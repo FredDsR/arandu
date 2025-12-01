@@ -1,11 +1,17 @@
 import sys
+import json
 import argparse
 from transcription import transcribe_audio
+from transcription.load_model import prepare_audio_input
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Transcribe an audio/video file using a speech model.")
-    parser.add_argument("file_path", help="Path to the input audio/video file to transcribe")
+    parser = argparse.ArgumentParser(
+        description="Transcribe an audio/video file using a speech model."
+    )
+    parser.add_argument(
+        "file_path", help="Path to the input audio/video file to transcribe"
+    )
     parser.add_argument(
         "--cpu",
         action="store_true",
@@ -21,18 +27,25 @@ def main():
     file_path = parsed.file_path
     force_cpu = parsed.cpu
 
-    model_id = "facebook/s2t-small-librispeech-asr"
+    model_id = "openai/whisper-tiny"
+    # model_id = "openai/whisper-large-v3"
 
     print(f"> Running transcription model {model_id} for file: {file_path}")
     if force_cpu:
         print("> Device override: CPU forced by --cpu flag")
 
-    transcription = transcribe_audio(model_id, file_path, force_cpu=force_cpu)
+    # Extract/prepare audio before loading the model to avoid delays
+    prepared_path = prepare_audio_input(file_path)
 
-    print(f'> Transcription:\n\n"{transcription[:100]}..."')
+    transcription = transcribe_audio(model_id, prepared_path, force_cpu=force_cpu)
 
-    with open(f"{file_path}_transcription.txt", "w") as f:
-        f.write(transcription)
+    print(f'> Transcription:\n\n"{transcription["text"][:100]}..."')
+
+    output_file = f"{file_path}_transcription.json"
+    with open(output_file, "w") as f:
+        json.dump(transcription, f)
+
+    print(f"Transcription saved to {output_file}")
 
 
 if __name__ == "__main__":
