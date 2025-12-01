@@ -1,0 +1,203 @@
+"""Whisper ASR engine for G-Transcriber.
+
+Implements the transcription engine using Hugging Face's transformers
+library with support for flexible model IDs and hardware configurations.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import torch
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
+from gtranscriber.core.hardware import (
+    DeviceType,
+    HardwareConfig,
+    get_device_and_dtype,
+    get_quantization_config,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from transformers.pipelines import Pipeline
+
+
+@dataclass
+class TranscriptionResult:
+    """Result from a transcription operation."""
+
+    text: str
+    segments: list[dict] | None
+    detected_language: str
+    language_probability: float
+    processing_duration_sec: float
+    model_id: str
+    device: str
+
+
+class WhisperEngine:
+    """Whisper-based ASR engine with flexible model and hardware support.
+
+    Supports any model_id from Hugging Face Hub (e.g., openai/whisper-large-v3,
+    distil-whisper/distil-large-v3, openai/whisper-large-v3-turbo).
+    """
+
+    def __init__(
+        self,
+        model_id: str = "openai/whisper-large-v3",
+        force_cpu: bool = False,
+        quantize: bool = False,
+        quantize_bits: int = 8,
+        chunk_length_s: int = 30,
+        stride_length_s: int = 5,
+    ) -> None:
+        """Initialize the Whisper engine.
+
+        Args:
+            model_id: Hugging Face model ID for the Whisper model.
+            force_cpu: Force CPU execution.
+            quantize: Enable quantization (8-bit or 4-bit loading).
+            quantize_bits: Number of bits for quantization.
+            chunk_length_s: Chunk length in seconds for long audio processing.
+            stride_length_s: Stride length in seconds between chunks.
+        """
+        self.model_id = model_id
+        self.chunk_length_s = chunk_length_s
+        self.stride_length_s = stride_length_s
+
+        # Get hardware configuration
+        self.hw_config: HardwareConfig = get_device_and_dtype(
+            force_cpu=force_cpu,
+            quantize=quantize,
+        )
+
+        # Get quantization config if applicable
+        self.quant_config = get_quantization_config(quantize, quantize_bits)
+
+        # Initialize pipeline lazily
+        self._pipe: Pipeline | None = None
+
+    @property
+    def pipe(self) -> Pipeline:
+        """Get the transcription pipeline, initializing if needed."""
+        if self._pipe is None:
+            self._pipe = self._create_pipeline()
+        return self._pipe
+
+    def _create_pipeline(self) -> Pipeline:
+        """Create the Hugging Face ASR pipeline."""
+        # Load model with appropriate configuration
+        model_kwargs: dict = {
+            "low_cpu_mem_usage": True,
+            "use_safetensors": True,
+        }
+
+        if self.quant_config:
+            model_kwargs.update(self.quant_config)
+        else:
+            model_kwargs["torch_dtype"] = self.hw_config.dtype
+
+        model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            self.model_id,
+            **model_kwargs,
+        )
+
+        # Move to device (if not using quantization which handles device placement)
+        if not self.quant_config:
+            try:
+                model.to(self.hw_config.device)
+            except Exception:
+                # Fallback to CPU if device placement fails
+                self.hw_config = HardwareConfig(
+                    device="cpu",
+                    dtype=torch.float32,
+                    device_type=DeviceType.CPU,
+                )
+                model.to(self.hw_config.device)
+
+        processor = AutoProcessor.from_pretrained(self.model_id)
+
+        return pipeline(
+            "automatic-speech-recognition",
+            model=model,
+            tokenizer=processor.tokenizer,
+            feature_extractor=processor.feature_extractor,
+            torch_dtype=self.hw_config.dtype,
+            device=self.hw_config.device if not self.quant_config else None,
+            return_timestamps=True,
+            chunk_length_s=self.chunk_length_s,
+            stride_length_s=(self.stride_length_s, self.stride_length_s),
+        )
+
+    def transcribe(self, audio_path: str | Path) -> TranscriptionResult:
+        """Transcribe an audio or video file.
+
+        Args:
+            audio_path: Path to the audio/video file.
+
+        Returns:
+            TranscriptionResult with text, segments, and metadata.
+        """
+        start_time = time.time()
+
+        result = self.pipe(str(audio_path))
+
+        processing_duration = time.time() - start_time
+
+        # Extract text and segments
+        text = result.get("text", "")
+        chunks = result.get("chunks", [])
+
+        segments = None
+        if chunks:
+            segments = [
+                {
+                    "text": chunk.get("text", ""),
+                    "start": chunk.get("timestamp", [0.0])[0],
+                    "end": chunk.get("timestamp", [0.0, 0.0])[1],
+                }
+                for chunk in chunks
+            ]
+
+        # Extract language info if available
+        detected_language = "unknown"
+        language_probability = 0.0
+
+        return TranscriptionResult(
+            text=text,
+            segments=segments,
+            detected_language=detected_language,
+            language_probability=language_probability,
+            processing_duration_sec=processing_duration,
+            model_id=self.model_id,
+            device=self.hw_config.device,
+        )
+
+
+def transcribe_audio(
+    audio_path: str | Path,
+    model_id: str = "openai/whisper-large-v3",
+    force_cpu: bool = False,
+    quantize: bool = False,
+) -> TranscriptionResult:
+    """Convenience function to transcribe a single audio file.
+
+    Args:
+        audio_path: Path to the audio/video file.
+        model_id: Hugging Face model ID for the Whisper model.
+        force_cpu: Force CPU execution.
+        quantize: Enable 8-bit quantization.
+
+    Returns:
+        TranscriptionResult with transcription and metadata.
+    """
+    engine = WhisperEngine(
+        model_id=model_id,
+        force_cpu=force_cpu,
+        quantize=quantize,
+    )
+    return engine.transcribe(audio_path)

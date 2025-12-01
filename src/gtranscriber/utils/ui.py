@@ -1,0 +1,164 @@
+"""Rich UI components for G-Transcriber.
+
+Provides progress bars, panels, and other visual components.
+"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
+from rich.table import Table
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from gtranscriber.schemas import EnrichedRecord
+
+
+# Global console instance
+console = Console()
+
+
+@contextmanager
+def create_progress(
+    description: str = "Processing",
+) -> Generator[Progress]:
+    """Create a progress bar context manager.
+
+    Args:
+        description: Description for the progress bar.
+
+    Yields:
+        Progress instance.
+    """
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    )
+
+    with progress:
+        yield progress
+
+
+def create_download_progress() -> Progress:
+    """Create a progress bar for downloads.
+
+    Returns:
+        Progress instance configured for downloads.
+    """
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]Downloading[/bold blue]"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+        console=console,
+    )
+
+
+def create_transcription_progress() -> Progress:
+    """Create a progress bar for transcription.
+
+    Returns:
+        Progress instance configured for transcription.
+    """
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[bold green]Transcribing[/bold green]"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+        console=console,
+    )
+
+
+def display_result_panel(record: EnrichedRecord) -> None:
+    """Display a panel with transcription results.
+
+    Args:
+        record: Enriched record with transcription results.
+    """
+    content = f"""[bold]File:[/bold] {record.name}
+[bold]Model:[/bold] {record.model_id}
+[bold]Device:[/bold] {record.compute_device}
+[bold]Duration:[/bold] {record.processing_duration_sec:.2f}s
+[bold]Language:[/bold] {record.detected_language}
+[bold]Status:[/bold] {record.transcription_status}
+
+[bold]Transcription:[/bold]
+{record.transcription_text[:500]}{"..." if len(record.transcription_text) > 500 else ""}"""
+
+    panel = Panel(
+        content,
+        title="[bold green]Transcription Complete[/bold green]",
+        border_style="green",
+    )
+    console.print(panel)
+
+
+def display_config_table(
+    model_id: str,
+    device: str,
+    quantize: bool,
+    source: str,
+) -> None:
+    """Display a table with current configuration.
+
+    Args:
+        model_id: Model ID being used.
+        device: Compute device.
+        quantize: Whether quantization is enabled.
+        source: Source file or folder.
+    """
+    table = Table(title="Configuration", show_header=False)
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Model", model_id)
+    table.add_row("Device", device)
+    table.add_row("Quantization", "Enabled" if quantize else "Disabled")
+    table.add_row("Source", source)
+
+    console.print(table)
+
+
+def display_file_list(files: list[dict]) -> None:
+    """Display a table of files to be processed.
+
+    Args:
+        files: List of file metadata dictionaries.
+    """
+    table = Table(title=f"Found {len(files)} media files")
+    table.add_column("Name", style="cyan")
+    table.add_column("Type", style="green")
+    table.add_column("Size", style="yellow")
+
+    for file in files[:20]:  # Limit display to first 20
+        name = file.get("name", "Unknown")
+        mime_type = file.get("mimeType", "Unknown")
+        size = file.get("size", "Unknown")
+        if isinstance(size, (int, float)):
+            size = f"{size / 1024 / 1024:.2f} MB"
+        table.add_row(name, mime_type, str(size))
+
+    if len(files) > 20:
+        table.add_row("...", f"and {len(files) - 20} more", "")
+
+    console.print(table)
