@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def _get_default_temp_dir() -> str:
+    """Get the default temporary directory for the current platform."""
+    return str(Path(tempfile.gettempdir()) / "gtranscriber")
 
 
 @dataclass
@@ -27,7 +34,7 @@ class TranscriberConfig:
     scopes: list[str] = field(default_factory=lambda: ["https://www.googleapis.com/auth/drive"])
 
     # Processing settings
-    temp_dir: str = "/tmp/gtranscriber"
+    temp_dir: str = field(default_factory=_get_default_temp_dir)
     max_retries: int = 3
     retry_delay: float = 1.0
 

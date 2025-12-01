@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
@@ -34,6 +34,9 @@ from gtranscriber.utils.ui import (
     display_result_panel,
 )
 
+if TYPE_CHECKING:
+    from gtranscriber.core.engine import TranscriptionResult
+
 # Initialize Typer app
 app = typer.Typer(
     name="gtranscriber",
@@ -41,6 +44,48 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="rich",
 )
+
+
+def _create_segments_from_result(
+    result: TranscriptionResult,
+) -> list[TranscriptionSegment] | None:
+    """Create TranscriptionSegment list from TranscriptionResult.
+
+    Args:
+        result: Transcription result containing segments.
+
+    Returns:
+        List of TranscriptionSegment objects or None if no segments.
+    """
+    if not result.segments:
+        return None
+
+    return [
+        TranscriptionSegment(
+            text=seg.get("text", ""),
+            start=seg.get("start", 0.0),
+            end=seg.get("end", 0.0),
+        )
+        for seg in result.segments
+    ]
+
+
+def _safe_int_conversion(value: str | None, default: int | None = None) -> int | None:
+    """Safely convert a string value to integer.
+
+    Args:
+        value: String value to convert.
+        default: Default value if conversion fails.
+
+    Returns:
+        Integer value or default.
+    """
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 
 def version_callback(value: bool) -> None:
@@ -147,16 +192,7 @@ def transcribe(
             progress.update(task, completed=100)
 
         # Create enriched record
-        segments = None
-        if result.segments:
-            segments = [
-                TranscriptionSegment(
-                    text=seg.get("text", ""),
-                    start=seg.get("start", 0.0),
-                    end=seg.get("end", 0.0),
-                )
-                for seg in result.segments
-            ]
+        segments = _create_segments_from_result(result)
 
         # Create a minimal input record for local files
         enriched = EnrichedRecord(
@@ -257,7 +293,7 @@ def drive_transcribe(
             mimeType=metadata["mimeType"],
             parents=metadata.get("parents", []),
             webContentLink=metadata.get("webContentLink", ""),
-            size_bytes=int(metadata.get("size", 0)) if metadata.get("size") else None,
+            size_bytes=_safe_int_conversion(metadata.get("size")),
         )
 
         display_config_table(
@@ -293,16 +329,7 @@ def drive_transcribe(
             progress.update(task, completed=100)
 
         # Create enriched record
-        segments = None
-        if result.segments:
-            segments = [
-                TranscriptionSegment(
-                    text=seg.get("text", ""),
-                    start=seg.get("start", 0.0),
-                    end=seg.get("end", 0.0),
-                )
-                for seg in result.segments
-            ]
+        segments = _create_segments_from_result(result)
 
         enriched = EnrichedRecord(
             gdrive_id=input_record.gdrive_id,

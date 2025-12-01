@@ -6,6 +6,7 @@ Handles local file operations and temporary file management.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -15,15 +16,26 @@ if TYPE_CHECKING:
     from gtranscriber.schemas import EnrichedRecord
 
 
-def ensure_temp_dir(base_dir: str = "/tmp/gtranscriber") -> Path:
+def _get_default_temp_dir() -> str:
+    """Get the default temporary directory for the current platform.
+
+    Returns:
+        Cross-platform temporary directory path.
+    """
+    return str(Path(tempfile.gettempdir()) / "gtranscriber")
+
+
+def ensure_temp_dir(base_dir: str | None = None) -> Path:
     """Ensure temporary directory exists.
 
     Args:
-        base_dir: Base directory for temporary files.
+        base_dir: Base directory for temporary files. Uses system temp dir if None.
 
     Returns:
         Path to the temporary directory.
     """
+    if base_dir is None:
+        base_dir = _get_default_temp_dir()
     temp_dir = Path(base_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
     return temp_dir
@@ -32,23 +44,23 @@ def ensure_temp_dir(base_dir: str = "/tmp/gtranscriber") -> Path:
 def create_temp_file(
     suffix: str = "",
     prefix: str = "gtranscriber_",
-    base_dir: str = "/tmp/gtranscriber",
+    base_dir: str | None = None,
 ) -> Path:
     """Create a temporary file.
 
     Args:
         suffix: File suffix (e.g., '.mp4').
         prefix: File prefix.
-        base_dir: Base directory for temporary files.
+        base_dir: Base directory for temporary files. Uses system temp dir if None.
 
     Returns:
         Path to the temporary file.
     """
+    if base_dir is None:
+        base_dir = _get_default_temp_dir()
     ensure_temp_dir(base_dir)
     fd, path = tempfile.mkstemp(suffix=suffix, prefix=prefix, dir=base_dir)
     # Close the file descriptor as we just need the path
-    import os
-
     os.close(fd)
     return Path(path)
 
@@ -95,15 +107,17 @@ def get_output_filename(original_name: str, suffix: str = "_transcription.json")
     return f"{path.stem}{suffix}"
 
 
-def cleanup_temp_files(base_dir: str = "/tmp/gtranscriber") -> int:
+def cleanup_temp_files(base_dir: str | None = None) -> int:
     """Clean up temporary files.
 
     Args:
-        base_dir: Base directory for temporary files.
+        base_dir: Base directory for temporary files. Uses system temp dir if None.
 
     Returns:
         Number of files cleaned up.
     """
+    if base_dir is None:
+        base_dir = _get_default_temp_dir()
     temp_dir = Path(base_dir)
     if not temp_dir.exists():
         return 0

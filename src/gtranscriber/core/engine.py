@@ -154,14 +154,16 @@ class WhisperEngine:
 
         segments = None
         if chunks:
-            segments = [
-                {
-                    "text": chunk.get("text", ""),
-                    "start": chunk.get("timestamp", [0.0])[0],
-                    "end": chunk.get("timestamp", [0.0, 0.0])[1],
-                }
-                for chunk in chunks
-            ]
+            segments = []
+            for chunk in chunks:
+                timestamp = chunk.get("timestamp", [0.0, 0.0])
+                segments.append(
+                    {
+                        "text": chunk.get("text", ""),
+                        "start": timestamp[0] if len(timestamp) > 0 else 0.0,
+                        "end": timestamp[1] if len(timestamp) > 1 else 0.0,
+                    }
+                )
 
         # Extract language info if available
         detected_language = "unknown"
