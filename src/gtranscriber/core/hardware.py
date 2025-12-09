@@ -60,6 +60,7 @@ def get_device_and_dtype(
     # Check for CUDA
     if torch.cuda.is_available():
         try:
+            # Check CUDA compute capability (sm_70 = 7.0 = Volta architecture and newer)
             major, _ = torch.cuda.get_device_capability(0)
         except Exception:
             major = 0

@@ -13,6 +13,20 @@ def _get_default_temp_dir() -> str:
     return str(Path(tempfile.gettempdir()) / "gtranscriber")
 
 
+def _parse_bool(value: str) -> bool:
+    """Parse a string value to boolean.
+
+    Accepts: true, True, TRUE, 1, yes, Yes, YES.
+
+    Args:
+        value: String value to parse.
+
+    Returns:
+        Boolean value.
+    """
+    return value.lower() in ("true", "1", "yes")
+
+
 @dataclass
 class TranscriberConfig:
     """Configuration settings for the transcriber."""
@@ -43,8 +57,8 @@ class TranscriberConfig:
         """Create configuration from environment variables."""
         return cls(
             model_id=os.getenv("GTRANSCRIBER_MODEL_ID", "openai/whisper-large-v3"),
-            force_cpu=os.getenv("GTRANSCRIBER_FORCE_CPU", "").lower() == "true",
-            quantize=os.getenv("GTRANSCRIBER_QUANTIZE", "").lower() == "true",
+            force_cpu=_parse_bool(os.getenv("GTRANSCRIBER_FORCE_CPU", "")),
+            quantize=_parse_bool(os.getenv("GTRANSCRIBER_QUANTIZE", "")),
             credentials_file=os.getenv("GTRANSCRIBER_CREDENTIALS", "credentials.json"),
             token_file=os.getenv("GTRANSCRIBER_TOKEN", "token.json"),
         )

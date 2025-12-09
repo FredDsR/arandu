@@ -5,10 +5,8 @@ Handles local file operations and temporary file management.
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -81,15 +79,9 @@ def save_enriched_record(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Convert to dict with datetime serialization
-    data = record.model_dump()
-
-    # Handle datetime serialization
-    for key, value in data.items():
-        if isinstance(value, datetime):
-            data[key] = value.isoformat()
-
-    output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    # Use Pydantic's built-in JSON serialization for nested models and datetimes
+    json_str = record.model_dump_json(indent=2)
+    output_path.write_text(json_str, encoding="utf-8")
     return output_path
 
 
@@ -107,27 +99,55 @@ def get_output_filename(original_name: str, suffix: str = "_transcription.json")
     return f"{path.stem}{suffix}"
 
 
-def cleanup_temp_files(base_dir: str | None = None) -> int:
+def get_mime_type(file_path: Path) -> str:
+    """Get MIME type based on file extension.
+
+    Args:
+        file_path: Path to the file.
+
+    Returns:
+        MIME type string.
+    """
+    mime_types = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".flac": "audio/flac",
+        ".ogg": "audio/ogg",
+        ".m4a": "audio/m4a",
+        ".mp4": "video/mp4",
+        ".mkv": "video/x-matroska",
+        ".avi": "video/x-msvideo",
+        ".mov": "video/quicktime",
+        ".webm": "video/webm",
+    }
+    return mime_types.get(file_path.suffix.lower(), "application/octet-stream")
+
+
+def cleanup_temp_files(base_dir: str | None = None) -> tuple[int, int]:
     """Clean up temporary files.
 
     Args:
         base_dir: Base directory for temporary files. Uses system temp dir if None.
 
     Returns:
-        Number of files cleaned up.
+        Tuple of (success_count, failure_count).
     """
     if base_dir is None:
         base_dir = _get_default_temp_dir()
     temp_dir = Path(base_dir)
     if not temp_dir.exists():
-        return 0
+        return (0, 0)
 
-    count = 0
+    success_count = 0
+    failure_count = 0
     for file_path in temp_dir.glob("gtranscriber_*"):
         try:
             file_path.unlink()
-            count += 1
-        except OSError:
-            pass
+            success_count += 1
+        except OSError as e:
+            import logging
 
-    return count
+            logging.warning(f"Failed to delete temporary file {file_path}: {e}")
+            failure_count += 1
+
+    return (success_count, failure_count)

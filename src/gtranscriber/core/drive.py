@@ -7,6 +7,10 @@ resumable media transfers and retry logic.
 from __future__ import annotations
 
 import io
+import logging
+import os
+import re
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +28,41 @@ if TYPE_CHECKING:
 
 # Google Drive API scopes
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_file_id(file_id: str) -> bool:
+    """Validate that file_id matches expected format.
+
+    Args:
+        file_id: Google Drive file ID to validate.
+
+    Returns:
+        True if valid, False otherwise.
+    """
+    # Google Drive file IDs are typically alphanumeric with dashes and underscores
+    return bool(re.match(r"^[a-zA-Z0-9_-]+$", file_id))
+
+
+def _check_file_permissions(file_path: Path) -> None:
+    """Check and warn about overly permissive file permissions.
+
+    Args:
+        file_path: Path to the file to check.
+    """
+    if not file_path.exists():
+        return
+
+    # Only check on Unix-like systems
+    if hasattr(os, "stat") and hasattr(os.stat(str(file_path)), "st_mode"):
+        mode = os.stat(str(file_path)).st_mode
+        # Check if file is readable by group or others (beyond owner)
+        if mode & 0o077:  # Check if any group/other permissions are set
+            logger.warning(
+                f"File {file_path} has overly permissive permissions. "
+                f"Consider restricting to owner-only access (chmod 600)."
+            )
 
 
 class DriveClient:
@@ -60,6 +99,10 @@ class DriveClient:
         creds = None
         token_path = Path(self.token_file)
 
+        # Check permissions on sensitive files
+        _check_file_permissions(token_path)
+        _check_file_permissions(Path(self.credentials_file))
+
         if token_path.exists():
             creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
 
@@ -72,6 +115,10 @@ class DriveClient:
 
             # Save the credentials for next run
             token_path.write_text(creds.to_json())
+            # Set restrictive permissions on the token file
+            if hasattr(os, "chmod"):
+                with suppress(OSError):
+                    os.chmod(str(token_path), 0o600)
 
         return build("drive", "v3", credentials=creds)
 
@@ -83,7 +130,13 @@ class DriveClient:
 
         Returns:
             File metadata dictionary.
+
+        Raises:
+            ValueError: If file_id format is invalid.
         """
+        if not _validate_file_id(file_id):
+            raise ValueError(f"Invalid file_id format: {file_id}")
+
         return (
             self.service.files()
             .get(
@@ -120,16 +173,17 @@ class DriveClient:
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         request = self.service.files().get_media(fileId=file_id)
-        fh = io.FileIO(str(destination), "wb")
-        downloader = MediaIoBaseDownload(fh, request)
 
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-            if progress and task_id is not None and status:
-                progress.update(task_id, completed=int(status.progress() * 100))
+        with io.FileIO(str(destination), "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
 
-        fh.close()
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                if progress and task_id is not None and status:
+                    # Update progress based on actual progress (0-100)
+                    progress.update(task_id, completed=int(status.progress() * 100))
+
         return destination
 
     @retry(
@@ -230,8 +284,11 @@ class DriveClient:
             query_parts.append(f"'{folder_id}' in parents")
 
         if status_filter:
+            # Escape single quotes in the filter value to prevent query syntax issues
+            safe_status_filter = status_filter.replace("'", "\\'")
             query_parts.append(
-                f"appProperties has {{ key='x-transcription-status' and value='{status_filter}' }}"
+                f"appProperties has {{ key='x-transcription-status' "
+                f"and value='{safe_status_filter}' }}"
             )
 
         query = " and ".join(query_parts)

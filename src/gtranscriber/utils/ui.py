@@ -8,7 +8,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -20,14 +19,12 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from gtranscriber.utils.console import console
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from gtranscriber.schemas import EnrichedRecord
-
-
-# Global console instance
-console = Console()
 
 
 @contextmanager
@@ -89,12 +86,37 @@ def create_transcription_progress() -> Progress:
     )
 
 
+def _truncate_text(text: str, max_length: int = 500) -> str:
+    """Truncate text at word boundary.
+
+    Args:
+        text: Text to truncate.
+        max_length: Maximum length before truncation.
+
+    Returns:
+        Truncated text with ellipsis if needed.
+    """
+    if len(text) <= max_length:
+        return text
+
+    # Find the last space before max_length
+    truncated = text[:max_length]
+    last_space = truncated.rfind(" ")
+
+    if last_space > 0:
+        truncated = truncated[:last_space]
+
+    return truncated + "..."
+
+
 def display_result_panel(record: EnrichedRecord) -> None:
     """Display a panel with transcription results.
 
     Args:
         record: Enriched record with transcription results.
     """
+    truncated_text = _truncate_text(record.transcription_text, 500)
+
     content = f"""[bold]File:[/bold] {record.name}
 [bold]Model:[/bold] {record.model_id}
 [bold]Device:[/bold] {record.compute_device}
@@ -103,7 +125,7 @@ def display_result_panel(record: EnrichedRecord) -> None:
 [bold]Status:[/bold] {record.transcription_status}
 
 [bold]Transcription:[/bold]
-{record.transcription_text[:500]}{"..." if len(record.transcription_text) > 500 else ""}"""
+{truncated_text}"""
 
     panel = Panel(
         content,

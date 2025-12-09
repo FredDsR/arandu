@@ -17,6 +17,7 @@ from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.hardware import get_device_and_dtype
 from gtranscriber.core.io import (
     create_temp_file,
+    get_mime_type,
     get_output_filename,
     save_enriched_record,
 )
@@ -218,9 +219,9 @@ def transcribe(
         enriched = EnrichedRecord(
             gdrive_id="local",
             name=file_path.name,
-            mimeType=_get_mime_type(file_path),
+            mimeType=get_mime_type(file_path),
             parents=[],
-            webContentLink="",
+            webContentLink="local://",
             transcription_text=result.text,
             detected_language=result.detected_language,
             language_probability=result.language_probability,
@@ -326,83 +327,87 @@ def drive_transcribe(
         # Download file
         suffix = Path(input_record.name).suffix
         temp_file = create_temp_file(suffix=suffix)
+        local_output = None
 
-        with create_progress("Downloading") as progress:
-            task = progress.add_task(f"Downloading {input_record.name}...", total=100)
-            drive_client.download_file(file_id, temp_file, progress, task)
+        try:
+            with create_progress("Downloading") as progress:
+                task = progress.add_task(f"Downloading {input_record.name}...", total=100)
+                drive_client.download_file(file_id, temp_file, progress, task)
 
-        print_success(f"Downloaded [bold]{input_record.name}[/bold]")
+            print_success(f"Downloaded [bold]{input_record.name}[/bold]")
 
-        # Initialize engine and transcribe
-        with create_progress("Initializing model") as progress:
-            task = progress.add_task("Loading model...", total=100)
-            engine = WhisperEngine(
-                model_id=model_id,
-                force_cpu=cpu,
-                quantize=quantize,
-            )
-            progress.update(task, completed=100)
-
-        with create_progress("Transcribing") as progress:
-            task = progress.add_task("Processing audio...", total=None)
-            result = engine.transcribe(temp_file)
-            progress.update(task, completed=100)
-
-        # Create enriched record
-        segments = _create_segments_from_result(result)
-
-        enriched = EnrichedRecord(
-            gdrive_id=input_record.gdrive_id,
-            name=input_record.name,
-            mimeType=input_record.mimeType,
-            parents=input_record.parents,
-            webContentLink=input_record.web_content_link,
-            size_bytes=input_record.size_bytes,
-            transcription_text=result.text,
-            detected_language=result.detected_language,
-            language_probability=result.language_probability,
-            model_id=result.model_id,
-            compute_device=result.device,
-            processing_duration_sec=result.processing_duration_sec,
-            transcription_status="completed",
-            segments=segments,
-        )
-
-        # Save locally first
-        output_filename = get_output_filename(input_record.name)
-        local_output = temp_file.parent / output_filename
-        save_enriched_record(enriched, local_output)
-
-        # Upload to Drive (same folder as original)
-        if input_record.parents:
-            with create_progress("Uploading") as progress:
-                task = progress.add_task("Uploading result...", total=100)
-                upload_result = drive_client.upload_file(
-                    local_output,
-                    input_record.parents[0],
-                    progress=progress,
-                    task_id=task,
+            # Initialize engine and transcribe
+            with create_progress("Initializing model") as progress:
+                task = progress.add_task("Loading model...", total=100)
+                engine = WhisperEngine(
+                    model_id=model_id,
+                    force_cpu=cpu,
+                    quantize=quantize,
                 )
-            print_success(
-                f"Uploaded transcription to Drive: [bold]{upload_result.get('name')}[/bold]"
+                progress.update(task, completed=100)
+
+            with create_progress("Transcribing") as progress:
+                task = progress.add_task("Processing audio...", total=None)
+                result = engine.transcribe(temp_file)
+                progress.update(task, completed=100)
+
+            # Create enriched record
+            segments = _create_segments_from_result(result)
+
+            enriched = EnrichedRecord(
+                gdrive_id=input_record.gdrive_id,
+                name=input_record.name,
+                mimeType=input_record.mimeType,
+                parents=input_record.parents,
+                webContentLink=input_record.web_content_link,
+                size_bytes=input_record.size_bytes,
+                transcription_text=result.text,
+                detected_language=result.detected_language,
+                language_probability=result.language_probability,
+                model_id=result.model_id,
+                compute_device=result.device,
+                processing_duration_sec=result.processing_duration_sec,
+                transcription_status="completed",
+                segments=segments,
             )
 
-        # Update original file properties
-        drive_client.update_file_properties(
-            file_id,
-            {
-                "x-transcription-status": "completed",
-                "x-model-id": model_id,
-                "x-transcription-date": datetime.now().isoformat(),
-            },
-        )
+            # Save locally first
+            output_filename = get_output_filename(input_record.name)
+            local_output = temp_file.parent / output_filename
+            save_enriched_record(enriched, local_output)
 
-        # Display result
-        display_result_panel(enriched)
+            # Upload to Drive (same folder as original)
+            if input_record.parents:
+                with create_progress("Uploading") as progress:
+                    task = progress.add_task("Uploading result...", total=100)
+                    upload_result = drive_client.upload_file(
+                        local_output,
+                        input_record.parents[0],
+                        progress=progress,
+                        task_id=task,
+                    )
+                print_success(
+                    f"Uploaded transcription to Drive: [bold]{upload_result.get('name')}[/bold]"
+                )
 
-        # Cleanup
-        temp_file.unlink(missing_ok=True)
-        local_output.unlink(missing_ok=True)
+            # Update original file properties
+            drive_client.update_file_properties(
+                file_id,
+                {
+                    "x-transcription-status": "completed",
+                    "x-model-id": model_id,
+                    "x-transcription-date": datetime.now().isoformat(),
+                },
+            )
+
+            # Display result
+            display_result_panel(enriched)
+
+        finally:
+            # Cleanup temporary files
+            temp_file.unlink(missing_ok=True)
+            if local_output:
+                local_output.unlink(missing_ok=True)
 
     except Exception as e:
         print_error(f"Transcription failed: {e}")
@@ -442,30 +447,6 @@ def info() -> None:
     console.print(f"[cyan]MPS Available:[/cyan] {has_mps}")
 
     console.print()
-
-
-def _get_mime_type(file_path: Path) -> str:
-    """Get MIME type based on file extension.
-
-    Args:
-        file_path: Path to the file.
-
-    Returns:
-        MIME type string.
-    """
-    mime_types = {
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-        ".flac": "audio/flac",
-        ".ogg": "audio/ogg",
-        ".m4a": "audio/m4a",
-        ".mp4": "video/mp4",
-        ".mkv": "video/x-matroska",
-        ".avi": "video/x-msvideo",
-        ".mov": "video/quicktime",
-        ".webm": "video/webm",
-    }
-    return mime_types.get(file_path.suffix.lower(), "application/octet-stream")
 
 
 if __name__ == "__main__":

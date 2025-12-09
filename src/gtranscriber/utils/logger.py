@@ -6,14 +6,10 @@ Provides structured logging with Rich console output.
 from __future__ import annotations
 
 import logging
-import sys
 
-from rich.console import Console
 from rich.logging import RichHandler
 
-# Global console instances
-console = Console()
-stderr_console = Console(stderr=True)
+from gtranscriber.utils.console import console, stderr_console
 
 
 def setup_logging(

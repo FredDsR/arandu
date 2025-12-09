@@ -6,6 +6,7 @@ library with support for flexible model IDs and hardware configurations.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from transformers.pipelines import Pipeline
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,8 +117,11 @@ class WhisperEngine:
         if not self.quant_config:
             try:
                 model.to(self.hw_config.device)
-            except Exception:
+            except Exception as e:
                 # Fallback to CPU if device placement fails
+                logger.warning(
+                    f"Failed to move model to {self.hw_config.device}: {e}. Falling back to CPU."
+                )
                 self.hw_config = HardwareConfig(
                     device="cpu",
                     dtype=torch.float32,
@@ -163,8 +169,8 @@ class WhisperEngine:
                 segments.append(
                     {
                         "text": chunk.get("text", ""),
-                        "start": timestamp[0] if len(timestamp) > 0 else 0.0,
-                        "end": timestamp[1] if len(timestamp) > 1 else 0.0,
+                        "start": timestamp[0] if len(timestamp) >= 1 else 0.0,
+                        "end": timestamp[1] if len(timestamp) >= 2 else 0.0,
                     }
                 )
 
