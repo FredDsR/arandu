@@ -11,8 +11,9 @@ import sys
 from rich.console import Console
 from rich.logging import RichHandler
 
-# Global console instance
+# Global console instances
 console = Console()
+stderr_console = Console(stderr=True)
 
 
 def setup_logging(
@@ -111,7 +112,7 @@ def print_error(message: str) -> None:
     Args:
         message: Message to print.
     """
-    console.print(f"[bold red]Error:[/bold red] {message}", file=sys.stderr)
+    stderr_console.print(f"[bold red]Error:[/bold red] {message}")
 
 
 def print_success(message: str) -> None:

@@ -52,8 +52,8 @@ class WhisperEngine:
         force_cpu: bool = False,
         quantize: bool = False,
         quantize_bits: int = 8,
-        chunk_length_s: int = 30,
-        stride_length_s: int = 5,
+        chunk_length_s: int | None = None,
+        stride_length_s: int | None = None,
     ) -> None:
         """Initialize the Whisper engine.
 
@@ -66,8 +66,12 @@ class WhisperEngine:
             stride_length_s: Stride length in seconds between chunks.
         """
         self.model_id = model_id
-        self.chunk_length_s = chunk_length_s
-        self.stride_length_s = stride_length_s
+
+        self.pipe_kwargs = {}
+        if chunk_length_s is not None:
+            self.pipe_kwargs["chunk_length_s"] = chunk_length_s
+        if stride_length_s is not None:
+            self.pipe_kwargs["stride_length_s"] = (stride_length_s, stride_length_s)
 
         # Get hardware configuration
         self.hw_config: HardwareConfig = get_device_and_dtype(
@@ -129,8 +133,7 @@ class WhisperEngine:
             torch_dtype=self.hw_config.dtype,
             device=self.hw_config.device if not self.quant_config else None,
             return_timestamps=True,
-            chunk_length_s=self.chunk_length_s,
-            stride_length_s=(self.stride_length_s, self.stride_length_s),
+            **self.pipe_kwargs,
         )
 
     def transcribe(self, audio_path: str | Path) -> TranscriptionResult:
@@ -166,8 +169,8 @@ class WhisperEngine:
                 )
 
         # Extract language info if available
-        detected_language = "unknown"
-        language_probability = 0.0
+        detected_language = result.get("language", "unknown")
+        language_probability = result.get("language_probability", 0.0)
 
         return TranscriptionResult(
             text=text,

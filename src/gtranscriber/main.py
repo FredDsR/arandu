@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
@@ -46,6 +46,16 @@ app = typer.Typer(
 )
 
 
+def _ensure_float(value: Any, default: float) -> float:
+    """Turn arbitrary values into floats with a safe fallback."""
+    try:
+        if value is None:
+            raise TypeError
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _create_segments_from_result(
     result: TranscriptionResult,
 ) -> list[TranscriptionSegment] | None:
@@ -60,14 +70,24 @@ def _create_segments_from_result(
     if not result.segments:
         return None
 
-    return [
-        TranscriptionSegment(
-            text=seg.get("text", ""),
-            start=seg.get("start", 0.0),
-            end=seg.get("end", 0.0),
+    sanitized_segments: list[TranscriptionSegment] = []
+    for seg in result.segments:
+        start = _ensure_float(seg.get("start"), 0.0)
+        end = _ensure_float(seg.get("end"), start)
+
+        # Ensure segment end never precedes its start
+        if end < start:
+            end = start
+
+        sanitized_segments.append(
+            TranscriptionSegment(
+                text=seg.get("text", ""),
+                start=start,
+                end=end,
+            )
         )
-        for seg in result.segments
-    ]
+
+    return sanitized_segments
 
 
 def _safe_int_conversion(value: str | None, default: int | None = None) -> int | None:
