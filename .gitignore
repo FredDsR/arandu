@@ -189,3 +189,6 @@ pyrightconfig.json
 
 results/*
 !results/.gitkeep
+
+credentials.json
+token.json
