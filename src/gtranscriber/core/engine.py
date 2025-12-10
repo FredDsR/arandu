@@ -64,10 +64,16 @@ class WhisperEngine:
             model_id: Hugging Face model ID for the Whisper model.
             force_cpu: Force CPU execution.
             quantize: Enable quantization (8-bit or 4-bit loading).
-            quantize_bits: Number of bits for quantization.
+            quantize_bits: Number of bits for quantization (4 or 8).
             chunk_length_s: Chunk length in seconds for long audio processing.
             stride_length_s: Stride length in seconds between chunks.
+
+        Raises:
+            ValueError: If quantize_bits is not 4 or 8.
         """
+        if quantize and quantize_bits not in (4, 8):
+            raise ValueError(f"quantize_bits must be 4 or 8, got {quantize_bits}")
+
         self.model_id = model_id
 
         self.pipe_kwargs = {}
@@ -108,19 +114,42 @@ class WhisperEngine:
         else:
             model_kwargs["torch_dtype"] = self.hw_config.dtype
 
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            self.model_id,
-            **model_kwargs,
-        )
+        try:
+            model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self.model_id,
+                **model_kwargs,
+            )
+        except OSError as e:
+            logger.error(
+                f"Failed to download or load the model '{self.model_id}'. "
+                "This may be due to network issues or insufficient disk space. "
+                f"Original error: {e}"
+            )
+            raise RuntimeError(
+                f"Could not download or load the model '{self.model_id}'. "
+                "Please check your internet connection and available disk space."
+            ) from e
+        except ValueError as e:
+            logger.error(
+                f"Invalid model ID '{self.model_id}' or incompatible model. Original error: {e}"
+            )
+            raise RuntimeError(
+                f"Invalid model ID '{self.model_id}'. Please check the model name and try again."
+            ) from e
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred while loading the model '{self.model_id}': {e}"
+            )
+            raise
 
         # Move to device (if not using quantization which handles device placement)
         if not self.quant_config:
             try:
                 model.to(self.hw_config.device)
-            except Exception as e:
+            except Exception:
                 # Fallback to CPU if device placement fails
-                logger.warning(
-                    f"Failed to move model to {self.hw_config.device}: {e}. Falling back to CPU."
+                logger.exception(
+                    f"Failed to move model to {self.hw_config.device}. Falling back to CPU."
                 )
                 self.hw_config = HardwareConfig(
                     device="cpu",

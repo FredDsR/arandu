@@ -62,7 +62,7 @@ def get_device_and_dtype(
         try:
             # Check CUDA compute capability (sm_70 = 7.0 = Volta architecture and newer)
             major, _ = torch.cuda.get_device_capability(0)
-        except Exception:
+        except RuntimeError:
             major = 0
 
         # PyTorch 2.x official wheels commonly support >= sm_70

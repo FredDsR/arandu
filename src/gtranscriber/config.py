@@ -16,13 +16,26 @@ def _get_default_temp_dir() -> str:
 def _parse_bool(value: str) -> bool:
     """Parse a string value to boolean.
 
-    Accepts: true, True, TRUE, 1, yes, Yes, YES.
+    Accepts (case-insensitive): "true", "1", "yes".
+    Any other value, including empty strings, returns False.
 
     Args:
         value: String value to parse.
 
     Returns:
         Boolean value.
+
+    Examples:
+        >>> _parse_bool("true")
+        True
+        >>> _parse_bool("Yes")
+        True
+        >>> _parse_bool("1")
+        True
+        >>> _parse_bool("false")
+        False
+        >>> _parse_bool("")
+        False
     """
     return value.lower() in ("true", "1", "yes")
 

@@ -6,6 +6,7 @@ and Rich for visual feedback.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
@@ -22,8 +23,8 @@ from gtranscriber.core.io import (
     save_enriched_record,
 )
 from gtranscriber.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
+from gtranscriber.utils.console import console
 from gtranscriber.utils.logger import (
-    console,
     print_error,
     print_info,
     print_success,
@@ -37,6 +38,9 @@ from gtranscriber.utils.ui import (
 
 if TYPE_CHECKING:
     from gtranscriber.core.engine import TranscriptionResult
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Initialize Typer app
 app = typer.Typer(
@@ -113,7 +117,7 @@ def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
         console.print(f"[bold]G-Transcriber[/bold] version {__version__}")
-        raise typer.Exit()
+        raise typer.Exit(code=0)
 
 
 @app.callback()
@@ -404,10 +408,13 @@ def drive_transcribe(
             display_result_panel(enriched)
 
         finally:
-            # Cleanup temporary files
-            temp_file.unlink(missing_ok=True)
-            if local_output:
-                local_output.unlink(missing_ok=True)
+            # Cleanup temporary files with logging
+            if temp_file.exists():
+                temp_file.unlink()
+                logger.debug(f"Deleted temporary file: {temp_file}")
+            if local_output and local_output.exists():
+                local_output.unlink()
+                logger.debug(f"Deleted local output file: {local_output}")
 
     except Exception as e:
         print_error(f"Transcription failed: {e}")

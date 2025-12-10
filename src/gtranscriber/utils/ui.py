@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 
     from gtranscriber.schemas import EnrichedRecord
 
+# Constants
+MAX_DISPLAY_FILES = 20  # Maximum number of files to display in file list
+
 
 @contextmanager
 def create_progress(
@@ -172,7 +175,7 @@ def display_file_list(files: list[dict]) -> None:
     table.add_column("Type", style="green")
     table.add_column("Size", style="yellow")
 
-    for file in files[:20]:  # Limit display to first 20
+    for file in files[:MAX_DISPLAY_FILES]:  # Limit display to first MAX_DISPLAY_FILES
         name = file.get("name", "Unknown")
         mime_type = file.get("mimeType", "Unknown")
         size = file.get("size", "Unknown")
@@ -180,7 +183,7 @@ def display_file_list(files: list[dict]) -> None:
             size = f"{size / 1024 / 1024:.2f} MB"
         table.add_row(name, mime_type, str(size))
 
-    if len(files) > 20:
-        table.add_row("...", f"and {len(files) - 20} more", "")
+    if len(files) > MAX_DISPLAY_FILES:
+        table.add_row("...", f"and {len(files) - MAX_DISPLAY_FILES} more", "")
 
     console.print(table)

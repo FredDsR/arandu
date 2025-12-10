@@ -57,10 +57,10 @@ def _check_file_permissions(file_path: Path) -> None:
     # Only check on Unix-like systems
     if hasattr(os, "stat") and hasattr(os.stat(str(file_path)), "st_mode"):
         mode = os.stat(str(file_path)).st_mode
-        # Check if file is readable by group or others (beyond owner)
-        if mode & 0o077:  # Check if any group/other permissions are set
+        # Check if group/other write permissions are set
+        if mode & 0o022:  # Check if group/other write permissions are set
             logger.warning(
-                f"File {file_path} has overly permissive permissions. "
+                f"File {file_path} has write permissions for group or others. "
                 f"Consider restricting to owner-only access (chmod 600)."
             )
 
@@ -174,15 +174,22 @@ class DriveClient:
 
         request = self.service.files().get_media(fileId=file_id)
 
-        with io.FileIO(str(destination), "wb") as fh:
-            downloader = MediaIoBaseDownload(fh, request)
+        try:
+            with io.FileIO(str(destination), "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request)
 
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
-                if progress and task_id is not None and status:
-                    # Update progress based on actual progress (0-100)
-                    progress.update(task_id, completed=int(status.progress() * 100))
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                    if progress and task_id is not None and status:
+                        # Update progress based on actual progress (0-100)
+                        progress.update(task_id, completed=round(status.progress() * 100))
+        except OSError as e:
+            # Clean up partial file on failure
+            with suppress(Exception):
+                destination.unlink()
+            logger.error(f"Failed to download file to {destination}: {e}")
+            raise
 
         return destination
 
@@ -281,7 +288,9 @@ class DriveClient:
         ]
 
         if folder_id:
-            query_parts.append(f"'{folder_id}' in parents")
+            # Escape single quotes in the folder_id to prevent query syntax issues
+            safe_folder_id = folder_id.replace("'", "\\'")
+            query_parts.append(f"'{safe_folder_id}' in parents")
 
         if status_filter:
             # Escape single quotes in the filter value to prevent query syntax issues

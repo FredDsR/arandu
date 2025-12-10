@@ -38,6 +38,21 @@ class InputRecord(BaseModel):
             return v
         return []
 
+    @field_validator("size_bytes", mode="before")
+    @classmethod
+    def parse_size_bytes(cls, v: str | int | None) -> int | None:
+        """Parse size_bytes from string or int format."""
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str):
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return None
+        return None
+
 
 class TranscriptionSegment(BaseModel):
     """Schema for a transcription segment with timestamp information."""

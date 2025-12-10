@@ -5,7 +5,6 @@ Handles local file operations and temporary file management.
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -53,13 +52,18 @@ def create_temp_file(
 
     Returns:
         Path to the temporary file.
+
+    Note:
+        Uses NamedTemporaryFile with delete=False for better safety and to avoid race conditions.
     """
     if base_dir is None:
         base_dir = _get_default_temp_dir()
     ensure_temp_dir(base_dir)
-    fd, path = tempfile.mkstemp(suffix=suffix, prefix=prefix, dir=base_dir)
-    # Close the file descriptor as we just need the path
-    os.close(fd)
+    # Use NamedTemporaryFile with delete=False for better safety and to avoid race conditions
+    with tempfile.NamedTemporaryFile(
+        suffix=suffix, prefix=prefix, dir=base_dir, delete=False
+    ) as tmp:
+        path = tmp.name
     return Path(path)
 
 
