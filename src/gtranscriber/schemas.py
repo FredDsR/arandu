@@ -21,6 +21,9 @@ class InputRecord(BaseModel):
     parents: list[str] = Field(..., description="List of parent folder IDs")
     web_content_link: str = Field(..., alias="webContentLink", description="Direct download link")
     size_bytes: int | None = Field(None, description="File size in bytes")
+    duration_milliseconds: int | None = Field(
+        None, description="Media duration in milliseconds (for audio/video files)"
+    )
 
     model_config = {"populate_by_name": True}
 

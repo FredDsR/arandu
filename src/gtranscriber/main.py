@@ -422,6 +422,129 @@ def drive_transcribe(
 
 
 @app.command()
+def batch_transcribe(
+    catalog: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to catalog CSV file with Google Drive file metadata.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Output directory for transcription JSON files.",
+        ),
+    ] = Path("results"),
+    model_id: Annotated[
+        str,
+        typer.Option(
+            "--model-id",
+            "-m",
+            help="Hugging Face model ID for transcription.",
+        ),
+    ] = "openai/whisper-large-v3",
+    credentials: Annotated[
+        Path,
+        typer.Option(
+            "--credentials",
+            "-c",
+            help="Path to Google OAuth2 credentials file.",
+        ),
+    ] = Path("credentials.json"),
+    workers: Annotated[
+        int,
+        typer.Option(
+            "--workers",
+            "-w",
+            help="Number of parallel workers (each loads its own model instance).",
+        ),
+    ] = 1,
+    checkpoint_file: Annotated[
+        Path,
+        typer.Option(
+            "--checkpoint",
+            help="Path to checkpoint file for resuming interrupted jobs.",
+        ),
+    ] = Path("results/checkpoint.json"),
+    quantize: Annotated[
+        bool,
+        typer.Option(
+            "--quantize",
+            "-q",
+            help="Enable 8-bit quantization to reduce VRAM usage.",
+        ),
+    ] = False,
+    cpu: Annotated[
+        bool,
+        typer.Option(
+            "--cpu",
+            help="Force CPU execution.",
+        ),
+    ] = False,
+) -> None:
+    """Batch transcribe audio/video files from a catalog.
+
+    Processes all audio and video files listed in the catalog CSV with parallel
+    processing support and automatic checkpoint/resume capability. Each worker
+    loads its own model instance for true parallel processing.
+
+    The catalog CSV must contain columns: gdrive_id, name, mime_type, size_bytes,
+    parents, web_content_link, and optionally duration_milliseconds.
+
+    Transcription results are saved as JSON files in the output directory with
+    all metadata including media duration. Progress is automatically checkpointed,
+    allowing interrupted jobs to resume from the last completed file.
+    """
+    from gtranscriber.core.batch import BatchConfig, run_batch_transcription
+
+    # Validate inputs
+    if not credentials.exists():
+        print_error(f"Credentials file not found: {credentials}")
+        raise typer.Exit(code=1)
+
+    if workers < 1:
+        print_error("Number of workers must be at least 1")
+        raise typer.Exit(code=1)
+
+    # Create config
+    config = BatchConfig(
+        catalog_file=catalog,
+        output_dir=output_dir,
+        checkpoint_file=checkpoint_file,
+        credentials_file=credentials,
+        model_id=model_id,
+        num_workers=workers,
+        force_cpu=cpu,
+        quantize=quantize,
+    )
+
+    # Display configuration
+    console.print("\n[bold]Batch Transcription Configuration[/bold]\n")
+    console.print(f"[cyan]Catalog:[/cyan] {catalog}")
+    console.print(f"[cyan]Output Directory:[/cyan] {output_dir}")
+    console.print(f"[cyan]Model ID:[/cyan] {model_id}")
+    console.print(f"[cyan]Workers:[/cyan] {workers}")
+    console.print(f"[cyan]Checkpoint:[/cyan] {checkpoint_file}")
+    console.print(f"[cyan]Quantize:[/cyan] {quantize}")
+    console.print(f"[cyan]Force CPU:[/cyan] {cpu}")
+    console.print()
+
+    try:
+        run_batch_transcription(config)
+        print_success("Batch transcription completed!")
+
+    except Exception as e:
+        print_error(f"Batch transcription failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
 def info() -> None:
     """Display system information and hardware capabilities."""
     import torch
