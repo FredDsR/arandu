@@ -34,8 +34,6 @@ class CheckpointState(BaseModel):
         default_factory=datetime.now, description="Last update timestamp"
     )
 
-    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
-
 
 class CheckpointManager:
     """Manages checkpoint state for batch transcription."""

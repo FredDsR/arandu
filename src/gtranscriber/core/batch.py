@@ -7,6 +7,7 @@ parallel processing, checkpoint/resume capability, and progress tracking.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -230,8 +231,6 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
             # Parse parents
             parents_str = row.get("parents", "[]")
             try:
-                import json
-
                 parents = json.loads(parents_str.replace("'", '"'))
             except json.JSONDecodeError:
                 parents = []
@@ -283,11 +282,17 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
     # Determine number of workers
     num_workers = min(config.num_workers, len(remaining_tasks))
-    if num_workers > mp.cpu_count():
+    # Only limit workers to CPU count when using CPU mode
+    if config.force_cpu and num_workers > mp.cpu_count():
         logger.warning(
             f"Requested {num_workers} workers but only {mp.cpu_count()} CPUs available"
         )
         num_workers = mp.cpu_count()
+    elif num_workers > mp.cpu_count():
+        logger.info(
+            f"Using {num_workers} workers with GPU processing "
+            f"(more than {mp.cpu_count()} CPU cores)"
+        )
 
     logger.info(f"Using {num_workers} parallel workers")
 

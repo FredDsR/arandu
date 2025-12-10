@@ -16,6 +16,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Timeout for ffprobe command in seconds
+FFPROBE_TIMEOUT_SECONDS = 30
+
 
 def get_media_duration_ms(file_path: str | Path) -> int | None:
     """Extract media duration in milliseconds using ffprobe.
@@ -43,7 +46,7 @@ def get_media_duration_ms(file_path: str | Path) -> int | None:
             capture_output=True,
             text=True,
             check=True,
-            timeout=30,
+            timeout=FFPROBE_TIMEOUT_SECONDS,
         )
 
         data = json.loads(result.stdout)
