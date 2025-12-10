@@ -186,3 +186,6 @@ pyrightconfig.json
 *.mp3
 *.wav
 *.flac
+
+results/*
+!results/.gitkeep
