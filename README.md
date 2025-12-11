@@ -12,7 +12,7 @@ G-Transcriber is a robust pipeline for automated transcription of audio and vide
 - **Hardware Agnostic**: Automatic detection and optimization for CPU, CUDA GPU, or Apple Silicon MPS
 - **Quantization Support**: 8-bit quantization for reduced VRAM usage on GPUs
 - **Google Drive Integration**: Download files, transcribe, and upload results back to Drive
-- **Resilient Transfers**: Resumable downloads/uploads with automatic retry logic
+- **Resilient Transfers**: Resumable downloads/uploads with automatic retry logic, file size validation, and exponential backoff
 - **Rich CLI**: Beautiful command-line interface with progress bars and structured output
 - **Structured Output**: JSON output with transcription text, timestamps, and metadata
 

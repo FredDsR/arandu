@@ -19,7 +19,81 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+
+class DownloadError(Exception):
+    """Base exception for download-related errors."""
+
+    pass
+
+
+class IncompleteDownloadError(DownloadError):
+    """Raised when a download completes but file size doesn't match expected."""
+
+    def __init__(
+        self,
+        file_id: str,
+        file_name: str,
+        expected_size: int,
+        actual_size: int,
+        destination: Path,
+    ) -> None:
+        self.file_id = file_id
+        self.file_name = file_name
+        self.expected_size = expected_size
+        self.actual_size = actual_size
+        self.destination = destination
+
+        # Calculate percentage downloaded
+        percentage = (actual_size / expected_size * 100) if expected_size > 0 else 0
+
+        # Format sizes for readability
+        expected_mb = expected_size / (1024 * 1024)
+        actual_mb = actual_size / (1024 * 1024)
+
+        super().__init__(
+            f"Incomplete download for '{file_name}' (ID: {file_id}): "
+            f"expected {expected_mb:.2f} MB but got {actual_mb:.2f} MB ({percentage:.1f}% complete). "
+            f"This may be due to network issues or Google Drive rate limiting. "
+            f"The file will be retried automatically."
+        )
+
+
+class EmptyDownloadError(DownloadError):
+    """Raised when a download results in an empty file."""
+
+    def __init__(self, file_id: str, file_name: str, destination: Path) -> None:
+        self.file_id = file_id
+        self.file_name = file_name
+        self.destination = destination
+
+        super().__init__(
+            f"Download resulted in empty file for '{file_name}' (ID: {file_id}). "
+            f"This typically indicates a Google Drive API error or permission issue. "
+            f"Verify that the file exists and is accessible with the current credentials."
+        )
+
+
+class NoAudioStreamError(DownloadError):
+    """Raised when a media file has no audio stream to transcribe."""
+
+    def __init__(self, file_id: str, file_name: str, destination: Path) -> None:
+        self.file_id = file_id
+        self.file_name = file_name
+        self.destination = destination
+
+        super().__init__(
+            f"No audio stream found in '{file_name}' (ID: {file_id}). "
+            f"The file may be a video without audio, or the audio codec is not supported. "
+            f"Use ffprobe to inspect the file: ffprobe -v error -show_streams <file>"
+        )
+
 
 if TYPE_CHECKING:
     from googleapiclient.discovery import Resource
@@ -147,30 +221,55 @@ class DriveClient:
         )
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type((IncompleteDownloadError, EmptyDownloadError)),
         reraise=True,
+        before_sleep=lambda retry_state: logger.warning(
+            f"Download incomplete, retrying in {retry_state.next_action.sleep} seconds "
+            f"(attempt {retry_state.attempt_number}/5)..."
+        ),
     )
     def download_file(
         self,
         file_id: str,
         destination: str | Path,
+        expected_size: int | None = None,
+        file_name: str | None = None,
         progress: Progress | None = None,
         task_id: TaskID | None = None,
     ) -> Path:
-        """Download a file from Google Drive with resumable support.
+        """Download a file from Google Drive with resumable support and validation.
 
         Args:
             file_id: Google Drive file ID.
             destination: Local path to save the file.
+            expected_size: Expected file size in bytes for validation.
+            file_name: Original file name (for error messages).
             progress: Optional Rich progress bar.
             task_id: Optional task ID for progress updates.
 
         Returns:
             Path to the downloaded file.
+
+        Raises:
+            EmptyDownloadError: If the downloaded file is empty.
+            IncompleteDownloadError: If the downloaded file size doesn't match expected.
+            OSError: If file system operations fail.
         """
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        display_name = file_name or file_id
+
+        # Fetch expected size from API if not provided
+        if expected_size is None:
+            try:
+                metadata = self.get_file_metadata(file_id)
+                expected_size = int(metadata.get("size", 0))
+                if file_name is None:
+                    display_name = metadata.get("name", file_id)
+            except Exception as e:
+                logger.warning(f"Could not fetch file metadata for size validation: {e}")
 
         request = self.service.files().get_media(fileId=file_id)
 
@@ -182,15 +281,34 @@ class DriveClient:
                 while not done:
                     status, done = downloader.next_chunk()
                     if progress and task_id is not None and status:
-                        # Update progress based on actual progress (0-100)
                         progress.update(task_id, completed=round(status.progress() * 100))
         except OSError as e:
-            # Clean up partial file on failure
             with suppress(Exception):
                 destination.unlink()
             logger.error(f"Failed to download file to {destination}: {e}")
             raise
 
+        # Validate downloaded file
+        actual_size = destination.stat().st_size
+
+        if actual_size == 0:
+            with suppress(Exception):
+                destination.unlink()
+            raise EmptyDownloadError(file_id, display_name, destination)
+
+        if expected_size and actual_size != expected_size:
+            # Allow small tolerance (0.1%) for potential metadata/encoding differences
+            tolerance = expected_size * 0.001
+            if abs(actual_size - expected_size) > tolerance:
+                with suppress(Exception):
+                    destination.unlink()
+                raise IncompleteDownloadError(
+                    file_id, display_name, expected_size, actual_size, destination
+                )
+
+        logger.debug(
+            f"Download validated: {display_name} ({actual_size / (1024*1024):.2f} MB)"
+        )
         return destination
 
     @retry(

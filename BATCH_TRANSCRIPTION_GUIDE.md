@@ -228,6 +228,64 @@ Files are named: `{gdrive_id}_transcription.json`
 
 ## Troubleshooting
 
+### "Incomplete download" errors
+
+If you see errors like:
+```
+Incomplete download for 'video.mp4': expected 546.43 MB but got 123.45 MB (22.6% complete)
+```
+
+This indicates the download was interrupted or truncated. The system will:
+- **Automatically retry up to 5 times** with exponential backoff (4s → 60s delays)
+- Delete the incomplete file before each retry
+- Log retry attempts with wait times
+
+Common causes:
+- Network instability or timeouts
+- Google Drive rate limiting (for large files or many requests)
+- Temporary Google API issues
+
+If retries fail:
+- Check your network connection
+- Wait a few minutes and run the command again (checkpoint will resume)
+- For very large files, try processing during off-peak hours
+
+### "Empty download" errors
+
+If you see:
+```
+Download resulted in empty file for 'audio.mp3'
+```
+
+This typically indicates:
+- Google Drive API permission issues
+- The file was deleted or moved in Drive
+- OAuth token expired
+
+Solutions:
+- Delete `token.json` and re-authenticate
+- Verify the file exists and is accessible in Google Drive
+- Check that your OAuth credentials have Drive read access
+
+### "No audio stream found" errors
+
+If you see:
+```
+No audio stream found in 'video.mp4'
+```
+
+This means the file has no audio track to transcribe. Common causes:
+- Video file recorded without audio (e.g., screen recording with mic disabled)
+- Corrupted audio track
+- Unsupported audio codec
+
+To inspect the file:
+```bash
+ffprobe -v error -show_streams your_file.mp4
+```
+
+The file will be marked as failed and skipped.
+
 ### "Failed to extract duration"
 
 If FFmpeg is not installed or file format is unsupported:
@@ -241,6 +299,18 @@ If FFmpeg is not installed or file format is unsupported:
 - Use quantization: `--quantize`
 - Use smaller model: `--model-id distil-whisper/distil-large-v3`
 - Force CPU: `--cpu`
+
+### "Soundfile is either not in the correct format or is malformed"
+
+This error from the Whisper pipeline usually indicates:
+- **Incomplete download** - The file didn't download fully (see "Incomplete download" above)
+- **No audio stream** - The file has no audio track (see "No audio stream found" above)
+- **Corrupted file** - The source file in Google Drive may be corrupted
+
+The system now validates downloads and audio streams before transcription, so this error should be rare. If it occurs:
+1. Check the checkpoint file for the specific file ID
+2. Manually download the file from Google Drive and test with `ffprobe`
+3. If the source file is valid, report the issue
 
 ### "Credentials not found"
 

@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from gtranscriber.core.checkpoint import CheckpointManager
-from gtranscriber.core.drive import DriveClient
+from gtranscriber.core.drive import DriveClient, NoAudioStreamError
 from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.io import create_temp_file, save_enriched_record
-from gtranscriber.core.media import get_media_duration_ms
+from gtranscriber.core.media import get_media_duration_ms, has_audio_stream
 from gtranscriber.schemas import EnrichedRecord, TranscriptionSegment
 
 if TYPE_CHECKING:
@@ -128,13 +128,22 @@ def transcribe_single_file(
         # Initialize Drive client
         drive_client = DriveClient(credentials_file=str(config.credentials_file))
 
-        # Download file
+        # Download file with size validation
         suffix = Path(task.name).suffix
         temp_file = create_temp_file(suffix=suffix)
 
         try:
-            drive_client.download_file(task.file_id, temp_file)
+            drive_client.download_file(
+                task.file_id,
+                temp_file,
+                expected_size=task.size_bytes,
+                file_name=task.name,
+            )
             logger.info(f"Downloaded: {task.name}")
+
+            # Validate audio stream exists before attempting transcription
+            if not has_audio_stream(temp_file):
+                raise NoAudioStreamError(task.file_id, task.name, temp_file)
 
             # Extract duration if not provided
             duration_ms = task.duration_ms
