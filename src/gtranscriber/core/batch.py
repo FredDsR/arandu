@@ -44,6 +44,29 @@ AUDIO_VIDEO_MIME_TYPES = {
     "video/x-matroska",
 }
 
+# Global engine instance per worker process
+_worker_engine: WhisperEngine | None = None
+
+
+def _init_worker(model_id: str, force_cpu: bool, quantize: bool) -> None:
+    """Initialize worker process with a WhisperEngine instance.
+
+    This function is called once per worker process to load the model,
+    avoiding the overhead of loading the model for each file.
+
+    Args:
+        model_id: Hugging Face model ID for transcription.
+        force_cpu: Force CPU execution.
+        quantize: Enable 8-bit quantization.
+    """
+    global _worker_engine
+    _worker_engine = WhisperEngine(
+        model_id=model_id,
+        force_cpu=force_cpu,
+        quantize=quantize,
+    )
+    logger.info(f"Worker initialized with model {model_id}")
+
 
 @dataclass
 class BatchConfig:
@@ -115,6 +138,8 @@ def transcribe_single_file(
 ) -> tuple[str, bool, str]:
     """Transcribe a single file (worker function for parallel processing).
 
+    Uses the global _worker_engine that was initialized once per worker process.
+
     Args:
         task: TranscriptionTask with file information.
         config: BatchConfig with processing configuration.
@@ -122,6 +147,8 @@ def transcribe_single_file(
     Returns:
         Tuple of (file_id, success, message).
     """
+    global _worker_engine
+
     try:
         logger.info(f"Processing file: {task.name} ({task.file_id})")
 
@@ -150,14 +177,16 @@ def transcribe_single_file(
             if duration_ms is None:
                 duration_ms = get_media_duration_ms(temp_file)
 
-            # Initialize engine and transcribe
-            engine = WhisperEngine(
-                model_id=config.model_id,
-                force_cpu=config.force_cpu,
-                quantize=config.quantize,
-            )
+            # Use the pre-initialized engine for this worker process
+            # For sequential processing (single worker), initialize on first use
+            if _worker_engine is None:
+                _worker_engine = WhisperEngine(
+                    model_id=config.model_id,
+                    force_cpu=config.force_cpu,
+                    quantize=config.quantize,
+                )
 
-            result = engine.transcribe(temp_file)
+            result = _worker_engine.transcribe(temp_file)
             logger.info(f"Transcribed: {task.name}")
 
             # Create enriched record
@@ -195,7 +224,7 @@ def transcribe_single_file(
                 temp_file.unlink()
 
     except Exception as e:
-        error_msg = f"Failed to process {task.name}: {e}"
+        error_msg = f"Failed to process {task.name}"
         logger.exception(error_msg)
         return task.file_id, False, str(e)
 
@@ -208,53 +237,86 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
 
     Returns:
         List of TranscriptionTask objects.
+
+    Raises:
+        ValueError: If required columns are missing from the catalog.
     """
     tasks: list[TranscriptionTask] = []
+
+    # Required columns
+    required_columns = {"gdrive_id", "name", "mime_type"}
 
     with open(catalog_file, encoding="utf-8") as f:
         reader = csv.DictReader(f)
 
-        for row in reader:
-            mime_type = row.get("mime_type", "")
+        # Validate required columns exist
+        if reader.fieldnames is None:
+            raise ValueError("Catalog file is empty or invalid")
 
-            # Filter only audio/video files
-            if mime_type not in AUDIO_VIDEO_MIME_TYPES:
-                continue
-
-            # Parse size_bytes
-            size_bytes = None
-            if row.get("size_bytes"):
-                try:
-                    size_bytes = int(row["size_bytes"])
-                except (ValueError, TypeError):
-                    size_bytes = None
-
-            # Parse duration_milliseconds
-            duration_ms = None
-            if row.get("duration_milliseconds"):
-                try:
-                    duration_ms = int(row["duration_milliseconds"])
-                except (ValueError, TypeError):
-                    duration_ms = None
-
-            # Parse parents
-            parents_str = row.get("parents", "[]")
-            try:
-                parents = json.loads(parents_str.replace("'", '"'))
-            except json.JSONDecodeError:
-                parents = []
-
-            tasks.append(
-                TranscriptionTask(
-                    file_id=row["gdrive_id"],
-                    name=row["name"],
-                    mime_type=mime_type,
-                    size_bytes=size_bytes,
-                    parents=parents,
-                    web_content_link=row.get("web_content_link", ""),
-                    duration_ms=duration_ms,
-                )
+        missing_columns = required_columns - set(reader.fieldnames)
+        if missing_columns:
+            raise ValueError(
+                f"Catalog is missing required columns: {', '.join(missing_columns)}"
             )
+
+        for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
+            try:
+                mime_type = row.get("mime_type", "")
+
+                # Filter only audio/video files
+                if mime_type not in AUDIO_VIDEO_MIME_TYPES:
+                    continue
+
+                # Validate required fields are present
+                if not row.get("gdrive_id") or not row.get("name"):
+                    logger.warning(f"Skipping row {row_num}: missing gdrive_id or name")
+                    continue
+
+                # Parse size_bytes
+                size_bytes = None
+                if row.get("size_bytes"):
+                    try:
+                        size_bytes = int(row["size_bytes"])
+                    except (ValueError, TypeError):
+                        size_bytes = None
+
+                # Parse duration_milliseconds
+                duration_ms = None
+                if row.get("duration_milliseconds"):
+                    try:
+                        duration_ms = int(row["duration_milliseconds"])
+                    except (ValueError, TypeError):
+                        duration_ms = None
+
+                # Parse parents - use the same logic as InputRecord.parse_parents
+                parents_str = row.get("parents", "[]")
+                if isinstance(parents_str, str):
+                    try:
+                        # Handle single-quoted JSON strings (same as InputRecord)
+                        parents = json.loads(parents_str.replace("'", '"'))
+                    except json.JSONDecodeError:
+                        parents = []
+                else:
+                    parents = []
+
+                tasks.append(
+                    TranscriptionTask(
+                        file_id=row["gdrive_id"],
+                        name=row["name"],
+                        mime_type=mime_type,
+                        size_bytes=size_bytes,
+                        parents=parents if isinstance(parents, list) else [],
+                        web_content_link=row.get("web_content_link", ""),
+                        duration_ms=duration_ms,
+                    )
+                )
+
+            except KeyError as e:
+                logger.warning(f"Skipping row {row_num}: missing required field {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"Skipping row {row_num}: {e}")
+                continue
 
     logger.info(f"Loaded {len(tasks)} audio/video files from catalog")
     return tasks
@@ -321,34 +383,60 @@ def run_batch_transcription(config: BatchConfig) -> None:
             completed, total = checkpoint.get_progress()
             logger.info(f"Progress: {completed}/{total} files")
     else:
-        # Parallel processing
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            # Submit all tasks
-            future_to_task = {
-                executor.submit(transcribe_single_file, task, config): task
-                for task in remaining_tasks
-            }
+        # Parallel processing with worker initialization
+        with ProcessPoolExecutor(
+            max_workers=num_workers,
+            initializer=_init_worker,
+            initargs=(config.model_id, config.force_cpu, config.quantize),
+        ) as executor:
+            # Submit tasks in batches to avoid spawning all at once
+            # This prevents resource exhaustion with thousands of pending futures
+            batch_size = max(num_workers * 2, 10)
+            task_iter = iter(remaining_tasks)
+            pending_futures = {}
 
-            # Process results as they complete
-            for future in as_completed(future_to_task):
-                task = future_to_task[future]
-
+            # Submit initial batch
+            for _ in range(min(batch_size, len(remaining_tasks))):
                 try:
-                    file_id, success, message = future.result()
+                    task = next(task_iter)
+                    future = executor.submit(transcribe_single_file, task, config)
+                    pending_futures[future] = task
+                except StopIteration:
+                    break
 
-                    if success:
-                        checkpoint.mark_completed(file_id)
-                        logger.info(f"✓ Completed: {task.name}")
-                    else:
-                        checkpoint.mark_failed(file_id, message)
-                        logger.error(f"✗ Failed: {task.name} - {message}")
+            # Process results and submit new tasks as workers become available
+            while pending_futures:
+                # Wait for next completion
+                for future in as_completed(pending_futures):
+                    task = pending_futures.pop(future)
 
-                except Exception as e:
-                    logger.exception(f"Task failed with exception: {task.name}")
-                    checkpoint.mark_failed(task.file_id, str(e))
+                    try:
+                        file_id, success, message = future.result()
 
-                completed, total = checkpoint.get_progress()
-                logger.info(f"Progress: {completed}/{total} files")
+                        if success:
+                            checkpoint.mark_completed(file_id)
+                            logger.info(f"✓ Completed: {task.name}")
+                        else:
+                            checkpoint.mark_failed(file_id, message)
+                            logger.error(f"✗ Failed: {task.name} - {message}")
+
+                    except Exception as e:
+                        logger.exception(f"Task failed with exception: {task.name}")
+                        checkpoint.mark_failed(task.file_id, str(e))
+
+                    completed, total = checkpoint.get_progress()
+                    logger.info(f"Progress: {completed}/{total} files")
+
+                    # Submit next task if available
+                    try:
+                        next_task = next(task_iter)
+                        next_future = executor.submit(transcribe_single_file, next_task, config)
+                        pending_futures[next_future] = next_task
+                    except StopIteration:
+                        pass
+
+                    # Break from as_completed to recheck pending_futures
+                    break
 
     # Final summary
     completed, total = checkpoint.get_progress()
@@ -359,7 +447,10 @@ def run_batch_transcription(config: BatchConfig) -> None:
     logger.info(f"Total files: {total}")
     logger.info(f"Successfully transcribed: {completed}")
     logger.info(f"Failed: {failed_count}")
-    logger.info(f"Success rate: {completed / total * 100:.1f}%")
+    if total == 0:
+        logger.info("Success rate: N/A (no files to process)")
+    else:
+        logger.info(f"Success rate: {completed / total * 100:.1f}%")
     logger.info("=" * 60)
 
     if failed_count > 0:

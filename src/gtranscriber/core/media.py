@@ -9,11 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -149,8 +148,8 @@ def get_media_duration_ms(file_path: str | Path) -> int | None:
         return None
 
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
-        logger.warning(f"Failed to extract duration from {file_path}: {e}")
+        logger.warning(f"Failed to extract duration from {file_path}: {e}", exc_info=True)
         return None
-    except Exception as e:
-        logger.exception(f"Unexpected error extracting duration from {file_path}: {e}")
+    except Exception:
+        logger.exception(f"Unexpected error extracting duration from {file_path}")
         return None

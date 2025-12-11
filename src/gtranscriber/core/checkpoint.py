@@ -67,13 +67,20 @@ class CheckpointManager:
 
                 return CheckpointState(**data)
         except Exception as e:
-            logger.warning(f"Failed to load checkpoint file: {e}, starting fresh")
+            logger.warning(
+                "Checkpoint file is invalid or corrupted. Starting fresh. "
+                "Please check the file format or delete it to reset progress."
+            )
+            logger.debug(f"Exception details: {e}")
             return CheckpointState()
 
     def save(self) -> None:
         """Save checkpoint state to file."""
         try:
             self.state.last_updated = datetime.now()
+
+            # Ensure parent directory exists
+            self.checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
 
             # Convert set to list for JSON serialization
             data = self.state.model_dump()
@@ -85,8 +92,8 @@ class CheckpointManager:
                 json.dump(data, f, indent=2)
 
             logger.debug(f"Checkpoint saved: {len(self.state.completed_files)} files completed")
-        except Exception as e:
-            logger.exception(f"Failed to save checkpoint: {e}")
+        except Exception:
+            logger.exception("Failed to save checkpoint")
 
     def mark_completed(self, file_id: str) -> None:
         """Mark a file as completed.
