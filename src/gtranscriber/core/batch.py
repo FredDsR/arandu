@@ -420,41 +420,41 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
             # Process results and submit new tasks as workers become available
             while pending_futures:
-                # Wait for completions and process all available results
-                done_futures = []
+                # Wait for at least one completion
+                completed_future = None
                 for future in as_completed(pending_futures):
-                    done_futures.append(future)
-                    task = pending_futures[future]
+                    completed_future = future
+                    break  # Get the first completed future
 
-                    try:
-                        file_id, success, message = future.result()
+                if completed_future is None:
+                    break
 
-                        if success:
-                            checkpoint.mark_completed(file_id)
-                            logger.info(f"✓ Completed: {task.name}")
-                        else:
-                            checkpoint.mark_failed(file_id, message)
-                            logger.error(f"✗ Failed: {task.name} - {message}")
+                task = pending_futures.pop(completed_future)
 
-                    except Exception as e:
-                        logger.exception(f"Task failed with exception: {task.name}")
-                        checkpoint.mark_failed(task.file_id, str(e))
+                try:
+                    file_id, success, message = completed_future.result()
 
-                    completed, total = checkpoint.get_progress()
-                    logger.info(f"Progress: {completed}/{total} files")
+                    if success:
+                        checkpoint.mark_completed(file_id)
+                        logger.info(f"✓ Completed: {task.name}")
+                    else:
+                        checkpoint.mark_failed(file_id, message)
+                        logger.error(f"✗ Failed: {task.name} - {message}")
 
-                # Remove completed futures from pending
-                for future in done_futures:
-                    pending_futures.pop(future, None)
+                except Exception as e:
+                    logger.exception(f"Task failed with exception: {task.name}")
+                    checkpoint.mark_failed(task.file_id, str(e))
 
-                # Submit new tasks for each completed future
-                for _ in done_futures:
-                    try:
-                        next_task = next(task_iter)
-                        next_future = executor.submit(transcribe_single_file, next_task, config)
-                        pending_futures[next_future] = next_task
-                    except StopIteration:
-                        break
+                completed, total = checkpoint.get_progress()
+                logger.info(f"Progress: {completed}/{total} files")
+
+                # Submit next task to replace the completed one
+                try:
+                    next_task = next(task_iter)
+                    next_future = executor.submit(transcribe_single_file, next_task, config)
+                    pending_futures[next_future] = next_task
+                except StopIteration:
+                    pass  # No more tasks to submit
 
     # Final summary
     completed, total = checkpoint.get_progress()
