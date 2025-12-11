@@ -12,7 +12,7 @@ G-Transcriber is a robust pipeline for automated transcription of audio and vide
 - **Hardware Agnostic**: Automatic detection and optimization for CPU, CUDA GPU, or Apple Silicon MPS
 - **Quantization Support**: 8-bit quantization for reduced VRAM usage on GPUs
 - **Google Drive Integration**: Download files, transcribe, and upload results back to Drive
-- **Resilient Transfers**: Resumable downloads/uploads with automatic retry logic
+- **Resilient Transfers**: Resumable downloads/uploads with automatic retry logic, file size validation, and exponential backoff
 - **Rich CLI**: Beautiful command-line interface with progress bars and structured output
 - **Structured Output**: JSON output with transcription text, timestamps, and metadata
 
@@ -58,6 +58,35 @@ gtranscriber transcribe audio.mp3 --cpu
 gtranscriber drive-transcribe <file-id> --credentials credentials.json
 ```
 
+### Batch Transcribe from Catalog
+
+Transcribe all audio/video files from a catalog CSV with parallel processing:
+
+```bash
+gtranscriber batch-transcribe input/catalog.csv --credentials credentials.json --workers 4
+```
+
+Advanced options:
+
+```bash
+# Use custom output directory
+gtranscriber batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
+
+# Use different model with quantization
+gtranscriber batch-transcribe input/catalog.csv --model-id openai/whisper-large-v3-turbo --quantize --workers 4
+
+# Resume interrupted job (uses checkpoint automatically)
+gtranscriber batch-transcribe input/catalog.csv --workers 4
+```
+
+The batch transcribe command:
+- Filters only audio/video files from the catalog
+- Downloads files from Google Drive
+- Extracts media duration and includes it in output
+- Processes files in parallel with multiple model instances
+- Automatically checkpoints progress for resumption
+- Saves results as JSON files with full metadata
+
 ### Check System Information
 
 ```bash
@@ -85,6 +114,8 @@ Transcription results are saved as JSON files containing:
   "gdrive_id": "...",
   "name": "audio.mp3",
   "mimeType": "audio/mpeg",
+  "size_bytes": 12345678,
+  "duration_milliseconds": 120000,
   "transcription_text": "...",
   "detected_language": "en",
   "language_probability": 0.95,
