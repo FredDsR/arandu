@@ -48,13 +48,13 @@ AUDIO_VIDEO_MIME_TYPES = {
 _worker_engine: WhisperEngine | None = None
 
 
-def _parse_parents_from_string(parents_str: str) -> list[str]:
-    """Parse parents field from string format (shared utility).
+def _parse_parents_from_string(parents_str: str | list[str]) -> list[str]:
+    """Parse parents field from string or list format (shared utility).
 
     Uses the same logic as InputRecord.parse_parents for consistency.
 
     Args:
-        parents_str: String representation of parents (JSON array).
+        parents_str: String or list representation of parents.
 
     Returns:
         List of parent folder IDs.
@@ -66,6 +66,8 @@ def _parse_parents_from_string(parents_str: str) -> list[str]:
             return result if isinstance(result, list) else []
         except json.JSONDecodeError:
             return []
+    if isinstance(parents_str, list):
+        return parents_str
     return []
 
 
@@ -420,15 +422,8 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
             # Process results and submit new tasks as workers become available
             while pending_futures:
-                # Wait for at least one completion
-                completed_future = None
-                for future in as_completed(pending_futures):
-                    completed_future = future
-                    break  # Get the first completed future
-
-                if completed_future is None:
-                    break
-
+                # Get the next completed future
+                completed_future = next(as_completed(pending_futures))
                 task = pending_futures.pop(completed_future)
 
                 try:
