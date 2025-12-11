@@ -48,6 +48,27 @@ AUDIO_VIDEO_MIME_TYPES = {
 _worker_engine: WhisperEngine | None = None
 
 
+def _parse_parents_from_string(parents_str: str) -> list[str]:
+    """Parse parents field from string format (shared utility).
+
+    Uses the same logic as InputRecord.parse_parents for consistency.
+
+    Args:
+        parents_str: String representation of parents (JSON array).
+
+    Returns:
+        List of parent folder IDs.
+    """
+    if isinstance(parents_str, str):
+        try:
+            # Handle single-quoted JSON strings
+            result = json.loads(parents_str.replace("'", '"'))
+            return result if isinstance(result, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
 def _init_worker(model_id: str, force_cpu: bool, quantize: bool) -> None:
     """Initialize worker process with a WhisperEngine instance.
 
@@ -288,16 +309,9 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
                     except (ValueError, TypeError):
                         duration_ms = None
 
-                # Parse parents - use the same logic as InputRecord.parse_parents
+                # Parse parents - use shared utility function
                 parents_str = row.get("parents", "[]")
-                if isinstance(parents_str, str):
-                    try:
-                        # Handle single-quoted JSON strings (same as InputRecord)
-                        parents = json.loads(parents_str.replace("'", '"'))
-                    except json.JSONDecodeError:
-                        parents = []
-                else:
-                    parents = []
+                parents = _parse_parents_from_string(parents_str)
 
                 tasks.append(
                     TranscriptionTask(
@@ -406,9 +420,11 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
             # Process results and submit new tasks as workers become available
             while pending_futures:
-                # Wait for next completion
+                # Wait for completions and process all available results
+                done_futures = []
                 for future in as_completed(pending_futures):
-                    task = pending_futures.pop(future)
+                    done_futures.append(future)
+                    task = pending_futures[future]
 
                     try:
                         file_id, success, message = future.result()
@@ -427,16 +443,18 @@ def run_batch_transcription(config: BatchConfig) -> None:
                     completed, total = checkpoint.get_progress()
                     logger.info(f"Progress: {completed}/{total} files")
 
-                    # Submit next task if available
+                # Remove completed futures from pending
+                for future in done_futures:
+                    pending_futures.pop(future, None)
+
+                # Submit new tasks for each completed future
+                for _ in done_futures:
                     try:
                         next_task = next(task_iter)
                         next_future = executor.submit(transcribe_single_file, next_task, config)
                         pending_futures[next_future] = next_task
                     except StopIteration:
-                        pass
-
-                    # Break from as_completed to recheck pending_futures
-                    break
+                        break
 
     # Final summary
     completed, total = checkpoint.get_progress()
