@@ -26,8 +26,8 @@ G-Transcriber is an automated transcription system for media files stored in Goo
 This project uses `uv` as the package manager. Key commands:
 
 ```bash
-# Install dependencies
-uv pip install -e .
+# Install dependencies in development mode
+uv sync --dev
 
 # Add a new dependency
 uv add <package-name>
@@ -100,6 +100,7 @@ gtranscriber/
         │   ├── hardware.py # Hardware detection (CPU/CUDA/MPS)
         │   └── io.py       # File operations
         └── utils/
+            ├── console.py  # Console utilities
             ├── logger.py   # Rich logging utilities
             └── ui.py       # Progress bars and UI
 ```
