@@ -1,0 +1,31 @@
+# G-Transcriber Docker Image for AMD GPUs (ROCm)
+# Supports RDNA3 GPUs (RX 7900 series)
+
+FROM rocm/pytorch:rocm6.2_ubuntu22.04_py3.10_pytorch_release-2.3.0
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml .
+COPY src/ src/
+
+# Install Python dependencies
+# Note: PyTorch is already installed in the base image
+RUN pip install --no-cache-dir -e .
+
+# Environment variables
+ENV HSA_OVERRIDE_GFX_VERSION=11.0.0
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Create directories for volumes
+RUN mkdir -p /app/input /app/results /app/credentials
+
+# Default command
+ENTRYPOINT ["gtranscriber"]
+CMD ["--help"]

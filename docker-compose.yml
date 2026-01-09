@@ -1,0 +1,156 @@
+services:
+  gtranscriber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gtranscriber:latest
+    container_name: gtranscriber-${SLURM_JOB_ID:-local}
+
+    # GPU support - NVIDIA runtime
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Environment variables
+    environment:
+      - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}
+      - GTRANSCRIBER_QUANTIZE=${GTRANSCRIBER_QUANTIZE:-true}
+      - GTRANSCRIBER_FORCE_CPU=${GTRANSCRIBER_FORCE_CPU:-false}
+      - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
+      - GTRANSCRIBER_TOKEN=/app/credentials/token.json
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # Volume mounts
+    volumes:
+      # Input catalog
+      - ${INPUT_DIR:-./input}:/app/input:ro
+      # Output results
+      - ${RESULTS_DIR:-./results}:/app/results:rw
+      # Google Drive credentials
+      - ${CREDENTIALS_DIR:-./}:/app/credentials:ro
+      # Hugging Face cache (persistent model storage)
+      - ${HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    # Working directory
+    working_dir: /app
+
+    # Default command for batch transcription
+    command: >
+      batch-transcribe
+      /app/input/${CATALOG_FILE:-catalog.csv}
+      --credentials /app/credentials/credentials.json
+      --output-dir /app/results
+      --workers ${WORKERS:-4}
+      ${QUANTIZE_FLAG:---quantize}
+      ${CPU_FLAG:-}
+
+    # Resource limits (adjust based on partition)
+    shm_size: '16gb'
+
+    # Restart policy (useful for long-running jobs)
+    restart: "no"
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # CPU-only variant
+  gtranscriber-cpu:
+    extends:
+      service: gtranscriber
+    container_name: gtranscriber-cpu-${SLURM_JOB_ID:-local}
+
+    # Remove GPU reservation for CPU-only execution
+    deploy:
+      resources: {}
+
+    environment:
+      - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-distil-whisper/distil-large-v3}
+      - GTRANSCRIBER_QUANTIZE=false
+      - GTRANSCRIBER_FORCE_CPU=true
+      - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
+      - GTRANSCRIBER_TOKEN=/app/credentials/token.json
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      batch-transcribe
+      /app/input/${CATALOG_FILE:-catalog.csv}
+      --credentials /app/credentials/credentials.json
+      --output-dir /app/results
+      --workers ${WORKERS:-2}
+      --cpu
+
+    profiles:
+      - cpu
+
+  # AMD GPU variant (ROCm)
+  gtranscriber-rocm:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
+    image: gtranscriber:rocm
+    container_name: gtranscriber-rocm-${SLURM_JOB_ID:-local}
+
+    # AMD GPU device access
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+
+    # Environment variables
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}
+      - GTRANSCRIBER_QUANTIZE=false
+      - GTRANSCRIBER_FORCE_CPU=false
+      - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
+      - GTRANSCRIBER_TOKEN=/app/credentials/token.json
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # Volume mounts
+    volumes:
+      - ${INPUT_DIR:-./input}:/app/input:ro
+      - ${RESULTS_DIR:-./results}:/app/results:rw
+      - ${CREDENTIALS_DIR:-./}:/app/credentials:ro
+      - ${HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    # Working directory
+    working_dir: /app
+
+    # Default command for batch transcription
+    command: >
+      batch-transcribe
+      /app/input/${CATALOG_FILE:-catalog.csv}
+      --credentials /app/credentials/credentials.json
+      --output-dir /app/results
+      --workers ${WORKERS:-3}
+
+    # Resource limits
+    shm_size: '16gb'
+
+    # Restart policy
+    restart: "no"
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - rocm

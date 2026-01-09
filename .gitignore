@@ -196,3 +196,14 @@ results/*
 
 credentials.json
 token.json
+
+# Docker
+.dockerignore
+
+# SLURM logs
+logs/
+*.out
+*.err
+
+# Hugging Face cache
+cache/
