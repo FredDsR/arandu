@@ -22,4 +22,4 @@ export WORKERS="${WORKERS:-4}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
 
 # Source the main job script
-source "$(dirname "$0")/job_common.sh"
+source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"

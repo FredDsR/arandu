@@ -24,4 +24,4 @@ export WORKERS="${WORKERS:-8}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-distil-whisper/distil-large-v3}"
 
 # Source the main job script
-source "$(dirname "$0")/job_common.sh"
+source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
