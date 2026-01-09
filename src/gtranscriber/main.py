@@ -545,6 +545,66 @@ def batch_transcribe(
 
 
 @app.command()
+def refresh_auth(
+    credentials: Annotated[
+        Path,
+        typer.Option(
+            "--credentials",
+            "-c",
+            help="Path to Google OAuth2 credentials file.",
+        ),
+    ] = Path("credentials.json"),
+    token: Annotated[
+        Path,
+        typer.Option(
+            "--token",
+            "-t",
+            help="Path to token file to refresh.",
+        ),
+    ] = Path("token.json"),
+) -> None:
+    """Fully refresh Google OAuth2 authentication token.
+
+    This command deletes the existing token file and initiates a fresh OAuth2
+    authorization flow. Use this when you need to:
+
+    - Re-authorize with different Google account
+    - Fix authentication issues or permission problems
+    - Update token after revoking access in Google Account settings
+    """
+    from gtranscriber.core.drive import DriveClient
+
+    # Check if credentials file exists
+    if not credentials.exists():
+        print_error(f"Credentials file not found: {credentials}")
+        raise typer.Exit(code=1)
+
+    # Delete existing token if it exists
+    if token.exists():
+        print_info(f"Removing existing token: [bold]{token}[/bold]")
+        token.unlink()
+
+    print_info("Starting OAuth2 authorization flow...")
+    print_info("A browser window will open for Google authentication.")
+
+    try:
+        # Initialize DriveClient which triggers fresh authentication
+        client = DriveClient(
+            credentials_file=str(credentials),
+            token_file=str(token),
+        )
+        # Access service property to trigger authentication
+        _ = client.service
+
+        print_success("Authentication successful!")
+        print_success(f"Token saved to: [bold]{token}[/bold]")
+
+    except Exception as e:
+        print_error(f"Authentication failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
 def info() -> None:
     """Display system information and hardware capabilities."""
     import torch
