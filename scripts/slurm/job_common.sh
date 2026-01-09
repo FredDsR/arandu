@@ -1,0 +1,282 @@
+#!/bin/bash
+# =============================================================================
+# G-Transcriber Common Job Script
+#
+# This script contains the shared logic for all SLURM partition scripts.
+# It should be sourced from partition-specific scripts, not run directly.
+#
+# Required environment variables (set by partition scripts):
+#   WORKERS - Number of parallel workers
+#   GTRANSCRIBER_MODEL_ID - Whisper model to use
+#
+# Optional environment variables:
+#   USE_SCRATCH - Set to "false" to disable $SCRATCH optimization (default: true)
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration (can be overridden via environment variables)
+# -----------------------------------------------------------------------------
+PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
+CATALOG_FILE="${CATALOG_FILE:-catalog.csv}"
+USE_CPU="${USE_CPU:-false}"
+USE_ROCM="${USE_ROCM:-false}"
+USE_SCRATCH="${USE_SCRATCH:-true}"
+
+# -----------------------------------------------------------------------------
+# $SCRATCH Setup for Better I/O Performance
+# -----------------------------------------------------------------------------
+# $SCRATCH is a local disk on compute nodes, much faster than NFS-mounted $HOME.
+# We copy necessary files to $SCRATCH at start and copy results back at end.
+# -----------------------------------------------------------------------------
+
+SCRATCH_WORK_DIR=""
+USING_SCRATCH=false
+
+setup_scratch() {
+    if [ "$USE_SCRATCH" != "true" ]; then
+        echo "SCRATCH optimization disabled via USE_SCRATCH=false"
+        return 1
+    fi
+
+    if [ -z "${SCRATCH:-}" ] || [ ! -d "${SCRATCH:-}" ]; then
+        echo "Warning: \$SCRATCH not available, using \$HOME (slower NFS)"
+        return 1
+    fi
+
+    SCRATCH_WORK_DIR="$SCRATCH/gtranscriber_${SLURM_JOB_ID:-$$}"
+    echo "Setting up SCRATCH working directory: $SCRATCH_WORK_DIR"
+
+    # Create directory structure in $SCRATCH
+    mkdir -p "$SCRATCH_WORK_DIR"/{input,results,cache/huggingface,credentials}
+
+    # Copy input catalog
+    if [ -f "$PROJECT_DIR/input/$CATALOG_FILE" ]; then
+        cp "$PROJECT_DIR/input/$CATALOG_FILE" "$SCRATCH_WORK_DIR/input/"
+        echo "  Copied input catalog to SCRATCH"
+    else
+        echo "Error: Catalog file not found: $PROJECT_DIR/input/$CATALOG_FILE"
+        return 1
+    fi
+
+    # Copy credentials
+    if [ -f "$PROJECT_DIR/credentials.json" ]; then
+        cp "$PROJECT_DIR/credentials.json" "$SCRATCH_WORK_DIR/credentials/"
+        echo "  Copied credentials.json to SCRATCH"
+    fi
+    if [ -f "$PROJECT_DIR/token.json" ]; then
+        cp "$PROJECT_DIR/token.json" "$SCRATCH_WORK_DIR/credentials/"
+        echo "  Copied token.json to SCRATCH"
+    fi
+
+    # Copy existing checkpoint if resuming
+    if [ -f "$PROJECT_DIR/results/checkpoint.json" ]; then
+        cp "$PROJECT_DIR/results/checkpoint.json" "$SCRATCH_WORK_DIR/results/"
+        echo "  Copied existing checkpoint to SCRATCH (resuming)"
+    fi
+
+    # Sync HF cache if it exists (models are large, this may take time)
+    if [ -d "$PROJECT_DIR/cache/huggingface" ] && [ "$(ls -A "$PROJECT_DIR/cache/huggingface" 2>/dev/null)" ]; then
+        echo "  Syncing Hugging Face cache to SCRATCH (this may take a while)..."
+        rsync -a --info=progress2 "$PROJECT_DIR/cache/huggingface/" "$SCRATCH_WORK_DIR/cache/huggingface/"
+        echo "  Hugging Face cache synced to SCRATCH"
+    fi
+
+    USING_SCRATCH=true
+    echo "SCRATCH setup complete"
+    return 0
+}
+
+# Cleanup function to copy results back to $HOME
+cleanup_scratch() {
+    if [ "$USING_SCRATCH" = true ] && [ -n "$SCRATCH_WORK_DIR" ] && [ -d "$SCRATCH_WORK_DIR" ]; then
+        echo ""
+        echo "=============================================="
+        echo "Copying results from SCRATCH to HOME..."
+        echo "=============================================="
+
+        # Ensure results directory exists in $HOME
+        mkdir -p "$PROJECT_DIR/results"
+
+        # Copy results back to $HOME
+        if [ -d "$SCRATCH_WORK_DIR/results" ] && [ "$(ls -A "$SCRATCH_WORK_DIR/results" 2>/dev/null)" ]; then
+            rsync -av --info=progress2 "$SCRATCH_WORK_DIR/results/" "$PROJECT_DIR/results/"
+            echo "Results copied to: $PROJECT_DIR/results"
+        else
+            echo "No results to copy"
+        fi
+
+        # Optionally sync back the HF cache (new models downloaded during run)
+        if [ -d "$SCRATCH_WORK_DIR/cache/huggingface" ]; then
+            echo "Syncing Hugging Face cache back to HOME..."
+            rsync -a "$SCRATCH_WORK_DIR/cache/huggingface/" "$PROJECT_DIR/cache/huggingface/"
+            echo "Hugging Face cache synced"
+        fi
+
+        # Clean up SCRATCH
+        echo "Cleaning up SCRATCH directory..."
+        rm -rf "$SCRATCH_WORK_DIR"
+        echo "SCRATCH cleanup complete"
+    fi
+}
+
+# Register cleanup trap to ensure results are copied even on failure
+trap cleanup_scratch EXIT
+
+# -----------------------------------------------------------------------------
+# Job Information
+# -----------------------------------------------------------------------------
+echo "=============================================="
+echo "G-Transcriber Job Started"
+echo "=============================================="
+echo "Job ID:        $SLURM_JOB_ID"
+echo "Job Name:      $SLURM_JOB_NAME"
+echo "Partition:     $SLURM_JOB_PARTITION"
+echo "Node:          $(hostname)"
+echo "CPUs:          ${SLURM_CPUS_PER_TASK:-N/A}"
+echo "Start Time:    $(date)"
+echo "Project Dir:   $PROJECT_DIR"
+echo "Model:         $GTRANSCRIBER_MODEL_ID"
+echo "Workers:       $WORKERS"
+echo "Catalog:       $CATALOG_FILE"
+echo "=============================================="
+
+# -----------------------------------------------------------------------------
+# Check GPU availability
+# -----------------------------------------------------------------------------
+echo ""
+echo "Checking GPU availability..."
+
+if [ "$USE_ROCM" = "true" ]; then
+    echo "ROCm mode enabled for AMD GPU"
+    if [ -e /dev/kfd ]; then
+        echo "AMD GPU device found (/dev/kfd)"
+        rocm-smi --showproductname 2>/dev/null || echo "rocm-smi not available on host"
+    else
+        echo "Warning: /dev/kfd not found, AMD GPU may not be available"
+    fi
+elif command -v nvidia-smi &> /dev/null; then
+    nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv
+    GPU_AVAILABLE=true
+else
+    echo "No NVIDIA GPU detected, will use CPU mode"
+    GPU_AVAILABLE=false
+    USE_CPU=true
+fi
+
+# -----------------------------------------------------------------------------
+# Setup working directory
+# -----------------------------------------------------------------------------
+cd "$PROJECT_DIR"
+
+# Create logs directory if it doesn't exist
+mkdir -p logs
+
+# Create cache directory for Hugging Face models
+mkdir -p cache/huggingface
+
+# -----------------------------------------------------------------------------
+# Setup SCRATCH for better I/O performance
+# -----------------------------------------------------------------------------
+echo ""
+echo "Setting up working directories..."
+
+if setup_scratch; then
+    # Use SCRATCH directories for Docker mounts
+    WORK_INPUT_DIR="$SCRATCH_WORK_DIR/input"
+    WORK_RESULTS_DIR="$SCRATCH_WORK_DIR/results"
+    WORK_CREDENTIALS_DIR="$SCRATCH_WORK_DIR/credentials"
+    WORK_HF_CACHE_DIR="$SCRATCH_WORK_DIR/cache/huggingface"
+    echo "Using SCRATCH for I/O (faster local disk)"
+else
+    # Fallback to $HOME directories
+    WORK_INPUT_DIR="$PROJECT_DIR/input"
+    WORK_RESULTS_DIR="$PROJECT_DIR/results"
+    WORK_CREDENTIALS_DIR="$PROJECT_DIR"
+    WORK_HF_CACHE_DIR="$PROJECT_DIR/cache/huggingface"
+    echo "Using HOME for I/O (NFS - slower)"
+fi
+
+echo "  Input Dir:       $WORK_INPUT_DIR"
+echo "  Results Dir:     $WORK_RESULTS_DIR"
+echo "  Credentials Dir: $WORK_CREDENTIALS_DIR"
+echo "  HF Cache Dir:    $WORK_HF_CACHE_DIR"
+
+# -----------------------------------------------------------------------------
+# Export environment variables for Docker Compose
+# -----------------------------------------------------------------------------
+export SLURM_JOB_ID
+export WORKERS
+export GTRANSCRIBER_MODEL_ID
+export CATALOG_FILE
+export INPUT_DIR="$WORK_INPUT_DIR"
+export RESULTS_DIR="$WORK_RESULTS_DIR"
+export CREDENTIALS_DIR="$WORK_CREDENTIALS_DIR"
+export HF_CACHE_DIR="$WORK_HF_CACHE_DIR"
+
+# Set quantization flag (enabled by default for GPU, disabled for CPU)
+if [ "$USE_CPU" = "true" ]; then
+    export GTRANSCRIBER_QUANTIZE=false
+    export GTRANSCRIBER_FORCE_CPU=true
+    export QUANTIZE_FLAG=""
+    export CPU_FLAG="--cpu"
+else
+    export GTRANSCRIBER_QUANTIZE=true
+    export GTRANSCRIBER_FORCE_CPU=false
+    export QUANTIZE_FLAG="--quantize"
+    export CPU_FLAG=""
+fi
+
+# -----------------------------------------------------------------------------
+# Build Docker image (if needed)
+# -----------------------------------------------------------------------------
+echo ""
+echo "Building Docker image..."
+
+if [ "$USE_ROCM" = "true" ]; then
+    docker compose --profile rocm build gtranscriber-rocm
+elif [ "$USE_CPU" = "true" ]; then
+    docker compose --profile cpu build gtranscriber-cpu
+else
+    docker compose build gtranscriber
+fi
+
+# -----------------------------------------------------------------------------
+# Run transcription
+# -----------------------------------------------------------------------------
+echo ""
+echo "Starting transcription process..."
+echo "=============================================="
+
+if [ "$USE_ROCM" = "true" ]; then
+    echo "Running with AMD ROCm support..."
+    docker compose --profile rocm up gtranscriber-rocm --abort-on-container-exit
+elif [ "$USE_CPU" = "true" ]; then
+    echo "Running in CPU mode..."
+    docker compose --profile cpu up gtranscriber-cpu --abort-on-container-exit
+else
+    echo "Running with NVIDIA GPU support..."
+    docker compose up gtranscriber --abort-on-container-exit
+fi
+
+# -----------------------------------------------------------------------------
+# Cleanup
+# -----------------------------------------------------------------------------
+echo ""
+echo "Cleaning up containers..."
+docker compose down
+
+# -----------------------------------------------------------------------------
+# Job Summary
+# -----------------------------------------------------------------------------
+echo ""
+echo "=============================================="
+echo "G-Transcriber Job Completed"
+echo "=============================================="
+echo "End Time:      $(date)"
+echo "Results Dir:   $PROJECT_DIR/results"
+if [ "$USING_SCRATCH" = true ]; then
+    echo "Note:          Results were copied from SCRATCH to HOME"
+fi
+echo "=============================================="
