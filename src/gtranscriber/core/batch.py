@@ -176,7 +176,10 @@ def transcribe_single_file(
         logger.info(f"Processing file: {task.name} ({task.file_id})")
 
         # Initialize Drive client
-        drive_client = DriveClient(credentials_file=str(config.credentials_file))
+        drive_client = DriveClient(
+            credentials_file=str(config.credentials_file),
+            token_file=str(config.token_file),
+        )
 
         # Download file with size validation
         suffix = Path(task.name).suffix

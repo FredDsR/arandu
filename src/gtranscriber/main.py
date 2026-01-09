@@ -276,6 +276,14 @@ def drive_transcribe(
             help="Path to Google OAuth2 credentials file.",
         ),
     ] = Path("credentials.json"),
+    token: Annotated[
+        Path,
+        typer.Option(
+            "--token",
+            "-t",
+            help="Path to Google OAuth2 token file.",
+        ),
+    ] = Path("token.json"),
     quantize: Annotated[
         bool,
         typer.Option(
@@ -306,7 +314,10 @@ def drive_transcribe(
 
     try:
         # Initialize Drive client
-        drive_client = DriveClient(credentials_file=str(credentials))
+        drive_client = DriveClient(
+            credentials_file=str(credentials),
+            token_file=str(token),
+        )
 
         # Get file metadata
         metadata = drive_client.get_file_metadata(file_id)
