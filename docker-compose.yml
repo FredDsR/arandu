@@ -30,13 +30,13 @@ services:
     # Volume mounts
     volumes:
       # Input catalog
-      - ${INPUT_DIR:-./input}:/app/input:ro
+      - ${GTRANSCRIBER_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
       # Output results
-      - ${RESULTS_DIR:-./results}:/app/results:rw
+      - ${GTRANSCRIBER_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
       # Google Drive credentials
-      - ${CREDENTIALS_DIR:-./}:/app/credentials:ro
+      - ${GTRANSCRIBER_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
       # Hugging Face cache (persistent model storage)
-      - ${HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+      - ${GTRANSCRIBER_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
 
     # Working directory
     working_dir: /app
@@ -44,10 +44,11 @@ services:
     # Default command for batch transcription
     command: >
       batch-transcribe
-      /app/input/${CATALOG_FILE:-catalog.csv}
+      /app/input/${GTRANSCRIBER_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
       --credentials /app/credentials/credentials.json
+      --token /app/credentials/token.json
       --output-dir /app/results
-      --workers ${WORKERS:-4}
+      --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-4}}
       ${QUANTIZE_FLAG:---quantize}
       ${CPU_FLAG:-}
 
@@ -85,10 +86,11 @@ services:
 
     command: >
       batch-transcribe
-      /app/input/${CATALOG_FILE:-catalog.csv}
+      /app/input/${GTRANSCRIBER_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
       --credentials /app/credentials/credentials.json
+      --token /app/credentials/token.json
       --output-dir /app/results
-      --workers ${WORKERS:-2}
+      --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-2}}
       --cpu
 
     profiles:
@@ -123,10 +125,10 @@ services:
 
     # Volume mounts
     volumes:
-      - ${INPUT_DIR:-./input}:/app/input:ro
-      - ${RESULTS_DIR:-./results}:/app/results:rw
-      - ${CREDENTIALS_DIR:-./}:/app/credentials:ro
-      - ${HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+      - ${GTRANSCRIBER_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
+      - ${GTRANSCRIBER_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
+      - ${GTRANSCRIBER_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
+      - ${GTRANSCRIBER_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
 
     # Working directory
     working_dir: /app
@@ -134,10 +136,11 @@ services:
     # Default command for batch transcription
     command: >
       batch-transcribe
-      /app/input/${CATALOG_FILE:-catalog.csv}
+      /app/input/${GTRANSCRIBER_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
       --credentials /app/credentials/credentials.json
+      --token /app/credentials/token.json
       --output-dir /app/results
-      --workers ${WORKERS:-3}
+      --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-3}}
 
     # Resource limits
     shm_size: '16gb'

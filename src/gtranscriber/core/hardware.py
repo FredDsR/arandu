@@ -6,11 +6,14 @@ compute devices (CPU, CUDA, MPS) and appropriate dtype selection.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from gtranscriber.config import TranscriberConfig
 
 
 class DeviceType(str, Enum):
@@ -33,6 +36,7 @@ class HardwareConfig:
 def get_device_and_dtype(
     force_cpu: bool = False,
     quantize: bool = False,
+    config: TranscriberConfig | None = None,
 ) -> HardwareConfig:
     """Detect the best available compute device and appropriate dtype.
 
@@ -42,13 +46,22 @@ def get_device_and_dtype(
     Args:
         force_cpu: Force CPU execution even if GPU is available.
         quantize: Whether quantization will be used (affects dtype selection).
+        config: Optional TranscriberConfig to read settings from. If not provided,
+                will be loaded from environment.
 
     Returns:
         HardwareConfig with device string, dtype, and device type.
     """
-    # Environment override to force CPU
-    if os.getenv("UV_FORCE_CPU") == "1" or os.getenv("GTRANSCRIBER_FORCE_CPU") == "1":
-        force_cpu = True
+    # Load config if not provided
+    if config is None:
+        from gtranscriber.config import TranscriberConfig
+
+        config = TranscriberConfig()
+
+    # Use config settings if parameters are at defaults
+    if not force_cpu and not quantize:
+        force_cpu = config.force_cpu
+        quantize = config.quantize
 
     if force_cpu:
         return HardwareConfig(
@@ -100,6 +113,7 @@ def get_device_and_dtype(
 def get_quantization_config(
     quantize: bool = False,
     bits: int = 8,
+    config: TranscriberConfig | None = None,
 ) -> dict | None:
     """Get quantization configuration for model loading.
 
@@ -109,10 +123,22 @@ def get_quantization_config(
     Args:
         quantize: Whether to enable quantization.
         bits: Number of bits for quantization (4 or 8).
+        config: Optional TranscriberConfig to read settings from.
 
     Returns:
         Quantization configuration dict or None if not enabled.
     """
+    # Load config if not provided
+    if config is None:
+        from gtranscriber.config import TranscriberConfig
+
+        config = TranscriberConfig()
+
+    # Use config settings if parameter is at default
+    if not quantize:
+        quantize = config.quantize
+        bits = config.quantize_bits
+
     if not quantize:
         return None
 

@@ -17,9 +17,23 @@ set -euo pipefail
 
 # -----------------------------------------------------------------------------
 # Configuration (can be overridden via environment variables)
+# Support both old (WORKERS, CATALOG_FILE) and new (GTRANSCRIBER_*) variable names
+# for backward compatibility
 # -----------------------------------------------------------------------------
 PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
+
+# Support both GTRANSCRIBER_WORKERS and WORKERS (prioritize GTRANSCRIBER_*)
+if [ -n "${GTRANSCRIBER_WORKERS:-}" ]; then
+    WORKERS="${GTRANSCRIBER_WORKERS}"
+fi
+WORKERS="${WORKERS:-1}"
+
+# Support both GTRANSCRIBER_CATALOG_FILE and CATALOG_FILE
+if [ -n "${GTRANSCRIBER_CATALOG_FILE:-}" ]; then
+    CATALOG_FILE="${GTRANSCRIBER_CATALOG_FILE}"
+fi
 CATALOG_FILE="${CATALOG_FILE:-catalog.csv}"
+
 USE_CPU="${USE_CPU:-false}"
 USE_ROCM="${USE_ROCM:-false}"
 USE_SCRATCH="${USE_SCRATCH:-true}"
@@ -58,6 +72,12 @@ setup_scratch() {
     else
         echo "Error: Catalog file not found: $PROJECT_DIR/input/$CATALOG_FILE"
         return 1
+    fi
+
+    # Copy .env file
+    if [ -f "$PROJECT_DIR/.env" ]; then
+        cp "$PROJECT_DIR/.env" "$SCRATCH_WORK_DIR/"
+        echo "  Copied .env to SCRATCH"
     fi
 
     # Copy credentials
@@ -105,6 +125,12 @@ cleanup_scratch() {
             echo "Results copied to: $PROJECT_DIR/results"
         else
             echo "No results to copy"
+        fi
+
+        # Copy back updated credentials (token.json may have been refreshed)
+        if [ -f "$SCRATCH_WORK_DIR/credentials/token.json" ]; then
+            echo "Copying back updated token.json..."
+            cp "$SCRATCH_WORK_DIR/credentials/token.json" "$PROJECT_DIR/"
         fi
 
         # Optionally sync back the HF cache (new models downloaded during run)
@@ -205,15 +231,32 @@ echo "  HF Cache Dir:    $WORK_HF_CACHE_DIR"
 
 # -----------------------------------------------------------------------------
 # Export environment variables for Docker Compose
+# Export both old and new variable names for backward compatibility
 # -----------------------------------------------------------------------------
 export SLURM_JOB_ID
+
+# Export both WORKERS and GTRANSCRIBER_WORKERS
 export WORKERS
+export GTRANSCRIBER_WORKERS="$WORKERS"
+
 export GTRANSCRIBER_MODEL_ID
+
+# Export both CATALOG_FILE and GTRANSCRIBER_CATALOG_FILE
 export CATALOG_FILE
+export GTRANSCRIBER_CATALOG_FILE="$CATALOG_FILE"
+
+# Export both old and new path variables
 export INPUT_DIR="$WORK_INPUT_DIR"
+export GTRANSCRIBER_INPUT_DIR="$WORK_INPUT_DIR"
+
 export RESULTS_DIR="$WORK_RESULTS_DIR"
+export GTRANSCRIBER_RESULTS_DIR="$WORK_RESULTS_DIR"
+
 export CREDENTIALS_DIR="$WORK_CREDENTIALS_DIR"
+export GTRANSCRIBER_CREDENTIALS_DIR="$WORK_CREDENTIALS_DIR"
+
 export HF_CACHE_DIR="$WORK_HF_CACHE_DIR"
+export GTRANSCRIBER_HF_CACHE_DIR="$WORK_HF_CACHE_DIR"
 
 # Set quantization flag (enabled by default for GPU, disabled for CPU)
 if [ "$USE_CPU" = "true" ]; then
@@ -229,17 +272,30 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Change to appropriate working directory for Docker Compose
+# -----------------------------------------------------------------------------
+# If using SCRATCH, run docker compose from SCRATCH directory to pick up .env file
+if [ "$USING_SCRATCH" = true ]; then
+    echo ""
+    echo "Changing to SCRATCH directory for Docker Compose execution..."
+    cd "$SCRATCH_WORK_DIR"
+fi
+
+# -----------------------------------------------------------------------------
 # Build Docker image (if needed)
 # -----------------------------------------------------------------------------
 echo ""
 echo "Building Docker image..."
 
+# Use -f flag to specify docker-compose.yml location from PROJECT_DIR
+COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+
 if [ "$USE_ROCM" = "true" ]; then
-    docker compose --profile rocm build gtranscriber-rocm
+    docker compose -f "$COMPOSE_FILE" --profile rocm build gtranscriber-rocm
 elif [ "$USE_CPU" = "true" ]; then
-    docker compose --profile cpu build gtranscriber-cpu
+    docker compose -f "$COMPOSE_FILE" --profile cpu build gtranscriber-cpu
 else
-    docker compose build gtranscriber
+    docker compose -f "$COMPOSE_FILE" build gtranscriber
 fi
 
 # -----------------------------------------------------------------------------
@@ -251,13 +307,13 @@ echo "=============================================="
 
 if [ "$USE_ROCM" = "true" ]; then
     echo "Running with AMD ROCm support..."
-    docker compose --profile rocm up gtranscriber-rocm --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" --profile rocm up gtranscriber-rocm --abort-on-container-exit
 elif [ "$USE_CPU" = "true" ]; then
     echo "Running in CPU mode..."
-    docker compose --profile cpu up gtranscriber-cpu --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" --profile cpu up gtranscriber-cpu --abort-on-container-exit
 else
     echo "Running with NVIDIA GPU support..."
-    docker compose up gtranscriber --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" up gtranscriber --abort-on-container-exit
 fi
 
 # -----------------------------------------------------------------------------
@@ -265,7 +321,7 @@ fi
 # -----------------------------------------------------------------------------
 echo ""
 echo "Cleaning up containers..."
-docker compose down
+docker compose -f "$COMPOSE_FILE" down
 
 # -----------------------------------------------------------------------------
 # Job Summary

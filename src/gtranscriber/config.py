@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _get_default_temp_dir() -> str:
@@ -13,65 +14,114 @@ def _get_default_temp_dir() -> str:
     return str(Path(tempfile.gettempdir()) / "gtranscriber")
 
 
-def _parse_bool(value: str) -> bool:
-    """Parse a string value to boolean.
+class TranscriberConfig(BaseSettings):
+    """Configuration settings for the transcriber.
 
-    Accepts (case-insensitive): "true", "1", "yes".
-    Any other value, including empty strings, returns False.
-
-    Args:
-        value: String value to parse.
-
-    Returns:
-        Boolean value.
-
-    Examples:
-        >>> _parse_bool("true")
-        True
-        >>> _parse_bool("Yes")
-        True
-        >>> _parse_bool("1")
-        True
-        >>> _parse_bool("false")
-        False
-        >>> _parse_bool("")
-        False
+    Settings are loaded from environment variables with the GTRANSCRIBER_ prefix.
     """
-    return value.lower() in ("true", "1", "yes")
 
-
-@dataclass
-class TranscriberConfig:
-    """Configuration settings for the transcriber."""
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # Model settings
-    model_id: str = "openai/whisper-large-v3"
-    return_timestamps: bool = True
-    chunk_length_s: int = 30
-    stride_length_s: int = 5
+    model_id: str = Field(
+        default="openai/whisper-large-v3",
+        description="Hugging Face model ID for transcription",
+    )
+    return_timestamps: bool = Field(
+        default=True,
+        description="Return timestamps for transcription segments",
+    )
+    chunk_length_s: int = Field(
+        default=30,
+        description="Chunk length in seconds for processing",
+    )
+    stride_length_s: int = Field(
+        default=5,
+        description="Stride length in seconds between chunks",
+    )
 
     # Hardware settings
-    force_cpu: bool = False
-    quantize: bool = False
-    quantize_bits: int = 8
+    force_cpu: bool = Field(
+        default=False,
+        description="Force CPU execution instead of GPU",
+    )
+    quantize: bool = Field(
+        default=False,
+        description="Enable 8-bit quantization to reduce VRAM usage",
+    )
+    quantize_bits: int = Field(
+        default=8,
+        description="Number of bits for quantization",
+    )
 
     # Google Drive settings
-    credentials_file: str = "credentials.json"
-    token_file: str = "token.json"
-    scopes: list[str] = field(default_factory=lambda: ["https://www.googleapis.com/auth/drive"])
+    credentials: str = Field(
+        default="credentials.json",
+        description="Path to Google OAuth2 credentials file",
+    )
+    token: str = Field(
+        default="token.json",
+        description="Path to Google OAuth2 token file",
+    )
+    scopes: list[str] = Field(
+        default=["https://www.googleapis.com/auth/drive"],
+        description="OAuth2 scopes for Google Drive API",
+    )
+
+    # Batch processing settings
+    workers: int = Field(
+        default=1,
+        description="Number of parallel workers for batch processing",
+    )
+    catalog_file: str = Field(
+        default="catalog.csv",
+        description="Name of the catalog CSV file",
+    )
+
+    # Path settings
+    input_dir: str = Field(
+        default="./input",
+        description="Directory containing input files",
+    )
+    results_dir: str = Field(
+        default="./results",
+        description="Directory for transcription results",
+    )
+    credentials_dir: str = Field(
+        default="./",
+        description="Directory containing credentials and token files",
+    )
+    hf_cache_dir: str = Field(
+        default="./cache/huggingface",
+        description="Hugging Face cache directory for model storage",
+    )
 
     # Processing settings
-    temp_dir: str = field(default_factory=_get_default_temp_dir)
-    max_retries: int = 3
-    retry_delay: float = 1.0
+    temp_dir: str = Field(
+        default_factory=_get_default_temp_dir,
+        description="Temporary directory for file processing",
+    )
+    max_retries: int = Field(
+        default=3,
+        description="Maximum number of retry attempts for failed operations",
+    )
+    retry_delay: float = Field(
+        default=1.0,
+        description="Delay in seconds between retry attempts",
+    )
 
-    @classmethod
-    def from_env(cls) -> TranscriberConfig:
-        """Create configuration from environment variables."""
-        return cls(
-            model_id=os.getenv("GTRANSCRIBER_MODEL_ID", "openai/whisper-large-v3"),
-            force_cpu=_parse_bool(os.getenv("GTRANSCRIBER_FORCE_CPU", "")),
-            quantize=_parse_bool(os.getenv("GTRANSCRIBER_QUANTIZE", "")),
-            credentials_file=os.getenv("GTRANSCRIBER_CREDENTIALS", "credentials.json"),
-            token_file=os.getenv("GTRANSCRIBER_TOKEN", "token.json"),
-        )
+    @property
+    def credentials_file(self) -> str:
+        """Alias for credentials (backward compatibility)."""
+        return self.credentials
+
+    @property
+    def token_file(self) -> str:
+        """Alias for token (backward compatibility)."""
+        return self.token

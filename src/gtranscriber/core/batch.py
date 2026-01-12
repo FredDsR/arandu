@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from gtranscriber.config import TranscriberConfig
 from gtranscriber.core.checkpoint import CheckpointManager
 from gtranscriber.core.drive import DriveClient, NoAudioStreamError
 from gtranscriber.core.engine import WhisperEngine
@@ -99,10 +100,47 @@ class BatchConfig:
     output_dir: Path
     checkpoint_file: Path
     credentials_file: Path
+    token_file: Path
     model_id: str = "openai/whisper-large-v3"
     num_workers: int = 1
     force_cpu: bool = False
     quantize: bool = False
+
+    @classmethod
+    def from_transcriber_config(
+        cls,
+        catalog_file: Path,
+        output_dir: Path,
+        checkpoint_file: Path,
+        config: TranscriberConfig | None = None,
+        num_workers: int = 1,
+    ) -> BatchConfig:
+        """Create BatchConfig from TranscriberConfig.
+
+        Args:
+            catalog_file: Path to catalog CSV file
+            output_dir: Output directory for results
+            checkpoint_file: Path to checkpoint file
+            config: TranscriberConfig instance. If not provided, will be loaded from environment.
+            num_workers: Number of parallel workers
+
+        Returns:
+            BatchConfig instance
+        """
+        if config is None:
+            config = TranscriberConfig()
+
+        return cls(
+            catalog_file=catalog_file,
+            output_dir=output_dir,
+            checkpoint_file=checkpoint_file,
+            credentials_file=Path(config.credentials),
+            token_file=Path(config.token),
+            model_id=config.model_id,
+            num_workers=num_workers,
+            force_cpu=config.force_cpu,
+            quantize=config.quantize,
+        )
 
 
 @dataclass
@@ -123,7 +161,7 @@ def _ensure_float(value: object, default: float) -> float:
     try:
         if value is None:
             raise TypeError
-        return float(value)
+        return float(value)  # ty:ignore[invalid-argument-type]
     except (TypeError, ValueError):
         return default
 
@@ -281,9 +319,7 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
 
         missing_columns = required_columns - set(reader.fieldnames)
         if missing_columns:
-            raise ValueError(
-                f"Catalog is missing required columns: {', '.join(missing_columns)}"
-            )
+            raise ValueError(f"Catalog is missing required columns: {', '.join(missing_columns)}")
 
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
             try:
@@ -374,9 +410,7 @@ def run_batch_transcription(config: BatchConfig) -> None:
     num_workers = min(config.num_workers, len(remaining_tasks))
     # Only limit workers to CPU count when using CPU mode
     if config.force_cpu and num_workers > mp.cpu_count():
-        logger.warning(
-            f"Requested {num_workers} workers but only {mp.cpu_count()} CPUs available"
-        )
+        logger.warning(f"Requested {num_workers} workers but only {mp.cpu_count()} CPUs available")
         num_workers = mp.cpu_count()
     elif num_workers > mp.cpu_count():
         logger.info(

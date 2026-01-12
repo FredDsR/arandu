@@ -26,6 +26,9 @@ from tenacity import (
     wait_exponential,
 )
 
+if TYPE_CHECKING:
+    from gtranscriber.config import TranscriberConfig
+
 
 class DownloadError(Exception):
     """Base exception for download-related errors."""
@@ -144,17 +147,28 @@ class DriveClient:
 
     def __init__(
         self,
-        credentials_file: str = "credentials.json",
-        token_file: str = "token.json",
+        credentials_file: str | None = None,
+        token_file: str | None = None,
+        config: TranscriberConfig | None = None,
     ) -> None:
         """Initialize the Drive client.
 
         Args:
-            credentials_file: Path to OAuth2 credentials file.
-            token_file: Path to store/load the token.
+            credentials_file: Path to OAuth2 credentials file. If not provided,
+                            will be loaded from config or environment.
+            token_file: Path to store/load the token. If not provided,
+                       will be loaded from config or environment.
+            config: Optional TranscriberConfig instance. If not provided,
+                   will be loaded from environment.
         """
-        self.credentials_file = credentials_file
-        self.token_file = token_file
+        # Load config if not provided
+        if config is None:
+            from gtranscriber.config import TranscriberConfig
+
+            config = TranscriberConfig()
+
+        self.credentials_file = credentials_file or config.credentials
+        self.token_file = token_file or config.token
         self._service: Resource | None = None
 
     @property

@@ -5,6 +5,7 @@ and Rich for visual feedback.
 """
 
 from __future__ import annotations
+import json
 
 import logging
 from datetime import datetime
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 
 from gtranscriber import __version__
+from gtranscriber.config import TranscriberConfig
 from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.hardware import get_device_and_dtype
 from gtranscriber.core.io import (
@@ -49,6 +51,16 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="rich",
 )
+
+# Load configuration from environment variables
+# This is loaded once at module import time and used as defaults for CLI parameters.
+# CLI arguments will override these defaults, but if not specified, values from
+# environment variables (GTRANSCRIBER_*) or .env file will be used.
+_config = TranscriberConfig()
+logger.debug(f"Loaded configuration:\n{json.dumps(_config.model_dump_json(), indent=2)}")
+# Default paths from config - these are used as CLI parameter defaults
+DEFAULT_CREDENTIALS_PATH = Path(_config.credentials)
+DEFAULT_TOKEN_PATH = Path(_config.token)
 
 
 def _ensure_float(value: Any, default: float) -> float:
@@ -154,9 +166,10 @@ def transcribe(
         typer.Option(
             "--model-id",
             "-m",
-            help="Hugging Face model ID for transcription.",
+            help="Hugging Face model ID for transcription. "
+            "Can be set via GTRANSCRIBER_MODEL_ID env var.",
         ),
-    ] = "openai/whisper-large-v3",
+    ] = _config.model_id,
     output: Annotated[
         Path | None,
         typer.Option(
@@ -170,16 +183,18 @@ def transcribe(
         typer.Option(
             "--quantize",
             "-q",
-            help="Enable 8-bit quantization to reduce VRAM usage.",
+            help="Enable 8-bit quantization to reduce VRAM usage. "
+            "Can be set via GTRANSCRIBER_QUANTIZE env var.",
         ),
-    ] = False,
+    ] = _config.quantize,
     cpu: Annotated[
         bool,
         typer.Option(
             "--cpu",
-            help="Force CPU execution (disables CUDA/MPS even if available).",
+            help="Force CPU execution (disables CUDA/MPS even if available). "
+            "Can be set via GTRANSCRIBER_FORCE_CPU env var.",
         ),
-    ] = False,
+    ] = _config.force_cpu,
 ) -> None:
     """Transcribe a local audio or video file.
 
@@ -265,40 +280,43 @@ def drive_transcribe(
         typer.Option(
             "--model-id",
             "-m",
-            help="Hugging Face model ID for transcription.",
+            help="Hugging Face model ID for transcription. "
+            "Can be set via GTRANSCRIBER_MODEL_ID env var.",
         ),
-    ] = "openai/whisper-large-v3",
+    ] = _config.model_id,
     credentials: Annotated[
         Path,
         typer.Option(
             "--credentials",
             "-c",
-            help="Path to Google OAuth2 credentials file.",
+            help="Path to Google OAuth2 credentials file. "
+            "Can be set via GTRANSCRIBER_CREDENTIALS env var.",
         ),
-    ] = Path("credentials.json"),
+    ] = DEFAULT_CREDENTIALS_PATH,
     token: Annotated[
         Path,
         typer.Option(
             "--token",
             "-t",
-            help="Path to Google OAuth2 token file.",
+            help="Path to Google OAuth2 token file. Can be set via GTRANSCRIBER_TOKEN env var.",
         ),
-    ] = Path("token.json"),
+    ] = DEFAULT_TOKEN_PATH,
     quantize: Annotated[
         bool,
         typer.Option(
             "--quantize",
             "-q",
-            help="Enable 8-bit quantization to reduce VRAM usage.",
+            help="Enable 8-bit quantization to reduce VRAM usage. "
+            "Can be set via GTRANSCRIBER_QUANTIZE env var.",
         ),
-    ] = False,
+    ] = _config.quantize,
     cpu: Annotated[
         bool,
         typer.Option(
             "--cpu",
-            help="Force CPU execution.",
+            help="Force CPU execution. Can be set via GTRANSCRIBER_FORCE_CPU env var.",
         ),
-    ] = False,
+    ] = _config.force_cpu,
 ) -> None:
     """Transcribe a file from Google Drive.
 
@@ -449,33 +467,45 @@ def batch_transcribe(
         typer.Option(
             "--output-dir",
             "-o",
-            help="Output directory for transcription JSON files.",
+            help="Output directory for transcription JSON files. "
+            "Can be set via GTRANSCRIBER_RESULTS_DIR env var.",
         ),
-    ] = Path("results"),
+    ] = Path(_config.results_dir),
     model_id: Annotated[
         str,
         typer.Option(
             "--model-id",
             "-m",
-            help="Hugging Face model ID for transcription.",
+            help="Hugging Face model ID for transcription. "
+            "Can be set via GTRANSCRIBER_MODEL_ID env var.",
         ),
-    ] = "openai/whisper-large-v3",
+    ] = _config.model_id,
     credentials: Annotated[
         Path,
         typer.Option(
             "--credentials",
             "-c",
-            help="Path to Google OAuth2 credentials file.",
+            help="Path to Google OAuth2 credentials file. "
+            "Can be set via GTRANSCRIBER_CREDENTIALS env var.",
         ),
-    ] = Path("credentials.json"),
+    ] = DEFAULT_CREDENTIALS_PATH,
+    token: Annotated[
+        Path,
+        typer.Option(
+            "--token",
+            "-t",
+            help="Path to Google OAuth2 token file. Can be set via GTRANSCRIBER_TOKEN env var.",
+        ),
+    ] = DEFAULT_TOKEN_PATH,
     workers: Annotated[
         int,
         typer.Option(
             "--workers",
             "-w",
-            help="Number of parallel workers (each loads its own model instance).",
+            help="Number of parallel workers (each loads its own model instance). "
+            "Can be set via GTRANSCRIBER_WORKERS env var.",
         ),
-    ] = 1,
+    ] = _config.workers,
     checkpoint_file: Annotated[
         Path,
         typer.Option(
@@ -488,16 +518,17 @@ def batch_transcribe(
         typer.Option(
             "--quantize",
             "-q",
-            help="Enable 8-bit quantization to reduce VRAM usage.",
+            help="Enable 8-bit quantization to reduce VRAM usage. "
+            "Can be set via GTRANSCRIBER_QUANTIZE env var.",
         ),
-    ] = False,
+    ] = _config.quantize,
     cpu: Annotated[
         bool,
         typer.Option(
             "--cpu",
-            help="Force CPU execution.",
+            help="Force CPU execution. Can be set via GTRANSCRIBER_FORCE_CPU env var.",
         ),
-    ] = False,
+    ] = _config.force_cpu,
 ) -> None:
     """Batch transcribe audio/video files from a catalog.
 
@@ -519,6 +550,10 @@ def batch_transcribe(
         print_error(f"Credentials file not found: {credentials}")
         raise typer.Exit(code=1)
 
+    if not token.exists():
+        print_error(f"Token file not found: {token}")
+        raise typer.Exit(code=1)
+
     if workers < 1:
         print_error("Number of workers must be at least 1")
         raise typer.Exit(code=1)
@@ -529,6 +564,7 @@ def batch_transcribe(
         output_dir=output_dir,
         checkpoint_file=checkpoint_file,
         credentials_file=credentials,
+        token_file=token,
         model_id=model_id,
         num_workers=workers,
         force_cpu=cpu,
