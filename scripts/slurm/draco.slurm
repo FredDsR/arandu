@@ -18,7 +18,8 @@
 
 # Use the base script with partition-specific settings
 export WORKERS="${WORKERS:-2}"
-export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-distil-whisper/distil-large-v3}"
+export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-small}"
+export USE_CPU="${USE_CPU:-true}"
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
