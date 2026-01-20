@@ -10,6 +10,7 @@
 #   GTRANSCRIBER_MODEL_ID - Whisper model to use
 #
 # Optional environment variables:
+#   GTRANSCRIBER_RESULTS_DIR - Custom results directory (default: $PROJECT_DIR/results)
 #   USE_SCRATCH - Set to "false" to disable $SCRATCH optimization (default: true)
 # =============================================================================
 
@@ -33,6 +34,9 @@ if [ -n "${GTRANSCRIBER_CATALOG_FILE:-}" ]; then
     CATALOG_FILE="${GTRANSCRIBER_CATALOG_FILE}"
 fi
 CATALOG_FILE="${CATALOG_FILE:-catalog.csv}"
+
+# Support custom results directory (final destination after job completes)
+FINAL_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
 
 USE_CPU="${USE_CPU:-false}"
 USE_ROCM="${USE_ROCM:-false}"
@@ -113,16 +117,16 @@ cleanup_scratch() {
     if [ "$USING_SCRATCH" = true ] && [ -n "$SCRATCH_WORK_DIR" ] && [ -d "$SCRATCH_WORK_DIR" ]; then
         echo ""
         echo "=============================================="
-        echo "Copying results from SCRATCH to HOME..."
+        echo "Copying results from SCRATCH to final destination..."
         echo "=============================================="
 
-        # Ensure results directory exists in $HOME
-        mkdir -p "$PROJECT_DIR/results"
+        # Ensure results directory exists
+        mkdir -p "$FINAL_RESULTS_DIR"
 
-        # Copy results back to $HOME
+        # Copy results back
         if [ -d "$SCRATCH_WORK_DIR/results" ] && [ "$(ls -A "$SCRATCH_WORK_DIR/results" 2>/dev/null)" ]; then
-            rsync -av --info=progress2 "$SCRATCH_WORK_DIR/results/" "$PROJECT_DIR/results/"
-            echo "Results copied to: $PROJECT_DIR/results"
+            rsync -av --info=progress2 "$SCRATCH_WORK_DIR/results/" "$FINAL_RESULTS_DIR/"
+            echo "Results copied to: $FINAL_RESULTS_DIR"
         else
             echo "No results to copy"
         fi
@@ -163,6 +167,7 @@ echo "Node:          $(hostname)"
 echo "CPUs:          ${SLURM_CPUS_PER_TASK:-N/A}"
 echo "Start Time:    $(date)"
 echo "Project Dir:   $PROJECT_DIR"
+echo "Results Dir:   $FINAL_RESULTS_DIR"
 echo "Model:         $GTRANSCRIBER_MODEL_ID"
 echo "Workers:       $WORKERS"
 echo "Catalog:       $CATALOG_FILE"
@@ -218,10 +223,12 @@ if setup_scratch; then
 else
     # Fallback to $HOME directories
     WORK_INPUT_DIR="$PROJECT_DIR/input"
-    WORK_RESULTS_DIR="$PROJECT_DIR/results"
+    WORK_RESULTS_DIR="$FINAL_RESULTS_DIR"
     WORK_CREDENTIALS_DIR="$PROJECT_DIR"
     WORK_HF_CACHE_DIR="$PROJECT_DIR/cache/huggingface"
     echo "Using HOME for I/O (NFS - slower)"
+    # Ensure results directory exists
+    mkdir -p "$FINAL_RESULTS_DIR"
 fi
 
 echo "  Input Dir:       $WORK_INPUT_DIR"
@@ -265,7 +272,7 @@ if [ "$USE_CPU" = "true" ]; then
     export QUANTIZE_FLAG=""
     export CPU_FLAG="--cpu"
 else
-    export GTRANSCRIBER_QUANTIZE=true
+    export GTRANSCRIBER_QUANTIZE=false
     export GTRANSCRIBER_FORCE_CPU=false
     export QUANTIZE_FLAG="--quantize"
     export CPU_FLAG=""
@@ -331,8 +338,8 @@ echo "=============================================="
 echo "G-Transcriber Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "Results Dir:   $PROJECT_DIR/results"
+echo "Results Dir:   $FINAL_RESULTS_DIR"
 if [ "$USING_SCRATCH" = true ]; then
-    echo "Note:          Results were copied from SCRATCH to HOME"
+    echo "Note:          Results were copied from SCRATCH"
 fi
 echo "=============================================="
