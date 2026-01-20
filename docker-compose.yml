@@ -18,7 +18,7 @@ services:
     # Environment variables
     environment:
       - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}
-      - GTRANSCRIBER_QUANTIZE=${GTRANSCRIBER_QUANTIZE:-true}
+      - GTRANSCRIBER_QUANTIZE=${GTRANSCRIBER_QUANTIZE:-false}
       - GTRANSCRIBER_FORCE_CPU=${GTRANSCRIBER_FORCE_CPU:-false}
       - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
       - GTRANSCRIBER_TOKEN=/app/credentials/token.json
@@ -49,8 +49,6 @@ services:
       --token /app/credentials/token.json
       --output-dir /app/results
       --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-4}}
-      ${QUANTIZE_FLAG:---quantize}
-      ${CPU_FLAG:-}
 
     # Resource limits (adjust based on partition)
     shm_size: '16gb'

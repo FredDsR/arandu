@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
@@ -14,12 +14,13 @@
 #
 # Partition: tupi
 # GPU: NVIDIA GeForce RTX 4090 (24 GB)
-# Recommended: 4 workers with quantization
+# Recommended: 4 workers without quantization (24 GB VRAM is sufficient)
 # =============================================================================
 
 # Use the base script with partition-specific settings
 export WORKERS="${WORKERS:-4}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
+export GTRANSCRIBER_QUANTIZE=false  # RTX 4090 has enough VRAM, no need for quantization
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
