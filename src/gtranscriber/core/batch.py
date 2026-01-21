@@ -72,7 +72,9 @@ def _parse_parents_from_string(parents_str: str | list[str]) -> list[str]:
     return []
 
 
-def _init_worker(model_id: str, force_cpu: bool, quantize: bool) -> None:
+def _init_worker(
+    model_id: str, force_cpu: bool, quantize: bool, language: str | None
+) -> None:
     """Initialize worker process with a WhisperEngine instance.
 
     This function is called once per worker process to load the model,
@@ -82,12 +84,14 @@ def _init_worker(model_id: str, force_cpu: bool, quantize: bool) -> None:
         model_id: Hugging Face model ID for transcription.
         force_cpu: Force CPU execution.
         quantize: Enable 8-bit quantization.
+        language: Language code for transcription (e.g., 'pt' for Portuguese).
     """
     global _worker_engine
     _worker_engine = WhisperEngine(
         model_id=model_id,
         force_cpu=force_cpu,
         quantize=quantize,
+        language=language,
     )
     logger.info(f"Worker initialized with model {model_id}")
 
@@ -105,6 +109,7 @@ class BatchConfig:
     num_workers: int = 1
     force_cpu: bool = False
     quantize: bool = False
+    language: str | None = None
 
     @classmethod
     def from_transcriber_config(
@@ -140,6 +145,7 @@ class BatchConfig:
             num_workers=num_workers,
             force_cpu=config.force_cpu,
             quantize=config.quantize,
+            language=config.language,
         )
 
 
@@ -248,6 +254,7 @@ def transcribe_single_file(
                     model_id=config.model_id,
                     force_cpu=config.force_cpu,
                     quantize=config.quantize,
+                    language=config.language,
                 )
 
             result = _worker_engine.transcribe(temp_file)
@@ -440,7 +447,7 @@ def run_batch_transcription(config: BatchConfig) -> None:
         with ProcessPoolExecutor(
             max_workers=num_workers,
             initializer=_init_worker,
-            initargs=(config.model_id, config.force_cpu, config.quantize),
+            initargs=(config.model_id, config.force_cpu, config.quantize, config.language),
         ) as executor:
             # Submit tasks in batches to avoid spawning all at once
             # This prevents resource exhaustion with thousands of pending futures

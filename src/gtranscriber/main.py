@@ -195,6 +195,16 @@ def transcribe(
             "Can be set via GTRANSCRIBER_FORCE_CPU env var.",
         ),
     ] = _config.force_cpu,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Language code for transcription (e.g., 'pt' for Portuguese). "
+            "If not specified, the language will be auto-detected. "
+            "Can be set via GTRANSCRIBER_LANGUAGE env var.",
+        ),
+    ] = _config.language,
 ) -> None:
     """Transcribe a local audio or video file.
 
@@ -222,6 +232,7 @@ def transcribe(
                 model_id=model_id,
                 force_cpu=cpu,
                 quantize=quantize,
+                language=language,
             )
             progress.update(task, completed=100)
 
@@ -317,6 +328,16 @@ def drive_transcribe(
             help="Force CPU execution. Can be set via GTRANSCRIBER_FORCE_CPU env var.",
         ),
     ] = _config.force_cpu,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Language code for transcription (e.g., 'pt' for Portuguese). "
+            "If not specified, the language will be auto-detected. "
+            "Can be set via GTRANSCRIBER_LANGUAGE env var.",
+        ),
+    ] = _config.language,
 ) -> None:
     """Transcribe a file from Google Drive.
 
@@ -376,6 +397,7 @@ def drive_transcribe(
                     model_id=model_id,
                     force_cpu=cpu,
                     quantize=quantize,
+                    language=language,
                 )
                 progress.update(task, completed=100)
 

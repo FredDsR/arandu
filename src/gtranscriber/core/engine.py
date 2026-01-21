@@ -57,6 +57,7 @@ class WhisperEngine:
         quantize_bits: int = 8,
         chunk_length_s: int | None = None,
         stride_length_s: int | None = None,
+        language: str | None = None,
     ) -> None:
         """Initialize the Whisper engine.
 
@@ -67,6 +68,8 @@ class WhisperEngine:
             quantize_bits: Number of bits for quantization (4 or 8).
             chunk_length_s: Chunk length in seconds for long audio processing.
             stride_length_s: Stride length in seconds between chunks.
+            language: Language code for transcription (e.g., 'pt' for Portuguese).
+                If None, the language will be auto-detected.
 
         Raises:
             ValueError: If quantize_bits is not 4 or 8.
@@ -75,6 +78,7 @@ class WhisperEngine:
             raise ValueError(f"quantize_bits must be 4 or 8, got {quantize_bits}")
 
         self.model_id = model_id
+        self.language = language
 
         self.pipe_kwargs = {}
         if chunk_length_s is not None:
@@ -160,6 +164,11 @@ class WhisperEngine:
 
         processor = AutoProcessor.from_pretrained(self.model_id)
 
+        # Build generate_kwargs for language setting
+        generate_kwargs = {}
+        if self.language:
+            generate_kwargs["language"] = self.language
+
         return pipeline(
             "automatic-speech-recognition",
             model=model,
@@ -168,6 +177,7 @@ class WhisperEngine:
             torch_dtype=self.hw_config.dtype,
             device=self.hw_config.device if not self.quant_config else None,
             return_timestamps=True,
+            generate_kwargs=generate_kwargs if generate_kwargs else None,
             **self.pipe_kwargs,
         )
 
@@ -223,6 +233,7 @@ def transcribe_audio(
     model_id: str = "openai/whisper-large-v3",
     force_cpu: bool = False,
     quantize: bool = False,
+    language: str | None = None,
 ) -> TranscriptionResult:
     """Convenience function to transcribe a single audio file.
 
@@ -231,6 +242,8 @@ def transcribe_audio(
         model_id: Hugging Face model ID for the Whisper model.
         force_cpu: Force CPU execution.
         quantize: Enable 8-bit quantization.
+        language: Language code for transcription (e.g., 'pt' for Portuguese).
+            If None, the language will be auto-detected.
 
     Returns:
         TranscriptionResult with transcription and metadata.
@@ -239,5 +252,6 @@ def transcribe_audio(
         model_id=model_id,
         force_cpu=force_cpu,
         quantize=quantize,
+        language=language,
     )
     return engine.transcribe(audio_path)

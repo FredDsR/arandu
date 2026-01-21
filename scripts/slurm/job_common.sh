@@ -10,6 +10,7 @@
 #   GTRANSCRIBER_MODEL_ID - Whisper model to use
 #
 # Optional environment variables:
+#   GTRANSCRIBER_LANGUAGE - Language code for transcription (default: pt)
 #   GTRANSCRIBER_RESULTS_DIR - Custom results directory (default: $PROJECT_DIR/results)
 #   USE_SCRATCH - Set to "false" to disable $SCRATCH optimization (default: true)
 # =============================================================================
@@ -169,6 +170,7 @@ echo "Start Time:    $(date)"
 echo "Project Dir:   $PROJECT_DIR"
 echo "Results Dir:   $FINAL_RESULTS_DIR"
 echo "Model:         $GTRANSCRIBER_MODEL_ID"
+echo "Language:      ${GTRANSCRIBER_LANGUAGE:-pt}"
 echo "Workers:       $WORKERS"
 echo "Catalog:       $CATALOG_FILE"
 echo "=============================================="
@@ -247,6 +249,9 @@ export WORKERS
 export GTRANSCRIBER_WORKERS="$WORKERS"
 
 export GTRANSCRIBER_MODEL_ID
+
+# Set default language to Portuguese (Brazilian)
+export GTRANSCRIBER_LANGUAGE="${GTRANSCRIBER_LANGUAGE:-pt}"
 
 # Export both CATALOG_FILE and GTRANSCRIBER_CATALOG_FILE
 export CATALOG_FILE

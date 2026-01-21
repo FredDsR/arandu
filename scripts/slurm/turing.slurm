@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=gtranscriber
+#SBATCH --job-name=corpus_transcription
 #SBATCH --partition=turing
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=48:00:00
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
+#SBATCH --time=72:00:00
+#SBATCH --output=logs/turing_%x_%j.out
+#SBATCH --error=logs/turing_%x_%j.err
 
 # =============================================================================
 # G-Transcriber SLURM Job Script for PCAD - TURING Partition

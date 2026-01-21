@@ -33,6 +33,10 @@ class TranscriberConfig(BaseSettings):
         default="openai/whisper-large-v3",
         description="Hugging Face model ID for transcription",
     )
+    language: str | None = Field(
+        default=None,
+        description="Language code for transcription (e.g., 'pt' for Portuguese). If None, auto-detect.",
+    )
     return_timestamps: bool = Field(
         default=True,
         description="Return timestamps for transcription segments",
