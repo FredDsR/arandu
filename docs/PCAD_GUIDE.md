@@ -127,9 +127,7 @@ rsync -avz --progress \
 
 | Partition | GPU | VRAM | Recommended Workers | Best For |
 |-----------|-----|------|---------------------|----------|
-| `grace` | NVIDIA L40S | 46 GB | 6-8 | Large batches, full model |
 | `tupi` | RTX 4090 | 24 GB | 4 | Good balance |
-| `blaise` | Tesla P100 | 16 GB | 2-3 | Medium batches |
 | `draco` | Tesla K20m | 4 GB | 1-2 | Small batches, distil model |
 
 #### AMD GPU Partition (ROCm)
