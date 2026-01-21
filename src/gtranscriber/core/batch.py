@@ -20,7 +20,14 @@ from gtranscriber.core.checkpoint import CheckpointManager
 from gtranscriber.core.drive import DriveClient, NoAudioStreamError
 from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.io import create_temp_file, save_enriched_record
-from gtranscriber.core.media import get_media_duration_ms, has_audio_stream
+from gtranscriber.core.media import (
+    AudioExtractionError,
+    CorruptedMediaError,
+    extract_audio,
+    get_media_duration_ms,
+    has_audio_stream,
+    requires_audio_extraction,
+)
 from gtranscriber.schemas import EnrichedRecord, TranscriptionSegment
 
 if TYPE_CHECKING:
@@ -206,6 +213,8 @@ def transcribe_single_file(
     """Transcribe a single file (worker function for parallel processing).
 
     Uses the global _worker_engine that was initialized once per worker process.
+    For video files (MP4, MOV, etc.), audio is extracted to WAV format before
+    transcription to ensure compatibility with the Whisper audio backend.
 
     Args:
         task: TranscriptionTask with file information.
@@ -228,6 +237,7 @@ def transcribe_single_file(
         # Download file with size validation
         suffix = Path(task.name).suffix
         temp_file = create_temp_file(suffix=suffix)
+        extracted_audio_file: Path | None = None
 
         try:
             drive_client.download_file(
@@ -238,9 +248,27 @@ def transcribe_single_file(
             )
             logger.info(f"Downloaded: {task.name}")
 
-            # Validate audio stream exists before attempting transcription
-            if not has_audio_stream(temp_file):
-                raise NoAudioStreamError(task.file_id, task.name, temp_file)
+            # Determine which file to use for transcription
+            transcription_file = temp_file
+
+            # For video files, extract audio to WAV format for compatibility
+            if requires_audio_extraction(task.mime_type):
+                logger.info(f"Extracting audio from video: {task.name}")
+                extracted_audio_file = create_temp_file(suffix=".wav")
+                try:
+                    extract_audio(temp_file, extracted_audio_file)
+                    transcription_file = extracted_audio_file
+                    logger.info(f"Audio extracted successfully: {task.name}")
+                except CorruptedMediaError:
+                    # Re-raise with original context
+                    raise
+                except AudioExtractionError:
+                    # Re-raise with original context
+                    raise
+            else:
+                # For audio files, validate audio stream exists
+                if not has_audio_stream(temp_file):
+                    raise NoAudioStreamError(task.file_id, task.name, temp_file)
 
             # Extract duration if not provided
             duration_ms = task.duration_ms
@@ -257,7 +285,7 @@ def transcribe_single_file(
                     language=config.language,
                 )
 
-            result = _worker_engine.transcribe(temp_file)
+            result = _worker_engine.transcribe(transcription_file)
             logger.info(f"Transcribed: {task.name}")
 
             # Create enriched record
@@ -290,11 +318,29 @@ def transcribe_single_file(
             return task.file_id, True, "Success"
 
         finally:
-            # Cleanup temporary file
+            # Cleanup temporary files
             if temp_file.exists():
                 temp_file.unlink()
+            if extracted_audio_file is not None and extracted_audio_file.exists():
+                extracted_audio_file.unlink()
+
+    except CorruptedMediaError as e:
+        # Corrupted files - clear error message about the corruption
+        logger.error(f"Corrupted file: {task.name} - {e}")
+        return task.file_id, False, str(e)
+
+    except AudioExtractionError as e:
+        # Audio extraction failed
+        logger.error(f"Audio extraction failed: {task.name} - {e}")
+        return task.file_id, False, str(e)
+
+    except NoAudioStreamError as e:
+        # File has no audio to transcribe
+        logger.error(f"No audio stream: {task.name} - {e}")
+        return task.file_id, False, str(e)
 
     except Exception as e:
+        # Catch-all for unexpected errors
         error_msg = f"Failed to process {task.name}"
         logger.exception(error_msg)
         return task.file_id, False, str(e)
