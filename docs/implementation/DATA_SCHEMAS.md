@@ -99,36 +99,125 @@ Represents the complete QA dataset for a single transcription document.
 
 ## Knowledge Graph Schemas
 
-### KGNode
+### Design Decision: GraphML-First Approach
 
-Represents a node (entity or event) in the knowledge graph.
+Instead of defining custom schema classes (KGNode, KGEdge, etc.), we use **AutoSchemaKG's native GraphML output** directly with NetworkX. This provides:
+
+- **Simplicity**: No custom conversion code to maintain
+- **Standard format**: GraphML is widely supported
+- **Direct NetworkX compatibility**: Load with `nx.read_graphml()`
+- **AutoSchemaKG validation**: Triples are validated during extraction
+
+### AutoSchemaKG Pipeline
+
+The KG construction uses AutoSchemaKG's extraction pipeline:
+
+```python
+from atlas_rag.kg_construction import KGExtractor
+
+# Initialize extractor
+kg_extractor = KGExtractor(config)
+
+# 1. Extract triples from text
+kg_extractor.run_extraction()
+
+# 2. Convert to CSV format
+kg_extractor.convert_json_to_csv()
+
+# 3. Run schema induction (conceptualization)
+kg_extractor.generate_concept_csv_temp()
+
+# 4. Create concept CSV
+kg_extractor.create_concept_csv()
+
+# 5. Export to GraphML (NetworkX-compatible)
+kg_extractor.convert_to_graphml()
+```
+
+### Loading into NetworkX
+
+```python
+import networkx as nx
+
+# Load GraphML directly into NetworkX
+graph = nx.read_graphml("knowledge_graphs/corpus_graph.graphml")
+
+# Access nodes and edges with all attributes preserved
+for node, attrs in graph.nodes(data=True):
+    print(f"Node: {node}, Type: {attrs.get('type')}, Label: {attrs.get('label')}")
+
+for u, v, attrs in graph.edges(data=True):
+    print(f"Edge: {u} -> {v}, Relation: {attrs.get('relation')}")
+
+# Compute statistics using NetworkX
+print(f"Nodes: {graph.number_of_nodes()}")
+print(f"Edges: {graph.number_of_edges()}")
+print(f"Density: {nx.density(graph)}")
+print(f"Connected components: {nx.number_connected_components(graph)}")
+```
+
+### KGMetadata (Optional)
+
+For provenance tracking, a lightweight metadata sidecar file can be stored alongside the GraphML:
 
 **Fields**:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | `str` | Yes | Unique node identifier |
-| `label` | `str` | Yes | Entity/event text representation |
-| `type` | `str` | Yes | Semantic concept type from schema induction |
-| `properties` | `dict[str, Any]` | Yes | Additional node properties |
-| `source_documents` | `list[str]` | Yes | Document IDs where entity appears |
+| `graph_id` | `str` | Yes | Unique graph identifier |
+| `source_documents` | `list[str]` | Yes | List of source document IDs |
+| `created_at` | `datetime` | Yes | When graph was created |
+| `model_id` | `str` | Yes | LLM model used for extraction |
+| `provider` | `str` | Yes | LLM provider |
 
-**Example**:
+**Example** (`corpus_graph_metadata.json`):
 ```json
 {
-  "id": "node_001",
-  "label": "Rio Grande do Sul",
-  "type": "LOCATION",
-  "properties": {
-    "country": "Brazil",
-    "state": true,
-    "mentioned_count": 15
-  },
-  "source_documents": ["1abc123xyz", "2def456uvw"]
+  "graph_id": "corpus_merged_2026_01_14",
+  "source_documents": ["1abc123xyz", "2def456uvw", "3ghi789rst"],
+  "created_at": "2026-01-14T15:45:00Z",
+  "model_id": "llama3.1:8b",
+  "provider": "ollama"
 }
 ```
 
-**Node Types** (from AutoSchemaKG):
+**Python Implementation**:
+```python
+from dataclasses import dataclass, asdict
+from datetime import datetime
+import json
+
+@dataclass
+class KGMetadata:
+    """Lightweight metadata for provenance tracking."""
+    graph_id: str
+    source_documents: list[str]
+    model_id: str
+    provider: str
+    created_at: datetime = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
+
+    def save(self, path: str):
+        with open(path, 'w') as f:
+            data = asdict(self)
+            data['created_at'] = self.created_at.isoformat()
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def load(cls, path: str) -> "KGMetadata":
+        with open(path) as f:
+            data = json.load(f)
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+            return cls(**data)
+```
+
+### Node Types (from AutoSchemaKG)
+
+AutoSchemaKG extracts nodes with these semantic types (stored as node attributes in GraphML):
+
 - `PERSON` - People, groups of people
 - `LOCATION` - Geographic locations
 - `ORGANIZATION` - Companies, institutions
@@ -138,139 +227,16 @@ Represents a node (entity or event) in the knowledge graph.
 - `OBJECT` - Physical objects
 - Custom types from dynamic schema induction
 
-### KGEdge
+### Common Relations
 
-Represents an edge (relation) between two nodes in the knowledge graph.
+Relations are stored as edge attributes in GraphML:
 
-**Fields**:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `source` | `str` | Yes | Source node ID |
-| `target` | `str` | Yes | Target node ID |
-| `relation` | `str` | Yes | Relation type from schema |
-| `properties` | `dict[str, Any]` | Yes | Additional edge properties |
-| `confidence` | `float` | Yes | Extraction confidence (0.0-1.0) |
-
-**Example**:
-```json
-{
-  "source": "node_001",
-  "target": "node_002",
-  "relation": "AFFECTED_BY",
-  "properties": {
-    "intensity": "severe",
-    "year": 2023
-  },
-  "confidence": 0.87
-}
-```
-
-**Common Relations** (examples):
 - `LOCATED_IN` - Spatial containment
 - `CAUSED_BY` - Causal relationship
 - `AFFECTED_BY` - Impact relationship
 - `OCCURRED_IN` - Temporal/spatial occurrence
 - `BELONGS_TO` - Membership
 - Custom relations from dynamic schema induction
-
-### KGStatistics
-
-Represents statistical information about a knowledge graph.
-
-**Fields**:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `total_nodes` | `int` | Yes | Total number of nodes |
-| `total_edges` | `int` | Yes | Total number of edges |
-| `node_types` | `dict[str, int]` | Yes | Distribution of node types |
-| `edge_types` | `dict[str, int]` | Yes | Distribution of edge types |
-| `average_degree` | `float` | Yes | Average node degree |
-| `connected_components` | `int` | Yes | Number of connected components |
-| `density` | `float` | Yes | Graph density (0.0-1.0) |
-
-**Example**:
-```json
-{
-  "total_nodes": 1523,
-  "total_edges": 3847,
-  "node_types": {
-    "PERSON": 342,
-    "LOCATION": 189,
-    "EVENT": 423,
-    "ORGANIZATION": 156,
-    "CONCEPT": 413
-  },
-  "edge_types": {
-    "AFFECTED_BY": 892,
-    "LOCATED_IN": 567,
-    "CAUSED_BY": 423,
-    "OCCURRED_IN": 1965
-  },
-  "average_degree": 5.05,
-  "connected_components": 3,
-  "density": 0.0033
-}
-```
-
-### KGRecord
-
-Represents a complete knowledge graph with metadata.
-
-**Fields**:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `graph_id` | `str` | Yes | Unique graph identifier |
-| `source_documents` | `list[str]` | Yes | List of source document IDs |
-| `creation_timestamp` | `datetime` | Yes | When graph was created |
-| `model_id` | `str` | Yes | LLM model used for extraction |
-| `provider` | `str` | Yes | LLM provider |
-| `statistics` | `KGStatistics` | Yes | Graph statistics |
-| `nodes` | `list[KGNode]` | Yes | List of nodes |
-| `edges` | `list[KGEdge]` | Yes | List of edges |
-
-**Methods**:
-- `to_networkx() -> nx.Graph` - Convert to NetworkX graph
-- `from_networkx(graph: nx.Graph, metadata: dict) -> KGRecord` - Create from NetworkX
-
-**Example**:
-```json
-{
-  "graph_id": "corpus_merged_2026_01_14",
-  "source_documents": ["1abc123xyz", "2def456uvw", "3ghi789rst"],
-  "creation_timestamp": "2026-01-14T15:45:00Z",
-  "model_id": "llama3.1:8b",
-  "provider": "ollama",
-  "statistics": {
-    "total_nodes": 1523,
-    "total_edges": 3847,
-    "average_degree": 5.05,
-    "connected_components": 3,
-    "density": 0.0033
-  },
-  "nodes": [...],
-  "edges": [...]
-}
-```
-
-**NetworkX Conversion**:
-```python
-# Convert to NetworkX
-import networkx as nx
-kg_record = KGRecord.model_validate(json_data)
-graph = kg_record.to_networkx()
-
-# Convert from NetworkX
-graph = nx.Graph()
-# ... build graph ...
-kg_record = KGRecord.from_networkx(graph, metadata={
-    "graph_id": "my_graph",
-    "model_id": "llama3.1:8b",
-    # ...
-})
-```
 
 ---
 
@@ -435,19 +401,19 @@ graph TD
     B --> C[QARecord]
     C --> D[QAPair]
 
-    A --> E[KGBuilder]
-    E --> F[KGRecord]
-    F --> G[KGNode]
-    F --> H[KGEdge]
-    F --> I[KGStatistics]
+    A --> E[AutoSchemaKG]
+    E --> F[GraphML File]
+    E --> G[KGMetadata]
 
-    C --> J[Evaluator]
-    F --> J
-    A --> J
-    J --> K[EvaluationReport]
-    K --> L[EntityCoverageResult]
-    K --> M[RelationMetricsResult]
-    K --> N[SemanticQualityResult]
+    F --> H[NetworkX Graph]
+
+    C --> I[Evaluator]
+    H --> I
+    A --> I
+    I --> J[EvaluationReport]
+    J --> K[EntityCoverageResult]
+    J --> L[RelationMetricsResult]
+    J --> M[SemanticQualityResult]
 ```
 
 ## File Format Examples
@@ -479,44 +445,50 @@ graph TD
 }
 ```
 
-### KGRecord JSON File
+### Knowledge Graph Files
 
-**Filename**: `kg_<graph_id>.json`
+Knowledge graphs are stored as **GraphML files** (AutoSchemaKG native output) with optional metadata sidecars.
 
+**Graph file**: `<graph_id>.graphml`
+**Metadata file**: `<graph_id>_metadata.json`
+
+**Example Directory Structure**:
+```
+knowledge_graphs/
+├── corpus_graph.graphml           # Main graph (NetworkX-compatible)
+├── corpus_graph_metadata.json     # Provenance metadata
+├── individual/                    # Per-document graphs (optional)
+│   ├── 1abc123xyz.graphml
+│   └── 2def456uvw.graphml
+└── checkpoints/
+    └── kg_checkpoint.json
+```
+
+**Metadata Example** (`corpus_graph_metadata.json`):
 ```json
 {
   "graph_id": "corpus_merged",
   "source_documents": ["1abc123xyz", "2def456uvw"],
-  "creation_timestamp": "2026-01-14T15:45:00Z",
+  "created_at": "2026-01-14T15:45:00Z",
   "model_id": "llama3.1:8b",
-  "provider": "ollama",
-  "statistics": {
-    "total_nodes": 1523,
-    "total_edges": 3847,
-    "node_types": {"PERSON": 342, "LOCATION": 189},
-    "edge_types": {"AFFECTED_BY": 892},
-    "average_degree": 5.05,
-    "connected_components": 3,
-    "density": 0.0033
-  },
-  "nodes": [
-    {
-      "id": "node_001",
-      "label": "Rio Grande do Sul",
-      "type": "LOCATION",
-      "properties": {"country": "Brazil"},
-      "source_documents": ["1abc123xyz"]
-    }
-  ],
-  "edges": [
-    {
-      "source": "node_001",
-      "target": "node_002",
-      "relation": "AFFECTED_BY",
-      "properties": {"intensity": "severe"},
-      "confidence": 0.87
-    }
-  ]
+  "provider": "ollama"
+}
+```
+
+**Loading and Computing Statistics**:
+```python
+import networkx as nx
+
+# Load graph
+graph = nx.read_graphml("knowledge_graphs/corpus_graph.graphml")
+
+# Compute statistics on demand
+stats = {
+    "total_nodes": graph.number_of_nodes(),
+    "total_edges": graph.number_of_edges(),
+    "density": nx.density(graph),
+    "connected_components": nx.number_connected_components(graph),
+    "average_degree": sum(dict(graph.degree()).values()) / graph.number_of_nodes()
 }
 ```
 

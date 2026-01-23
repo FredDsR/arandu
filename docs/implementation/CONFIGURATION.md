@@ -128,7 +128,7 @@ Settings for KG construction using AutoSchemaKG.
 | `kg_model_id` | `str` | `"llama3.1:8b"` | Model ID for KG construction |
 | `kg_ollama_url` | `str` | `"http://localhost:11434"` | Ollama API base URL |
 | `kg_merge_graphs` | `bool` | `True` | Merge individual graphs into corpus-level graph |
-| `kg_output_format` | `str` | `"json"` | Export format: "json" or "graphml" |
+| `kg_output_format` | `str` | `"graphml"` | Export format: "graphml" (default) or "json" |
 | `kg_schema_mode` | `str` | `"dynamic"` | Schema mode: "dynamic" or "predefined" |
 | `kg_temperature` | `float` | `0.5` | Temperature for LLM (lower = more consistent) |
 | `kg_output_dir` | `Path` | `Path("knowledge_graphs")` | Output directory for KGs |
@@ -149,9 +149,9 @@ kg_merge_graphs: bool = Field(
     description="Merge individual graphs into corpus graph"
 )
 kg_output_format: str = Field(
-    default="json",
-    pattern="^(json|graphml)$",
-    description="Graph export format"
+    default="graphml",
+    pattern="^(graphml|json)$",
+    description="Graph export format (graphml recommended for NetworkX)"
 )
 ```
 
@@ -397,8 +397,8 @@ questions_per_document: int = Field(
 
 ```python
 kg_output_format: str = Field(
-    default="json",
-    pattern="^(json|graphml)$"  # Must match pattern
+    default="graphml",
+    pattern="^(graphml|json)$"  # Must match pattern
 )
 ```
 

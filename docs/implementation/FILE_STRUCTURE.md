@@ -80,7 +80,7 @@ etno-kgc-preprocessing/
 │   ├── fixtures/                   # [NEW] Test fixtures
 │   │   ├── sample_transcription.json
 │   │   ├── sample_qa_record.json
-│   │   └── sample_kg_record.json
+│   │   └── sample_graph.graphml
 │   │
 │   └── integration/                # [NEW] Integration tests
 │       ├── test_qa_pipeline.sh
@@ -161,11 +161,9 @@ evaluation_output_dir: Path = Field(default=Path("evaluation"), ...)
 class QAPair(BaseModel): ...
 class QARecord(BaseModel): ...
 
-# Add KG schemas
-class KGNode(BaseModel): ...
-class KGEdge(BaseModel): ...
-class KGStatistics(BaseModel): ...
-class KGRecord(BaseModel): ...
+# Add KG metadata (lightweight - graphs use GraphML format directly)
+@dataclass
+class KGMetadata: ...
 
 # Add Evaluation schemas
 class EntityCoverageResult(BaseModel): ...
@@ -173,6 +171,9 @@ class RelationMetricsResult(BaseModel): ...
 class SemanticQualityResult(BaseModel): ...
 class EvaluationReport(BaseModel): ...
 ```
+
+**Note**: Knowledge graphs use AutoSchemaKG's native GraphML output with NetworkX.
+No custom KGNode/KGEdge/KGRecord classes needed.
 
 **Location**: Lines 60-88 (after existing schemas)
 
@@ -474,7 +475,7 @@ GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
 
 1. `tests/fixtures/sample_transcription.json`
 2. `tests/fixtures/sample_qa_record.json`
-3. `tests/fixtures/sample_kg_record.json`
+3. `tests/fixtures/sample_graph.graphml`
 
 ### Documentation
 
@@ -507,19 +508,21 @@ qa_dataset/
 
 ```
 knowledge_graphs/
-├── kg_<gdrive_id_1>.json       # Individual graph 1
-├── kg_<gdrive_id_2>.json       # Individual graph 2
-├── ...
-├── merged_graph.json           # Corpus-level merged graph
-├── merged_graph.graphml        # GraphML format (optional)
-└── kg_checkpoint.json          # Checkpoint
+├── corpus_graph.graphml              # Main graph (NetworkX-compatible)
+├── corpus_graph_metadata.json        # Provenance metadata
+├── individual/                       # Per-document graphs (optional)
+│   ├── <gdrive_id_1>.graphml
+│   ├── <gdrive_id_1>_metadata.json
+│   └── ...
+└── checkpoints/
+    └── kg_checkpoint.json            # Processing checkpoint
 ```
 
 **File Naming**:
-- Individual: `kg_<source_gdrive_id>.json`
-- Merged: `merged_graph.json` or `merged_graph.graphml`
+- Graph: `<graph_id>.graphml` (AutoSchemaKG native output)
+- Metadata: `<graph_id>_metadata.json` (provenance sidecar)
 
-**Format**: JSON (KGRecord schema) or GraphML
+**Format**: GraphML (loaded with `nx.read_graphml()`) + JSON metadata
 
 ### Evaluation Directory
 

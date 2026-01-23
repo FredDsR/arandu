@@ -239,9 +239,9 @@ kg_merge_graphs: bool = Field(
     description="Merge individual graphs into corpus-level graph"
 )
 kg_output_format: str = Field(
-    default="json",
-    pattern="^(json|graphml)$",
-    description="Graph export format: json or graphml"
+    default="graphml",
+    pattern="^(graphml|json)$",
+    description="Graph export format: graphml (default) or json"
 )
 kg_output_dir: Path = Field(
     default=Path("knowledge_graphs"),
@@ -307,57 +307,40 @@ class QARecord(BaseModel):
     )
     total_pairs: int = Field(..., description="Total QA pairs generated")
 
-# Knowledge Graph Schemas
+# Knowledge Graph Metadata (lightweight - graphs use AutoSchemaKG's GraphML output directly)
+# Note: No custom KGNode/KGEdge/KGRecord classes needed.
+# AutoSchemaKG exports to GraphML which NetworkX loads directly with nx.read_graphml()
 
-class KGNode(BaseModel):
-    """Knowledge graph node (entity/event)"""
-    id: str = Field(..., description="Unique node ID")
-    label: str = Field(..., description="Entity/event text")
-    type: str = Field(..., description="Semantic concept type")
-    properties: dict[str, Any] = Field(default_factory=dict, description="Node properties")
-    source_documents: list[str] = Field(default_factory=list, description="Source doc IDs")
+from dataclasses import dataclass, asdict
+import json
 
-class KGEdge(BaseModel):
-    """Knowledge graph edge (relation)"""
-    source: str = Field(..., description="Source node ID")
-    target: str = Field(..., description="Target node ID")
-    relation: str = Field(..., description="Relation type")
-    properties: dict[str, Any] = Field(default_factory=dict, description="Edge properties")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence")
+@dataclass
+class KGMetadata:
+    """Lightweight metadata for KG provenance tracking."""
+    graph_id: str
+    source_documents: list[str]
+    model_id: str
+    provider: str
+    created_at: datetime = None
 
-class KGStatistics(BaseModel):
-    """Knowledge graph statistics"""
-    total_nodes: int = Field(..., description="Total number of nodes")
-    total_edges: int = Field(..., description="Total number of edges")
-    node_types: dict[str, int] = Field(..., description="Node type distribution")
-    edge_types: dict[str, int] = Field(..., description="Edge type distribution")
-    average_degree: float = Field(..., description="Average node degree")
-    connected_components: int = Field(..., description="Number of connected components")
-    density: float = Field(..., ge=0.0, le=1.0, description="Graph density")
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
 
-class KGRecord(BaseModel):
-    """Complete knowledge graph with metadata"""
-    graph_id: str = Field(..., description="Unique graph ID")
-    source_documents: list[str] = Field(..., description="Source document IDs")
-    creation_timestamp: datetime = Field(
-        default_factory=datetime.now,
-        description="Creation timestamp"
-    )
-    model_id: str = Field(..., description="LLM model used")
-    provider: str = Field(..., description="LLM provider")
-    statistics: KGStatistics = Field(..., description="Graph statistics")
-    nodes: list[KGNode] = Field(..., description="Graph nodes")
-    edges: list[KGEdge] = Field(..., description="Graph edges")
+    def save(self, path: str):
+        """Save metadata to JSON file."""
+        with open(path, 'w') as f:
+            data = asdict(self)
+            data['created_at'] = self.created_at.isoformat()
+            json.dump(data, f, indent=2)
 
-    def to_networkx(self) -> "nx.Graph":
-        """Convert to NetworkX graph"""
-        import networkx as nx
-        G = nx.Graph()
-        for node in self.nodes:
-            G.add_node(node.id, label=node.label, type=node.type, **node.properties)
-        for edge in self.edges:
-            G.add_edge(edge.source, edge.target, relation=edge.relation, **edge.properties)
-        return G
+    @classmethod
+    def load(cls, path: str) -> "KGMetadata":
+        """Load metadata from JSON file."""
+        with open(path) as f:
+            data = json.load(f)
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+            return cls(**data)
 
 # Evaluation Schemas
 
@@ -507,7 +490,7 @@ pip install -e .
       evaluate
       /app/qa_dataset
       /app/results
-      --kg-path /app/knowledge_graphs/merged_graph.json
+      --kg-path /app/knowledge_graphs/corpus_graph.graphml
       --output /app/evaluation/report.json
 
     volumes:
@@ -599,7 +582,7 @@ After completing Phase 1, verify everything works:
 # Test imports
 python -c "from gtranscriber.core.llm_client import LLMProvider, create_llm_client; print('LLM client OK')"
 python -c "from gtranscriber.config import TranscriberConfig; c = TranscriberConfig(); print(f'Config OK: qa_provider={c.qa_provider}')"
-python -c "from gtranscriber.schemas import QAPair, KGRecord, EvaluationReport; print('Schemas OK')"
+python -c "from gtranscriber.schemas import QAPair, QARecord, KGMetadata, EvaluationReport; print('Schemas OK')"
 
 # Test Docker builds
 docker compose build gtranscriber-qa

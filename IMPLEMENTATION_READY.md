@@ -51,7 +51,7 @@
 
 ### ✅ Data Models
 - [x] QA generation schemas (QAPair, QARecord)
-- [x] Knowledge graph schemas (KGNode, KGEdge, KGRecord)
+- [x] Knowledge graph approach (AutoSchemaKG GraphML + KGMetadata)
 - [x] Evaluation schemas (EvaluationReport, metrics)
 - [x] Validation rules and examples
 

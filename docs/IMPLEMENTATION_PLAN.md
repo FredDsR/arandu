@@ -83,7 +83,7 @@ Transcriptions → [QA Generation] → Synthetic QA Dataset
 
 1. **AutoSchemaKG Framework** - Selected for dynamic schema induction capabilities
 2. **Hybrid LLM Approach** - Combine commercial APIs (OpenAI/Claude) with local Ollama models
-3. **NetworkX Format** - JSON-serialized graphs for portability and simplicity
+3. **GraphML Format** - AutoSchemaKG native output, directly compatible with NetworkX
 4. **Metric Categories** - Four evaluation dimensions (QA, entity, relation, semantic)
 5. **Batch Processing Pattern** - Reuse existing architecture for consistency
 
@@ -270,7 +270,7 @@ sbatch scripts/slurm/run_qa_generation.slurm
 
 **Input**:
 - QA Dataset (QARecord JSONs)
-- Knowledge Graphs (NetworkX JSON)
+- Knowledge Graphs (GraphML files)
 - Original Transcriptions (EnrichedRecord JSONs)
 
 **Output**: EvaluationReport JSON with scores and recommendations
@@ -278,7 +278,7 @@ sbatch scripts/slurm/run_qa_generation.slurm
 **CLI Usage**:
 ```bash
 gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/merged_graph.json \
+    --kg-path knowledge_graphs/corpus_graph.graphml \
     --output evaluation_report.json \
     --metric qa \
     --metric entity \
@@ -296,14 +296,17 @@ gtranscriber evaluate qa_dataset/ results/ \
 3. CLI Command (`build-kg`)
 
 **AutoSchemaKG Pipeline**:
-1. **Triple Extraction**: LLM extracts (subject, predicate, object) triples
-2. **Schema Induction**: Conceptualize entities/events into semantic types
-3. **Graph Construction**: Build NetworkX graph with typed nodes/edges
-4. **Export**: Serialize as JSON or GraphML
+1. **Triple Extraction**: `kg_extractor.run_extraction()` - LLM extracts triples
+2. **CSV Conversion**: `kg_extractor.convert_json_to_csv()` - Convert to tabular format
+3. **Schema Induction**: `kg_extractor.generate_concept_csv_temp()` - Conceptualize entities/events
+4. **Concept CSV**: `kg_extractor.create_concept_csv()` - Create concept mapping
+5. **GraphML Export**: `kg_extractor.convert_to_graphml()` - Export to NetworkX-compatible format
+
+The output GraphML can be loaded directly with `nx.read_graphml()` - no custom schemas needed.
 
 **Processing Strategy**:
 - Process each transcription independently (enables parallelization)
-- Save individual graphs as JSON files
+- Save individual graphs as GraphML files
 - Optionally merge all graphs into corpus-level graph
 - Checkpoint progress for fault tolerance
 
@@ -312,7 +315,7 @@ gtranscriber evaluate qa_dataset/ results/ \
 kg_provider: str = "ollama"
 kg_model_id: str = "llama3.1:8b"
 kg_merge_graphs: bool = True
-kg_output_format: str = "json"  # json or graphml
+kg_output_format: str = "graphml"  # json or graphml
 ```
 
 **CLI Usage**:
@@ -381,7 +384,7 @@ sbatch scripts/slurm/run_kg_construction.slurm
 **CLI Commands** (Future):
 ```bash
 # Index knowledge graph
-gtranscriber index-graphrag knowledge_graphs/merged_graph.json
+gtranscriber index-graphrag knowledge_graphs/corpus_graph.graphml
 
 # Query with natural language
 gtranscriber query-graphrag graphrag_index/ \
@@ -428,14 +431,14 @@ gtranscriber evaluate-graphrag graphrag_index/ qa_dataset/ \
 3. **Schema Extension** (`schemas.py`)
    - [ ] Add `QAPair` model
    - [ ] Add `QARecord` model
-   - [ ] Add `KGNode` model
-   - [ ] Add `KGEdge` model
-   - [ ] Add `KGStatistics` model
-   - [ ] Add `KGRecord` model
+   - [ ] Add `KGMetadata` dataclass (lightweight provenance tracking)
    - [ ] Add `EntityCoverageResult` model
    - [ ] Add `RelationMetricsResult` model
    - [ ] Add `SemanticQualityResult` model
    - [ ] Add `EvaluationReport` model
+
+   **Note**: KG data uses AutoSchemaKG's native GraphML output directly with NetworkX.
+   No custom KGNode/KGEdge/KGRecord classes needed.
 
 4. **Docker Configuration**
    - [ ] Add `gtranscriber-qa` service to `docker-compose.yml`
@@ -470,7 +473,7 @@ python -c "from gtranscriber.core.llm_client import LLMClient; ..."
 python -c "from gtranscriber.config import TranscriberConfig; ..."
 
 # Test schemas
-python -c "from gtranscriber.schemas import QAPair, KGRecord; ..."
+python -c "from gtranscriber.schemas import QAPair, KGMetadata; ..."
 ```
 
 ### Phase 2: QA Generation (Week 2)
@@ -558,7 +561,7 @@ squeue -u $USER
    - [ ] Implement schema induction integration
    - [ ] Implement NetworkX conversion
    - [ ] Implement graph merging logic
-   - [ ] Add JSON/GraphML export
+   - [ ] Add GraphML export (AutoSchemaKG native format)
 
 3. **KG Batch Processor** (`kg_batch.py`) (Week 3, Day 4-5)
    - [ ] Create `KGBatchConfig` dataclass
@@ -576,7 +579,7 @@ squeue -u $USER
 
 5. **Local Testing** (Week 4, Day 2-3)
    - [ ] Test on 3-5 sample transcriptions
-   - [ ] Verify KGRecord JSON structure
+   - [ ] Verify GraphML output and metadata
    - [ ] Inspect graph quality manually
    - [ ] Check schema coherence
    - [ ] Verify merge functionality
@@ -605,7 +608,7 @@ gtranscriber build-kg results/ -o kg_test/ \
 # Inspect graph
 python -c "
 import json
-with open('kg_test/merged_graph.json') as f:
+with open('kg_test/corpus_graph.graphml') as f:
     kg = json.load(f)
     print(f'Nodes: {len(kg[\"nodes\"])}')
     print(f'Edges: {len(kg[\"edges\"])}')
@@ -670,7 +673,7 @@ sbatch scripts/slurm/run_kg_construction.slurm
 ```bash
 # Run evaluation
 gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/merged_graph.json \
+    --kg-path knowledge_graphs/corpus_graph.graphml \
     --output evaluation_report.json
 
 # View report
@@ -728,10 +731,11 @@ See [docs/implementation/DATA_SCHEMAS.md](docs/implementation/DATA_SCHEMAS.md) f
 **Key Schemas**:
 - `QAPair` - Single question-answer pair
 - `QARecord` - QA dataset record for one document
-- `KGNode` - Knowledge graph node (entity/event)
-- `KGEdge` - Knowledge graph edge (relation)
-- `KGRecord` - Complete knowledge graph with metadata
+- `KGMetadata` - Lightweight provenance tracking for knowledge graphs
 - `EvaluationReport` - Comprehensive evaluation results
+
+**Note**: Knowledge graphs use AutoSchemaKG's native GraphML format loaded directly into NetworkX.
+No custom node/edge classes needed - GraphML preserves all attributes.
 
 ### Configuration Reference
 
@@ -753,7 +757,7 @@ qa_strategies: list[str] = ["factual", "conceptual"]
 kg_provider: str = "ollama"
 kg_model_id: str = "llama3.1:8b"
 kg_merge_graphs: bool = True
-kg_output_format: str = "json"
+kg_output_format: str = "graphml"
 
 # Evaluation
 evaluation_metrics: list[str] = ["qa", "entity", "relation", "semantic"]
@@ -932,7 +936,7 @@ bash tests/integration/test_evaluation_pipeline.sh
 - ✅ AutoSchemaKG successfully integrated
 - ✅ Graphs built for all transcriptions
 - ✅ Schema coherence validated manually
-- ✅ NetworkX JSON export working correctly
+- ✅ GraphML export working correctly (NetworkX compatible)
 - ✅ Corpus-level graph merge successful
 - ✅ Graph statistics reasonable (nodes/edges/density)
 

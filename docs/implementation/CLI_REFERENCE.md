@@ -231,7 +231,7 @@ gtranscriber build-kg INPUT_DIR [OPTIONS]
 | `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL |
 | `--workers` | `-w` | int | `1` | Parallel workers |
 | `--merge/--no-merge` | | bool | `True` | Merge into corpus graph |
-| `--format` | `-f` | str | `json` | Output format: json, graphml |
+| `--format` | `-f` | str | `graphml` | Output format: graphml (default), json |
 | `--schema-mode` | | str | `dynamic` | Schema mode: dynamic, predefined |
 | `--checkpoint` | | Path | `kg_checkpoint.json` | Checkpoint file path |
 
@@ -263,10 +263,13 @@ gtranscriber build-kg results/ \
 **Output Structure**:
 ```
 knowledge_graphs/
-├── kg_1abc123xyz.json
-├── kg_2def456uvw.json
-├── merged_graph.json
-└── kg_checkpoint.json
+├── corpus_graph.graphml              # Merged graph (NetworkX-compatible)
+├── corpus_graph_metadata.json        # Provenance metadata
+├── individual/                       # Per-document graphs
+│   ├── 1abc123xyz.graphml
+│   └── 2def456uvw.graphml
+└── checkpoints/
+    └── kg_checkpoint.json
 ```
 
 **Progress Display**:
@@ -292,7 +295,7 @@ gtranscriber evaluate QA_DATASET TRANSCRIPTIONS [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--kg-path` | `-k` | Path | None | Path to knowledge graph JSON |
+| `--kg-path` | `-k` | Path | None | Path to knowledge graph (GraphML) |
 | `--output` | `-o` | Path | `evaluation_report.json` | Output report path |
 | `--metric` | `-m` | str | `qa` | Metric to compute (repeatable) |
 | `--embedding-model` | | str | From config | Sentence transformer model |
@@ -308,7 +311,7 @@ gtranscriber evaluate QA_DATASET TRANSCRIPTIONS [OPTIONS]
 ```bash
 # All metrics
 gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/merged_graph.json \
+    --kg-path knowledge_graphs/corpus_graph.graphml \
     --output evaluation_report.json
 
 # Specific metrics only
@@ -361,7 +364,7 @@ gtranscriber build-kg results/ \
 
 # Step 3: Evaluate quality
 gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/merged_graph.json \
+    --kg-path knowledge_graphs/corpus_graph.graphml \
     --output evaluation_report.json
 
 # Step 4: View report
@@ -390,7 +393,7 @@ gtranscriber build-kg samples/ \
 
 # Evaluate
 gtranscriber evaluate qa_test/ samples/ \
-    --kg-path kg_test/merged_graph.json
+    --kg-path kg_test/corpus_graph.graphml
 ```
 
 ### Resume Interrupted Job
@@ -476,11 +479,11 @@ gtranscriber generate-qa results/
 Commands support different output formats:
 
 ```bash
-# JSON output (default)
-gtranscriber build-kg results/ --format json
-
-# GraphML output
+# GraphML output (default, NetworkX-compatible)
 gtranscriber build-kg results/ --format graphml
+
+# JSON output (alternative)
+gtranscriber build-kg results/ --format json
 
 # Evaluation report as JSON
 gtranscriber evaluate qa_dataset/ results/ -o report.json

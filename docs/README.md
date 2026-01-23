@@ -23,7 +23,7 @@ Located in `docs/implementation/`:
 
 1. **[DATA_SCHEMAS.md](implementation/DATA_SCHEMAS.md)** - Complete data schema specifications
    - QA generation schemas (QAPair, QARecord)
-   - Knowledge graph schemas (KGNode, KGEdge, KGRecord)
+   - Knowledge graph approach (AutoSchemaKG GraphML + KGMetadata)
    - Evaluation schemas (EvaluationReport)
    - Schema relationships and examples
 
