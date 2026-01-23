@@ -83,7 +83,10 @@ Sync the entire project to your PCAD home directory:
 
 ```bash
 rsync -avz --progress \
+    --exclude '.git' \
     --exclude '.venv' \
+    --exclude '.claude' \
+    --exclude 'docs/*' \
     --exclude 'results/*' \
     --exclude 'cache/*' \
     --exclude 'logs/*' \
@@ -91,7 +94,6 @@ rsync -avz --progress \
     --exclude '*.pyc' \
     . user@gppd-hpc.inf.ufrgs.br:~/etno-kgc-preprocessing/
 ```
-
 ### Sync Credentials Separately
 
 For security, sync credentials files separately:
