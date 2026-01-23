@@ -24,7 +24,7 @@ Represents a single question-answer pair generated from a transcription.
 | `question` | `str` | Yes | The generated question |
 | `answer` | `str` | Yes | The ground truth answer (extractive from context) |
 | `context` | `str` | Yes | Source text segment from which QA was generated |
-| `question_type` | `str` | Yes | Strategy used: "factual", "conceptual", "temporal", "entity" |
+| `question_type` | `Literal["factual", "conceptual", "temporal", "entity"]` | Yes | Strategy used for question generation |
 | `confidence` | `float` | Yes | Generation confidence score (0.0-1.0) |
 | `start_time` | `float \| None` | No | Segment start time in seconds (if available) |
 | `end_time` | `float \| None` | No | Segment end time in seconds (if available) |
@@ -49,6 +49,43 @@ Represents a single question-answer pair generated from a transcription.
 - If `start_time` is provided, `end_time` must also be provided
 - `start_time` < `end_time` when both are provided
 
+**Python Implementation**:
+```python
+from typing import Literal
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+class QAPair(BaseModel):
+    """Represents a single question-answer pair generated from a transcription."""
+    question: str
+    answer: str
+    context: str
+    question_type: Literal["factual", "conceptual", "temporal", "entity"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    start_time: float | None = None
+    end_time: float | None = None
+
+    @field_validator("answer")
+    @classmethod
+    def answer_must_be_extractive(cls, v: str, info) -> str:
+        """Validate that answer is extractive from context."""
+        context = info.data.get("context", "")
+        if context and v.lower() not in context.lower():
+            raise ValueError("Answer must be extractive from context")
+        return v
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "QAPair":
+        """Validate temporal constraints."""
+        if self.start_time is not None and self.end_time is None:
+            raise ValueError("end_time required when start_time is provided")
+        if self.end_time is not None and self.start_time is None:
+            raise ValueError("start_time required when end_time is provided")
+        if self.start_time is not None and self.end_time is not None:
+            if self.start_time >= self.end_time:
+                raise ValueError("start_time must be less than end_time")
+        return self
+```
+
 ### QARecord
 
 Represents the complete QA dataset for a single transcription document.
@@ -62,7 +99,7 @@ Represents the complete QA dataset for a single transcription document.
 | `transcription_text` | `str` | Yes | Full transcription text |
 | `qa_pairs` | `list[QAPair]` | Yes | List of generated QA pairs |
 | `model_id` | `str` | Yes | LLM model used for generation (e.g., "llama3.1:8b") |
-| `provider` | `str` | Yes | LLM provider: "openai", "anthropic", "ollama" |
+| `provider` | `Literal["openai", "anthropic", "ollama"]` | Yes | LLM provider used |
 | `generation_timestamp` | `datetime` | Yes | When QA pairs were generated |
 | `total_pairs` | `int` | Yes | Total number of QA pairs generated |
 
@@ -94,6 +131,43 @@ Represents the complete QA dataset for a single transcription document.
 - `total_pairs` must equal `len(qa_pairs)`
 - `provider` must be one of: "openai", "anthropic", "ollama"
 - All `qa_pairs` must pass QAPair validation
+
+**Python Implementation**:
+```python
+from datetime import datetime
+from pathlib import Path
+from typing import Literal
+from pydantic import BaseModel, Field, model_validator
+
+class QARecord(BaseModel):
+    """Represents the complete QA dataset for a single transcription document."""
+    source_gdrive_id: str
+    source_filename: str
+    transcription_text: str
+    qa_pairs: list[QAPair]
+    model_id: str
+    provider: Literal["openai", "anthropic", "ollama"]
+    generation_timestamp: datetime = Field(default_factory=datetime.now)
+    total_pairs: int
+
+    @model_validator(mode="after")
+    def validate_total_pairs(self) -> "QARecord":
+        """Validate that total_pairs matches actual count."""
+        if self.total_pairs != len(self.qa_pairs):
+            raise ValueError(
+                f"total_pairs ({self.total_pairs}) must equal len(qa_pairs) ({len(self.qa_pairs)})"
+            )
+        return self
+
+    def save(self, path: str | Path) -> None:
+        """Save QA record to JSON file."""
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "QARecord":
+        """Load QA record from JSON file."""
+        return cls.model_validate_json(Path(path).read_text())
+```
 
 ---
 
@@ -183,35 +257,24 @@ For provenance tracking, a lightweight metadata sidecar file can be stored along
 
 **Python Implementation**:
 ```python
-from dataclasses import dataclass, asdict
 from datetime import datetime
-import json
+from pathlib import Path
+from pydantic import BaseModel, Field
 
-@dataclass
-class KGMetadata:
+class KGMetadata(BaseModel):
     """Lightweight metadata for provenance tracking."""
     graph_id: str
     source_documents: list[str]
     model_id: str
     provider: str
-    created_at: datetime = None
+    created_at: datetime = Field(default_factory=datetime.now)
 
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
-
-    def save(self, path: str):
-        with open(path, 'w') as f:
-            data = asdict(self)
-            data['created_at'] = self.created_at.isoformat()
-            json.dump(data, f, indent=2)
+    def save(self, path: str | Path) -> None:
+        Path(path).write_text(self.model_dump_json(indent=2))
 
     @classmethod
-    def load(cls, path: str) -> "KGMetadata":
-        with open(path) as f:
-            data = json.load(f)
-            data['created_at'] = datetime.fromisoformat(data['created_at'])
-            return cls(**data)
+    def load(cls, path: str | Path) -> "KGMetadata":
+        return cls.model_validate_json(Path(path).read_text())
 ```
 
 ### Node Types (from AutoSchemaKG)
@@ -253,8 +316,8 @@ Represents entity coverage metrics.
 | `total_entities` | `int` | Yes | Total entities extracted |
 | `unique_entities` | `int` | Yes | Number of unique entities |
 | `entity_density` | `float` | Yes | Entities per 100 tokens |
-| `entity_diversity` | `float` | Yes | unique_entities / total_entities |
 | `entity_type_distribution` | `dict[str, int]` | Yes | Count by entity type |
+| `entity_diversity` | `float` | Computed | unique_entities / total_entities (auto-calculated) |
 
 **Example**:
 ```json
@@ -277,6 +340,26 @@ Represents entity coverage metrics.
 - **Entity Diversity**: Values closer to 1.0 indicate less repetition
 - Ideal diversity: 0.3-0.6 (some repetition for coherence, but not excessive)
 
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field, computed_field
+
+class EntityCoverageResult(BaseModel):
+    """Entity coverage metrics."""
+    total_entities: int = Field(ge=0)
+    unique_entities: int = Field(ge=0)
+    entity_density: float = Field(ge=0.0, description="Entities per 100 tokens")
+    entity_type_distribution: dict[str, int]
+
+    @computed_field
+    @property
+    def entity_diversity(self) -> float:
+        """Compute entity diversity as unique/total ratio."""
+        if self.total_entities == 0:
+            return 0.0
+        return self.unique_entities / self.total_entities
+```
+
 ### RelationMetricsResult
 
 Represents relation metrics.
@@ -288,8 +371,8 @@ Represents relation metrics.
 | `total_relations` | `int` | Yes | Total relations extracted |
 | `unique_relations` | `int` | Yes | Number of unique relations |
 | `relation_density` | `float` | Yes | Relations per entity |
-| `relation_diversity` | `float` | Yes | unique_relations / total_relations |
-| `graph_connectivity` | `dict` | Yes | Connectivity metrics |
+| `graph_connectivity` | `GraphConnectivity` | Yes | Nested connectivity metrics model |
+| `relation_diversity` | `float` | Computed | unique_relations / total_relations (auto-calculated) |
 
 **Example**:
 ```json
@@ -311,6 +394,33 @@ Represents relation metrics.
 - **Relation Density**: Typical range 1.5-3.0 (depends on domain)
 - **Connectivity**: Fewer components = more cohesive knowledge
 - **Density**: Values close to 0 are normal for large graphs
+
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field, computed_field
+
+class GraphConnectivity(BaseModel):
+    """Graph connectivity metrics."""
+    average_degree: float = Field(ge=0.0)
+    connected_components: int = Field(ge=1)
+    largest_component_size: int = Field(ge=0)
+    density: float = Field(ge=0.0, le=1.0)
+
+class RelationMetricsResult(BaseModel):
+    """Relation density and connectivity metrics."""
+    total_relations: int = Field(ge=0)
+    unique_relations: int = Field(ge=0)
+    relation_density: float = Field(ge=0.0, description="Relations per entity")
+    graph_connectivity: GraphConnectivity
+
+    @computed_field
+    @property
+    def relation_diversity(self) -> float:
+        """Compute relation diversity as unique/total ratio."""
+        if self.total_relations == 0:
+            return 0.0
+        return self.unique_relations / self.total_relations
+```
 
 ### SemanticQualityResult
 
@@ -338,6 +448,17 @@ Represents semantic quality metrics.
 - **Information Density**: Higher values indicate more structured knowledge
 - **Knowledge Coverage**: >0.5 means QA pairs cover majority of entities
 
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field
+
+class SemanticQualityResult(BaseModel):
+    """Semantic quality metrics."""
+    coherence_score: float = Field(ge=0.0, le=1.0)
+    information_density: float = Field(ge=0.0)
+    knowledge_coverage: float = Field(ge=0.0, le=1.0)
+```
+
 ### EvaluationReport
 
 Represents a comprehensive evaluation report.
@@ -356,8 +477,8 @@ Represents a comprehensive evaluation report.
 | `entity_coverage` | `EntityCoverageResult \| None` | No | Entity coverage metrics |
 | `relation_metrics` | `RelationMetricsResult \| None` | No | Relation metrics |
 | `semantic_quality` | `SemanticQualityResult \| None` | No | Semantic quality metrics |
-| `overall_score` | `float` | Yes | Weighted average (0.0-1.0) |
 | `recommendations` | `list[str]` | Yes | Improvement suggestions |
+| `overall_score` | `float` | Computed | Weighted average score (auto-calculated, 0.0-1.0) |
 
 **Example**:
 ```json
@@ -389,6 +510,73 @@ overall_score = (
     0.2 * relation_metrics.relation_density / 3.0 +  # normalized
     0.3 * semantic_quality.coherence_score
 )
+```
+
+**Python Implementation**:
+```python
+from datetime import datetime
+from pathlib import Path
+from pydantic import BaseModel, Field, computed_field
+
+class EvaluationReport(BaseModel):
+    """Comprehensive evaluation report."""
+    dataset_name: str
+    evaluation_timestamp: datetime = Field(default_factory=datetime.now)
+    total_documents: int = Field(ge=0)
+    total_qa_pairs: int = Field(ge=0)
+
+    # QA metrics
+    qa_exact_match: float | None = Field(default=None, ge=0.0, le=1.0)
+    qa_f1_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    qa_bleu_score: float | None = Field(default=None, ge=0.0, le=100.0)
+
+    # Component metrics
+    entity_coverage: EntityCoverageResult | None = None
+    relation_metrics: RelationMetricsResult | None = None
+    semantic_quality: SemanticQualityResult | None = None
+
+    # Summary
+    recommendations: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def overall_score(self) -> float:
+        """Compute weighted overall score."""
+        components = []
+        weights = []
+
+        if self.qa_f1_score is not None:
+            components.append(self.qa_f1_score)
+            weights.append(0.3)
+
+        if self.entity_coverage is not None:
+            components.append(self.entity_coverage.entity_diversity)
+            weights.append(0.2)
+
+        if self.relation_metrics is not None:
+            # Normalize relation_density (assuming max ~3.0)
+            components.append(min(self.relation_metrics.relation_density / 3.0, 1.0))
+            weights.append(0.2)
+
+        if self.semantic_quality is not None:
+            components.append(self.semantic_quality.coherence_score)
+            weights.append(0.3)
+
+        if not components:
+            return 0.0
+
+        # Normalize weights and compute weighted average
+        total_weight = sum(weights)
+        return sum(c * w for c, w in zip(components, weights)) / total_weight
+
+    def save(self, path: str | Path) -> None:
+        """Save evaluation report to JSON file."""
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "EvaluationReport":
+        """Load evaluation report from JSON file."""
+        return cls.model_validate_json(Path(path).read_text())
 ```
 
 ---

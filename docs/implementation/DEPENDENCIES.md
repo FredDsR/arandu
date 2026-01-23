@@ -25,8 +25,8 @@ Dependencies from the original transcription pipeline:
 | `google-api-python-client` | latest | Google Drive API integration |
 | `google-auth-httplib2` | latest | Google authentication |
 | `google-auth-oauthlib` | latest | OAuth2 flow |
-| `pydantic` | >=2.0.0 | Data validation and settings |
-| `pydantic-settings` | >=2.0.0 | Configuration management |
+| `pydantic` | >=2.0.0 | Data validation, schemas, and JSON serialization |
+| `pydantic-settings` | >=2.0.0 | Configuration management with env var support |
 | `rich` | >=13.0.0 | Terminal UI and formatting |
 | `sentencepiece` | >=0.2.1 | Tokenization for Whisper |
 | `tenacity` | >=8.0.0 | Retry logic with exponential backoff |
@@ -273,6 +273,41 @@ Minimum version 3.1 required for:
 ---
 
 ## Detailed Dependency Information
+
+### pydantic (>=2.0.0)
+
+**Purpose**: Data validation, schema definitions, and JSON serialization
+
+**Features Used**:
+- `BaseModel` - All data schemas (QAPair, QARecord, EvaluationReport, etc.)
+- `Field()` - Validation constraints (ge, le, pattern, default_factory)
+- `@field_validator` - Custom field validation
+- `@model_validator` - Cross-field validation
+- `@computed_field` - Derived/calculated properties
+- `model_dump_json()` - JSON serialization
+- `model_validate_json()` - JSON deserialization
+- `model_json_schema()` - JSON Schema export
+
+**Why Pydantic over dataclasses**:
+- Built-in validation with declarative constraints
+- Automatic JSON serialization/deserialization with datetime support
+- Better error messages with field paths
+- Ecosystem alignment (OpenAI, Anthropic SDKs use Pydantic)
+- Computed fields for derived values
+- Rust-based validation core for performance (Pydantic v2)
+
+**Documentation**: https://docs.pydantic.dev/latest/
+
+### pydantic-settings (>=2.0.0)
+
+**Purpose**: Configuration management with environment variable support
+
+**Features Used**:
+- `BaseSettings` - Configuration class with env var loading
+- `SettingsConfigDict` - Configuration for env prefix, .env file support
+- Automatic type coercion from string env vars
+
+**Documentation**: https://docs.pydantic.dev/latest/concepts/pydantic_settings/
 
 ### openai (>=1.0.0)
 

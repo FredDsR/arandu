@@ -138,7 +138,7 @@ qa_output_dir: Path = Field(default=Path("qa_dataset"), ...)
 kg_provider: str = Field(default="ollama", ...)
 kg_model_id: str = Field(default="llama3.1:8b", ...)
 kg_merge_graphs: bool = Field(default=True, ...)
-kg_output_format: str = Field(default="json", ...)
+kg_output_format: str = Field(default="graphml", ...)  # graphml is default (NetworkX-compatible)
 kg_schema_mode: str = Field(default="dynamic", ...)
 kg_output_dir: Path = Field(default=Path("knowledge_graphs"), ...)
 
@@ -157,22 +157,30 @@ evaluation_output_dir: Path = Field(default=Path("evaluation"), ...)
 
 **Changes**:
 ```python
-# Add QA schemas
+from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
+
+# Add QA schemas (Pydantic models with validation)
 class QAPair(BaseModel): ...
 class QARecord(BaseModel): ...
 
-# Add KG metadata (lightweight - graphs use GraphML format directly)
-@dataclass
-class KGMetadata: ...
+# Add KG metadata (Pydantic model for JSON serialization)
+class KGMetadata(BaseModel): ...
 
-# Add Evaluation schemas
+# Add Evaluation schemas (Pydantic models with computed fields)
+class GraphConnectivity(BaseModel): ...
 class EntityCoverageResult(BaseModel): ...
 class RelationMetricsResult(BaseModel): ...
 class SemanticQualityResult(BaseModel): ...
 class EvaluationReport(BaseModel): ...
 ```
 
-**Note**: Knowledge graphs use AutoSchemaKG's native GraphML output with NetworkX.
+**Note**: All schemas use Pydantic v2 models for:
+- Built-in validation with `Field()` constraints
+- Automatic JSON serialization via `model_dump_json()`
+- JSON deserialization via `model_validate_json()`
+- Computed properties via `@computed_field`
+
+Knowledge graphs use AutoSchemaKG's native GraphML output with NetworkX.
 No custom KGNode/KGEdge/KGRecord classes needed.
 
 **Location**: Lines 60-88 (after existing schemas)
@@ -368,7 +376,7 @@ GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
 **Estimated Size**: ~250 lines
 
 **Key Classes**:
-- `QABatchConfig(dataclass)` - Configuration
+- `QABatchConfig(BaseModel)` - Configuration (Pydantic model)
 - `run_batch_qa_generation()` - Main entry point
 
 **Dependencies**: `qa_generator`, `batch` (for patterns), `checkpoint`
@@ -392,7 +400,7 @@ GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
 **Estimated Size**: ~300 lines
 
 **Key Classes**:
-- `KGBatchConfig(dataclass)` - Configuration
+- `KGBatchConfig(BaseModel)` - Configuration (Pydantic model)
 - `run_batch_kg_construction()` - Main entry point
 
 **Dependencies**: `kg_builder`, `checkpoint`
@@ -418,7 +426,7 @@ GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
 **Estimated Size**: ~350 lines
 
 **Key Classes**:
-- `EvaluationConfig(dataclass)` - Configuration
+- `EvaluationConfig(BaseModel)` - Configuration (Pydantic model)
 - `KnowledgeEvaluator` - Main evaluator class
 
 **Dependencies**: `metrics`, `schemas`
