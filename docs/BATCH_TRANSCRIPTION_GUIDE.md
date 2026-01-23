@@ -120,6 +120,31 @@ gtranscriber batch-transcribe input/catalog.csv \
 
 **Note**: CPU processing is slower but doesn't require GPU/VRAM.
 
+### Language Configuration
+
+Specify the transcription language for better accuracy and downstream processing:
+
+```bash
+# Portuguese transcriptions (ETno project)
+gtranscriber batch-transcribe input/catalog.csv \
+  --credentials credentials.json \
+  --language pt \
+  --workers 4
+
+# Spanish transcriptions
+gtranscriber batch-transcribe input/catalog.csv \
+  --credentials credentials.json \
+  --language es \
+  --workers 4
+```
+
+**Important for KG Construction**: The `--language` option sets both `detected_language` and `metadata.lang` in the output JSON. The `metadata.lang` field is **critical** for AutoSchemaKG to route extraction to the correct language-specific prompts during knowledge graph construction.
+
+If language is not specified, Whisper will auto-detect, but it's recommended to set it explicitly for:
+- Better transcription accuracy
+- Consistent language metadata for downstream processing
+- Proper routing in multilingual KG construction
+
 ## Checkpoint and Resume
 
 The batch transcription automatically creates a checkpoint file that tracks:
@@ -178,6 +203,11 @@ Each transcribed file produces a JSON file with this structure:
   "transcription_text": "Full transcription text here...",
   "detected_language": "pt",
   "language_probability": 0.98,
+  "metadata": {
+    "lang": "pt",
+    "duration_seconds": 120.0,
+    "sample_rate": 16000
+  },
   "model_id": "openai/whisper-large-v3",
   "compute_device": "cuda:0",
   "processing_duration_sec": 45.2,
@@ -192,6 +222,8 @@ Each transcribed file produces a JSON file with this structure:
   ]
 }
 ```
+
+**Note**: The `metadata.lang` field is used by AutoSchemaKG for language-specific prompt routing during KG construction. Ensure this field matches the actual language of the transcription.
 
 Files are named: `{gdrive_id}_transcription.json`
 
@@ -397,6 +429,25 @@ gtranscriber batch-transcribe input/catalog.csv \
   --cpu \
   --workers 2 \
   --model-id distil-whisper/distil-large-v3
+```
+
+### Example 5: Portuguese Corpus (ETno Project)
+
+For the ETno project with Portuguese transcriptions:
+
+```bash
+# Transcribe with explicit Portuguese language setting
+gtranscriber batch-transcribe input/etno_catalog.csv \
+  --credentials credentials.json \
+  --language pt \
+  --model-id openai/whisper-large-v3-turbo \
+  --workers 4 \
+  --quantize
+
+# After transcription, the output will have:
+# - detected_language: "pt"
+# - metadata.lang: "pt"
+# This ensures proper routing to Portuguese prompts during KG construction
 ```
 
 ## Monitoring Progress

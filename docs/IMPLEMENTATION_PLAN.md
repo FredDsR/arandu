@@ -294,6 +294,10 @@ gtranscriber evaluate qa_dataset/ results/ \
 1. KG Builder (`kg_builder.py`) - AutoSchemaKG wrapper
 2. KG Batch Processor (`kg_batch.py`)
 3. CLI Command (`build-kg`)
+4. Portuguese Prompts (`prompts/pt_prompts.json`) - Custom extraction prompts for Portuguese
+
+**Language Support**:
+AutoSchemaKG supports multilingual KG construction through custom prompt templates. Since all transcriptions in this project are in Portuguese, we need to create language-specific prompts for triple extraction. The framework routes extraction to the correct language via document metadata (`metadata.lang`).
 
 **AutoSchemaKG Pipeline**:
 1. **Triple Extraction**: `kg_extractor.run_extraction()` - LLM extracts triples
@@ -316,6 +320,18 @@ kg_provider: str = "ollama"
 kg_model_id: str = "llama3.1:8b"
 kg_merge_graphs: bool = True
 kg_output_format: str = "graphml"  # json or graphml
+kg_language: str = "pt"  # Language code for extraction prompts
+kg_prompt_path: str = "prompts/pt_prompts.json"  # Path to custom prompts
+```
+
+**Portuguese Prompt Template** (`prompts/pt_prompts.json`):
+```json
+{
+  "pt": {
+    "system": "Você é um assistente especializado em extração de conhecimento de textos em português...",
+    "triple_extraction": "Extraia triplas de conhecimento (sujeito, predicado, objeto) do texto a seguir. Identifique entidades (pessoas, locais, organizações, eventos, datas) e suas relações..."
+  }
+}
 ```
 
 **CLI Usage**:
@@ -550,19 +566,28 @@ squeue -u $USER
    - [ ] Install `atlas-rag` package: `pip install atlas-rag`
    - [ ] Test basic AutoSchemaKG functionality
    - [ ] Read AutoSchemaKG documentation
+   - [ ] Review multilingual processing guide (`example/multilingual_processing.md`)
    - [ ] Run example notebooks from repository
    - [ ] Understand input/output formats
 
-2. **KG Builder** (`kg_builder.py`) (Week 3, Day 2-3)
+2. **Portuguese Prompts Configuration** (Week 3, Day 1-2)
+   - [ ] Create `prompts/` directory structure
+   - [ ] Design Portuguese prompts for triple extraction
+   - [ ] Create `prompts/pt_prompts.json` with system and extraction prompts
+   - [ ] Ensure EnrichedRecord includes `metadata.lang = "pt"` for all documents
+   - [ ] Test prompt loading with AutoSchemaKG `ProcessingConfig`
+   - [ ] Validate extraction quality on sample Portuguese text
+
+3. **KG Builder** (`kg_builder.py`) (Week 3, Day 2-3)
    - [ ] Create `KGBuilder` class wrapping AutoSchemaKG
    - [ ] Implement `build_from_transcription()` method
-   - [ ] Implement triple extraction integration
-   - [ ] Implement schema induction integration
+   - [ ] Implement triple extraction integration with Portuguese prompts
+   - [ ] Implement schema induction integration with `language='pt'` parameter
    - [ ] Implement NetworkX conversion
    - [ ] Implement graph merging logic
    - [ ] Add GraphML export (AutoSchemaKG native format)
 
-3. **KG Batch Processor** (`kg_batch.py`) (Week 3, Day 4-5)
+4. **KG Batch Processor** (`kg_batch.py`) (Week 3, Day 4-5)
    - [ ] Create `KGBatchConfig` dataclass
    - [ ] Implement `run_batch_kg_construction()` function
    - [ ] Add checkpoint integration
@@ -570,20 +595,20 @@ squeue -u $USER
    - [ ] Add graph merging at end
    - [ ] Calculate graph statistics
 
-4. **CLI Command** (`main.py`) (Week 4, Day 1)
+5. **CLI Command** (`main.py`) (Week 4, Day 1)
    - [ ] Add `build_kg()` command with Typer
-   - [ ] Add all command-line arguments
+   - [ ] Add all command-line arguments (including `--language` option)
    - [ ] Add progress tracking
    - [ ] Add statistics display
 
-5. **Local Testing** (Week 4, Day 2-3)
-   - [ ] Test on 3-5 sample transcriptions
+6. **Local Testing** (Week 4, Day 2-3)
+   - [ ] Test on 3-5 sample Portuguese transcriptions
    - [ ] Verify GraphML output and metadata
-   - [ ] Inspect graph quality manually
+   - [ ] Inspect graph quality manually (verify Portuguese entities/relations)
    - [ ] Check schema coherence
    - [ ] Verify merge functionality
 
-6. **SLURM Deployment** (Week 4, Day 4-5)
+7. **SLURM Deployment** (Week 4, Day 4-5)
    - [ ] Submit test job to SLURM
    - [ ] Monitor progress and logs
    - [ ] Run on full corpus
@@ -757,6 +782,8 @@ kg_provider: str = "ollama"
 kg_model_id: str = "llama3.1:8b"
 kg_merge_graphs: bool = True
 kg_output_format: str = "graphml"
+kg_language: str = "pt"  # Portuguese for ETno corpus
+kg_prompt_path: str = "prompts/pt_prompts.json"
 
 # Evaluation
 evaluation_metrics: list[str] = ["qa", "entity", "relation", "semantic"]
@@ -898,9 +925,10 @@ bash tests/integration/test_evaluation_pipeline.sh
 - [ ] Timestamps preserved when available
 
 **KG Construction**:
+- [ ] Portuguese prompts loaded correctly
 - [ ] Schema coherence (no duplicate concepts)
-- [ ] Entity types are semantically consistent
-- [ ] Relations are meaningful
+- [ ] Entity types are semantically consistent (Portuguese entity names)
+- [ ] Relations are meaningful (Portuguese relation labels)
 - [ ] Graph is connected (or has reasonable components)
 - [ ] No isolated nodes (unless justified)
 
@@ -933,8 +961,9 @@ bash tests/integration/test_evaluation_pipeline.sh
 ### P2 Task 3: KG Construction
 
 - ✅ AutoSchemaKG successfully integrated
-- ✅ Graphs built for all transcriptions
-- ✅ Schema coherence validated manually
+- ✅ Portuguese prompts configured and tested (`prompts/pt_prompts.json`)
+- ✅ Graphs built for all Portuguese transcriptions
+- ✅ Schema coherence validated manually (Portuguese entities/relations)
 - ✅ GraphML export working correctly (NetworkX compatible)
 - ✅ Corpus-level graph merge successful
 - ✅ Graph statistics reasonable (nodes/edges/density)
@@ -959,6 +988,7 @@ bash tests/integration/test_evaluation_pipeline.sh
 - [Official Documentation](https://hkust-knowcomp.github.io/AutoSchemaKG/)
 - [Research Paper](https://arxiv.org/abs/2505.23628)
 - [Hugging Face Dataset](https://huggingface.co/datasets/AlexFanWei/AutoSchemaKG)
+- [Multilingual Processing Guide](https://github.com/HKUST-KnowComp/AutoSchemaKG/blob/main/example/multilingual_processing.md) - Guide for Portuguese and other languages
 
 ### Related Frameworks
 
@@ -1007,7 +1037,7 @@ Optimization guidelines - see [docs/implementation/PERFORMANCE_TUNING.md](docs/i
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-14
+**Document Version**: 1.1
+**Last Updated**: 2026-01-23
 **Author**: AI Assistant (Claude)
 **Status**: Ready for Implementation

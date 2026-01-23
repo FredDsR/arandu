@@ -236,7 +236,12 @@ gtranscriber build-kg INPUT_DIR [OPTIONS]
 | `--merge/--no-merge` | | bool | `True` | Merge into corpus graph |
 | `--format` | `-f` | str | `graphml` | Output format: graphml (default), json |
 | `--schema-mode` | | str | `dynamic` | Schema mode: dynamic, predefined |
+| `--language` | `-l` | str | `pt` | Language code for extraction prompts (ISO 639-1) |
+| `--prompt-path` | | Path | `prompts/pt_prompts.json` | Path to language-specific prompt templates |
 | `--checkpoint` | | Path | `kg_checkpoint.json` | Checkpoint file path |
+
+**Language Support**:
+The `--language` option specifies the language of the transcriptions for proper triple extraction. Supported languages include: `en`, `pt`, `es`, `fr`, `de`, `zh-CN`, `ja`, `ko`. The `--prompt-path` option points to a JSON file containing language-specific prompts.
 
 **Examples**:
 
@@ -261,6 +266,16 @@ gtranscriber build-kg results/ \
 gtranscriber build-kg results/ \
     --schema-mode predefined \
     --schema-file schema.json
+
+# Portuguese transcriptions (default)
+gtranscriber build-kg results/ \
+    --language pt \
+    --prompt-path prompts/pt_prompts.json
+
+# English transcriptions
+gtranscriber build-kg results/ \
+    --language en \
+    --prompt-path prompts/en_prompts.json
 ```
 
 **Output Structure**:
@@ -358,12 +373,13 @@ gtranscriber generate-qa results/ \
     --workers 4 \
     --questions 12
 
-# Step 2: Build knowledge graphs
+# Step 2: Build knowledge graphs (Portuguese transcriptions)
 gtranscriber build-kg results/ \
     -o knowledge_graphs/ \
     --provider ollama \
     --workers 2 \
-    --merge
+    --merge \
+    --language pt
 
 # Step 3: Evaluate quality
 gtranscriber evaluate qa_dataset/ results/ \
@@ -372,6 +388,34 @@ gtranscriber evaluate qa_dataset/ results/ \
 
 # Step 4: View report
 cat evaluation_report.json | jq .
+```
+
+### Portuguese Corpus Pipeline
+
+Complete pipeline for Portuguese transcriptions (ETno project):
+
+```bash
+# Step 1: Generate QA dataset from Portuguese transcriptions
+gtranscriber generate-qa results/ \
+    -o qa_dataset/ \
+    --provider ollama \
+    --model-id llama3.1:8b \
+    --workers 4 \
+    --questions 12
+
+# Step 2: Build knowledge graphs with Portuguese prompts
+gtranscriber build-kg results/ \
+    -o knowledge_graphs/ \
+    --provider ollama \
+    --workers 2 \
+    --merge \
+    --language pt \
+    --prompt-path prompts/pt_prompts.json
+
+# Step 3: Evaluate quality
+gtranscriber evaluate qa_dataset/ results/ \
+    --kg-path knowledge_graphs/corpus_graph.graphml \
+    --output evaluation_report.json
 ```
 
 ### Quick Testing on Sample Data
@@ -475,6 +519,13 @@ export GTRANSCRIBER_QA_MODEL_ID=gpt-4o-mini
 
 # Now uses OpenAI
 gtranscriber generate-qa results/
+
+# Set Portuguese as default language for KG construction
+export GTRANSCRIBER_KG_LANGUAGE=pt
+export GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
+
+# Now uses Portuguese prompts
+gtranscriber build-kg results/
 ```
 
 ### Output Formats
@@ -648,5 +699,5 @@ gtranscriber evaluate qa_dataset/ results/
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-14
+**Document Version**: 1.1
+**Last Updated**: 2026-01-23

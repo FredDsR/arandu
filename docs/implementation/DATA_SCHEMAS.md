@@ -4,10 +4,90 @@ This document provides complete specifications for all data schemas used in the 
 
 ## Table of Contents
 
-1. [QA Generation Schemas](#qa-generation-schemas)
-2. [Knowledge Graph Schemas](#knowledge-graph-schemas)
-3. [Evaluation Schemas](#evaluation-schemas)
-4. [Schema Relationships](#schema-relationships)
+1. [Input Schemas](#input-schemas)
+2. [QA Generation Schemas](#qa-generation-schemas)
+3. [Knowledge Graph Schemas](#knowledge-graph-schemas)
+4. [Evaluation Schemas](#evaluation-schemas)
+5. [Schema Relationships](#schema-relationships)
+
+---
+
+## Input Schemas
+
+### EnrichedRecord
+
+Represents a transcription record from the P1 pipeline. This is the primary input for QA generation and KG construction.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `gdrive_id` | `str` | Yes | Google Drive ID of original media file |
+| `filename` | `str` | Yes | Original filename |
+| `transcription_text` | `str` | Yes | Full transcription text |
+| `segments` | `list[Segment]` | Yes | Timestamped segments |
+| `detected_language` | `str` | Yes | Detected language code (ISO 639-1, e.g., "pt") |
+| `metadata` | `dict` | Yes | Additional metadata including `lang` field |
+| `created_at` | `datetime` | Yes | When transcription was created |
+
+**Language Metadata**:
+
+The `metadata.lang` field is **critical** for multilingual KG construction. AutoSchemaKG uses this field to route extraction to the correct language-specific prompts.
+
+**Example**:
+```json
+{
+  "gdrive_id": "1abc123xyz",
+  "filename": "entrevista_enchente_2023.mp3",
+  "transcription_text": "A enchente foi causada por chuvas intensas...",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.2,
+      "text": "A enchente foi causada por chuvas intensas"
+    }
+  ],
+  "detected_language": "pt",
+  "metadata": {
+    "lang": "pt",
+    "duration_seconds": 3600,
+    "sample_rate": 16000
+  },
+  "created_at": "2026-01-14T10:00:00Z"
+}
+```
+
+**Important**: When processing Portuguese transcriptions:
+- `detected_language` should be `"pt"`
+- `metadata.lang` **must** be set to `"pt"` for AutoSchemaKG language routing
+- The transcription pipeline should automatically populate these fields
+
+**Python Implementation**:
+```python
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+class Segment(BaseModel):
+    """Timestamped transcription segment."""
+    start: float
+    end: float
+    text: str
+
+class EnrichedRecord(BaseModel):
+    """Transcription record from P1 pipeline."""
+    gdrive_id: str
+    filename: str
+    transcription_text: str
+    segments: list[Segment]
+    detected_language: str = Field(description="ISO 639-1 language code")
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    def ensure_language_metadata(self) -> None:
+        """Ensure metadata.lang is set for AutoSchemaKG compatibility."""
+        if "lang" not in self.metadata:
+            self.metadata["lang"] = self.detected_language
+```
 
 ---
 
@@ -243,6 +323,8 @@ For provenance tracking, a lightweight metadata sidecar file can be stored along
 | `created_at` | `datetime` | Yes | When graph was created |
 | `model_id` | `str` | Yes | LLM model used for extraction |
 | `provider` | `str` | Yes | LLM provider |
+| `language` | `str` | Yes | Language code used for extraction (ISO 639-1) |
+| `prompt_path` | `str` | Yes | Path to prompt template file used |
 
 **Example** (`corpus_graph_metadata.json`):
 ```json
@@ -251,7 +333,9 @@ For provenance tracking, a lightweight metadata sidecar file can be stored along
   "source_documents": ["1abc123xyz", "2def456uvw", "3ghi789rst"],
   "created_at": "2026-01-14T15:45:00Z",
   "model_id": "llama3.1:8b",
-  "provider": "ollama"
+  "provider": "ollama",
+  "language": "pt",
+  "prompt_path": "prompts/pt_prompts.json"
 }
 ```
 
@@ -267,6 +351,8 @@ class KGMetadata(BaseModel):
     source_documents: list[str]
     model_id: str
     provider: str
+    language: str = Field(default="pt", description="ISO 639-1 language code")
+    prompt_path: str = Field(default="prompts/pt_prompts.json")
     created_at: datetime = Field(default_factory=datetime.now)
 
     def save(self, path: str | Path) -> None:
@@ -659,7 +745,9 @@ knowledge_graphs/
   "source_documents": ["1abc123xyz", "2def456uvw"],
   "created_at": "2026-01-14T15:45:00Z",
   "model_id": "llama3.1:8b",
-  "provider": "ollama"
+  "provider": "ollama",
+  "language": "pt",
+  "prompt_path": "prompts/pt_prompts.json"
 }
 ```
 
@@ -725,5 +813,5 @@ stats = {
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-14
+**Document Version**: 1.1
+**Last Updated**: 2026-01-23

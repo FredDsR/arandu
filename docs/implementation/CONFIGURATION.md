@@ -132,10 +132,17 @@ Settings for KG construction using AutoSchemaKG.
 | `kg_schema_mode` | `str` | `"dynamic"` | Schema mode: "dynamic" or "predefined" |
 | `kg_temperature` | `float` | `0.5` | Temperature for LLM (lower = more consistent) |
 | `kg_output_dir` | `Path` | `Path("knowledge_graphs")` | Output directory for KGs |
+| `kg_language` | `str` | `"pt"` | Language code for extraction prompts (ISO 639-1) |
+| `kg_prompt_path` | `str` | `"prompts/pt_prompts.json"` | Path to language-specific prompt templates |
 
 **Schema Modes**:
 - `"dynamic"` - AutoSchemaKG infers schema from data (recommended)
 - `"predefined"` - Use fixed schema (requires schema definition)
+
+**Language Support**:
+AutoSchemaKG supports multilingual KG construction. The `kg_language` setting specifies the ISO 639-1 language code (e.g., `"pt"` for Portuguese, `"en"` for English). The `kg_prompt_path` points to a JSON file containing language-specific prompts for triple extraction.
+
+Supported languages: `en`, `pt`, `es`, `fr`, `de`, `zh-CN`, `ja`, `ko`, and custom locale codes.
 
 **Example Configuration**:
 ```python
@@ -153,6 +160,24 @@ kg_output_format: str = Field(
     pattern="^(graphml|json)$",
     description="Graph export format (graphml recommended for NetworkX)"
 )
+kg_language: str = Field(
+    default="pt",
+    description="Language code for extraction prompts (ISO 639-1)"
+)
+kg_prompt_path: str = Field(
+    default="prompts/pt_prompts.json",
+    description="Path to language-specific prompt templates"
+)
+```
+
+**Portuguese Prompt Template** (`prompts/pt_prompts.json`):
+```json
+{
+  "pt": {
+    "system": "Você é um assistente especializado em extração de conhecimento de textos em português...",
+    "triple_extraction": "Extraia triplas de conhecimento (sujeito, predicado, objeto) do texto a seguir. Identifique entidades (pessoas, locais, organizações, eventos, datas) e suas relações..."
+  }
+}
 ```
 
 ### Evaluation Settings
@@ -218,6 +243,8 @@ export GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
 export GTRANSCRIBER_KG_PROVIDER=openai
 export GTRANSCRIBER_KG_MODEL_ID=gpt-4o
 export GTRANSCRIBER_KG_MERGE_GRAPHS=true
+export GTRANSCRIBER_KG_LANGUAGE=pt
+export GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
 
 # Evaluation
 export GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation
@@ -498,7 +525,9 @@ GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
 GTRANSCRIBER_KG_PROVIDER=ollama
 GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
 GTRANSCRIBER_KG_MERGE_GRAPHS=true
-GTRANSCRIBER_KG_OUTPUT_FORMAT=json
+GTRANSCRIBER_KG_OUTPUT_FORMAT=graphml
+GTRANSCRIBER_KG_LANGUAGE=pt
+GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
 
 # Evaluation Settings
 GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
@@ -513,5 +542,5 @@ GTRANSCRIBER_EVALUATION_OUTPUT_DIR=evaluation
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-14
+**Document Version**: 1.1
+**Last Updated**: 2026-01-23
