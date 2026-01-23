@@ -128,7 +128,7 @@ qa_provider: str = Field(default="ollama", ...)
 qa_model_id: str = Field(default="llama3.1:8b", ...)
 qa_ollama_url: str = Field(default="http://localhost:11434", ...)
 openai_api_key: str | None = Field(default=None, ...)
-anthropic_api_key: str | None = Field(default=None, ...)
+llm_base_url: str | None = Field(default=None, ...)  # For custom OpenAI-compatible endpoints
 questions_per_document: int = Field(default=10, ...)
 qa_strategies: list[str] = Field(default=["factual", "conceptual"], ...)
 qa_temperature: float = Field(default=0.7, ...)
@@ -259,7 +259,6 @@ dependencies = [
 
     # New dependencies for P2
     "openai>=1.0.0",
-    "anthropic>=0.18.0",
     "httpx>=0.27.0",
     "atlas-rag>=0.0.5",
     "networkx>=3.1",
@@ -322,9 +321,9 @@ GTRANSCRIBER_QA_PROVIDER=ollama
 GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
 GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
 
-# API Keys
+# API Keys (optional - only needed for OpenAI provider)
 # OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=sk-ant-...
+# GTRANSCRIBER_LLM_BASE_URL=http://localhost:11434/v1  # For custom endpoints
 
 # KG Construction Settings
 GTRANSCRIBER_KG_PROVIDER=ollama
@@ -343,18 +342,20 @@ GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
 
 #### 1. `src/gtranscriber/core/llm_client.py`
 
-**Purpose**: Unified LLM client supporting OpenAI, Anthropic, and Ollama
+**Purpose**: Unified LLM client using OpenAI SDK with configurable base_url (supports OpenAI, Ollama, and any OpenAI-compatible provider)
 
-**Estimated Size**: ~300 lines
+**Estimated Size**: ~100 lines
 
 **Key Classes**:
-- `LLMProvider(Enum)` - Provider types
-- `LLMClient` - Main client class
-- `OpenAIClient` - OpenAI implementation
-- `AnthropicClient` - Anthropic implementation
-- `OllamaClient` - Ollama implementation
+- `LLMProvider(Enum)` - Provider types (openai, ollama, custom)
+- `LLMClient` - Thin wrapper around OpenAI SDK with configurable base_url
 
-**Dependencies**: `openai`, `anthropic`, `httpx`, `tenacity`
+**Dependencies**: `openai`, `tenacity`
+
+**Note**: Uses OpenAI SDK's `base_url` parameter to support multiple providers:
+- OpenAI: default base_url
+- Ollama: `http://localhost:11434/v1`
+- Custom: any OpenAI-compatible endpoint
 
 #### 2. `src/gtranscriber/core/qa_generator.py`
 
@@ -572,14 +573,14 @@ cache/
 
 | File | Estimated Lines | Complexity |
 |------|----------------|------------|
-| `llm_client.py` | 300 | Medium |
+| `llm_client.py` | 100 | Low |
 | `qa_generator.py` | 400 | High |
 | `qa_batch.py` | 250 | Medium |
 | `kg_builder.py` | 350 | High |
 | `kg_batch.py` | 300 | Medium |
 | `metrics.py` | 500 | High |
 | `evaluator.py` | 350 | Medium |
-| **Total New Code** | **2,450** | |
+| **Total New Code** | **2,250** | |
 
 ### Tests
 
@@ -607,9 +608,9 @@ cache/
 | Category | Lines of Code |
 |----------|---------------|
 | Existing Code | ~4,000 |
-| New Code | ~2,450 |
+| New Code | ~2,250 |
 | Tests | ~1,750 |
-| **Total Code** | **~8,200** |
+| **Total Code** | **~8,000** |
 
 ---
 

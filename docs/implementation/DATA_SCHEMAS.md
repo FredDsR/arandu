@@ -99,7 +99,7 @@ Represents the complete QA dataset for a single transcription document.
 | `transcription_text` | `str` | Yes | Full transcription text |
 | `qa_pairs` | `list[QAPair]` | Yes | List of generated QA pairs |
 | `model_id` | `str` | Yes | LLM model used for generation (e.g., "llama3.1:8b") |
-| `provider` | `Literal["openai", "anthropic", "ollama"]` | Yes | LLM provider used |
+| `provider` | `Literal["openai", "ollama", "custom"]` | Yes | LLM provider used |
 | `generation_timestamp` | `datetime` | Yes | When QA pairs were generated |
 | `total_pairs` | `int` | Yes | Total number of QA pairs generated |
 
@@ -129,7 +129,7 @@ Represents the complete QA dataset for a single transcription document.
 
 **Validation Rules**:
 - `total_pairs` must equal `len(qa_pairs)`
-- `provider` must be one of: "openai", "anthropic", "ollama"
+- `provider` must be one of: "openai", "ollama", "custom"
 - All `qa_pairs` must pass QAPair validation
 
 **Python Implementation**:
@@ -146,7 +146,7 @@ class QARecord(BaseModel):
     transcription_text: str
     qa_pairs: list[QAPair]
     model_id: str
-    provider: Literal["openai", "anthropic", "ollama"]
+    provider: Literal["openai", "ollama", "custom"]
     generation_timestamp: datetime = Field(default_factory=datetime.now)
     total_pairs: int
 

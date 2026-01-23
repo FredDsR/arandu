@@ -115,7 +115,7 @@ gtranscriber evaluate qa_dataset/ results/
 - **Synthetic QA Generation** - Generate question-answer pairs from transcriptions
 - **Knowledge Graph Construction** - Build graphs using AutoSchemaKG framework
 - **Knowledge Evaluation** - Measure quality across four dimensions
-- **Hybrid LLM Support** - OpenAI, Claude, and Ollama integration
+- **Hybrid LLM Support** - OpenAI, Ollama, and any OpenAI-compatible endpoint
 
 ## Architecture
 
@@ -153,7 +153,7 @@ gtranscriber evaluate qa_dataset/ results/
 - **Language**: Python 3.13+
 - **CLI Framework**: Typer
 - **Configuration**: Pydantic Settings
-- **LLM APIs**: OpenAI, Anthropic, Ollama
+- **LLM APIs**: OpenAI, Ollama (via OpenAI-compatible API)
 - **KG Framework**: AutoSchemaKG (atlas-rag)
 - **Graph Library**: NetworkX
 - **Containerization**: Docker
@@ -200,8 +200,8 @@ etno-kgc-preprocessing/
 - [AutoSchemaKG Paper](https://arxiv.org/abs/2505.23628)
 - [Microsoft GraphRAG](https://github.com/microsoft/graphrag)
 - [OpenAI API](https://platform.openai.com/docs/api-reference)
-- [Anthropic Claude API](https://docs.anthropic.com/claude/reference/)
 - [Ollama](https://github.com/ollama/ollama)
+- [Ollama OpenAI Compatibility](https://ollama.com/blog/openai-compatibility)
 
 ### Research Papers
 

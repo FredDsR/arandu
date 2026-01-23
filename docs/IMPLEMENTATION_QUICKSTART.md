@@ -47,7 +47,7 @@ Three new capabilities:
 **Goal**: Infrastructure setup (LLM client, config, schemas, Docker, SLURM)
 
 **Critical Files to Create**:
-1. `src/gtranscriber/core/llm_client.py` (~300 lines)
+1. `src/gtranscriber/core/llm_client.py` (~100 lines)
 2. Extend `src/gtranscriber/config.py` (add ~100 lines)
 3. Extend `src/gtranscriber/schemas.py` (add ~300 lines)
 4. Extend `docker-compose.yml` (add ~120 lines)
@@ -105,73 +105,71 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 class LLMProvider(Enum):
     """LLM provider types"""
     OPENAI = "openai"
-    ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
+    CUSTOM = "custom"
 
-class LLMClient(Protocol):
-    """Unified LLM client interface"""
+class LLMClient:
+    """Unified LLM client using OpenAI SDK with configurable base_url.
 
-    def generate(self, prompt: str, temperature: float = 0.7) -> str:
-        """Generate text from prompt"""
-        ...
+    Supports OpenAI, Ollama, and any OpenAI-compatible provider.
+    """
 
-    def is_available(self) -> bool:
-        """Check if provider is available"""
-        ...
+    # Default base URLs for known providers
+    PROVIDER_URLS = {
+        LLMProvider.OPENAI: None,  # Uses OpenAI default
+        LLMProvider.OLLAMA: "http://localhost:11434/v1",
+    }
 
-class OpenAIClient:
-    """OpenAI API client"""
-
-    def __init__(self, model_id: str, api_key: str):
+    def __init__(
+        self,
+        provider: LLMProvider,
+        model_id: str,
+        api_key: str | None = None,
+        base_url: str | None = None
+    ):
         from openai import OpenAI
-        self.client = OpenAI(api_key=api_key)
+
+        self.provider = provider
         self.model_id = model_id
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    def generate(self, prompt: str, temperature: float = 0.7) -> str:
-        # Implement with retry logic
-        ...
+        # Determine base_url
+        if base_url:
+            self._base_url = base_url
+        else:
+            self._base_url = self.PROVIDER_URLS.get(provider)
 
-class AnthropicClient:
-    """Anthropic Claude API client"""
+        # For Ollama, api_key can be anything (not validated)
+        if provider == LLMProvider.OLLAMA and not api_key:
+            api_key = "ollama"
 
-    def __init__(self, model_id: str, api_key: str):
-        from anthropic import Anthropic
-        self.client = Anthropic(api_key=api_key)
-        self.model_id = model_id
-
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    def generate(self, prompt: str, temperature: float = 0.7) -> str:
-        # Implement with retry logic
-        ...
-
-class OllamaClient:
-    """Ollama local API client"""
-
-    def __init__(self, model_id: str, base_url: str = "http://localhost:11434"):
-        import httpx
-        self.client = httpx.Client(base_url=base_url, timeout=60.0)
-        self.model_id = model_id
+        self.client = OpenAI(api_key=api_key, base_url=self._base_url)
 
     def is_available(self) -> bool:
-        # Health check
-        ...
+        """Check if provider is available."""
+        try:
+            self.client.models.list()
+            return True
+        except Exception:
+            return False
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def generate(self, prompt: str, temperature: float = 0.7) -> str:
-        # Implement with retry logic
-        ...
+        """Generate text from prompt."""
+        response = self.client.chat.completions.create(
+            model=self.model_id,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+        )
+        return response.choices[0].message.content
 
 def create_llm_client(provider: LLMProvider, model_id: str, **kwargs) -> LLMClient:
-    """Factory function to create LLM client"""
-    if provider == LLMProvider.OPENAI:
-        return OpenAIClient(model_id, kwargs.get("api_key"))
-    elif provider == LLMProvider.ANTHROPIC:
-        return AnthropicClient(model_id, kwargs.get("api_key"))
-    elif provider == LLMProvider.OLLAMA:
-        return OllamaClient(model_id, kwargs.get("base_url", "http://localhost:11434"))
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    """Factory function to create LLM client."""
+    return LLMClient(
+        provider=provider,
+        model_id=model_id,
+        api_key=kwargs.get("api_key"),
+        base_url=kwargs.get("base_url"),
+    )
 ```
 
 **Reference**: [DATA_SCHEMAS.md](implementation/DATA_SCHEMAS.md) for understanding what this client will generate
@@ -186,7 +184,7 @@ def create_llm_client(provider: LLMProvider, model_id: str, **kwargs) -> LLMClie
 # QA Generation Settings
 qa_provider: str = Field(
     default="ollama",
-    description="LLM provider for QA generation: openai, anthropic, ollama"
+    description="LLM provider for QA generation: openai, ollama, custom"
 )
 qa_model_id: str = Field(
     default="llama3.1:8b",
@@ -200,9 +198,9 @@ openai_api_key: str | None = Field(
     default=None,
     description="OpenAI API key"
 )
-anthropic_api_key: str | None = Field(
+llm_base_url: str | None = Field(
     default=None,
-    description="Anthropic API key"
+    description="Custom base URL for OpenAI-compatible endpoints"
 )
 questions_per_document: int = Field(
     default=10,
@@ -398,9 +396,8 @@ class EvaluationReport(BaseModel):
 dependencies = [
     # ... existing dependencies ...
 
-    # New - LLM Integration
+    # New - LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
     "openai>=1.0.0",
-    "anthropic>=0.18.0",
     "httpx>=0.27.0",
 
     # New - KG Construction
@@ -440,7 +437,7 @@ pip install -e .
       - GTRANSCRIBER_QA_MODEL_ID=${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}
       - GTRANSCRIBER_QA_OLLAMA_URL=${GTRANSCRIBER_QA_OLLAMA_URL:-http://host.docker.internal:11434}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
       - GTRANSCRIBER_WORKERS=${GTRANSCRIBER_WORKERS:-2}
 
     command: >

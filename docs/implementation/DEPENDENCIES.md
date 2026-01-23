@@ -50,9 +50,8 @@ Dependencies added for P2 functionality:
 
 | Package | Version | Purpose | Used By |
 |---------|---------|---------|---------|
-| `openai` | >=1.0.0 | OpenAI API client | `llm_client.py` |
-| `anthropic` | >=0.18.0 | Anthropic Claude API client | `llm_client.py` |
-| `httpx` | >=0.27.0 | HTTP client for Ollama | `llm_client.py` |
+| `openai` | >=1.0.0 | OpenAI API client (also supports Ollama and other OpenAI-compatible endpoints) | `llm_client.py` |
+| `httpx` | >=0.27.0 | HTTP client (used by openai SDK) | `llm_client.py` |
 
 ### Knowledge Graph Construction
 
@@ -96,9 +95,8 @@ dependencies = [
     "transformers>=4.57.3",
     "typer[all]>=0.9.0",
 
-    # New - LLM Integration
+    # New - LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
     "openai>=1.0.0",
-    "anthropic>=0.18.0",
     "httpx>=0.27.0",
 
     # New - KG Construction
@@ -292,7 +290,7 @@ Minimum version 3.1 required for:
 - Built-in validation with declarative constraints
 - Automatic JSON serialization/deserialization with datetime support
 - Better error messages with field paths
-- Ecosystem alignment (OpenAI, Anthropic SDKs use Pydantic)
+- Ecosystem alignment (OpenAI SDK uses Pydantic)
 - Computed fields for derived values
 - Rust-based validation core for performance (Pydantic v2)
 
@@ -327,24 +325,6 @@ Minimum version 3.1 required for:
 **Authentication**: Requires `OPENAI_API_KEY` environment variable
 
 **Documentation**: https://platform.openai.com/docs/api-reference
-
-### anthropic (>=0.18.0)
-
-**Purpose**: Anthropic Claude API client
-
-**Features Used**:
-- Messages API
-- Streaming responses
-- Token usage tracking
-
-**API Models**:
-- `claude-3-sonnet-20240229` (recommended)
-- `claude-3-opus-20240229` (highest quality)
-- `claude-3-haiku-20240307` (fastest)
-
-**Authentication**: Requires `ANTHROPIC_API_KEY` environment variable
-
-**Documentation**: https://docs.anthropic.com/claude/reference/
 
 ### httpx (>=0.27.0)
 
@@ -460,7 +440,6 @@ nltk.download('stopwords')
 
 ### Apache 2.0 Licensed
 
-- `anthropic`
 - `transformers`
 - `sentence-transformers`
 - `scikit-learn`
@@ -501,7 +480,6 @@ nltk.download('stopwords')
 | `sentence-transformers` | ~400 MB |
 | `atlas-rag` | ~50 MB |
 | `openai` | ~5 MB |
-| `anthropic` | ~3 MB |
 | `networkx` | ~10 MB |
 | `scikit-learn` | ~40 MB |
 | `nltk` | ~20 MB + data |
@@ -587,7 +565,6 @@ pip install -e . --upgrade
 
 ```bash
 pip install --upgrade openai
-pip install --upgrade anthropic
 ```
 
 ### Lock Dependencies

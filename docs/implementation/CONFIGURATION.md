@@ -82,11 +82,11 @@ Settings for synthetic QA dataset generation.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `qa_provider` | `str` | `"ollama"` | LLM provider: "openai", "anthropic", "ollama" |
+| `qa_provider` | `str` | `"ollama"` | LLM provider: "openai", "ollama", "custom" |
 | `qa_model_id` | `str` | `"llama3.1:8b"` | Model ID for QA generation |
 | `qa_ollama_url` | `str` | `"http://localhost:11434"` | Ollama API base URL |
 | `openai_api_key` | `str \| None` | `None` | OpenAI API key (from env) |
-| `anthropic_api_key` | `str \| None` | `None` | Anthropic API key (from env) |
+| `llm_base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
 | `questions_per_document` | `int` | `10` | Number of QA pairs to generate per document |
 | `qa_strategies` | `list[str]` | `["factual", "conceptual"]` | Question generation strategies |
 | `qa_temperature` | `float` | `0.7` | Temperature for LLM generation |
@@ -215,8 +215,8 @@ export GTRANSCRIBER_QA_MODEL_ID=gpt-4
 export GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
 
 # KG Construction
-export GTRANSCRIBER_KG_PROVIDER=anthropic
-export GTRANSCRIBER_KG_MODEL_ID=claude-3-sonnet-20240229
+export GTRANSCRIBER_KG_PROVIDER=openai
+export GTRANSCRIBER_KG_MODEL_ID=gpt-4o
 export GTRANSCRIBER_KG_MERGE_GRAPHS=true
 
 # Evaluation
@@ -229,14 +229,14 @@ export GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+export GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1  # For custom OpenAI-compatible endpoints
 ```
 
 These can also be set in `.env` file:
 ```bash
 # .env file
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1  # For custom endpoints
 ```
 
 **Note**: The `.env` file should be added to `.gitignore`.
@@ -303,16 +303,16 @@ GTRANSCRIBER_QA_OUTPUT_DIR=/data/qa_dataset
 GTRANSCRIBER_KG_OUTPUT_DIR=/data/knowledge_graphs
 ```
 
-### Example 3: Hybrid Approach (Claude + Ollama)
+### Example 3: Hybrid Approach (OpenAI + Ollama)
 
 **.env file**:
 ```bash
 # API Keys
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+OPENAI_API_KEY=sk-your-key-here
 
-# QA with Claude (higher quality)
-GTRANSCRIBER_QA_PROVIDER=anthropic
-GTRANSCRIBER_QA_MODEL_ID=claude-3-sonnet-20240229
+# QA with OpenAI (higher quality)
+GTRANSCRIBER_QA_PROVIDER=openai
+GTRANSCRIBER_QA_MODEL_ID=gpt-4o
 GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
 
 # KG with Ollama (cost-effective)
@@ -430,7 +430,7 @@ def validate_strategies(cls, v: list[str]) -> list[str]:
 
 3. **Environment variables**:
    ```bash
-   export GTRANSCRIBER_QA_PROVIDER=anthropic
+   export GTRANSCRIBER_QA_PROVIDER=openai
    ```
 
 4. **Command-line arguments** (highest priority):
@@ -485,14 +485,14 @@ GTRANSCRIBER_CREDENTIALS=credentials.json
 GTRANSCRIBER_TOKEN=token.json
 
 # QA Generation Settings
-GTRANSCRIBER_QA_PROVIDER=ollama  # openai, anthropic, ollama
+GTRANSCRIBER_QA_PROVIDER=ollama  # openai, ollama, custom
 GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
 GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434
 GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
 
-# API Keys (required for OpenAI/Anthropic)
+# API Keys (required for OpenAI provider)
 # OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=sk-ant-...
+# GTRANSCRIBER_LLM_BASE_URL=http://localhost:11434/v1  # For custom endpoints
 
 # KG Construction Settings
 GTRANSCRIBER_KG_PROVIDER=ollama

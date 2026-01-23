@@ -42,7 +42,7 @@ This document outlines the implementation plan for extending the G-Transcriber p
 
 ### Technology Stack
 
-- **LLM Integration**: OpenAI API, Anthropic API, Ollama
+- **LLM Integration**: OpenAI API, Ollama (via OpenAI-compatible endpoint)
 - **KG Framework**: AutoSchemaKG (atlas-rag package)
 - **Graph Library**: NetworkX
 - **Evaluation**: scikit-learn, sentence-transformers, sacrebleu
@@ -82,7 +82,7 @@ Transcriptions → [QA Generation] → Synthetic QA Dataset
 ### Key Decisions Made
 
 1. **AutoSchemaKG Framework** - Selected for dynamic schema induction capabilities
-2. **Hybrid LLM Approach** - Combine commercial APIs (OpenAI/Claude) with local Ollama models
+2. **Hybrid LLM Approach** - Combine commercial APIs (OpenAI) with local Ollama models via OpenAI-compatible endpoint
 3. **GraphML Format** - AutoSchemaKG native output, directly compatible with NetworkX
 4. **Metric Categories** - Four evaluation dimensions (QA, entity, relation, semantic)
 5. **Batch Processing Pattern** - Reuse existing architecture for consistency
@@ -198,7 +198,7 @@ src/gtranscriber/
 
 **Key Features**:
 - Multiple question strategies (factual, conceptual, temporal, entity-focused)
-- Hybrid LLM support (OpenAI, Claude, Ollama)
+- Hybrid LLM support (OpenAI, Ollama via OpenAI-compatible API)
 - Prompt engineering with few-shot examples
 - Context window management for long transcriptions
 - Answer validation (extractive from context)
@@ -210,7 +210,7 @@ qa_provider: str = "ollama"
 qa_model_id: str = "llama3.1:8b"
 qa_ollama_url: str = "http://localhost:11434"
 openai_api_key: str | None = None
-anthropic_api_key: str | None = None
+llm_base_url: str | None = None  # For custom OpenAI-compatible endpoints
 questions_per_document: int = 10
 qa_strategies: list[str] = ["factual", "conceptual"]
 ```
@@ -413,11 +413,10 @@ gtranscriber evaluate-graphrag graphrag_index/ qa_dataset/ \
 **Tasks**:
 
 1. **LLM Client Implementation** (`llm_client.py`)
-   - [ ] Create `LLMProvider` enum (OpenAI, Anthropic, Ollama)
-   - [ ] Implement `LLMClient` base class
-   - [ ] Add OpenAI integration with retry logic
-   - [ ] Add Anthropic integration with retry logic
-   - [ ] Add Ollama integration with health checks
+   - [ ] Create `LLMProvider` enum (OpenAI, Ollama, Custom)
+   - [ ] Implement `LLMClient` class using OpenAI SDK with configurable base_url
+   - [ ] Add retry logic with tenacity
+   - [ ] Add health check functionality
    - [ ] Implement token usage tracking
    - [ ] Add unit tests for each provider
 
@@ -749,7 +748,7 @@ qa_provider: str = "ollama"
 qa_model_id: str = "llama3.1:8b"
 qa_ollama_url: str = "http://localhost:11434"
 openai_api_key: str | None = None
-anthropic_api_key: str | None = None
+llm_base_url: str | None = None  # For custom OpenAI-compatible endpoints
 questions_per_document: int = 10
 qa_strategies: list[str] = ["factual", "conceptual"]
 
@@ -920,7 +919,7 @@ bash tests/integration/test_evaluation_pipeline.sh
 - ✅ Generate 10+ QA pairs per transcription
 - ✅ Support multiple question strategies
 - ✅ Answers extractable from original context
-- ✅ Hybrid LLM support (OpenAI/Claude/Ollama) working
+- ✅ Hybrid LLM support (OpenAI/Ollama via OpenAI-compatible API) working
 - ✅ Checkpoint and resume functionality working
 - ✅ Successful SLURM deployment on full dataset
 
@@ -970,7 +969,6 @@ bash tests/integration/test_evaluation_pipeline.sh
 ### LLM APIs
 
 - [OpenAI API Documentation](https://platform.openai.com/docs/api-reference)
-- [Anthropic Claude API](https://docs.anthropic.com/claude/reference/getting-started-with-the-api)
 - [Ollama Documentation](https://github.com/ollama/ollama)
 - [Ollama OpenAI Compatibility](https://ollama.com/blog/openai-compatibility)
 

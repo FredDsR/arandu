@@ -151,10 +151,11 @@ gtranscriber generate-qa INPUT_DIR [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--output-dir` | `-o` | Path | `qa_dataset` | Output directory for QA dataset |
-| `--provider` | `-p` | str | `ollama` | LLM provider: openai, anthropic, ollama |
+| `--provider` | `-p` | str | `ollama` | LLM provider: openai, ollama, custom |
 | `--model-id` | `-m` | str | `llama3.1:8b` | Model ID for generation |
 | `--api-key` | | str | None | API key (overrides env) |
-| `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL |
+| `--base-url` | | str | None | Custom base URL for OpenAI-compatible endpoints |
+| `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL (deprecated, use --base-url) |
 | `--workers` | `-w` | int | `2` | Number of parallel workers |
 | `--questions` | `-q` | int | `10` | Questions per document |
 | `--strategy` | | str | `factual` | Question strategy (repeatable) |
@@ -187,10 +188,11 @@ gtranscriber generate-qa results/ \
     --api-key sk-... \
     --workers 2
 
-# With Claude
+# With custom OpenAI-compatible endpoint
 gtranscriber generate-qa results/ \
-    --provider anthropic \
-    --model-id claude-3-sonnet-20240229 \
+    --provider custom \
+    --base-url https://my-vllm-server/v1 \
+    --model-id llama3.1:70b \
     --questions 12
 ```
 
@@ -225,10 +227,11 @@ gtranscriber build-kg INPUT_DIR [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--output-dir` | `-o` | Path | `knowledge_graphs` | Output directory for KGs |
-| `--provider` | `-p` | str | `ollama` | LLM provider |
+| `--provider` | `-p` | str | `ollama` | LLM provider: openai, ollama, custom |
 | `--model-id` | `-m` | str | `llama3.1:8b` | Model ID |
 | `--api-key` | | str | None | API key (overrides env) |
-| `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL |
+| `--base-url` | | str | None | Custom base URL for OpenAI-compatible endpoints |
+| `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL (deprecated, use --base-url) |
 | `--workers` | `-w` | int | `1` | Parallel workers |
 | `--merge/--no-merge` | | bool | `True` | Merge into corpus graph |
 | `--format` | `-f` | str | `graphml` | Output format: graphml (default), json |
@@ -417,11 +420,11 @@ gtranscriber build-kg results/ \
 Use different LLMs for different tasks:
 
 ```bash
-# High-quality QA with Claude
+# High-quality QA with OpenAI
 gtranscriber generate-qa results/ \
     -o qa_dataset/ \
-    --provider anthropic \
-    --model-id claude-3-sonnet-20240229 \
+    --provider openai \
+    --model-id gpt-4o \
     --questions 15
 
 # Cost-effective KG with Ollama
