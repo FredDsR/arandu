@@ -551,6 +551,16 @@ def batch_transcribe(
             help="Force CPU execution. Can be set via GTRANSCRIBER_FORCE_CPU env var.",
         ),
     ] = _config.force_cpu,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Language code for transcription (e.g., 'pt' for Portuguese). "
+            "If not specified, the language will be auto-detected. "
+            "Can be set via GTRANSCRIBER_LANGUAGE env var.",
+        ),
+    ] = _config.language,
 ) -> None:
     """Batch transcribe audio/video files from a catalog.
 
@@ -591,6 +601,7 @@ def batch_transcribe(
         num_workers=workers,
         force_cpu=cpu,
         quantize=quantize,
+        language=language,
     )
 
     # Display configuration
@@ -602,6 +613,7 @@ def batch_transcribe(
     console.print(f"[cyan]Checkpoint:[/cyan] {checkpoint_file}")
     console.print(f"[cyan]Quantize:[/cyan] {quantize}")
     console.print(f"[cyan]Force CPU:[/cyan] {cpu}")
+    console.print(f"[cyan]Language:[/cyan] {language or 'auto-detect'}")
     console.print()
 
     try:

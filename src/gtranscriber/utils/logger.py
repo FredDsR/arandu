@@ -33,7 +33,7 @@ def setup_logging(
         show_time=show_time,
         show_path=show_path,
         rich_tracebacks=True,
-        tracebacks_show_locals=True,
+        tracebacks_show_locals=False,
     )
 
     # Configure format

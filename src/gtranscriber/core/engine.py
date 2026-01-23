@@ -177,7 +177,7 @@ class WhisperEngine:
             torch_dtype=self.hw_config.dtype,
             device=self.hw_config.device if not self.quant_config else None,
             return_timestamps=True,
-            generate_kwargs=generate_kwargs if generate_kwargs else None,
+            generate_kwargs=generate_kwargs,
             **self.pipe_kwargs,
         )
 
