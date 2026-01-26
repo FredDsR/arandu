@@ -187,8 +187,8 @@ pyrightconfig.json
 *.wav
 *.flac
 
-results/*
-!results/.gitkeep
+results*/*
+!results*/.gitkeep
 
 # Checkpoint files (can be committed if you want to track progress)
 # Uncomment the line below to ignore checkpoint files:
