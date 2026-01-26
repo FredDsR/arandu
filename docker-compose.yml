@@ -155,3 +155,164 @@ services:
 
     profiles:
       - rocm
+
+  # ===========================================================================
+  # Knowledge Graph Construction Pipeline Services
+  # ===========================================================================
+
+  # Ollama LLM Service (sidecar for QA and KG services)
+  # Uses GPU if available for faster inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-${SLURM_JOB_ID:-local}
+
+    # GPU support for Ollama (optional - will work on CPU if unavailable)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
+
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    profiles:
+      - qa
+      - kg
+      - ollama
+
+  # QA Generation Service
+  gtranscriber-qa:
+    extends:
+      service: gtranscriber
+    container_name: gtranscriber-qa-${SLURM_JOB_ID:-local}
+
+    # Remove GPU reservation (QA generation is CPU/API-based)
+    deploy:
+      resources: {}
+
+    # Wait for Ollama to be ready when using Ollama provider
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false  # Allow running without Ollama (e.g., with OpenAI)
+
+    environment:
+      - GTRANSCRIBER_QA_PROVIDER=${GTRANSCRIBER_QA_PROVIDER:-ollama}
+      - GTRANSCRIBER_QA_MODEL_ID=${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}
+      # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
+      - GTRANSCRIBER_QA_OLLAMA_URL=${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
+      - GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}
+      - GTRANSCRIBER_QA_TEMPERATURE=${GTRANSCRIBER_QA_TEMPERATURE:-0.7}
+      - GTRANSCRIBER_QA_WORKERS=${GTRANSCRIBER_QA_WORKERS:-2}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      generate-qa
+      /app/results
+      --output-dir /app/qa_dataset
+      --workers ${GTRANSCRIBER_QA_WORKERS:-2}
+
+    volumes:
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
+      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:rw
+      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    profiles:
+      - qa
+
+  # KG Construction Service
+  gtranscriber-kg:
+    extends:
+      service: gtranscriber
+    container_name: gtranscriber-kg-${SLURM_JOB_ID:-local}
+
+    # Remove GPU reservation (KG construction is CPU/API-based)
+    deploy:
+      resources: {}
+
+    # Wait for Ollama to be ready when using Ollama provider
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false  # Allow running without Ollama (e.g., with OpenAI)
+
+    environment:
+      - GTRANSCRIBER_KG_PROVIDER=${GTRANSCRIBER_KG_PROVIDER:-ollama}
+      - GTRANSCRIBER_KG_MODEL_ID=${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}
+      # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
+      - GTRANSCRIBER_KG_OLLAMA_URL=${GTRANSCRIBER_KG_OLLAMA_URL:-http://ollama:11434}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
+      - GTRANSCRIBER_KG_MERGE_GRAPHS=${GTRANSCRIBER_KG_MERGE_GRAPHS:-true}
+      - GTRANSCRIBER_KG_OUTPUT_FORMAT=${GTRANSCRIBER_KG_OUTPUT_FORMAT:-graphml}
+      - GTRANSCRIBER_KG_LANGUAGE=${GTRANSCRIBER_KG_LANGUAGE:-pt}
+      - GTRANSCRIBER_KG_WORKERS=${GTRANSCRIBER_KG_WORKERS:-2}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      build-kg
+      /app/results
+      --output-dir /app/knowledge_graphs
+      --workers ${GTRANSCRIBER_KG_WORKERS:-2}
+
+    volumes:
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
+      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:rw
+      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    profiles:
+      - kg
+
+  # Evaluation Service
+  gtranscriber-eval:
+    extends:
+      service: gtranscriber
+    container_name: gtranscriber-eval-${SLURM_JOB_ID:-local}
+
+    # Remove GPU reservation (evaluation is CPU-based)
+    deploy:
+      resources: {}
+
+    environment:
+      - GTRANSCRIBER_EVAL_METRICS=${GTRANSCRIBER_EVAL_METRICS:-qa,entity,relation,semantic}
+      - GTRANSCRIBER_EVAL_EMBEDDING_MODEL=${GTRANSCRIBER_EVAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      evaluate
+      /app/qa_dataset
+      /app/results
+      --kg-path /app/knowledge_graphs/corpus_graph.graphml
+      --output /app/evaluation/report.json
+
+    volumes:
+      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:ro
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
+      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:ro
+      - ${GTRANSCRIBER_EVAL_DIR:-./evaluation}:/app/evaluation:rw
+      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    profiles:
+      - evaluate
