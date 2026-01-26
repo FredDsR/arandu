@@ -1,11 +1,18 @@
-"""Configuration module for G-Transcriber."""
+"""Configuration module for G-Transcriber.
+
+Provides separate configuration classes for each pipeline:
+- TranscriberConfig: Transcription pipeline settings
+- QAConfig: QA generation pipeline settings
+- KGConfig: Knowledge graph construction pipeline settings
+- EvaluationConfig: Evaluation pipeline settings
+"""
 
 from __future__ import annotations
 
 import tempfile
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +22,7 @@ def _get_default_temp_dir() -> str:
 
 
 class TranscriberConfig(BaseSettings):
-    """Configuration settings for the transcriber.
+    """Configuration settings for the transcription pipeline.
 
     Settings are loaded from environment variables with the GTRANSCRIBER_ prefix.
     """
@@ -129,3 +136,277 @@ class TranscriberConfig(BaseSettings):
     def token_file(self) -> str:
         """Alias for token (backward compatibility)."""
         return self.token
+
+
+class QAConfig(BaseSettings):
+    """Configuration settings for the QA generation pipeline.
+
+    Settings are loaded from environment variables with the GTRANSCRIBER_QA_ prefix.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_QA_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # LLM Provider settings
+    provider: str = Field(
+        default="ollama",
+        description="LLM provider: openai, ollama, custom",
+    )
+    model_id: str = Field(
+        default="llama3.1:8b",
+        description="Model ID for QA generation",
+    )
+    ollama_url: str = Field(
+        default="http://localhost:11434",
+        description="Ollama API base URL",
+    )
+    base_url: str | None = Field(
+        default=None,
+        description="Custom base URL for OpenAI-compatible endpoints",
+    )
+
+    # Generation settings
+    questions_per_document: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Number of QA pairs to generate per document",
+    )
+    strategies: list[str] = Field(
+        default=["factual", "conceptual"],
+        description="Question generation strategies: factual, conceptual, temporal, entity",
+    )
+    temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        description="Temperature for QA generation LLM",
+    )
+    max_tokens: int = Field(
+        default=2048,
+        ge=1,
+        description="Max tokens for QA generation LLM",
+    )
+
+    # Output settings
+    output_dir: Path = Field(
+        default=Path("qa_dataset"),
+        description="Output directory for QA datasets",
+    )
+
+    # Workers (shared setting, loaded from GTRANSCRIBER_WORKERS)
+    workers: int = Field(
+        default=2,
+        description="Number of parallel workers for QA generation",
+    )
+
+    @field_validator("strategies")
+    @classmethod
+    def validate_strategies(cls, v: list[str]) -> list[str]:
+        """Validate QA generation strategies."""
+        valid_strategies = {"factual", "conceptual", "temporal", "entity"}
+        for strategy in v:
+            if strategy not in valid_strategies:
+                raise ValueError(
+                    f"Invalid QA strategy: {strategy!r}. "
+                    f"Must be one of {sorted(valid_strategies)}"
+                )
+        return v
+
+
+class KGConfig(BaseSettings):
+    """Configuration settings for the knowledge graph construction pipeline.
+
+    Settings are loaded from environment variables with the GTRANSCRIBER_KG_ prefix.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_KG_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # LLM Provider settings
+    provider: str = Field(
+        default="ollama",
+        description="LLM provider: openai, ollama, custom",
+    )
+    model_id: str = Field(
+        default="llama3.1:8b",
+        description="Model ID for KG construction",
+    )
+    ollama_url: str = Field(
+        default="http://localhost:11434",
+        description="Ollama API base URL for KG construction",
+    )
+    base_url: str | None = Field(
+        default=None,
+        description="Custom base URL for OpenAI-compatible endpoints",
+    )
+
+    # Graph settings
+    merge_graphs: bool = Field(
+        default=True,
+        description="Merge individual graphs into corpus-level graph",
+    )
+    output_format: str = Field(
+        default="graphml",
+        pattern="^(graphml|json)$",
+        description="Graph export format: graphml (default, NetworkX-compatible) or json",
+    )
+    schema_mode: str = Field(
+        default="dynamic",
+        pattern="^(dynamic|predefined)$",
+        description="Schema mode: dynamic (infer from data) or predefined",
+    )
+
+    # LLM settings
+    temperature: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=2.0,
+        description="Temperature for KG construction LLM (lower = more consistent)",
+    )
+
+    # Language and prompts
+    language: str = Field(
+        default="pt",
+        description="Language code for extraction prompts (ISO 639-1)",
+    )
+    prompt_path: str = Field(
+        default="prompts/pt_prompts.json",
+        description="Path to language-specific prompt templates",
+    )
+
+    # Output settings
+    output_dir: Path = Field(
+        default=Path("knowledge_graphs"),
+        description="Output directory for knowledge graphs",
+    )
+
+    # Workers (shared setting, loaded from GTRANSCRIBER_WORKERS)
+    workers: int = Field(
+        default=2,
+        description="Number of parallel workers for KG construction",
+    )
+
+
+class EvaluationConfig(BaseSettings):
+    """Configuration settings for the evaluation pipeline.
+
+    Settings are loaded from environment variables with the GTRANSCRIBER_EVAL_ prefix.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_EVAL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Metrics to compute
+    metrics: list[str] = Field(
+        default=["qa", "entity", "relation", "semantic"],
+        description="Metrics to compute: qa, entity, relation, semantic",
+    )
+
+    # Embedding model for semantic metrics
+    embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        description="Sentence transformer model for semantic embeddings",
+    )
+
+    # Output settings
+    output_dir: Path = Field(
+        default=Path("evaluation"),
+        description="Output directory for evaluation reports",
+    )
+
+    # Input directories (can override defaults)
+    qa_dir: Path = Field(
+        default=Path("qa_dataset"),
+        description="Directory containing QA dataset",
+    )
+    kg_dir: Path = Field(
+        default=Path("knowledge_graphs"),
+        description="Directory containing knowledge graphs",
+    )
+    results_dir: Path = Field(
+        default=Path("results"),
+        description="Directory containing transcription results",
+    )
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_metrics(cls, v: list[str]) -> list[str]:
+        """Validate evaluation metric types."""
+        valid_metrics = {"qa", "entity", "relation", "semantic"}
+        for metric in v:
+            if metric not in valid_metrics:
+                raise ValueError(
+                    f"Invalid evaluation metric: {metric!r}. "
+                    f"Must be one of {sorted(valid_metrics)}"
+                )
+        return v
+
+
+class LLMConfig(BaseSettings):
+    """Shared LLM configuration settings.
+
+    Settings are loaded from environment variables without prefix or with OPENAI_ prefix.
+    Used for API keys and shared LLM settings across pipelines.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # API Keys
+    openai_api_key: str | None = Field(
+        default=None,
+        alias="OPENAI_API_KEY",
+        description="OpenAI API key",
+    )
+
+    # Shared base URL (for custom providers)
+    base_url: str | None = Field(
+        default=None,
+        alias="GTRANSCRIBER_LLM_BASE_URL",
+        description="Custom base URL for OpenAI-compatible endpoints",
+    )
+
+
+def get_transcriber_config() -> TranscriberConfig:
+    """Get transcription pipeline configuration."""
+    return TranscriberConfig()
+
+
+def get_qa_config() -> QAConfig:
+    """Get QA pipeline configuration."""
+    return QAConfig()
+
+
+def get_kg_config() -> KGConfig:
+    """Get KG pipeline configuration."""
+    return KGConfig()
+
+
+def get_evaluation_config() -> EvaluationConfig:
+    """Get evaluation pipeline configuration."""
+    return EvaluationConfig()
+
+
+def get_llm_config() -> LLMConfig:
+    """Get shared LLM configuration."""
+    return LLMConfig()
