@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -43,9 +43,7 @@ class TestLLMClient:
         assert client.provider == LLMProvider.OLLAMA
         assert client.model_id == "llama3.1:8b"
         assert client.base_url == "http://localhost:11434/v1"
-        mock_openai.assert_called_once_with(
-            api_key="ollama", base_url="http://localhost:11434/v1"
-        )
+        mock_openai.assert_called_once_with(api_key="ollama", base_url="http://localhost:11434/v1")
 
     def test_initialization_ollama_custom_api_key(self, mocker: pytest.fixture) -> None:
         """Test LLMClient initialization with Ollama provider and custom API key."""

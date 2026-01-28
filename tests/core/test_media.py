@@ -134,17 +134,19 @@ class TestGetAudioStreamInfo:
     def test_get_audio_stream_info_success(self, mocker: pytest.fixture) -> None:
         """Test getting audio stream information."""
         mock_result = Mock()
-        mock_result.stdout = json.dumps({
-            "streams": [
-                {
-                    "codec_name": "aac",
-                    "codec_type": "audio",
-                    "sample_rate": "44100",
-                    "channels": 2,
-                    "duration": "120.5",
-                }
-            ]
-        })
+        mock_result.stdout = json.dumps(
+            {
+                "streams": [
+                    {
+                        "codec_name": "aac",
+                        "codec_type": "audio",
+                        "sample_rate": "44100",
+                        "channels": 2,
+                        "duration": "120.5",
+                    }
+                ]
+            }
+        )
         mock_run = mocker.patch("subprocess.run", return_value=mock_result)
 
         info = get_audio_stream_info("test.mp4")

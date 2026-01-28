@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -81,9 +80,7 @@ class TestCreateTempFile:
 
     def test_create_temp_file_with_all_params(self, tmp_path: Path) -> None:
         """Test creating temp file with all parameters."""
-        temp_file = create_temp_file(
-            suffix=".json", prefix="test_", base_dir=str(tmp_path)
-        )
+        temp_file = create_temp_file(suffix=".json", prefix="test_", base_dir=str(tmp_path))
 
         assert temp_file.exists()
         assert temp_file.suffix == ".json"
