@@ -1,0 +1,301 @@
+"""Tests for media file utilities."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+
+from gtranscriber.core.media import (
+    AudioExtractionError,
+    CorruptedMediaError,
+    MediaError,
+    UnsupportedCodecError,
+    get_audio_stream_info,
+    get_media_duration_ms,
+    has_audio_stream,
+)
+
+
+class TestMediaExceptions:
+    """Tests for custom media exceptions."""
+
+    def test_media_error(self) -> None:
+        """Test base MediaError exception."""
+        error = MediaError("Test error")
+        assert str(error) == "Test error"
+
+    def test_corrupted_media_error(self) -> None:
+        """Test CorruptedMediaError exception."""
+        error = CorruptedMediaError("test.mp4", "Invalid header")
+
+        assert error.file_path == Path("test.mp4")
+        assert error.reason == "Invalid header"
+        assert "Corrupted media file" in str(error)
+        assert "test.mp4" in str(error)
+        assert "Invalid header" in str(error)
+
+    def test_audio_extraction_error(self) -> None:
+        """Test AudioExtractionError exception."""
+        error = AudioExtractionError("test.mp4", "No audio stream")
+
+        assert error.file_path == Path("test.mp4")
+        assert error.reason == "No audio stream"
+        assert "Failed to extract audio" in str(error)
+        assert "test.mp4" in str(error)
+        assert "No audio stream" in str(error)
+
+    def test_unsupported_codec_error(self) -> None:
+        """Test UnsupportedCodecError exception."""
+        error = UnsupportedCodecError("test.mp4", "opus")
+
+        assert error.file_path == Path("test.mp4")
+        assert error.codec == "opus"
+        assert "Unsupported audio codec" in str(error)
+        assert "opus" in str(error)
+        assert "test.mp4" in str(error)
+
+
+class TestHasAudioStream:
+    """Tests for has_audio_stream function."""
+
+    def test_has_audio_stream_success(self, mocker: pytest.fixture) -> None:
+        """Test detecting audio stream in media file."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"streams": [{"codec_type": "audio"}]})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        result = has_audio_stream("test.mp4")
+
+        assert result is True
+        mock_run.assert_called_once()
+        assert "ffprobe" in mock_run.call_args[0][0]
+
+    def test_has_audio_stream_no_streams(self, mocker: pytest.fixture) -> None:
+        """Test when media file has no audio streams."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"streams": []})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        result = has_audio_stream("test.mp4")
+
+        assert result is False
+
+    def test_has_audio_stream_subprocess_error(self, mocker: pytest.fixture) -> None:
+        """Test handling subprocess.CalledProcessError."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "ffprobe", stderr="Error"),
+        )
+
+        result = has_audio_stream("test.mp4")
+
+        assert result is False
+
+    def test_has_audio_stream_timeout(self, mocker: pytest.fixture) -> None:
+        """Test handling subprocess timeout."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffprobe", 30),
+        )
+
+        result = has_audio_stream("test.mp4")
+
+        assert result is False
+
+    def test_has_audio_stream_json_decode_error(self, mocker: pytest.fixture) -> None:
+        """Test handling invalid JSON response."""
+        mock_result = Mock()
+        mock_result.stdout = "invalid json"
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        result = has_audio_stream("test.mp4")
+
+        assert result is False
+
+    def test_has_audio_stream_unexpected_error(self, mocker: pytest.fixture) -> None:
+        """Test handling unexpected exceptions."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=Exception("Unexpected error"),
+        )
+
+        result = has_audio_stream("test.mp4")
+
+        assert result is False
+
+
+class TestGetAudioStreamInfo:
+    """Tests for get_audio_stream_info function."""
+
+    def test_get_audio_stream_info_success(self, mocker: pytest.fixture) -> None:
+        """Test getting audio stream information."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({
+            "streams": [
+                {
+                    "codec_name": "aac",
+                    "codec_type": "audio",
+                    "sample_rate": "44100",
+                    "channels": 2,
+                    "duration": "120.5",
+                }
+            ]
+        })
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        info = get_audio_stream_info("test.mp4")
+
+        assert info is not None
+        assert info["codec_name"] == "aac"
+        assert info["sample_rate"] == "44100"
+        assert info["channels"] == 2
+
+    def test_get_audio_stream_info_no_streams(self, mocker: pytest.fixture) -> None:
+        """Test when no audio streams are found."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"streams": []})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        info = get_audio_stream_info("test.mp4")
+
+        assert info is None
+
+    def test_get_audio_stream_info_subprocess_error(self, mocker: pytest.fixture) -> None:
+        """Test handling subprocess error."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "ffprobe"),
+        )
+
+        info = get_audio_stream_info("test.mp4")
+
+        assert info is None
+
+    def test_get_audio_stream_info_timeout(self, mocker: pytest.fixture) -> None:
+        """Test handling timeout."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffprobe", 30),
+        )
+
+        info = get_audio_stream_info("test.mp4")
+
+        assert info is None
+
+
+class TestGetMediaDurationMs:
+    """Tests for get_media_duration_ms function."""
+
+    def test_get_duration_success(self, mocker: pytest.fixture) -> None:
+        """Test extracting media duration successfully."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"format": {"duration": "123.456"}})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration == 123456  # 123.456 seconds = 123456 ms
+
+    def test_get_duration_zero(self, mocker: pytest.fixture) -> None:
+        """Test when duration is zero."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"format": {"duration": "0"}})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None  # Zero duration returns None
+
+    def test_get_duration_no_duration_field(self, mocker: pytest.fixture) -> None:
+        """Test when duration field is missing."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"format": {}})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None
+
+    def test_get_duration_no_format_field(self, mocker: pytest.fixture) -> None:
+        """Test when format field is missing."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None
+
+    def test_get_duration_subprocess_error(self, mocker: pytest.fixture) -> None:
+        """Test handling subprocess error."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "ffprobe"),
+        )
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None
+
+    def test_get_duration_timeout(self, mocker: pytest.fixture) -> None:
+        """Test handling timeout."""
+        mock_run = mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffprobe", 30),
+        )
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None
+
+    def test_get_duration_json_decode_error(self, mocker: pytest.fixture) -> None:
+        """Test handling invalid JSON."""
+        mock_result = Mock()
+        mock_result.stdout = "invalid json"
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None
+
+    def test_get_duration_value_error(self, mocker: pytest.fixture) -> None:
+        """Test handling invalid duration value."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"format": {"duration": "invalid"}})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms("test.mp4")
+
+        assert duration is None
+
+    def test_get_duration_ffprobe_command(self, mocker: pytest.fixture) -> None:
+        """Test that ffprobe is called with correct arguments."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"format": {"duration": "100.0"}})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        get_media_duration_ms("test.mp4")
+
+        # Verify command structure
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0] == "ffprobe"
+        assert "-v" in call_args
+        assert "quiet" in call_args
+        assert "-print_format" in call_args
+        assert "json" in call_args
+        assert "-show_format" in call_args
+        assert "test.mp4" in call_args
+
+    def test_get_duration_with_path_object(self, mocker: pytest.fixture) -> None:
+        """Test duration extraction with Path object."""
+        mock_result = Mock()
+        mock_result.stdout = json.dumps({"format": {"duration": "50.0"}})
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        duration = get_media_duration_ms(Path("test.mp4"))
+
+        assert duration == 50000
