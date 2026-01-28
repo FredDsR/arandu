@@ -1,40 +1,28 @@
 # G-Transcriber - Cursor Rules
 
-You are working on G-Transcriber, a Python 3.13+ project for ethnographic audio/video processing.
+**Read [AGENTS.md](AGENTS.md) for comprehensive development guidelines.**
 
-## Project Context
-- Transcription pipeline using Whisper ASR
-- QA generation pipeline using LLMs (Ollama/OpenAI)
-- Knowledge graph construction pipeline
-- CLI built with Typer + Rich
-- Data validation with Pydantic v2
+## Quick Essentials
 
-## Coding Standards
+- **Python 3.13+** with uv package manager
+- **Mandatory**: Type annotations, Google docstrings, Ruff linting (100 char line limit)
+- **Git**: Conventional commits (`feat(scope): description`) and branches (`feature/description`)
+- **Never use `print()`**: Use Rich console utilities from `gtranscriber.utils.logger`
+- **Before commit**: `uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest`
 
-1. ALWAYS use type annotations (enforced by Ruff)
-2. Use `from __future__ import annotations` at file top
-3. Use Pydantic v2 patterns from `schemas.py` and `config.py`
-4. Use Rich console utilities from `utils/logger.py`, never raw `print()`
-5. Follow import order: stdlib, third-party, first-party
-6. Line length: 100 characters
+## Key Patterns
 
-## Patterns to Follow
-
-Configuration: See `src/gtranscriber/config.py`
-Schemas: See `src/gtranscriber/schemas.py`
-CLI: See `src/gtranscriber/main.py`
-LLM Client: See `src/gtranscriber/core/llm_client.py`
-
-## Environment Variables
-
-Use GTRANSCRIBER_ prefix for all config (e.g., GTRANSCRIBER_MODEL_ID)
+- **Config**: Pydantic Settings with `GTRANSCRIBER_` env prefix
+- **Schemas**: Pydantic models with validators
+- **CLI**: Typer with Rich, load defaults from config
+- **LLM**: Use unified `LLMClient`, never provider SDKs directly
 
 ## Commands
 
-- Lint: `ruff check src/ && ruff format src/`
-- Run: `gtranscriber --help`
-- Docker: `docker compose --profile qa up`
-
-## Full Guidelines
-
-See AGENTS.md for comprehensive documentation.
+```bash
+uv sync                           # Install dependencies
+uv run gtranscriber --help        # Run CLI
+uv run ruff check --fix src/      # Lint
+uv run ruff format src/           # Format
+uv run pytest                     # Test
+```

@@ -1,388 +1,263 @@
 # AI Agent Development Guidelines
 
-This document provides instructions for AI agents to effectively develop and maintain this codebase.
+**CRITICAL**: All guidelines are mandatory. Code that violates these standards will be rejected.
 
-## Project Overview
+## Quick Start Checklist
 
-**G-Transcriber** is a Python-based pipeline for processing ethnographic audio/video archives. It consists of three main pipelines:
+Before making any changes:
 
-1. **Transcription Pipeline**: Whisper-based ASR for audio/video transcription
-2. **QA Pipeline**: Synthetic question-answer pair generation from transcriptions
-3. **KG Pipeline**: Knowledge graph construction using LLMs
+1. **Git Workflow**: Use conventional commits (`feat(scope): description`) and conventional branches (`feature/description`)
+2. **Code Style**: Pass Ruff linting (100 char line limit)
+3. **Type Annotations**: Every function argument and return value must be typed
+4. **Docstrings**: Use Google style for all public functions/classes
+5. **Testing**: Write tests and run pytest before committing
+6. **No `print()`**: Use Rich console utilities (`print_info`, `print_error`, etc.)
 
-## Technology Stack
+## Standard Development Workflow
 
-| Category | Technology |
-|----------|------------|
-| Language | Python 3.13+ |
-| Package Manager | uv (preferred), pip |
-| CLI Framework | Typer with Rich for output |
-| Data Validation | Pydantic v2, pydantic-settings |
-| ML/AI | PyTorch, Transformers (Whisper), OpenAI SDK |
-| External APIs | Google Drive API, Ollama, OpenAI |
-| Graph Processing | NetworkX (GraphML format) |
-| Containerization | Docker, Docker Compose |
-| HPC | SLURM job scripts |
-| Linting | Ruff |
+**Follow this process for every task:**
 
-## Project Structure
+1. **Create branch**: `git checkout -b <type>/<description>`
+2. **Make changes**: Follow existing code patterns in the codebase
+3. **Add docstrings**: Google style for all new/modified public functions
+4. **Type annotations**: Ensure all arguments and returns are typed
+5. **Lint and format**: `ruff check --fix src/ && ruff format src/`
+6. **Test**: `pytest` (write tests if adding features)
+7. **Commit**: Use conventional commit format
+8. **Verify**: All checks pass before pushing
 
+## Git Workflow
+
+### Conventional Commits
+
+**Format**: `<type>(<scope>): <description>`
+
+**Types**:
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring without behavior changes
+- `perf`: Performance improvements
+- `test`: Adding or updating tests
+- `build`: Build system or dependency changes
+- `ci`: CI/CD configuration changes
+- `chore`: Other changes (maintenance, tooling)
+- `revert`: Revert a previous commit
+
+**Scope** (optional): Component affected (`transcribe`, `qa`, `kg`, `cli`, `docker`)
+
+**Description**: Brief summary in imperative mood ("add feature" not "added feature")
+
+**Breaking changes**: Add `!` after type/scope and include `BREAKING CHANGE:` in footer
+
+**Examples**:
+```bash
+feat(qa): add support for custom system prompts
+fix(transcribe): resolve CUDA memory leak in batch processing
+docs: update README with new environment variables
+feat(cli)!: change transcribe command default model
 ```
-etno-kgc-preprocessing/
-├── src/gtranscriber/           # Main package
-│   ├── __init__.py             # Package metadata (__version__)
-│   ├── main.py                 # CLI entrypoint (Typer app)
-│   ├── config.py               # Pydantic Settings configurations
-│   ├── schemas.py              # Pydantic models for data validation
-│   ├── core/                   # Core functionality
-│   │   ├── batch.py            # Batch processing with checkpointing
-│   │   ├── checkpoint.py       # Progress checkpoint management
-│   │   ├── drive.py            # Google Drive API integration
-│   │   ├── engine.py           # Whisper transcription engine
-│   │   ├── hardware.py         # Hardware detection (CPU/CUDA/MPS)
-│   │   ├── io.py               # File I/O operations
-│   │   └── llm_client.py       # Unified LLM client (OpenAI/Ollama)
-│   └── utils/                  # Utilities
-│       ├── console.py          # Rich console setup
-│       ├── logger.py           # Rich logging integration
-│       └── ui.py               # Progress bars and UI components
-├── scripts/slurm/              # SLURM job scripts for HPC clusters
-├── docs/                       # Documentation
-├── docker-compose.yml          # Service definitions
-├── Dockerfile                  # Multi-stage Docker build
-└── pyproject.toml              # Project configuration and dependencies
+
+### Conventional Branches
+
+**Pattern**: `<type>/<short-description>`
+
+**Types**: `feature/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`
+
+**Rules**:
+- Use lowercase with hyphens
+- Keep descriptions short (2-4 words)
+- Be descriptive but concise
+
+**Examples**:
+```bash
+feature/ollama-streaming
+fix/cuda-memory-leak
+docs/api-reference
+refactor/llm-client
 ```
 
-## Code Patterns and Conventions
+## Documentation Standards
 
-### Configuration Pattern
+### Google Style Docstrings
 
-Use `pydantic-settings` for configuration with environment variable support:
+All public functions, classes, and modules MUST use [Google Style Docstrings](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
 
+**Structure**:
 ```python
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+def function_name(arg1: type, arg2: type) -> return_type:
+    """Brief summary in one line.
 
-class MyConfig(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="GTRANSCRIBER_",
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore",
-    )
+    Longer description if needed (optional).
 
-    my_setting: str = Field(
-        default="default_value",
-        description="Clear description of the setting",
-    )
+    Args:
+        arg1: Description of arg1.
+        arg2: Description of arg2.
+
+    Returns:
+        Description of return value.
+
+    Raises:
+        ExceptionType: When this exception occurs.
+
+    Examples:
+        >>> function_name(1, 2)
+        3
+    """
 ```
 
-### Schema Pattern
+**Sections** (use as needed):
+- **Args**: Function/method parameters
+- **Returns**: Return value description
+- **Raises**: Exceptions that may be raised
+- **Yields**: For generator functions
+- **Attributes**: Class attributes (public only)
+- **Examples**: Usage examples (encouraged for non-trivial functions)
 
-Use Pydantic models for all data structures with comprehensive validation:
-
-```python
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-class MySchema(BaseModel):
-    required_field: str = Field(..., description="Description")
-    optional_field: int | None = Field(None, description="Description")
-
-    @field_validator("required_field")
-    @classmethod
-    def validate_field(cls, v: str) -> str:
-        # Validation logic
-        return v
-
-    def save(self, path: str | Path) -> None:
-        """Save to JSON file."""
-        Path(path).write_text(self.model_dump_json(indent=2))
-
-    @classmethod
-    def load(cls, path: str | Path) -> "MySchema":
-        """Load from JSON file."""
-        return cls.model_validate_json(Path(path).read_text())
-```
-
-### CLI Pattern
-
-Use Typer with Rich integration and environment variable defaults:
-
-```python
-from typing import Annotated
-import typer
-from gtranscriber.config import get_my_config
-
-_config = get_my_config()
-
-@app.command()
-def my_command(
-    required_arg: Annotated[
-        str,
-        typer.Argument(help="Description of argument."),
-    ],
-    optional_flag: Annotated[
-        bool,
-        typer.Option(
-            "--flag",
-            "-f",
-            help="Description. Can be set via GTRANSCRIBER_FLAG env var.",
-        ),
-    ] = _config.flag,
-) -> None:
-    """Command docstring shown in help."""
-    # Implementation
-```
-
-### LLM Client Pattern
-
-Use the unified `LLMClient` that supports multiple providers:
-
-```python
-from gtranscriber.core.llm_client import create_llm_client, LLMProvider
-
-# Ollama (local)
-client = create_llm_client("ollama", "llama3.1:8b")
-
-# OpenAI
-client = create_llm_client(LLMProvider.OPENAI, "gpt-4", api_key="sk-...")
-
-# Custom endpoint
-client = create_llm_client("custom", "model", base_url="http://localhost:8000/v1")
-
-response = client.generate(
-    prompt="Question here",
-    system_prompt="You are a helpful assistant.",
-    temperature=0.7,
-)
-```
-
-### Error Handling Pattern
-
-Use Rich console utilities for user-facing messages:
-
-```python
-from gtranscriber.utils.logger import print_error, print_success, print_info, print_warning
-
-try:
-    # Operation
-    print_success("Operation completed successfully")
-except SomeError as e:
-    print_error(f"Operation failed: {e}")
-    raise typer.Exit(code=1) from e
-```
-
-### Retry Pattern
-
-Use tenacity for operations that may fail transiently:
-
-```python
-from tenacity import retry, stop_after_attempt, wait_exponential
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-)
-def unreliable_operation():
-    # Implementation
-```
+**Rules**:
+1. First line is a brief summary (imperative mood)
+2. Leave blank line after summary if adding details
+3. Document all public functions, classes, and methods
+4. Private functions can have shorter docstrings
+5. Keep line length under 100 characters
 
 ## Type Annotations
 
-### Required Annotations
+**MANDATORY**: Strict type annotations enforced by Ruff.
 
-This project uses strict type annotations enforced by Ruff:
+**Requirements**:
+- All function arguments MUST have type annotations (`ANN001`)
+- All public functions MUST have return type annotations (`ANN201`)
+- All private functions MUST have return type annotations (`ANN202`)
 
-- All function arguments must have type annotations (`ANN001`)
-- All public functions must have return type annotations (`ANN201`)
-- All private functions must have return type annotations (`ANN202`)
+**Exception**: CLI command functions in `main.py` are exempt.
 
-**Exception**: CLI command functions in `main.py` are exempt from these rules.
+**Patterns**:
+- Use `|` for unions: `str | None`
+- Use `list[type]`, `dict[key, value]` for generics
+- Import `from __future__ import annotations` at top of file
+- Use `Literal` for constrained string values
 
-### Type Annotation Patterns
+## Code Conventions
 
-```python
-from __future__ import annotations  # Always use at top of file
+### Imports
 
-from typing import TYPE_CHECKING, Literal
-from pathlib import Path
+**Order** (enforced by Ruff isort):
+1. Standard library
+2. Third-party packages
+3. First-party (gtranscriber)
 
-if TYPE_CHECKING:
-    from typing import Self  # For return type in methods
+### Configuration
 
-# Use | for unions (Python 3.10+ syntax)
-def process(value: str | None) -> list[str]:
-    ...
+- Use `pydantic-settings` with `BaseSettings`
+- All env vars use `GTRANSCRIBER_` prefix
+- Use `Field()` with descriptions
 
-# Use Literal for constrained string values
-status: Literal["pending", "completed", "failed"]
-```
+### Schemas
 
-## Imports Organization
+- Use Pydantic models for all data structures
+- Add validators with `@field_validator` or `@model_validator`
+- Include `save()` and `load()` methods for persistent schemas
 
-Ruff enforces import ordering via isort rules:
+### CLI
 
-```python
-# 1. Standard library
-from __future__ import annotations
-import logging
-from pathlib import Path
+- Use Typer with Rich integration
+- Load defaults from config classes
+- Use `Annotated` for all parameters
 
-# 2. Third-party packages
-import torch
-from pydantic import BaseModel
-from rich.console import Console
+### LLM Interactions
 
-# 3. First-party (gtranscriber)
-from gtranscriber.config import TranscriberConfig
-from gtranscriber.schemas import EnrichedRecord
-```
+- Always use unified `LLMClient` from `gtranscriber.core.llm_client`
+- Never use provider SDKs (OpenAI, Ollama) directly
 
-## Ruff Configuration
+### Error Handling
 
-The project uses Ruff for linting with these rules enabled:
+- Never use `print()` - use Rich console utilities
+- Import from `gtranscriber.utils.logger`: `print_error`, `print_success`, `print_info`, `print_warning`
+- Use `typer.Exit(code=1)` for CLI errors
 
-- `E`, `W`: pycodestyle errors and warnings
-- `F`: pyflakes
-- `I`: isort (import sorting)
-- `B`: flake8-bugbear
-- `C4`: flake8-comprehensions
-- `UP`: pyupgrade
-- `ANN001`, `ANN201`, `ANN202`: type annotations
-- `SIM`: flake8-simplify
-- `TCH`: flake8-type-checking
-- `RUF`: Ruff-specific rules
+### Retry Logic
 
-**Line length**: 100 characters
+- Use `tenacity` for operations that may fail transiently
+- Typical pattern: `@retry(stop=stop_after_attempt(3), wait=wait_exponential(...))`
 
-Run linting with:
+## Linting with Ruff
+
+**MANDATORY**: All code MUST pass Ruff checks before committing.
+
+**Requirements**:
+- Line length: 100 characters maximum
+- Run before every commit: `uv run ruff check --fix src/ && uv run ruff format src/`
+
+**Commands**:
 ```bash
-ruff check src/
-ruff format src/
+# Check and auto-fix
+uv run ruff check --fix src/
+
+# Format code
+uv run ruff format src/
 ```
 
-## Environment Variables
+## Testing
 
-All configuration uses the `GTRANSCRIBER_` prefix. Key variables:
+**Framework**: pytest
 
-### Transcription
-- `GTRANSCRIBER_MODEL_ID`: Whisper model (default: `openai/whisper-large-v3-turbo`)
-- `GTRANSCRIBER_FORCE_CPU`: Force CPU execution
-- `GTRANSCRIBER_QUANTIZE`: Enable 8-bit quantization
-- `GTRANSCRIBER_WORKERS`: Parallel workers count
+**Requirements**:
+1. Place tests in `tests/` mirroring `src/` structure
+2. Mock all external services (Google Drive, Ollama, OpenAI)
+3. Test Pydantic model validation with invalid inputs
+4. Test error paths, not just happy paths
 
-### QA Pipeline
-- `GTRANSCRIBER_QA_PROVIDER`: `ollama`, `openai`, or `custom`
-- `GTRANSCRIBER_QA_MODEL_ID`: LLM model for QA generation
-- `GTRANSCRIBER_QA_OLLAMA_URL`: Ollama API URL
-
-### KG Pipeline
-- `GTRANSCRIBER_KG_PROVIDER`: `ollama`, `openai`, or `custom`
-- `GTRANSCRIBER_KG_MODEL_ID`: LLM model for extraction
-- `GTRANSCRIBER_KG_LANGUAGE`: Language code (`pt`, `en`, `es`)
-
-### Shared
-- `OPENAI_API_KEY`: OpenAI API key (when using OpenAI provider)
-
-## Docker Compose Profiles
-
-Run specific pipelines using profiles:
-
+**Commands**:
 ```bash
-# GPU transcription (NVIDIA)
-docker compose --profile gpu up
-
-# Alternative: transcribe profile (same as gpu)
-docker compose --profile transcribe up
-
-# CPU-only transcription
-docker compose --profile cpu up
-
-# QA generation (requires Ollama)
-docker compose --profile qa up
-
-# Knowledge graph construction
-docker compose --profile kg up
-
-# Evaluation
-docker compose --profile evaluate up
+uv run pytest                              # Run all tests
+uv run pytest tests/core/test_engine.py   # Run specific test
+uv run pytest --cov=gtranscriber          # Run with coverage
 ```
 
-## Testing Guidelines
+## Common Mistakes to Avoid
 
-When writing tests:
+| ❌ Don't | ✅ Do |
+|----------|-------|
+| Hardcode paths | Use configuration or environment variables |
+| Skip type annotations | Annotate all functions and arguments |
+| Use `print()` for output | Use Rich console utilities |
+| Ignore error handling | Use try/except with user-friendly messages |
+| Skip validation | Use Pydantic models for data structures |
+| Use provider SDKs directly | Use unified `LLMClient` |
+| Commit without testing | Run `ruff check`, `ruff format`, and tests |
+| Use inconsistent commits | Follow Conventional Commits |
 
-1. Place tests in `tests/` directory mirroring `src/` structure
-2. Use pytest as the test framework
-3. Mock external services (Google Drive API, LLM providers)
-4. Test Pydantic models with edge cases
+## Quick Reference
 
-## Adding New Features
-
-### New CLI Command
-
-1. Add command function in `src/gtranscriber/main.py`
-2. Use `Annotated` for all parameters with `typer.Argument` or `typer.Option`
-3. Load defaults from config classes
-4. Document with docstring (shown in `--help`)
-
-### New Configuration
-
-1. Add settings class in `config.py` extending `BaseSettings`
-2. Use appropriate `env_prefix` (e.g., `GTRANSCRIBER_NEW_`)
-3. Add factory function `get_new_config()`
-4. Document in README.md configuration tables
-
-### New Schema
-
-1. Add Pydantic model in `schemas.py`
-2. Include `save()` and `load()` class methods if persistent
-3. Use `Field(...)` for required fields, `Field(default=...)` for optional
-4. Add validators with `@field_validator` or `@model_validator`
-
-### New Core Module
-
-1. Create file in `src/gtranscriber/core/`
-2. Use dataclasses for result objects
-3. Use classes for stateful operations (engines, clients)
-4. Provide convenience functions for simple use cases
-
-## Common Pitfalls to Avoid
-
-1. **Don't hardcode paths**: Use configuration or environment variables
-2. **Don't skip type annotations**: Required by Ruff rules
-3. **Don't use `print()`**: Use Rich console utilities instead
-4. **Don't ignore error handling**: Use proper try/except with user-friendly messages
-5. **Don't create unnecessary files**: Prefer editing existing code
-6. **Don't skip validation**: Use Pydantic for all data structures
-7. **Don't duplicate configuration**: Reuse existing config classes
-
-## Helpful Commands
-
+### Pre-Commit Checklist
 ```bash
-# Install dependencies (development)
-uv pip install -e .
-
-# Run CLI
-gtranscriber --help
-gtranscriber info
-gtranscriber transcribe audio.mp3
-
-# Lint code
-ruff check src/
-ruff format src/
-
-# Build Docker image (GPU transcription)
-docker compose --profile gpu build gtranscriber
-
-# Run with Docker (GPU transcription)
-docker compose --profile gpu up gtranscriber
+# Run all quality checks
+uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest
 ```
+
+### Development Setup
+```bash
+uv sync
+uv run gtranscriber --help
+```
+
+### Key Standards Summary
+
+| Aspect | Requirement | Example |
+|--------|-------------|---------|
+| **Commits** | Conventional Commits | `feat(qa): add custom prompts` |
+| **Branches** | `<type>/<description>` | `feature/ollama-streaming` |
+| **Docstrings** | Google style | See Documentation Standards |
+| **Type Hints** | All args and returns | `def foo(x: int) -> str:` |
+| **Line Length** | 100 characters max | Enforced by Ruff |
+| **Output** | Rich console only | `print_info()`, never `print()` |
+| **LLM Calls** | Unified `LLMClient` | Never use provider SDKs directly |
 
 ## References
 
-- [Typer Documentation](https://typer.tiangolo.com/)
-- [Pydantic v2 Documentation](https://docs.pydantic.dev/latest/)
-- [Rich Documentation](https://rich.readthedocs.io/)
+- [Conventional Commits](https://www.conventionalcommits.org/)
+- [Google Style Docstrings](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings)
 - [Ruff Documentation](https://docs.astral.sh/ruff/)
-- [OpenAI Python SDK](https://github.com/openai/openai-python)
+- [Pydantic v2 Documentation](https://docs.pydantic.dev/latest/)
