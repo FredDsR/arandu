@@ -1,28 +1,22 @@
 # G-Transcriber Docker Image
-# Multi-stage build for optimized image size
+# Multi-stage build for optimized image size using official uv images
 
-# Stage 1: Builder
-FROM python:3.13-slim AS builder
+# Stage 1: Builder - Use official uv image
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv for faster dependency resolution
-RUN pip install --no-cache-dir uv
-
-# Copy dependency files
-COPY pyproject.toml .
+# Copy dependency files and source code
+# Note: src/ must be present before sync for the package to be installed
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
-# Create virtual environment and install dependencies
-RUN uv venv /app/.venv && \
-    . /app/.venv/bin/activate && \
-    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124 && \
-    uv pip install -e .
+# Install dependencies and the gtranscriber package using uv sync
+# --frozen ensures exact lockfile reproduction without re-resolving
+# PyTorch CUDA 12.4 versions are configured via tool.uv.sources in pyproject.toml
+# This installs both dependencies AND the gtranscriber CLI tool
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 # Stage 2: Runtime
 FROM python:3.13-slim AS runtime

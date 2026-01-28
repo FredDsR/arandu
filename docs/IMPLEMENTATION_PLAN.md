@@ -838,7 +838,12 @@ gtranscriber generate-qa results/ -o qa_dataset/
 
 **Build**:
 ```bash
-docker compose build
+# Build GPU transcription service
+docker compose --profile gpu build gtranscriber
+
+# Build QA/KG/Eval services (built automatically on first run)
+docker compose --profile qa build gtranscriber-qa
+docker compose --profile kg build gtranscriber-kg
 ```
 
 **Run Services**:

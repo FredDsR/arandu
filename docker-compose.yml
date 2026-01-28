@@ -63,6 +63,11 @@ services:
         max-size: "100m"
         max-file: "3"
 
+    # Profiles - prevent this GPU service from running with other profiles
+    profiles:
+      - transcribe
+      - gpu
+
   # CPU-only variant
   gtranscriber-cpu:
     extends:
@@ -161,12 +166,48 @@ services:
   # ===========================================================================
 
   # Ollama LLM Service (sidecar for QA and KG services)
-  # Uses GPU if available for faster inference
+  # CPU-only by default for maximum compatibility
   ollama:
     image: ollama/ollama:latest
     container_name: ollama-${SLURM_JOB_ID:-local}
 
-    # GPU support for Ollama (optional - will work on CPU if unavailable)
+    networks:
+      default:
+        aliases:
+          - ollama
+
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
+
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    profiles:
+      - qa
+      - kg
+      - ollama
+
+  # Ollama with GPU support (use --profile ollama-gpu)
+  ollama-gpu:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu-${SLURM_JOB_ID:-local}
+
+    networks:
+      default:
+        aliases:
+          - ollama
+
     deploy:
       resources:
         reservations:
@@ -193,19 +234,21 @@ services:
       start_period: 10s
 
     profiles:
-      - qa
-      - kg
-      - ollama
+      - qa-gpu
+      - kg-gpu
+      - ollama-gpu
 
   # QA Generation Service
   gtranscriber-qa:
-    extends:
-      service: gtranscriber
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gtranscriber:latest
     container_name: gtranscriber-qa-${SLURM_JOB_ID:-local}
+    working_dir: /app
 
-    # Remove GPU reservation (QA generation is CPU/API-based)
-    deploy:
-      resources: {}
+    # No GPU needed (QA generation is CPU/API-based)
+    deploy: {}
 
     # Wait for Ollama to be ready when using Ollama provider
     depends_on:
@@ -237,18 +280,30 @@ services:
       - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
     profiles:
       - qa
+      - qa-gpu
 
   # KG Construction Service
   gtranscriber-kg:
-    extends:
-      service: gtranscriber
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gtranscriber:latest
     container_name: gtranscriber-kg-${SLURM_JOB_ID:-local}
+    working_dir: /app
 
-    # Remove GPU reservation (KG construction is CPU/API-based)
-    deploy:
-      resources: {}
+    # No GPU needed (KG construction is CPU/API-based)
+    deploy: {}
 
     # Wait for Ollama to be ready when using Ollama provider
     depends_on:
@@ -281,18 +336,30 @@ services:
       - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
     profiles:
       - kg
+      - kg-gpu
 
   # Evaluation Service
   gtranscriber-eval:
-    extends:
-      service: gtranscriber
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gtranscriber:latest
     container_name: gtranscriber-eval-${SLURM_JOB_ID:-local}
+    working_dir: /app
 
-    # Remove GPU reservation (evaluation is CPU-based)
-    deploy:
-      resources: {}
+    # No GPU needed (evaluation is CPU-based)
+    deploy: {}
 
     environment:
       - GTRANSCRIBER_EVAL_METRICS=${GTRANSCRIBER_EVAL_METRICS:-qa,entity,relation,semantic}
@@ -313,6 +380,15 @@ services:
       - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:ro
       - ${GTRANSCRIBER_EVAL_DIR:-./evaluation}:/app/evaluation:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
     profiles:
       - evaluate

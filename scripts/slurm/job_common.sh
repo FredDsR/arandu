@@ -307,7 +307,7 @@ if [ "$USE_ROCM" = "true" ]; then
 elif [ "$USE_CPU" = "true" ]; then
     docker compose -f "$COMPOSE_FILE" --profile cpu build gtranscriber-cpu
 else
-    docker compose -f "$COMPOSE_FILE" build gtranscriber
+    docker compose -f "$COMPOSE_FILE" --profile gpu build gtranscriber
 fi
 
 # -----------------------------------------------------------------------------
@@ -325,7 +325,7 @@ elif [ "$USE_CPU" = "true" ]; then
     docker compose -f "$COMPOSE_FILE" --profile cpu up gtranscriber-cpu --abort-on-container-exit
 else
     echo "Running with NVIDIA GPU support..."
-    docker compose -f "$COMPOSE_FILE" up gtranscriber --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" --profile gpu up gtranscriber --abort-on-container-exit
 fi
 
 # -----------------------------------------------------------------------------

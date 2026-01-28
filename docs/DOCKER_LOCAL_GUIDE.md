@@ -117,7 +117,7 @@ ls -la input/catalog.csv
 ### 5. Build Docker Image
 
 ```bash
-docker compose build
+docker compose --profile gpu build gtranscriber
 ```
 
 ---
@@ -129,7 +129,7 @@ docker compose build
 Run with NVIDIA GPU acceleration:
 
 ```bash
-docker compose up gtranscriber
+docker compose --profile gpu up gtranscriber
 ```
 
 ### CPU Mode
@@ -144,7 +144,7 @@ docker compose --profile cpu up gtranscriber-cpu
 
 ```bash
 # GPU mode
-docker compose up -d gtranscriber
+docker compose --profile gpu up -d gtranscriber
 
 # CPU mode
 docker compose --profile cpu up -d gtranscriber-cpu
@@ -156,16 +156,16 @@ Override settings without editing `.env`:
 
 ```bash
 # Use more workers
-WORKERS=6 docker compose up gtranscriber
+WORKERS=6 docker compose --profile gpu up gtranscriber
 
 # Use a different model
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3 docker compose up gtranscriber
+GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3 docker compose --profile gpu up gtranscriber
 
 # Use a different catalog
-CATALOG_FILE=my_subset.csv docker compose up gtranscriber
+CATALOG_FILE=my_subset.csv docker compose --profile gpu up gtranscriber
 
 # Combine multiple overrides
-WORKERS=2 GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose up gtranscriber
+WORKERS=2 GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gpu up gtranscriber
 ```
 
 ---
@@ -338,17 +338,17 @@ docker compose --profile cpu up gtranscriber-cpu
 
 **Reduce workers:**
 ```bash
-WORKERS=1 docker compose up gtranscriber
+WORKERS=1 docker compose --profile gpu up gtranscriber
 ```
 
 **Enable quantization:**
 ```bash
-GTRANSCRIBER_QUANTIZE=true docker compose up gtranscriber
+GTRANSCRIBER_QUANTIZE=true docker compose --profile gpu up gtranscriber
 ```
 
 **Use smaller model:**
 ```bash
-GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose up gtranscriber
+GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gpu up gtranscriber
 ```
 
 ### OAuth Token Expired
@@ -364,7 +364,7 @@ docker compose stop
 gtranscriber info
 
 # Restart transcription
-docker compose up gtranscriber
+docker compose --profile gpu up gtranscriber
 ```
 
 ### Shared Memory Issues
@@ -381,7 +381,7 @@ shm_size: '32gb'  # Increase from default 16gb
 **Pre-download models:**
 ```bash
 # Download model before running transcription
-docker compose run --rm gtranscriber python -c "
+docker compose --profile gpu run --rm gtranscriber python -c "
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 model_id = 'openai/whisper-large-v3-turbo'
 AutoProcessor.from_pretrained(model_id)
@@ -395,13 +395,13 @@ print('Model downloaded successfully')
 The checkpoint system automatically handles resume. Simply restart:
 
 ```bash
-docker compose up gtranscriber
+docker compose --profile gpu up gtranscriber
 ```
 
 To start fresh:
 ```bash
 rm results/checkpoint.json
-docker compose up gtranscriber
+docker compose --profile gpu up gtranscriber
 ```
 
 ---
@@ -412,16 +412,16 @@ docker compose up gtranscriber
 
 ```bash
 # Build image
-docker compose build
+docker compose --profile gpu build gtranscriber
 
 # Run with GPU
-docker compose up gtranscriber
+docker compose --profile gpu up gtranscriber
 
 # Run with CPU
 docker compose --profile cpu up gtranscriber-cpu
 
 # Run in background
-docker compose up -d gtranscriber
+docker compose --profile gpu up -d gtranscriber
 
 # View logs
 docker compose logs -f gtranscriber
@@ -441,10 +441,10 @@ cp .env.example .env
 # Edit .env as needed
 
 # 2. Build
-docker compose build
+docker compose --profile gpu build gtranscriber
 
 # 3. Run transcription
-docker compose up gtranscriber
+docker compose --profile gpu up gtranscriber
 
 # 4. Check results
 ls results/*_transcription.json | wc -l
@@ -462,7 +462,7 @@ Test with a small subset of files:
 head -6 input/catalog.csv > input/test_catalog.csv
 
 # Run test
-CATALOG_FILE=test_catalog.csv WORKERS=1 docker compose up gtranscriber
+CATALOG_FILE=test_catalog.csv WORKERS=1 docker compose --profile gpu up gtranscriber
 
 # Check results
 ls results/

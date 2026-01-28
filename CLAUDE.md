@@ -27,8 +27,11 @@ ruff check src/ && ruff format src/
 # Run CLI
 gtranscriber --help
 
-# Docker
-docker compose build
+# Docker - GPU transcription
+docker compose --profile gpu build
+docker compose --profile gpu up
+
+# Docker - QA generation
 docker compose --profile qa up
 ```
 

@@ -387,7 +387,7 @@ docker compose version
 **Clear Docker cache and rebuild:**
 ```bash
 docker system prune -f
-docker compose build --no-cache gtranscriber
+docker compose --profile gpu build --no-cache gtranscriber
 ```
 
 ### Network/Download Issues

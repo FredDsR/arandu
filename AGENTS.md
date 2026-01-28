@@ -289,8 +289,11 @@ All configuration uses the `GTRANSCRIBER_` prefix. Key variables:
 Run specific pipelines using profiles:
 
 ```bash
-# Transcription (default, with GPU)
-docker compose up
+# GPU transcription (NVIDIA)
+docker compose --profile gpu up
+
+# Alternative: transcribe profile (same as gpu)
+docker compose --profile transcribe up
 
 # CPU-only transcription
 docker compose --profile cpu up
@@ -369,11 +372,11 @@ gtranscriber transcribe audio.mp3
 ruff check src/
 ruff format src/
 
-# Build Docker image
-docker compose build
+# Build Docker image (GPU transcription)
+docker compose --profile gpu build gtranscriber
 
-# Run with Docker
-docker compose up gtranscriber
+# Run with Docker (GPU transcription)
+docker compose --profile gpu up gtranscriber
 ```
 
 ## References
