@@ -89,6 +89,8 @@ The coverage badge automatically changes color based on percentage:
 - 🟡 Yellow: 60-74%
 - 🟢 Green: 75-100%
 
+**Note**: The build will **fail** if coverage is below 75% (enforced by `--cov-fail-under=75`). The badge color is visual only; the actual pass/fail threshold is exactly 75%.
+
 ## Local Testing
 
 Before pushing, you can run the same checks locally:

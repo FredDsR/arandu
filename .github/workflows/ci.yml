@@ -65,7 +65,8 @@ jobs:
         id: coverage
         run: |
           if [ -f coverage.json ]; then
-            COVERAGE=$(python -c "import json; print(round(json.load(open('coverage.json'))['totals']['percent_covered']))")
+            # Use floor division to avoid showing higher percentage than actual
+            COVERAGE=$(python -c "import json; import math; print(math.floor(json.load(open('coverage.json'))['totals']['percent_covered']))")
             echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
             echo "Coverage: $COVERAGE%"
           else
@@ -76,8 +77,8 @@ jobs:
         if: always()
         id: tests
         run: |
-          # Extract test count from pytest output (using POSIX-compliant grep)
-          TESTS=$(uv run pytest --collect-only -q 2>/dev/null | tail -1 | grep -oE '[0-9]+ test' | grep -oE '[0-9]+' || echo "0")
+          # Extract test count from pytest output (handles both 'test' and 'tests')
+          TESTS=$(uv run pytest --collect-only -q 2>&1 | tail -1 | grep -oE '[0-9]+ tests?' | grep -oE '[0-9]+' || echo "0")
           echo "count=$TESTS" >> $GITHUB_OUTPUT
           echo "Tests: $TESTS"
       

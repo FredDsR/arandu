@@ -84,6 +84,8 @@ The coverage badge automatically changes color:
 - 🟡 Yellow/Orange (60-74%): Below threshold, **build fails**
 - 🟢 Green (75-100%): Meets requirements, **build passes**
 
+**Important**: The build fails if coverage is below 75% (enforced by `--cov-fail-under=75`). The badge uses floor division to display the percentage, ensuring it never shows a higher value than what actually passed.
+
 ## 📋 Required Setup (One-Time)
 
 To enable automatic badge updates, you need to configure GitHub secrets. Follow these steps:

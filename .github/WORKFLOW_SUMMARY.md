@@ -83,6 +83,8 @@ The coverage badge color changes automatically:
 - 🟡 **Yellow** (60-74%): Warning - below threshold, build fails
 - 🟢 **Green** (75-100%): Good - meets requirements
 
+**Important**: The build fails if coverage is below 75% (enforced by `--cov-fail-under=75`). The badge uses floor division to display the percentage, ensuring it never shows a higher value than what actually passed.
+
 ## What Happens on Each Push
 
 1. **Lint Job** runs first (fast feedback)
