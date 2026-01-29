@@ -67,7 +67,7 @@ class TestHasAudioStream:
         """Test detecting audio stream in media file."""
         mock_result = Mock()
         mock_result.stdout = json.dumps({"streams": [{"codec_type": "audio"}]})
-        mocker.patch("subprocess.run", return_value=mock_result)
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
 
         result = has_audio_stream("test.mp4")
 
@@ -279,7 +279,7 @@ class TestGetMediaDurationMs:
         """Test that ffprobe is called with correct arguments."""
         mock_result = Mock()
         mock_result.stdout = json.dumps({"format": {"duration": "100.0"}})
-        mocker.patch("subprocess.run", return_value=mock_result)
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
 
         get_media_duration_ms("test.mp4")
 

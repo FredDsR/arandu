@@ -140,7 +140,7 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        client.generate("What is the capital of France?")
+        response = client.generate("What is the capital of France?")
 
         assert response == "Paris is the capital of France."
         mock_client.chat.completions.create.assert_called_once()
@@ -169,7 +169,7 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        client.generate(
+        response = client.generate(
             "What is the capital of France?",
             system_prompt="You are a geography expert.",
         )
@@ -244,7 +244,7 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        client.generate("Test prompt")
+        response = client.generate("Test prompt")
 
         assert response == ""
 
@@ -270,7 +270,7 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        client.generate("Test prompt")
+        response = client.generate("Test prompt")
 
         # Should succeed after retries
         assert response == "Success"

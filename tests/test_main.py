@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-
 from gtranscriber.main import (
     _create_segments_from_result,
     _ensure_float,

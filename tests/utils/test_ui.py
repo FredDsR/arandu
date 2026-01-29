@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from unittest.mock import MagicMock, patch
-
-import pytest
-from pytest_mock import MockerFixture
 
 from gtranscriber.schemas import EnrichedRecord
 from gtranscriber.utils.ui import (

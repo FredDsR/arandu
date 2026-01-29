@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 from pytest_mock import MockerFixture
 
 from gtranscriber.core.batch import (
@@ -162,8 +160,9 @@ class TestBatchProcessingErrors:
     def test_no_audio_stream_error_import(self) -> None:
         """Test that NoAudioStreamError can be imported."""
         from gtranscriber.core.drive import NoAudioStreamError
+        from pathlib import Path
 
-        error = NoAudioStreamError("test_id", "test.mp4")
+        error = NoAudioStreamError("test_id", "test.mp4", Path("/tmp/test.mp4"))
         assert error.file_id == "test_id"
         assert error.file_name == "test.mp4"
 
@@ -325,7 +324,7 @@ class TestBatchConfig:
         mock_config.return_value.quantize = False
         mock_config.return_value.language = None
 
-        batch_config = BatchConfig.from_transcriber_config(
+        BatchConfig.from_transcriber_config(
             catalog_file=tmp_path / "catalog.csv",
             output_dir=tmp_path / "output",
             checkpoint_file=tmp_path / "checkpoint.json",

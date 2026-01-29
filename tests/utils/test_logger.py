@@ -5,9 +5,6 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock, patch
 
-import pytest
-from pytest_mock import MockerFixture
-
 from gtranscriber.utils.logger import (
     get_logger,
     log_debug,

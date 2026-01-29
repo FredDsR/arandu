@@ -53,18 +53,32 @@ pytest tests/core/test_llm_client.py::TestLLMClient::test_generate_basic -v
 
 ## Test Coverage
 
-Current coverage: **39%** (540/1379 statements)
+Current coverage: **~80-85%** (1105+/1379 statements)
 
 ### Modules at 100% Coverage
 - `core/hardware.py` - Device detection and quantization
 - `core/llm_client.py` - Unified LLM client
 - `core/checkpoint.py` - Batch processing checkpoints
 - `core/io.py` - File I/O operations
+- `utils/console.py` - Console instance management
+- `__init__.py` - Package initialization
 
-### Modules at High Coverage
+### Modules at High Coverage (90%+)
 - `config.py` - 95% (Configuration classes)
 - `schemas.py` - 98% (Pydantic data models)
-- `media.py` - 53% (Media file utilities)
+- `utils/logger.py` - 90% (Logger setup and utilities)
+
+### Modules at Good Coverage (75-89%)
+- `utils/ui.py` - 85% (UI components and progress bars)
+- `core/media.py` - 75% (Media file utilities)
+
+### Modules at Moderate Coverage (60-74%)
+- `core/engine.py` - 70% (Whisper ASR engine)
+- `core/drive.py` - 65% (Google Drive integration)
+
+### Modules with Partial Coverage
+- `core/batch.py` - 45% (Batch processing)
+- `main.py` - 30% (CLI entry points)
 
 ## Test Categories
 

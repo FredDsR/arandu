@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-from pytest_mock import MockerFixture
 import torch
+from pytest_mock import MockerFixture
 
 from gtranscriber.config import TranscriberConfig
 from gtranscriber.core.hardware import (
