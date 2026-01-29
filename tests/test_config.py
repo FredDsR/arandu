@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pytest import MonkeyPatch
 from pydantic import ValidationError
 
 from gtranscriber.config import (
@@ -34,7 +35,7 @@ class TestTranscriberConfig:
         assert config.max_retries == 3
         assert config.retry_delay == 1.0
 
-    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test configuration loading from environment variables."""
         monkeypatch.setenv("GTRANSCRIBER_MODEL_ID", "custom/model")
         monkeypatch.setenv("GTRANSCRIBER_LANGUAGE", "en")
@@ -150,7 +151,7 @@ class TestQAConfig:
             QAConfig(strategies=["factual", "invalid_strategy"])
         assert "Invalid QA strategy" in str(exc_info.value)
 
-    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test QA config loading from environment variables."""
         monkeypatch.setenv("GTRANSCRIBER_QA_PROVIDER", "openai")
         monkeypatch.setenv("GTRANSCRIBER_QA_MODEL_ID", "gpt-4")
@@ -182,7 +183,7 @@ class TestKGConfig:
         assert config.base_url is None
         assert config.workers == 2
 
-    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test KG config loading from environment variables."""
         monkeypatch.setenv("GTRANSCRIBER_KG_PROVIDER", "openai")
         monkeypatch.setenv("GTRANSCRIBER_KG_MODEL_ID", "gpt-3.5-turbo")
@@ -207,7 +208,7 @@ class TestEvaluationConfig:
         assert isinstance(config.qa_dir, Path)
         assert isinstance(config.kg_dir, Path)
 
-    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test Evaluation config loading from environment variables."""
         monkeypatch.setenv("GTRANSCRIBER_EVAL_EMBEDDING_MODEL", "custom-model")
 
@@ -230,31 +231,31 @@ class TestEvaluationConfig:
 class TestConfigEnvPrefix:
     """Test environment variable prefix handling."""
 
-    def test_transcriber_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_transcriber_prefix(self, monkeypatch: MonkeyPatch) -> None:
         """Test GTRANSCRIBER_ prefix for TranscriberConfig."""
         monkeypatch.setenv("GTRANSCRIBER_MODEL_ID", "test-model")
         config = TranscriberConfig()
         assert config.model_id == "test-model"
 
-    def test_qa_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_qa_prefix(self, monkeypatch: MonkeyPatch) -> None:
         """Test GTRANSCRIBER_QA_ prefix for QAConfig."""
         monkeypatch.setenv("GTRANSCRIBER_QA_MODEL_ID", "test-qa-model")
         config = QAConfig()
         assert config.model_id == "test-qa-model"
 
-    def test_kg_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_kg_prefix(self, monkeypatch: MonkeyPatch) -> None:
         """Test GTRANSCRIBER_KG_ prefix for KGConfig."""
         monkeypatch.setenv("GTRANSCRIBER_KG_MODEL_ID", "test-kg-model")
         config = KGConfig()
         assert config.model_id == "test-kg-model"
 
-    def test_eval_prefix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_eval_prefix(self, monkeypatch: MonkeyPatch) -> None:
         """Test GTRANSCRIBER_EVAL_ prefix for EvaluationConfig."""
         monkeypatch.setenv("GTRANSCRIBER_EVAL_EMBEDDING_MODEL", "test-eval-model")
         config = EvaluationConfig()
         assert config.embedding_model == "test-eval-model"
 
-    def test_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_case_insensitive(self, monkeypatch: MonkeyPatch) -> None:
         """Test case insensitivity of environment variables."""
         monkeypatch.setenv("gtranscriber_model_id", "lowercase-model")
         config = TranscriberConfig()

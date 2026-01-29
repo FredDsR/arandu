@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 import pytest
+from pytest_mock import MockerFixture
 
 from gtranscriber.core.llm_client import (
     LLMClient,
@@ -16,7 +17,7 @@ from gtranscriber.core.llm_client import (
 class TestLLMClient:
     """Tests for LLMClient class."""
 
-    def test_initialization_openai(self, mocker: pytest.fixture) -> None:
+    def test_initialization_openai(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with OpenAI provider."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -31,7 +32,7 @@ class TestLLMClient:
         assert client.base_url is None
         mock_openai.assert_called_once_with(api_key="sk-test-key", base_url=None)
 
-    def test_initialization_ollama_default_api_key(self, mocker: pytest.fixture) -> None:
+    def test_initialization_ollama_default_api_key(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with Ollama provider and default API key."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -45,7 +46,7 @@ class TestLLMClient:
         assert client.base_url == "http://localhost:11434/v1"
         mock_openai.assert_called_once_with(api_key="ollama", base_url="http://localhost:11434/v1")
 
-    def test_initialization_ollama_custom_api_key(self, mocker: pytest.fixture) -> None:
+    def test_initialization_ollama_custom_api_key(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with Ollama provider and custom API key."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -60,7 +61,7 @@ class TestLLMClient:
             api_key="custom-key", base_url="http://localhost:11434/v1"
         )
 
-    def test_initialization_custom_provider(self, mocker: pytest.fixture) -> None:
+    def test_initialization_custom_provider(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with custom provider."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -78,7 +79,7 @@ class TestLLMClient:
             api_key="custom-key", base_url="http://localhost:8000/v1"
         )
 
-    def test_initialization_custom_base_url_override(self, mocker: pytest.fixture) -> None:
+    def test_initialization_custom_base_url_override(self, mocker: MockerFixture) -> None:
         """Test that explicit base_url overrides provider default."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -93,7 +94,7 @@ class TestLLMClient:
             api_key="ollama", base_url="http://custom-ollama:11434/v1"
         )
 
-    def test_is_available_success(self, mocker: pytest.fixture) -> None:
+    def test_is_available_success(self, mocker: MockerFixture) -> None:
         """Test is_available returns True when models.list succeeds."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -108,7 +109,7 @@ class TestLLMClient:
         assert client.is_available() is True
         mock_client.models.list.assert_called_once()
 
-    def test_is_available_failure(self, mocker: pytest.fixture) -> None:
+    def test_is_available_failure(self, mocker: MockerFixture) -> None:
         """Test is_available returns False when models.list fails."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -122,7 +123,7 @@ class TestLLMClient:
 
         assert client.is_available() is False
 
-    def test_generate_basic(self, mocker: pytest.fixture) -> None:
+    def test_generate_basic(self, mocker: MockerFixture) -> None:
         """Test basic text generation."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -139,7 +140,7 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("What is the capital of France?")
+        client.generate("What is the capital of France?")
 
         assert response == "Paris is the capital of France."
         mock_client.chat.completions.create.assert_called_once()
@@ -152,7 +153,7 @@ class TestLLMClient:
         assert call_args.kwargs["messages"][0]["role"] == "user"
         assert call_args.kwargs["messages"][0]["content"] == "What is the capital of France?"
 
-    def test_generate_with_system_prompt(self, mocker: pytest.fixture) -> None:
+    def test_generate_with_system_prompt(self, mocker: MockerFixture) -> None:
         """Test text generation with system prompt."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -168,7 +169,7 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate(
+        client.generate(
             "What is the capital of France?",
             system_prompt="You are a geography expert.",
         )
@@ -183,7 +184,7 @@ class TestLLMClient:
         assert messages[0]["content"] == "You are a geography expert."
         assert messages[1]["role"] == "user"
 
-    def test_generate_with_custom_temperature(self, mocker: pytest.fixture) -> None:
+    def test_generate_with_custom_temperature(self, mocker: MockerFixture) -> None:
         """Test text generation with custom temperature."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -199,13 +200,13 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("Test prompt", temperature=0.9)
+        client.generate("Test prompt", temperature=0.9)
 
         # Verify temperature is set correctly
         call_args = mock_client.chat.completions.create.call_args
         assert call_args.kwargs["temperature"] == 0.9
 
-    def test_generate_with_max_tokens(self, mocker: pytest.fixture) -> None:
+    def test_generate_with_max_tokens(self, mocker: MockerFixture) -> None:
         """Test text generation with max_tokens limit."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -221,13 +222,13 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("Test prompt", max_tokens=100)
+        client.generate("Test prompt", max_tokens=100)
 
         # Verify max_tokens is set correctly
         call_args = mock_client.chat.completions.create.call_args
         assert call_args.kwargs["max_tokens"] == 100
 
-    def test_generate_empty_content(self, mocker: pytest.fixture) -> None:
+    def test_generate_empty_content(self, mocker: MockerFixture) -> None:
         """Test text generation when response content is None."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -243,11 +244,11 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("Test prompt")
+        client.generate("Test prompt")
 
         assert response == ""
 
-    def test_generate_retry_on_failure(self, mocker: pytest.fixture) -> None:
+    def test_generate_retry_on_failure(self, mocker: MockerFixture) -> None:
         """Test that generate retries on failure (tenacity decorator)."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
@@ -269,13 +270,13 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("Test prompt")
+        client.generate("Test prompt")
 
         # Should succeed after retries
         assert response == "Success"
         assert mock_client.chat.completions.create.call_count == 3
 
-    def test_repr(self, mocker: pytest.fixture) -> None:
+    def test_repr(self, mocker: MockerFixture) -> None:
         """Test string representation of LLMClient."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -295,7 +296,7 @@ class TestLLMClient:
 class TestCreateLLMClient:
     """Tests for create_llm_client factory function."""
 
-    def test_create_with_enum(self, mocker: pytest.fixture) -> None:
+    def test_create_with_enum(self, mocker: MockerFixture) -> None:
         """Test creating client with LLMProvider enum."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -308,7 +309,7 @@ class TestCreateLLMClient:
         assert client.provider == LLMProvider.OLLAMA
         assert client.model_id == "llama3.1:8b"
 
-    def test_create_with_string_lowercase(self, mocker: pytest.fixture) -> None:
+    def test_create_with_string_lowercase(self, mocker: MockerFixture) -> None:
         """Test creating client with lowercase string provider."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -320,7 +321,7 @@ class TestCreateLLMClient:
         assert isinstance(client, LLMClient)
         assert client.provider == LLMProvider.OLLAMA
 
-    def test_create_with_string_uppercase(self, mocker: pytest.fixture) -> None:
+    def test_create_with_string_uppercase(self, mocker: MockerFixture) -> None:
         """Test creating client with uppercase string provider."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -333,7 +334,7 @@ class TestCreateLLMClient:
         assert isinstance(client, LLMClient)
         assert client.provider == LLMProvider.OPENAI
 
-    def test_create_with_invalid_string(self, mocker: pytest.fixture) -> None:
+    def test_create_with_invalid_string(self, mocker: MockerFixture) -> None:
         """Test creating client with invalid string provider raises ValueError."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -346,7 +347,7 @@ class TestCreateLLMClient:
         assert "Invalid provider" in str(exc_info.value)
         assert "invalid_provider" in str(exc_info.value)
 
-    def test_create_with_all_parameters(self, mocker: pytest.fixture) -> None:
+    def test_create_with_all_parameters(self, mocker: MockerFixture) -> None:
         """Test creating client with all parameters."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 

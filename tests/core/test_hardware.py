@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pytest_mock import MockerFixture
 import torch
 
 from gtranscriber.config import TranscriberConfig
@@ -17,7 +18,7 @@ from gtranscriber.core.hardware import (
 class TestGetDeviceAndDtype:
     """Tests for get_device_and_dtype function."""
 
-    def test_force_cpu(self, mocker: pytest.fixture) -> None:
+    def test_force_cpu(self, mocker: MockerFixture) -> None:
         """Test forcing CPU execution."""
         hw_config = get_device_and_dtype(force_cpu=True)
 
@@ -25,7 +26,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32
         assert hw_config.device_type == DeviceType.CPU
 
-    def test_cuda_available_modern_architecture(self, mocker: pytest.fixture) -> None:
+    def test_cuda_available_modern_architecture(self, mocker: MockerFixture) -> None:
         """Test CUDA device selection with modern architecture (sm_70+)."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -37,7 +38,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float16
         assert hw_config.device_type == DeviceType.CUDA
 
-    def test_cuda_available_with_quantization(self, mocker: pytest.fixture) -> None:
+    def test_cuda_available_with_quantization(self, mocker: MockerFixture) -> None:
         """Test CUDA device selection with quantization enabled."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -49,7 +50,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32  # Quantization uses float32
         assert hw_config.device_type == DeviceType.CUDA
 
-    def test_cuda_old_architecture_fallback(self, mocker: pytest.fixture) -> None:
+    def test_cuda_old_architecture_fallback(self, mocker: MockerFixture) -> None:
         """Test fallback to CPU for old CUDA architectures (< sm_70)."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -61,7 +62,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32
         assert hw_config.device_type == DeviceType.CPU
 
-    def test_cuda_capability_runtime_error_fallback(self, mocker: pytest.fixture) -> None:
+    def test_cuda_capability_runtime_error_fallback(self, mocker: MockerFixture) -> None:
         """Test fallback to CPU when get_device_capability raises RuntimeError."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -73,7 +74,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32
         assert hw_config.device_type == DeviceType.CPU
 
-    def test_mps_available(self, mocker: pytest.fixture) -> None:
+    def test_mps_available(self, mocker: MockerFixture) -> None:
         """Test MPS device selection on Apple Silicon."""
         # Mock torch.cuda as unavailable
         mock_cuda = mocker.patch("torch.cuda")
@@ -90,7 +91,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32
         assert hw_config.device_type == DeviceType.MPS
 
-    def test_cpu_fallback_no_gpu(self, mocker: pytest.fixture) -> None:
+    def test_cpu_fallback_no_gpu(self, mocker: MockerFixture) -> None:
         """Test CPU fallback when no GPU is available."""
         # Mock torch.cuda as unavailable
         mock_cuda = mocker.patch("torch.cuda")
@@ -108,7 +109,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32
         assert hw_config.device_type == DeviceType.CPU
 
-    def test_with_config_force_cpu(self, mocker: pytest.fixture) -> None:
+    def test_with_config_force_cpu(self, mocker: MockerFixture) -> None:
         """Test using TranscriberConfig with force_cpu enabled."""
         config = TranscriberConfig(force_cpu=True)
 
@@ -118,7 +119,7 @@ class TestGetDeviceAndDtype:
         assert hw_config.dtype == torch.float32
         assert hw_config.device_type == DeviceType.CPU
 
-    def test_with_config_quantize(self, mocker: pytest.fixture) -> None:
+    def test_with_config_quantize(self, mocker: MockerFixture) -> None:
         """Test using TranscriberConfig with quantization enabled."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -136,13 +137,13 @@ class TestGetDeviceAndDtype:
 class TestGetQuantizationConfig:
     """Tests for get_quantization_config function."""
 
-    def test_quantization_disabled(self, mocker: pytest.fixture) -> None:
+    def test_quantization_disabled(self, mocker: MockerFixture) -> None:
         """Test when quantization is disabled."""
         quant_config = get_quantization_config(quantize=False)
 
         assert quant_config is None
 
-    def test_quantization_8bit_cuda_available(self, mocker: pytest.fixture) -> None:
+    def test_quantization_8bit_cuda_available(self, mocker: MockerFixture) -> None:
         """Test 8-bit quantization with CUDA available."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -151,7 +152,7 @@ class TestGetQuantizationConfig:
 
         assert quant_config == {"load_in_8bit": True}
 
-    def test_quantization_4bit_cuda_available(self, mocker: pytest.fixture) -> None:
+    def test_quantization_4bit_cuda_available(self, mocker: MockerFixture) -> None:
         """Test 4-bit quantization with CUDA available."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -160,7 +161,7 @@ class TestGetQuantizationConfig:
 
         assert quant_config == {"load_in_4bit": True}
 
-    def test_quantization_no_cuda(self, mocker: pytest.fixture) -> None:
+    def test_quantization_no_cuda(self, mocker: MockerFixture) -> None:
         """Test quantization returns None when CUDA is unavailable."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = False
@@ -169,7 +170,7 @@ class TestGetQuantizationConfig:
 
         assert quant_config is None
 
-    def test_with_config_quantize_enabled(self, mocker: pytest.fixture) -> None:
+    def test_with_config_quantize_enabled(self, mocker: MockerFixture) -> None:
         """Test using TranscriberConfig with quantization enabled."""
         mock_cuda = mocker.patch("torch.cuda")
         mock_cuda.is_available.return_value = True
@@ -180,7 +181,7 @@ class TestGetQuantizationConfig:
 
         assert quant_config == {"load_in_8bit": True}
 
-    def test_with_config_quantize_disabled(self, mocker: pytest.fixture) -> None:
+    def test_with_config_quantize_disabled(self, mocker: MockerFixture) -> None:
         """Test using TranscriberConfig with quantization disabled."""
         config = TranscriberConfig(quantize=False)
 

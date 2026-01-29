@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 
 from gtranscriber.core.checkpoint import CheckpointManager, CheckpointState
 
@@ -235,7 +236,7 @@ class TestCheckpointManager:
 
         assert manager.state.last_updated > original_timestamp
 
-    def test_save_failure_handling(self, tmp_path: Path, mocker: pytest.fixture) -> None:
+    def test_save_failure_handling(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that save() handles errors gracefully."""
         checkpoint_file = tmp_path / "checkpoint.json"
 

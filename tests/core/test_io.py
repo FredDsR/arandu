@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 
 from gtranscriber.core.io import (
     cleanup_temp_files,
@@ -303,7 +304,7 @@ class TestCleanupTempFiles:
         assert failure == 0
 
     def test_cleanup_temp_files_with_permission_error(
-        self, tmp_path: Path, mocker: pytest.fixture
+        self, tmp_path: Path, mocker: MockerFixture
     ) -> None:
         """Test cleanup handles permission errors gracefully."""
         # Create a temporary file
@@ -321,7 +322,7 @@ class TestCleanupTempFiles:
     def test_cleanup_temp_files_none_uses_default(self) -> None:
         """Test cleanup with None uses system temp directory."""
         # Create a temp file in the default location
-        temp_file = create_temp_file(suffix=".test")
+        create_temp_file(suffix=".test")
 
         success, failure = cleanup_temp_files(None)
 

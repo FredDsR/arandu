@@ -115,7 +115,9 @@ Tests for device detection and configuration:
 
 **Mocking Example**:
 ```python
-def test_cuda_available_modern_architecture(mocker: pytest.fixture) -> None:
+from pytest_mock import MockerFixture
+
+def test_cuda_available_modern_architecture(mocker: MockerFixture) -> None:
     """Test CUDA device selection with modern architecture (sm_70+)."""
     mock_cuda = mocker.patch("torch.cuda")
     mock_cuda.is_available.return_value = True
@@ -136,7 +138,7 @@ Tests for the unified LLM client supporting OpenAI, Ollama, and custom providers
 
 **Mocking Example**:
 ```python
-def test_generate_retry_on_failure(mocker: pytest.fixture) -> None:
+def test_generate_retry_on_failure(mocker: MockerFixture) -> None:
     """Test that generate retries on failure (tenacity decorator)."""
     mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
     mock_client = Mock()
@@ -168,7 +170,7 @@ Tests for media file processing utilities:
 
 **Mocking Example**:
 ```python
-def test_has_audio_stream_success(mocker: pytest.fixture) -> None:
+def test_has_audio_stream_success(mocker: MockerFixture) -> None:
     """Test detecting audio stream in media file."""
     mock_result = Mock()
     mock_result.stdout = json.dumps({"streams": [{"codec_type": "audio"}]})
@@ -275,7 +277,7 @@ def test_example(tmp_path: Path) -> None:
 ### `mocker` (pytest-mock)
 Provides mocking functionality:
 ```python
-def test_example(mocker: pytest.fixture) -> None:
+def test_example(mocker: MockerFixture) -> None:
     mock_func = mocker.patch("module.function")
     mock_func.return_value = "mocked"
 ```
@@ -323,7 +325,7 @@ When adding a new test:
 
 Example template:
 ```python
-def test_function_name_scenario(mocker: pytest.fixture) -> None:
+def test_function_name_scenario(mocker: MockerFixture) -> None:
     """Test that function_name handles scenario correctly."""
     # Arrange: Set up test data and mocks
     mock_dependency = mocker.patch("module.dependency")
