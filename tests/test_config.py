@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pytest import MonkeyPatch
 from pydantic import ValidationError
+from pytest import MonkeyPatch
 
 from gtranscriber.config import (
     EvaluationConfig,
@@ -93,7 +93,7 @@ class TestQAConfig:
 
         assert config.provider == "ollama"
         assert config.model_id == "llama3.1:8b"
-        assert config.ollama_url == "http://localhost:11434"
+        assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
         assert config.questions_per_document == 10
         assert config.strategies == ["factual", "conceptual"]
@@ -184,7 +184,7 @@ class TestKGConfig:
 
         assert config.provider == "ollama"
         assert config.model_id == "llama3.1:8b"
-        assert config.ollama_url == "http://localhost:11434"
+        assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
         assert config.workers == 2
 

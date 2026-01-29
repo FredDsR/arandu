@@ -67,3 +67,28 @@ def mock_subprocess_run(mocker: MockerFixture) -> MagicMock:
         MagicMock object for subprocess.run.
     """
     return mocker.patch("subprocess.run")
+
+
+@pytest.fixture
+def sample_enriched_record_data() -> dict:
+    """Provide sample EnrichedRecord data for tests.
+
+    Returns:
+        Dictionary with all required EnrichedRecord fields.
+    """
+    return {
+        "gdrive_id": "test123",
+        "name": "test.mp3",
+        "mimeType": "audio/mpeg",
+        "parents": ["parent_folder_id"],
+        "webContentLink": "https://drive.google.com/test",
+        "size_bytes": 1024000,
+        "duration_milliseconds": 60000,
+        "transcription_text": "This is a test transcription. " * 20,
+        "detected_language": "pt",
+        "language_probability": 0.95,
+        "model_id": "openai/whisper-large-v3",
+        "compute_device": "cpu",
+        "processing_duration_sec": 30.5,
+        "transcription_status": "completed",
+    }

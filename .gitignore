@@ -207,3 +207,4 @@ logs/
 
 # Hugging Face cache
 cache/
+coverage.json
