@@ -1,5 +1,9 @@
 # AI Agent Development Guidelines
 
+## Project Description
+
+This project aims to implement the composable pipelines for the transcription of audio/video files from Google Drive, generation of Knowledge Graphs, QA validation datasets, and other evaluation methods. The research in question investigates the power of tacit knowledge elicitation using Knowledge Graphs generation with LLMs in the context of riverine people affected by critical climate events on southern Brazil.
+
 **CRITICAL**: All guidelines are mandatory. Code that violates these standards will be rejected.
 
 ## Quick Start Checklist
