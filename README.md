@@ -1,5 +1,9 @@
 # G-Transcriber
 
+![Tests](https://img.shields.io/badge/tests-345%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-79%25-yellowgreen)
+![Python](https://img.shields.io/badge/python-3.13%2B-blue)
+
 Automated transcription and knowledge graph construction pipeline for ethnographic audio/video archives.
 
 ## Overview
