@@ -419,15 +419,20 @@ class TestExtractAudio:
         # Mock has_audio_stream
         mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
 
-        # Mock ffmpeg subprocess
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stderr = ""
-        mocker.patch("subprocess.run", return_value=mock_result)
-
         input_file = tmp_path / "input.mp4"
         input_file.touch()
         output_file = tmp_path / "output.wav"
+
+        # Mock ffmpeg subprocess that creates the output file
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+
+        def create_output_file(*args, **kwargs):
+            output_file.write_bytes(b"fake audio data")
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_output_file)
 
         result = extract_audio(input_file, output_file)
 
@@ -481,13 +486,18 @@ class TestExtractAudio:
         mocker.patch("gtranscriber.core.media.validate_media_file")
         mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
 
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
-
         input_file = tmp_path / "input.mp4"
         input_file.touch()
         output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        def create_output_file(*args, **kwargs):
+            output_file.write_bytes(b"fake audio data")
+            return mock_result
+
+        mock_run = mocker.patch("subprocess.run", side_effect=create_output_file)
 
         extract_audio(input_file, output_file, mono=False)
 
@@ -504,13 +514,18 @@ class TestExtractAudio:
         mocker.patch("gtranscriber.core.media.validate_media_file")
         mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
 
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
-
         input_file = tmp_path / "input.mp4"
         input_file.touch()
         output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        def create_output_file(*args, **kwargs):
+            output_file.write_bytes(b"fake audio data")
+            return mock_result
+
+        mock_run = mocker.patch("subprocess.run", side_effect=create_output_file)
 
         extract_audio(input_file, output_file, sample_rate=48000)
 

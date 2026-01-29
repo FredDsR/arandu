@@ -84,8 +84,11 @@ def _create_segments_from_result(
     Returns:
         List of TranscriptionSegment objects or None if no segments.
     """
-    if not result.segments:
+    if result.segments is None:
         return None
+
+    if not result.segments:
+        return []
 
     sanitized_segments: list[TranscriptionSegment] = []
     for seg in result.segments:
@@ -120,7 +123,8 @@ def _safe_int_conversion(value: str | None, default: int | None = None) -> int |
     if value is None:
         return default
     try:
-        return int(value)
+        # Try converting to float first to handle float strings like "42.7"
+        return int(float(value))
     except (ValueError, TypeError):
         return default
 

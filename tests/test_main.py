@@ -112,8 +112,8 @@ class TestCreateSegmentsFromResult:
         assert segments is not None
         assert len(segments) == 2
         assert segments[0].text == "Test"
-        assert segments[0].start_time == 0.0
-        assert segments[0].end_time == 1.0
+        assert segments[0].start == 0.0
+        assert segments[0].end == 1.0
         assert segments[1].text == "transcription"
 
     def test_create_segments_without_chunks(self) -> None:

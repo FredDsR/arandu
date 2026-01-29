@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
+import pytest
+
 from gtranscriber.core.drive import (
     DownloadError,
     EmptyDownloadError,
@@ -199,7 +201,8 @@ class TestDriveHelperFunctions:
             "id", "file.mp4", 1000, 500, Path("/tmp/file.mp4")
         )
 
-        assert "retry" in str(incomplete_error).lower()
+        error_msg = str(incomplete_error).lower()
+        assert "retried automatically" in error_msg
 
 
 class TestValidateFileId:
@@ -514,6 +517,7 @@ class TestDriveAuthenticationEdgeCases:
         mock_creds.valid = False
         mock_creds.expired = True
         mock_creds.refresh_token = "refresh_token_value"
+        mock_creds.to_json.return_value = '{"token": "refreshed"}'
         mock_credentials.from_authorized_user_file.return_value = mock_creds
 
         credentials_file = tmp_path / "creds.json"

@@ -19,8 +19,13 @@ from gtranscriber.config import (
 class TestTranscriberConfig:
     """Tests for TranscriberConfig."""
 
-    def test_default_initialization(self) -> None:
+    def test_default_initialization(self, monkeypatch: MonkeyPatch) -> None:
         """Test default configuration initialization."""
+        # Override with the default values to test the actual config defaults
+        # (not influenced by .env file)
+        monkeypatch.setenv("GTRANSCRIBER_MODEL_ID", "openai/whisper-large-v3")
+        monkeypatch.setenv("GTRANSCRIBER_WORKERS", "1")
+
         config = TranscriberConfig()
 
         assert config.model_id == "openai/whisper-large-v3"

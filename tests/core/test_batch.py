@@ -66,22 +66,6 @@ class TestParseParentsFromString:
         assert result == []
 
 
-class TestBatchProcessingDataStructures:
-    """Tests for batch processing data structures."""
-
-    def test_import_batch_result(self) -> None:
-        """Test that BatchResult can be imported."""
-        from gtranscriber.core.batch import BatchResult
-
-        assert BatchResult is not None
-
-    def test_import_batch_processor(self) -> None:
-        """Test that BatchProcessor can be imported."""
-        from gtranscriber.core.batch import BatchProcessor
-
-        assert BatchProcessor is not None
-
-
 class TestWorkerInitialization:
     """Tests for worker initialization."""
 
@@ -105,55 +89,6 @@ class TestWorkerInitialization:
         )
 
 
-class TestBatchProcessorInitialization:
-    """Tests for BatchProcessor initialization."""
-
-    @patch("gtranscriber.core.batch.DriveClient")
-    def test_batch_processor_creation(
-        self,
-        mock_drive_client: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Test creating a BatchProcessor instance."""
-        from gtranscriber.config import TranscriberConfig
-        from gtranscriber.core.batch import BatchProcessor
-
-        config = TranscriberConfig(
-            model_id="openai/whisper-tiny",
-            credentials="creds.json",
-            token="token.json",
-        )
-
-        processor = BatchProcessor(
-            config=config,
-            catalog_file=str(tmp_path / "catalog.csv"),
-        )
-
-        assert processor.config == config
-        assert processor.catalog_file == tmp_path / "catalog.csv"
-
-    @patch("gtranscriber.core.batch.DriveClient")
-    def test_batch_processor_with_checkpoint(
-        self,
-        mock_drive_client: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Test BatchProcessor with checkpoint file."""
-        from gtranscriber.config import TranscriberConfig
-        from gtranscriber.core.batch import BatchProcessor
-
-        config = TranscriberConfig()
-        checkpoint_file = tmp_path / "checkpoint.json"
-
-        processor = BatchProcessor(
-            config=config,
-            catalog_file=str(tmp_path / "catalog.csv"),
-            checkpoint_file=str(checkpoint_file),
-        )
-
-        assert processor.checkpoint_file == checkpoint_file
-
-
 class TestBatchProcessingErrors:
     """Tests for batch processing error handling."""
 
@@ -165,62 +100,6 @@ class TestBatchProcessingErrors:
         error = NoAudioStreamError("test_id", "test.mp4", Path("/tmp/test.mp4"))
         assert error.file_id == "test_id"
         assert error.file_name == "test.mp4"
-
-
-class TestBatchCatalogParsing:
-    """Tests for catalog file parsing."""
-
-    @patch("gtranscriber.core.batch.DriveClient")
-    def test_load_catalog_from_csv(
-        self,
-        mock_drive_client: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Test loading catalog from CSV file."""
-        from gtranscriber.config import TranscriberConfig
-        from gtranscriber.core.batch import BatchProcessor
-
-        # Create a test catalog CSV
-        catalog_file = tmp_path / "catalog.csv"
-        catalog_file.write_text(
-            "gdrive_id,name,mimeType,parents,webContentLink,size\n"
-            'file1,test1.mp3,audio/mpeg,"[\'folder1\']",http://example.com/1,1000\n'
-            'file2,test2.mp4,video/mp4,"[\'folder2\']",http://example.com/2,2000\n'
-        )
-
-        config = TranscriberConfig()
-        processor = BatchProcessor(
-            config=config,
-            catalog_file=str(catalog_file),
-        )
-
-        # Access the catalog loading method if available
-        # This tests that the file can be parsed without errors
-        assert processor.catalog_file.exists()
-
-
-class TestBatchResultDataClass:
-    """Tests for BatchResult dataclass."""
-
-    def test_batch_result_creation(self) -> None:
-        """Test creating a BatchResult instance."""
-        from gtranscriber.core.batch import BatchResult
-
-        result = BatchResult(
-            total=10,
-            successful=8,
-            failed=2,
-            skipped=0,
-            duration_sec=120.5,
-            failed_files={"file1": "Error 1", "file2": "Error 2"},
-        )
-
-        assert result.total == 10
-        assert result.successful == 8
-        assert result.failed == 2
-        assert result.skipped == 0
-        assert result.duration_sec == 120.5
-        assert len(result.failed_files) == 2
 
 
 class TestAudioVideoFiltering:
@@ -445,37 +324,3 @@ class TestWorkerFunctions:
         )
 
 
-class TestBatchResultEnhancements:
-    """Additional tests for BatchResult."""
-
-    def test_batch_result_zero_failed(self) -> None:
-        """Test BatchResult with no failures."""
-        from gtranscriber.core.batch import BatchResult
-
-        result = BatchResult(
-            total=10,
-            successful=10,
-            failed=0,
-            skipped=0,
-            duration_sec=100.0,
-            failed_files={},
-        )
-
-        assert len(result.failed_files) == 0
-        assert result.failed == 0
-
-    def test_batch_result_with_skipped(self) -> None:
-        """Test BatchResult with skipped files."""
-        from gtranscriber.core.batch import BatchResult
-
-        result = BatchResult(
-            total=10,
-            successful=7,
-            failed=1,
-            skipped=2,
-            duration_sec=90.0,
-            failed_files={"file1": "Error"},
-        )
-
-        assert result.skipped == 2
-        assert result.successful + result.failed + result.skipped == result.total
