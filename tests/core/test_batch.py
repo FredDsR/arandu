@@ -257,3 +257,226 @@ class TestAudioVideoFiltering:
 
         for mime_type in non_av_types:
             assert mime_type not in AUDIO_VIDEO_MIME_TYPES
+
+
+class TestBatchConfig:
+    """Tests for BatchConfig dataclass."""
+
+    def test_batch_config_creation(self, tmp_path: Path) -> None:
+        """Test creating BatchConfig instance."""
+        from gtranscriber.core.batch import BatchConfig
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            model_id="openai/whisper-tiny",
+            num_workers=4,
+            force_cpu=True,
+            quantize=False,
+            language="en",
+        )
+
+        assert config.model_id == "openai/whisper-tiny"
+        assert config.num_workers == 4
+        assert config.force_cpu is True
+        assert config.language == "en"
+
+    def test_batch_config_from_transcriber_config(self, tmp_path: Path) -> None:
+        """Test creating BatchConfig from TranscriberConfig."""
+        from gtranscriber.config import TranscriberConfig
+        from gtranscriber.core.batch import BatchConfig
+
+        transcriber_config = TranscriberConfig(
+            model_id="openai/whisper-large-v3",
+            force_cpu=False,
+            quantize=True,
+            language="pt",
+        )
+
+        batch_config = BatchConfig.from_transcriber_config(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            config=transcriber_config,
+            num_workers=2,
+        )
+
+        assert batch_config.model_id == "openai/whisper-large-v3"
+        assert batch_config.force_cpu is False
+        assert batch_config.quantize is True
+        assert batch_config.language == "pt"
+        assert batch_config.num_workers == 2
+
+    def test_batch_config_from_transcriber_config_none(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test BatchConfig.from_transcriber_config with None config."""
+        from gtranscriber.core.batch import BatchConfig
+
+        # Mock TranscriberConfig to avoid environment dependency
+        mock_config = mocker.patch("gtranscriber.core.batch.TranscriberConfig")
+        mock_config.return_value.model_id = "default-model"
+        mock_config.return_value.credentials = "creds.json"
+        mock_config.return_value.token = "token.json"
+        mock_config.return_value.force_cpu = False
+        mock_config.return_value.quantize = False
+        mock_config.return_value.language = None
+
+        batch_config = BatchConfig.from_transcriber_config(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            config=None,
+            num_workers=1,
+        )
+
+        mock_config.assert_called_once()
+
+
+class TestTranscriptionTask:
+    """Tests for TranscriptionTask dataclass."""
+
+    def test_transcription_task_creation(self) -> None:
+        """Test creating TranscriptionTask instance."""
+        from gtranscriber.core.batch import TranscriptionTask
+
+        task = TranscriptionTask(
+            file_id="file123",
+            name="test.mp3",
+            mime_type="audio/mpeg",
+            size_bytes=1024000,
+            parents=["folder1"],
+            web_content_link="http://example.com/file123",
+            duration_ms=60000,
+        )
+
+        assert task.file_id == "file123"
+        assert task.name == "test.mp3"
+        assert task.mime_type == "audio/mpeg"
+        assert task.size_bytes == 1024000
+        assert task.duration_ms == 60000
+
+    def test_transcription_task_optional_fields(self) -> None:
+        """Test TranscriptionTask with optional fields as None."""
+        from gtranscriber.core.batch import TranscriptionTask
+
+        task = TranscriptionTask(
+            file_id="file123",
+            name="test.mp3",
+            mime_type="audio/mpeg",
+            size_bytes=None,
+            parents=[],
+            web_content_link="http://example.com",
+            duration_ms=None,
+        )
+
+        assert task.size_bytes is None
+        assert task.duration_ms is None
+
+
+class TestEnsureFloat:
+    """Tests for _ensure_float helper function."""
+
+    def test_ensure_float_valid_float(self) -> None:
+        """Test converting valid float."""
+        from gtranscriber.core.batch import _ensure_float
+
+        result = _ensure_float(3.14, 0.0)
+        assert result == 3.14
+
+    def test_ensure_float_valid_int(self) -> None:
+        """Test converting valid int."""
+        from gtranscriber.core.batch import _ensure_float
+
+        result = _ensure_float(42, 0.0)
+        assert result == 42.0
+
+    def test_ensure_float_valid_string(self) -> None:
+        """Test converting valid string."""
+        from gtranscriber.core.batch import _ensure_float
+
+        result = _ensure_float("123.45", 0.0)
+        assert result == 123.45
+
+    def test_ensure_float_none_uses_default(self) -> None:
+        """Test that None returns default."""
+        from gtranscriber.core.batch import _ensure_float
+
+        result = _ensure_float(None, 99.0)
+        assert result == 99.0
+
+    def test_ensure_float_invalid_string_uses_default(self) -> None:
+        """Test that invalid string returns default."""
+        from gtranscriber.core.batch import _ensure_float
+
+        result = _ensure_float("not a number", 50.0)
+        assert result == 50.0
+
+    def test_ensure_float_object_uses_default(self) -> None:
+        """Test that arbitrary object returns default."""
+        from gtranscriber.core.batch import _ensure_float
+
+        result = _ensure_float(object(), 10.0)
+        assert result == 10.0
+
+
+class TestWorkerFunctions:
+    """Tests for worker-related functions."""
+
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    def test_init_worker_sets_global(self, mock_engine: MagicMock) -> None:
+        """Test that _init_worker sets the global engine."""
+        from gtranscriber.core.batch import _init_worker
+
+        _init_worker(
+            model_id="test-model",
+            force_cpu=True,
+            quantize=False,
+            language="en",
+        )
+
+        mock_engine.assert_called_once_with(
+            model_id="test-model",
+            force_cpu=True,
+            quantize=False,
+            language="en",
+        )
+
+
+class TestBatchResultEnhancements:
+    """Additional tests for BatchResult."""
+
+    def test_batch_result_zero_failed(self) -> None:
+        """Test BatchResult with no failures."""
+        from gtranscriber.core.batch import BatchResult
+
+        result = BatchResult(
+            total=10,
+            successful=10,
+            failed=0,
+            skipped=0,
+            duration_sec=100.0,
+            failed_files={},
+        )
+
+        assert len(result.failed_files) == 0
+        assert result.failed == 0
+
+    def test_batch_result_with_skipped(self) -> None:
+        """Test BatchResult with skipped files."""
+        from gtranscriber.core.batch import BatchResult
+
+        result = BatchResult(
+            total=10,
+            successful=7,
+            failed=1,
+            skipped=2,
+            duration_sec=90.0,
+            failed_files={"file1": "Error"},
+        )
+
+        assert result.skipped == 2
+        assert result.successful + result.failed + result.skipped == result.total

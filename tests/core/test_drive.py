@@ -203,3 +203,218 @@ class TestDriveHelperFunctions:
         )
 
         assert "retry" in str(incomplete_error).lower()
+
+
+class TestValidateFileId:
+    """Tests for _validate_file_id helper function."""
+
+    def test_valid_file_id_alphanumeric(self) -> None:
+        """Test validation of valid alphanumeric file ID."""
+        from gtranscriber.core.drive import _validate_file_id
+
+        assert _validate_file_id("abc123DEF456") is True
+
+    def test_valid_file_id_with_dash(self) -> None:
+        """Test validation of file ID with dashes."""
+        from gtranscriber.core.drive import _validate_file_id
+
+        assert _validate_file_id("abc-123-def") is True
+
+    def test_valid_file_id_with_underscore(self) -> None:
+        """Test validation of file ID with underscores."""
+        from gtranscriber.core.drive import _validate_file_id
+
+        assert _validate_file_id("abc_123_def") is True
+
+    def test_invalid_file_id_special_chars(self) -> None:
+        """Test validation fails for file ID with invalid characters."""
+        from gtranscriber.core.drive import _validate_file_id
+
+        assert _validate_file_id("abc@123") is False
+        assert _validate_file_id("abc#123") is False
+        assert _validate_file_id("abc.123") is False
+
+    def test_invalid_file_id_empty(self) -> None:
+        """Test validation fails for empty file ID."""
+        from gtranscriber.core.drive import _validate_file_id
+
+        assert _validate_file_id("") is False
+
+    def test_invalid_file_id_spaces(self) -> None:
+        """Test validation fails for file ID with spaces."""
+        from gtranscriber.core.drive import _validate_file_id
+
+        assert _validate_file_id("abc 123") is False
+
+
+class TestCheckFilePermissions:
+    """Tests for _check_file_permissions helper function."""
+
+    def test_check_permissions_nonexistent_file(self, tmp_path: Path) -> None:
+        """Test checking permissions for nonexistent file."""
+        from gtranscriber.core.drive import _check_file_permissions
+
+        # Should not raise an exception for nonexistent file
+        _check_file_permissions(tmp_path / "nonexistent.txt")
+
+    def test_check_permissions_existing_file(self, tmp_path: Path) -> None:
+        """Test checking permissions for existing file."""
+        from gtranscriber.core.drive import _check_file_permissions
+
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("test")
+
+        # Should not raise an exception
+        _check_file_permissions(file_path)
+
+
+class TestDriveClientAuthentication:
+    """Tests for DriveClient authentication logic."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.InstalledAppFlow")
+    def test_authenticate_new_user(
+        self,
+        mock_flow: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test authentication flow for new user without token."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_credentials.from_authorized_user_file.side_effect = FileNotFoundError
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_flow_instance = Mock()
+        mock_flow_instance.run_local_server.return_value = mock_creds
+        mock_flow.from_client_secrets_file.return_value = mock_flow_instance
+
+        credentials_file = tmp_path / "credentials.json"
+        credentials_file.write_text('{"installed": {}}')
+        token_file = tmp_path / "token.json"
+
+        # Initialize client
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        # This would trigger authentication in real scenario
+        # but we're testing the initialization
+        assert client.credentials_file == str(credentials_file)
+        assert client.token_file == str(token_file)
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_authenticate_existing_valid_token(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test authentication with existing valid token."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+
+        credentials_file = tmp_path / "credentials.json"
+        credentials_file.write_text('{"installed": {}}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        # Access service to trigger authentication
+        _ = client.service
+
+        mock_credentials.from_authorized_user_file.assert_called_once()
+        mock_build.assert_called_once()
+
+
+class TestDriveScopes:
+    """Tests for Drive API scopes constant."""
+
+    def test_scopes_constant(self) -> None:
+        """Test that SCOPES constant is defined correctly."""
+        from gtranscriber.core.drive import SCOPES
+
+        assert isinstance(SCOPES, list)
+        assert len(SCOPES) > 0
+        assert "drive" in SCOPES[0].lower()
+
+
+class TestNoAudioStreamError:
+    """Tests for NoAudioStreamError exception."""
+
+    def test_no_audio_stream_error_creation(self) -> None:
+        """Test creating NoAudioStreamError."""
+        from gtranscriber.core.drive import NoAudioStreamError
+
+        error = NoAudioStreamError("file123", "test.mp4")
+
+        assert error.file_id == "file123"
+        assert error.file_name == "test.mp4"
+        assert "test.mp4" in str(error)
+        assert "file123" in str(error)
+        assert "no audio" in str(error).lower()
+
+
+class TestDriveClientConfiguration:
+    """Tests for DriveClient configuration handling."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_client_with_config_object(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test DriveClient initialization with TranscriberConfig object."""
+        from gtranscriber.config import TranscriberConfig
+        from gtranscriber.core.drive import DriveClient
+
+        config = TranscriberConfig(
+            credentials="custom_creds.json",
+            token="custom_token.json",
+        )
+
+        client = DriveClient(config=config)
+
+        assert client.credentials_file == "custom_creds.json"
+        assert client.token_file == "custom_token.json"
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_client_explicit_paths_override_config(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that explicit paths override config values."""
+        from gtranscriber.config import TranscriberConfig
+        from gtranscriber.core.drive import DriveClient
+
+        config = TranscriberConfig(
+            credentials="config_creds.json",
+            token="config_token.json",
+        )
+
+        client = DriveClient(
+            credentials_file="explicit_creds.json",
+            token_file="explicit_token.json",
+            config=config,
+        )
+
+        assert client.credentials_file == "explicit_creds.json"
+        assert client.token_file == "explicit_token.json"
