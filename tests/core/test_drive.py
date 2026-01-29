@@ -418,3 +418,154 @@ class TestDriveClientConfiguration:
 
         assert client.credentials_file == "explicit_creds.json"
         assert client.token_file == "explicit_token.json"
+
+
+class TestDriveClientGetFileMetadata:
+    """Tests for get_file_metadata method."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_get_file_metadata_success(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test getting file metadata successfully."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+
+        mock_service = Mock()
+        mock_files = Mock()
+        mock_get = Mock()
+        mock_execute = Mock(return_value={"id": "file123", "name": "test.mp3"})
+
+        mock_get.execute = mock_execute
+        mock_files.get.return_value = mock_get
+        mock_service.files.return_value = mock_files
+        mock_build.return_value = mock_service
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        metadata = client.get_file_metadata("abc123")
+
+        assert metadata["id"] == "file123"
+        assert metadata["name"] == "test.mp3"
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_get_file_metadata_invalid_file_id(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that invalid file ID raises ValueError."""
+        from gtranscriber.core.drive import DriveClient
+
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            client.get_file_metadata("invalid@file#id")
+
+        assert "Invalid file_id format" in str(exc_info.value)
+
+
+class TestDriveAuthenticationEdgeCases:
+    """Tests for authentication edge cases."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.Request")
+    def test_authenticate_refresh_token_expired(
+        self,
+        mock_request: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test authentication when token is expired but can be refreshed."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Mock expired credentials that can be refreshed
+        mock_creds = Mock()
+        mock_creds.valid = False
+        mock_creds.expired = True
+        mock_creds.refresh_token = "refresh_token_value"
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        # Trigger authentication
+        _ = client.service
+
+        # Should have called refresh
+        mock_creds.refresh.assert_called_once()
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.Request")
+    def test_authenticate_refresh_token_fails(
+        self,
+        mock_request: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test authentication when token refresh fails."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Mock expired credentials with failing refresh
+        mock_creds = Mock()
+        mock_creds.valid = False
+        mock_creds.expired = True
+        mock_creds.refresh_token = "refresh_token_value"
+        mock_creds.refresh.side_effect = Exception("Refresh failed")
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = client.service
+
+        assert "Failed to refresh OAuth token" in str(exc_info.value)
