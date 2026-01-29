@@ -571,3 +571,269 @@ class TestDriveAuthenticationEdgeCases:
             _ = client.service
 
         assert "Failed to refresh OAuth token" in str(exc_info.value)
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.InstalledAppFlow")
+    def test_authenticate_new_user_flow_fails(
+        self,
+        mock_flow: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test authentication when new user flow fails (no browser)."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Mock no existing credentials
+        mock_credentials.from_authorized_user_file.side_effect = FileNotFoundError
+
+        # Mock flow failure
+        mock_flow_instance = Mock()
+        mock_flow_instance.run_local_server.side_effect = Exception("No browser available")
+        mock_flow.from_client_secrets_file.return_value = mock_flow_instance
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"installed": {"client_id": "test"}}')
+        token_file = tmp_path / "token.json"
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = client.service
+
+        assert "OAuth authentication requires a browser" in str(exc_info.value)
+
+
+class TestUploadFile:
+    """Tests for upload_file method."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaFileUpload")
+    def test_upload_file_success(
+        self,
+        mock_media_upload: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test uploading a file to Google Drive."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock upload response
+        mock_service.files().create().execute.return_value = {
+            "id": "uploaded_file_id",
+            "name": "test.json",
+            "webViewLink": "https://drive.google.com/file/d/uploaded_file_id/view",
+        }
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        # Create a file to upload
+        test_file = tmp_path / "test.json"
+        test_file.write_text('{"test": "data"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        result = client.upload_file(
+            file_path=test_file,
+            parent_folder_id="parent_folder_id",
+            mime_type="application/json",
+        )
+
+        assert result["id"] == "uploaded_file_id"
+        assert result["name"] == "test.json"
+        mock_media_upload.assert_called_once()
+
+
+class TestUpdateFileProperties:
+    """Tests for update_file_properties method."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_update_file_properties_success(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test updating file properties."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock update response
+        mock_service.files().update().execute.return_value = {
+            "id": "file_id",
+            "appProperties": {
+                "x-transcription-status": "completed",
+                "x-model-id": "test-model",
+            },
+        }
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        result = client.update_file_properties(
+            file_id="file_id",
+            properties={
+                "x-transcription-status": "completed",
+                "x-model-id": "test-model",
+            },
+        )
+
+        assert result["id"] == "file_id"
+        assert "appProperties" in result
+
+
+class TestListMediaFiles:
+    """Tests for list_media_files method."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_list_media_files_without_filters(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test listing files without folder or status filters."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock list response
+        mock_service.files().list().execute.return_value = {
+            "files": [
+                {"id": "file1", "name": "test1.mp3", "mimeType": "audio/mpeg"},
+                {"id": "file2", "name": "test2.mp4", "mimeType": "video/mp4"},
+            ]
+        }
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        result = client.list_media_files()
+
+        assert len(result) == 2
+        assert result[0]["id"] == "file1"
+        assert result[1]["id"] == "file2"
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_list_media_files_with_folder_filter(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test listing files with folder filter."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock list response
+        mock_service.files().list().execute.return_value = {
+            "files": [
+                {"id": "file1", "name": "test1.mp3", "mimeType": "audio/mpeg"},
+            ]
+        }
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        result = client.list_media_files(folder_id="test_folder_id")
+
+        assert len(result) == 1
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    def test_list_media_files_with_status_filter(
+        self,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test listing files with status filter."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock list response
+        mock_service.files().list().execute.return_value = {
+            "files": [
+                {"id": "file1", "name": "test1.mp3", "mimeType": "audio/mpeg"},
+            ]
+        }
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        result = client.list_media_files(status_filter="completed")
+
+        assert len(result) == 1

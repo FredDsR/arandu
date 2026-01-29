@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from pytest_mock import MockerFixture
 
 from gtranscriber.core.batch import (
     AUDIO_VIDEO_MIME_TYPES,
+    _create_segments_from_result,
     _parse_parents_from_string,
+    load_catalog,
+    transcribe_single_file,
 )
 
 
@@ -62,6 +65,12 @@ class TestParseParentsFromString:
     def test_parse_non_list_json(self) -> None:
         """Test parsing JSON that doesn't result in a list."""
         result = _parse_parents_from_string('{"key": "value"}')
+
+        assert result == []
+
+    def test_parse_invalid_type(self) -> None:
+        """Test parsing invalid type (not str or list) returns empty list."""
+        result = _parse_parents_from_string(123)  # type: ignore[arg-type]
 
         assert result == []
 
@@ -322,5 +331,580 @@ class TestWorkerFunctions:
             quantize=False,
             language="en",
         )
+
+
+class TestCreateSegmentsFromResult:
+    """Tests for _create_segments_from_result helper function."""
+
+    def test_create_segments_with_valid_data(self) -> None:
+        """Test creating segments from valid result."""
+        mock_result = MagicMock()
+        mock_result.segments = [
+            {"text": "Hello", "start": 0.0, "end": 1.5},
+            {"text": "World", "start": 1.5, "end": 3.0},
+        ]
+
+        segments = _create_segments_from_result(mock_result)
+
+        assert segments is not None
+        assert len(segments) == 2
+        assert segments[0].text == "Hello"
+        assert segments[0].start == 0.0
+        assert segments[0].end == 1.5
+        assert segments[1].text == "World"
+        assert segments[1].start == 1.5
+        assert segments[1].end == 3.0
+
+    def test_create_segments_with_empty_list(self) -> None:
+        """Test creating segments from empty segments list."""
+        mock_result = MagicMock()
+        mock_result.segments = []
+
+        segments = _create_segments_from_result(mock_result)
+
+        assert segments is None
+
+    def test_create_segments_with_none(self) -> None:
+        """Test creating segments when segments is None."""
+        mock_result = MagicMock()
+        mock_result.segments = None
+
+        segments = _create_segments_from_result(mock_result)
+
+        assert segments is None
+
+    def test_create_segments_with_missing_text(self) -> None:
+        """Test creating segments with missing text field."""
+        mock_result = MagicMock()
+        mock_result.segments = [
+            {"start": 0.0, "end": 1.5},  # No text field
+        ]
+
+        segments = _create_segments_from_result(mock_result)
+
+        assert segments is not None
+        assert len(segments) == 1
+        assert segments[0].text == ""  # Should default to empty string
+
+    def test_create_segments_with_invalid_times(self) -> None:
+        """Test creating segments with invalid time values."""
+        mock_result = MagicMock()
+        mock_result.segments = [
+            {"text": "Test", "start": "invalid", "end": 2.0},
+        ]
+
+        segments = _create_segments_from_result(mock_result)
+
+        assert segments is not None
+        assert len(segments) == 1
+        assert segments[0].start == 0.0  # Should default to 0.0
+        assert segments[0].end == 2.0
+
+    def test_create_segments_end_before_start(self) -> None:
+        """Test that end time is corrected when it's before start time."""
+        mock_result = MagicMock()
+        mock_result.segments = [
+            {"text": "Test", "start": 5.0, "end": 2.0},  # End before start
+        ]
+
+        segments = _create_segments_from_result(mock_result)
+
+        assert segments is not None
+        assert len(segments) == 1
+        assert segments[0].start == 5.0
+        assert segments[0].end == 5.0  # Should be corrected to match start
+
+
+class TestLoadCatalog:
+    """Tests for load_catalog function."""
+
+    def test_load_catalog_valid_csv(self, tmp_path: Path) -> None:
+        """Test loading a valid catalog CSV file."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text(
+            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            'file1,test.mp3,audio/mpeg,1024,"[\'folder1\']",http://example.com/file1,60000\n'
+            'file2,test.mp4,video/mp4,2048,"[\'folder2\']",http://example.com/file2,120000\n'
+        )
+
+        tasks = load_catalog(catalog_file)
+
+        assert len(tasks) == 2
+        assert tasks[0].file_id == "file1"
+        assert tasks[0].name == "test.mp3"
+        assert tasks[0].mime_type == "audio/mpeg"
+        assert tasks[0].size_bytes == 1024
+        assert tasks[0].parents == ["folder1"]
+        assert tasks[1].file_id == "file2"
+
+    def test_load_catalog_filters_non_audio_video(self, tmp_path: Path) -> None:
+        """Test that load_catalog filters out non-audio/video files."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text(
+            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            'file1,test.mp3,audio/mpeg,1024,"[]",http://example.com/file1,60000\n'
+            'file2,test.pdf,application/pdf,2048,"[]",http://example.com/file2,\n'
+            'file3,test.txt,text/plain,512,"[]",http://example.com/file3,\n'
+        )
+
+        tasks = load_catalog(catalog_file)
+
+        assert len(tasks) == 1
+        assert tasks[0].mime_type == "audio/mpeg"
+
+    def test_load_catalog_missing_required_columns(self, tmp_path: Path) -> None:
+        """Test that load_catalog raises error for missing required columns."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text(
+            "gdrive_id,name\n"  # Missing mime_type
+            "file1,test.mp3\n"
+        )
+
+        try:
+            load_catalog(catalog_file)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "missing required columns" in str(e).lower()
+
+    def test_load_catalog_empty_file(self, tmp_path: Path) -> None:
+        """Test that load_catalog raises error for empty file."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text("")
+
+        try:
+            load_catalog(catalog_file)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "empty or invalid" in str(e).lower()
+
+    def test_load_catalog_skips_rows_with_missing_id_or_name(self, tmp_path: Path) -> None:
+        """Test that rows with missing gdrive_id or name are skipped."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text(
+            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            'file1,test.mp3,audio/mpeg,1024,"[]",http://example.com/file1,60000\n'
+            ',missing_id.mp3,audio/mpeg,1024,"[]",http://example.com/file2,60000\n'  # Missing ID
+            'file3,,audio/mpeg,1024,"[]",http://example.com/file3,60000\n'  # Missing name
+        )
+
+        tasks = load_catalog(catalog_file)
+
+        assert len(tasks) == 1
+        assert tasks[0].file_id == "file1"
+
+    def test_load_catalog_handles_invalid_size_bytes(self, tmp_path: Path) -> None:
+        """Test that invalid size_bytes values are handled gracefully."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text(
+            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            'file1,test.mp3,audio/mpeg,invalid,"[]",http://example.com/file1,60000\n'
+            'file2,test2.mp3,audio/mpeg,,"[]",http://example.com/file2,60000\n'
+        )
+
+        tasks = load_catalog(catalog_file)
+
+        assert len(tasks) == 2
+        assert tasks[0].size_bytes is None
+        assert tasks[1].size_bytes is None
+
+    def test_load_catalog_handles_invalid_duration(self, tmp_path: Path) -> None:
+        """Test that invalid duration_milliseconds values are handled gracefully."""
+        catalog_file = tmp_path / "catalog.csv"
+        catalog_file.write_text(
+            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            'file1,test.mp3,audio/mpeg,1024,"[]",http://example.com/file1,invalid\n'
+            'file2,test2.mp3,audio/mpeg,1024,"[]",http://example.com/file2,\n'
+        )
+
+        tasks = load_catalog(catalog_file)
+
+        assert len(tasks) == 2
+        assert tasks[0].duration_ms is None
+        assert tasks[1].duration_ms is None
+
+
+class TestTranscribeSingleFile:
+    """Tests for transcribe_single_file function."""
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("gtranscriber.core.batch.DriveClient")
+    @patch("gtranscriber.core.batch.create_temp_file")
+    @patch("gtranscriber.core.batch.save_enriched_record")
+    @patch("gtranscriber.core.batch.has_audio_stream")
+    @patch("gtranscriber.core.batch.get_media_duration_ms")
+    def test_transcribe_single_file_audio_success(
+        self,
+        mock_duration: MagicMock,
+        mock_has_audio: MagicMock,
+        mock_save: MagicMock,
+        mock_temp_file: MagicMock,
+        mock_drive: MagicMock,
+        mock_engine: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test successful transcription of an audio file."""
+        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+
+        # Setup mocks
+        temp_file = tmp_path / "temp.mp3"
+        temp_file.touch()
+        mock_temp_file.return_value = temp_file
+
+        # Mock DriveClient
+        mock_drive_instance = Mock()
+        mock_drive.return_value = mock_drive_instance
+
+        # Mock WhisperEngine
+        mock_engine_instance = Mock()
+        mock_result = Mock(spec=['text', 'segments', 'detected_language', 'language_probability', 'model_id', 'device', 'processing_duration_sec'])
+        mock_result.text = "Test transcription"
+        mock_result.segments = []
+        mock_result.detected_language = "en"
+        mock_result.language_probability = 0.95
+        mock_result.model_id = "test-model"
+        mock_result.device = "cpu"
+        mock_result.processing_duration_sec = 1.0
+        mock_engine_instance.transcribe.return_value = mock_result
+        mock_engine.return_value = mock_engine_instance
+
+        # Mock audio validation
+        mock_has_audio.return_value = True
+        mock_duration.return_value = 60000
+
+        # Create task and config
+        task = TranscriptionTask(
+            file_id="test_id",
+            name="test.mp3",
+            mime_type="audio/mpeg",
+            size_bytes=1024,
+            parents=["folder1"],
+            web_content_link="http://example.com/test",
+            duration_ms=None,
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            model_id="test-model",
+            num_workers=1,
+        )
+        config.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Execute
+        file_id, success, message = transcribe_single_file(task, config)
+
+        # Verify
+        assert file_id == "test_id"
+        assert success is True
+        assert message == "Success"
+        mock_save.assert_called_once()
+
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("gtranscriber.core.batch.DriveClient")
+    @patch("gtranscriber.core.batch.create_temp_file")
+    @patch("gtranscriber.core.batch.has_audio_stream")
+    def test_transcribe_single_file_no_audio_stream(
+        self,
+        mock_has_audio: MagicMock,
+        mock_temp_file: MagicMock,
+        mock_drive: MagicMock,
+        mock_engine: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test transcription fails when file has no audio stream."""
+        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+
+        # Setup mocks
+        temp_file = tmp_path / "temp.mp3"
+        temp_file.touch()
+        mock_temp_file.return_value = temp_file
+
+        # Mock DriveClient
+        mock_drive_instance = Mock()
+        mock_drive.return_value = mock_drive_instance
+
+        # Mock no audio stream
+        mock_has_audio.return_value = False
+
+        # Create task and config
+        task = TranscriptionTask(
+            file_id="test_id",
+            name="test.mp3",
+            mime_type="audio/mpeg",
+            size_bytes=1024,
+            parents=[],
+            web_content_link="http://example.com/test",
+            duration_ms=60000,
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+        )
+
+        # Execute
+        file_id, success, message = transcribe_single_file(task, config)
+
+        # Verify
+        assert file_id == "test_id"
+        assert success is False
+        assert "no audio" in message.lower() or "audio stream" in message.lower()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("gtranscriber.core.batch.DriveClient")
+    @patch("gtranscriber.core.batch.create_temp_file")
+    @patch("gtranscriber.core.batch.save_enriched_record")
+    @patch("gtranscriber.core.batch.extract_audio")
+    @patch("gtranscriber.core.batch.requires_audio_extraction")
+    @patch("gtranscriber.core.batch.get_media_duration_ms")
+    def test_transcribe_single_file_video_with_extraction(
+        self,
+        mock_duration: MagicMock,
+        mock_requires_extraction: MagicMock,
+        mock_extract: MagicMock,
+        mock_save: MagicMock,
+        mock_temp_file: MagicMock,
+        mock_drive: MagicMock,
+        mock_engine: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test successful transcription of a video file with audio extraction."""
+        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+
+        # Setup mocks
+        temp_video = tmp_path / "temp.mp4"
+        temp_video.touch()
+        temp_audio = tmp_path / "temp.wav"
+        temp_audio.touch()
+
+        # Mock temp file creation to return different files for video and audio
+        mock_temp_file.side_effect = [temp_video, temp_audio]
+
+        # Mock DriveClient
+        mock_drive_instance = Mock()
+        mock_drive.return_value = mock_drive_instance
+
+        # Mock WhisperEngine
+        mock_engine_instance = Mock()
+        mock_result = Mock(spec=['text', 'segments', 'detected_language', 'language_probability', 'model_id', 'device', 'processing_duration_sec'])
+        mock_result.text = "Test transcription"
+        mock_result.segments = []
+        mock_result.detected_language = "en"
+        mock_result.language_probability = 0.95
+        mock_result.model_id = "test-model"
+        mock_result.device = "cpu"
+        mock_result.processing_duration_sec = 1.0
+        mock_engine_instance.transcribe.return_value = mock_result
+        mock_engine.return_value = mock_engine_instance
+
+        # Mock video extraction
+        mock_requires_extraction.return_value = True
+        mock_duration.return_value = 120000
+
+        # Create task and config
+        task = TranscriptionTask(
+            file_id="test_id",
+            name="test.mp4",
+            mime_type="video/mp4",
+            size_bytes=2048,
+            parents=["folder1"],
+            web_content_link="http://example.com/test",
+            duration_ms=None,
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            model_id="test-model",
+            num_workers=1,
+        )
+        config.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Execute
+        file_id, success, message = transcribe_single_file(task, config)
+
+        # Verify
+        assert file_id == "test_id"
+        assert success is True
+        assert message == "Success"
+        mock_extract.assert_called_once()
+        mock_save.assert_called_once()
+
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("gtranscriber.core.batch.DriveClient")
+    @patch("gtranscriber.core.batch.create_temp_file")
+    @patch("gtranscriber.core.batch.extract_audio")
+    @patch("gtranscriber.core.batch.requires_audio_extraction")
+    def test_transcribe_single_file_corrupted_media(
+        self,
+        mock_requires_extraction: MagicMock,
+        mock_extract: MagicMock,
+        mock_temp_file: MagicMock,
+        mock_drive: MagicMock,
+        mock_engine: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test transcription fails with corrupted media."""
+        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+        from gtranscriber.core.media import CorruptedMediaError
+
+        # Setup mocks
+        temp_file = tmp_path / "temp.mp4"
+        temp_file.touch()
+        mock_temp_file.return_value = temp_file
+
+        # Mock DriveClient
+        mock_drive_instance = Mock()
+        mock_drive.return_value = mock_drive_instance
+
+        # Mock extraction failure
+        mock_requires_extraction.return_value = True
+        mock_extract.side_effect = CorruptedMediaError(temp_file, "File is corrupted")
+
+        # Create task and config
+        task = TranscriptionTask(
+            file_id="test_id",
+            name="test.mp4",
+            mime_type="video/mp4",
+            size_bytes=2048,
+            parents=[],
+            web_content_link="http://example.com/test",
+            duration_ms=60000,
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+        )
+
+        # Execute
+        file_id, success, message = transcribe_single_file(task, config)
+
+        # Verify
+        assert file_id == "test_id"
+        assert success is False
+        assert "corrupted" in message.lower() or "corrupt" in message.lower()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("gtranscriber.core.batch.DriveClient")
+    @patch("gtranscriber.core.batch.create_temp_file")
+    @patch("gtranscriber.core.batch.extract_audio")
+    @patch("gtranscriber.core.batch.requires_audio_extraction")
+    def test_transcribe_single_file_audio_extraction_error(
+        self,
+        mock_requires_extraction: MagicMock,
+        mock_extract: MagicMock,
+        mock_temp_file: MagicMock,
+        mock_drive: MagicMock,
+        mock_engine: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test transcription fails with audio extraction error."""
+        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+        from gtranscriber.core.media import AudioExtractionError
+
+        # Setup mocks
+        temp_file = tmp_path / "temp.mp4"
+        temp_file.touch()
+        mock_temp_file.return_value = temp_file
+
+        # Mock DriveClient
+        mock_drive_instance = Mock()
+        mock_drive.return_value = mock_drive_instance
+
+        # Mock extraction failure
+        mock_requires_extraction.return_value = True
+        mock_extract.side_effect = AudioExtractionError(temp_file, "Extraction failed")
+
+        # Create task and config
+        task = TranscriptionTask(
+            file_id="test_id",
+            name="test.mp4",
+            mime_type="video/mp4",
+            size_bytes=2048,
+            parents=[],
+            web_content_link="http://example.com/test",
+            duration_ms=60000,
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+        )
+
+        # Execute
+        file_id, success, message = transcribe_single_file(task, config)
+
+        # Verify
+        assert file_id == "test_id"
+        assert success is False
+        assert "extraction" in message.lower() or "extract" in message.lower()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("gtranscriber.core.batch.DriveClient")
+    @patch("gtranscriber.core.batch.create_temp_file")
+    def test_transcribe_single_file_generic_error(
+        self,
+        mock_temp_file: MagicMock,
+        mock_drive: MagicMock,
+        mock_engine: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test transcription fails with generic error."""
+        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+
+        # Setup mocks
+        temp_file = tmp_path / "temp.mp3"
+        temp_file.touch()
+        mock_temp_file.return_value = temp_file
+
+        # Mock DriveClient to raise an error
+        mock_drive.side_effect = Exception("Generic error")
+
+        # Create task and config
+        task = TranscriptionTask(
+            file_id="test_id",
+            name="test.mp3",
+            mime_type="audio/mpeg",
+            size_bytes=1024,
+            parents=[],
+            web_content_link="http://example.com/test",
+            duration_ms=60000,
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+        )
+
+        # Execute
+        file_id, success, message = transcribe_single_file(task, config)
+
+        # Verify
+        assert file_id == "test_id"
+        assert success is False
+        assert message == "Generic error"
 
 

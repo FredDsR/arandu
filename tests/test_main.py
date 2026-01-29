@@ -170,3 +170,36 @@ class TestMainModuleImports:
         from gtranscriber.main import version_callback
 
         assert callable(version_callback)
+
+    def test_version_callback_with_true(self) -> None:
+        """Test version callback with True value."""
+        import typer
+        from gtranscriber.main import version_callback
+
+        try:
+            version_callback(True)
+            assert False, "Should have raised typer.Exit"
+        except typer.Exit as e:
+            assert e.exit_code == 0
+
+    def test_version_callback_with_false(self) -> None:
+        """Test version callback with False value does nothing."""
+        from gtranscriber.main import version_callback
+
+        # Should return None and not raise any exception
+        result = version_callback(False)
+        assert result is None
+
+    def test_setup_logging(self) -> None:
+        """Test setup_logging function."""
+        from gtranscriber.main import setup_logging
+
+        # Should execute without errors
+        setup_logging()
+
+    def test_main_function(self) -> None:
+        """Test main callback function."""
+        from gtranscriber.main import main
+
+        # Should execute without errors
+        main()
