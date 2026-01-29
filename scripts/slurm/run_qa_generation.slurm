@@ -29,7 +29,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 export GTRANSCRIBER_QA_PROVIDER="${QA_PROVIDER:-ollama}"
 export GTRANSCRIBER_QA_MODEL_ID="${QA_MODEL:-llama3.1:8b}"
 # Use ollama service name within Docker network (sidecar container)
-export GTRANSCRIBER_QA_OLLAMA_URL="${QA_OLLAMA_URL:-http://ollama:11434}"
+export GTRANSCRIBER_QA_OLLAMA_URL="${QA_OLLAMA_URL:-http://ollama:11434/v1}"
 export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT="${QUESTIONS_PER_DOCUMENT:-10}"
 export GTRANSCRIBER_QA_WORKERS="${WORKERS:-4}"
 

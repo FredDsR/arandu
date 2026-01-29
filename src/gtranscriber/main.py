@@ -5,8 +5,8 @@ and Rich for visual feedback.
 """
 
 from __future__ import annotations
-import json
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -682,6 +682,192 @@ def refresh_auth(
 
     except Exception as e:
         print_error(f"Authentication failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
+def generate_qa(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing transcription JSON files.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Output directory for QA dataset JSON files. "
+            "Can be set via GTRANSCRIBER_QA_OUTPUT_DIR env var.",
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            help="LLM provider: openai, ollama, custom. "
+            "Can be set via GTRANSCRIBER_QA_PROVIDER env var.",
+        ),
+    ] = None,
+    model_id: Annotated[
+        str | None,
+        typer.Option(
+            "--model-id",
+            "-m",
+            help="Model ID for QA generation (e.g., llama3.1:8b, gpt-4). "
+            "Can be set via GTRANSCRIBER_QA_MODEL_ID env var.",
+        ),
+    ] = None,
+    workers: Annotated[
+        int | None,
+        typer.Option(
+            "--workers",
+            "-w",
+            help="Number of parallel workers. Can be set via GTRANSCRIBER_QA_WORKERS env var.",
+        ),
+    ] = None,
+    questions: Annotated[
+        int | None,
+        typer.Option(
+            "--questions",
+            help="Number of QA pairs to generate per document (1-50). "
+            "Can be set via GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT env var.",
+        ),
+    ] = None,
+    strategy: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--strategy",
+            help="Question generation strategies (factual, conceptual, temporal, entity). "
+            "Can specify multiple times. "
+            "Can be set via GTRANSCRIBER_QA_STRATEGIES env var.",
+        ),
+    ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option(
+            "--temperature",
+            help="LLM temperature for generation (0.0-2.0). "
+            "Can be set via GTRANSCRIBER_QA_TEMPERATURE env var.",
+        ),
+    ] = None,
+    ollama_url: Annotated[
+        str | None,
+        typer.Option(
+            "--ollama-url",
+            help="Ollama API base URL. Can be set via GTRANSCRIBER_QA_OLLAMA_URL env var.",
+        ),
+    ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--base-url",
+            help="Custom base URL for OpenAI-compatible endpoints. "
+            "Can be set via GTRANSCRIBER_QA_BASE_URL env var.",
+        ),
+    ] = None,
+) -> None:
+    """Generate synthetic QA pairs from transcriptions.
+
+    Processes all transcription JSON files in the input directory and generates
+    question-answer pairs using the specified LLM provider. Supports multiple
+    question generation strategies (factual, conceptual, temporal, entity-focused)
+    to create diverse evaluation datasets.
+
+    Progress is automatically checkpointed, allowing interrupted jobs to resume
+    from the last completed file. QA pairs are saved as JSON files in the output
+    directory.
+
+    Examples:
+        # Generate QA pairs using Ollama
+        gtranscriber generate-qa results/ -o qa_dataset/
+
+        # Use OpenAI with specific model
+        gtranscriber generate-qa results/ --provider openai --model-id gpt-4
+
+        # Generate more pairs with multiple strategies
+        gtranscriber generate-qa results/ --questions 20 \\
+            --strategy factual --strategy conceptual --strategy temporal
+
+        # Use multiple workers for faster processing
+        gtranscriber generate-qa results/ --workers 4
+    """
+    from gtranscriber.config import QAConfig
+    from gtranscriber.core.qa_batch import run_batch_qa_generation
+
+    # Load config first to get defaults from environment variables
+    base_config = QAConfig()
+
+    # Override with CLI args if provided (None means use config default)
+    if provider is not None:
+        base_config.provider = provider
+    if model_id is not None:
+        base_config.model_id = model_id
+    if ollama_url is not None:
+        base_config.ollama_url = ollama_url
+    if base_url is not None:
+        base_config.base_url = base_url
+    if questions is not None:
+        base_config.questions_per_document = questions
+    if strategy is not None:
+        base_config.strategies = strategy
+    if temperature is not None:
+        base_config.temperature = temperature
+    if output_dir is not None:
+        base_config.output_dir = output_dir
+    if workers is not None:
+        base_config.workers = workers
+
+    # Now use the resolved config
+    qa_config = base_config
+
+    # Validate resolved values
+    if qa_config.workers < 1:
+        print_error("Number of workers must be at least 1")
+        raise typer.Exit(code=1)
+
+    if qa_config.questions_per_document < 1 or qa_config.questions_per_document > 50:
+        print_error("Number of questions must be between 1 and 50")
+        raise typer.Exit(code=1)
+
+    if qa_config.temperature < 0.0 or qa_config.temperature > 2.0:
+        print_error("Temperature must be between 0.0 and 2.0")
+        raise typer.Exit(code=1)
+
+    # Validate strategies
+    valid_strategies = {"factual", "conceptual", "temporal", "entity"}
+    for s in qa_config.strategies:
+        if s not in valid_strategies:
+            print_error(f"Invalid strategy: {s!r}. Must be one of {sorted(valid_strategies)}")
+            raise typer.Exit(code=1)
+
+    # Display configuration
+    console.print("\n[bold]QA Generation Configuration[/bold]\n")
+    console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
+    console.print(f"[cyan]Output Directory:[/cyan] {qa_config.output_dir}")
+    console.print(f"[cyan]Provider:[/cyan] {qa_config.provider}")
+    console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
+    console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
+    console.print(f"[cyan]Questions per document:[/cyan] {qa_config.questions_per_document}")
+    console.print(f"[cyan]Strategies:[/cyan] {', '.join(qa_config.strategies)}")
+    console.print(f"[cyan]Temperature:[/cyan] {qa_config.temperature}")
+    if qa_config.provider == "ollama":
+        console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
+    if qa_config.base_url:
+        console.print(f"[cyan]Base URL:[/cyan] {qa_config.base_url}")
+    console.print()
+
+    try:
+        run_batch_qa_generation(input_dir, qa_config.output_dir, qa_config, qa_config.workers)
+        print_success("QA generation completed!")
+
+    except Exception as e:
+        print_error(f"QA generation failed: {e}")
         raise typer.Exit(code=1) from e
 
 

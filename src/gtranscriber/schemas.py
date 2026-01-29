@@ -144,9 +144,7 @@ class QARecord(BaseModel):
     transcription_text: str = Field(..., description="Full transcription text")
     qa_pairs: list[QAPair] = Field(..., description="List of generated QA pairs")
     model_id: str = Field(..., description="LLM model used for generation")
-    provider: Literal["openai", "ollama", "custom"] = Field(
-        ..., description="LLM provider used"
-    )
+    provider: Literal["openai", "ollama", "custom"] = Field(..., description="LLM provider used")
     generation_timestamp: datetime = Field(
         default_factory=datetime.now, description="When QA pairs were generated"
     )
@@ -157,8 +155,7 @@ class QARecord(BaseModel):
         """Validate that total_pairs matches actual count."""
         if self.total_pairs != len(self.qa_pairs):
             raise ValueError(
-                f"total_pairs ({self.total_pairs}) must equal "
-                f"len(qa_pairs) ({len(self.qa_pairs)})"
+                f"total_pairs ({self.total_pairs}) must equal len(qa_pairs) ({len(self.qa_pairs)})"
             )
         return self
 
@@ -187,9 +184,7 @@ class KGMetadata(BaseModel):
     """
 
     graph_id: str = Field(..., description="Unique graph identifier")
-    source_documents: list[str] = Field(
-        ..., description="List of source document IDs (gdrive_ids)"
-    )
+    source_documents: list[str] = Field(..., description="List of source document IDs (gdrive_ids)")
     model_id: str = Field(..., description="LLM model used for extraction")
     provider: str = Field(..., description="LLM provider")
     language: str = Field(default="pt", description="Language code for extraction (ISO 639-1)")
@@ -197,9 +192,7 @@ class KGMetadata(BaseModel):
         default="prompts/pt_prompts.json",
         description="Path to prompt template file used",
     )
-    created_at: datetime = Field(
-        default_factory=datetime.now, description="When graph was created"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="When graph was created")
 
     def save(self, path: str | Path) -> None:
         """Save metadata to JSON file."""
@@ -264,9 +257,7 @@ class RelationMetricsResult(BaseModel):
 class SemanticQualityResult(BaseModel):
     """Semantic quality metrics for knowledge evaluation."""
 
-    coherence_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Semantic coherence (0.0-1.0)"
-    )
+    coherence_score: float = Field(..., ge=0.0, le=1.0, description="Semantic coherence (0.0-1.0)")
     information_density: float = Field(
         ..., ge=0.0, description="(Entities + Relations) / text_length"
     )
@@ -306,9 +297,7 @@ class EvaluationReport(BaseModel):
     )
 
     # Summary
-    recommendations: list[str] = Field(
-        default_factory=list, description="Improvement suggestions"
-    )
+    recommendations: list[str] = Field(default_factory=list, description="Improvement suggestions")
 
     @computed_field
     @property

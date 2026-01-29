@@ -29,7 +29,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 export GTRANSCRIBER_KG_PROVIDER="${KG_PROVIDER:-ollama}"
 export GTRANSCRIBER_KG_MODEL_ID="${KG_MODEL:-llama3.1:8b}"
 # Use ollama service name within Docker network (sidecar container)
-export GTRANSCRIBER_KG_OLLAMA_URL="${KG_OLLAMA_URL:-http://ollama:11434}"
+export GTRANSCRIBER_KG_OLLAMA_URL="${KG_OLLAMA_URL:-http://ollama:11434/v1}"
 export GTRANSCRIBER_KG_MERGE_GRAPHS="${KG_MERGE_GRAPHS:-true}"
 export GTRANSCRIBER_KG_OUTPUT_FORMAT="${KG_OUTPUT_FORMAT:-graphml}"
 export GTRANSCRIBER_KG_LANGUAGE="${KG_LANGUAGE:-pt}"

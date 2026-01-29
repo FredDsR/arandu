@@ -162,7 +162,7 @@ class QAConfig(BaseSettings):
         description="Model ID for QA generation",
     )
     ollama_url: str = Field(
-        default="http://localhost:11434",
+        default="http://localhost:11434/v1",
         description="Ollama API base URL",
     )
     base_url: str | None = Field(
@@ -213,8 +213,7 @@ class QAConfig(BaseSettings):
         for strategy in v:
             if strategy not in valid_strategies:
                 raise ValueError(
-                    f"Invalid QA strategy: {strategy!r}. "
-                    f"Must be one of {sorted(valid_strategies)}"
+                    f"Invalid QA strategy: {strategy!r}. Must be one of {sorted(valid_strategies)}"
                 )
         return v
 
@@ -243,7 +242,7 @@ class KGConfig(BaseSettings):
         description="Model ID for KG construction",
     )
     ollama_url: str = Field(
-        default="http://localhost:11434",
+        default="http://localhost:11434/v1",
         description="Ollama API base URL for KG construction",
     )
     base_url: str | None = Field(
@@ -352,8 +351,7 @@ class EvaluationConfig(BaseSettings):
         for metric in v:
             if metric not in valid_metrics:
                 raise ValueError(
-                    f"Invalid evaluation metric: {metric!r}. "
-                    f"Must be one of {sorted(valid_metrics)}"
+                    f"Invalid evaluation metric: {metric!r}. Must be one of {sorted(valid_metrics)}"
                 )
         return v
 
