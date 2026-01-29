@@ -26,7 +26,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv sync --all-groups
       
       - name: Run Ruff linter
         run: |
@@ -76,13 +76,14 @@ jobs:
         if: always()
         id: tests
         run: |
-          # Extract test count from pytest output
-          TESTS=$(uv run pytest --collect-only -q 2>/dev/null | tail -1 | grep -oP '\d+(?= test)' || echo "0")
+          # Extract test count from pytest output (using POSIX-compliant grep)
+          TESTS=$(uv run pytest --collect-only -q 2>/dev/null | tail -1 | grep -oE '[0-9]+ test' | grep -oE '[0-9]+' || echo "0")
           echo "count=$TESTS" >> $GITHUB_OUTPUT
           echo "Tests: $TESTS"
       
       - name: Create Coverage Badge
-        if: github.ref == 'refs/heads/main' && always()
+        # Only update badges on main branch and only if secrets are configured
+        if: github.ref == 'refs/heads/main' && always() && secrets.GIST_SECRET != '' && secrets.GIST_ID != ''
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
@@ -95,7 +96,8 @@ jobs:
           minColorRange: 0
       
       - name: Create Tests Badge
-        if: github.ref == 'refs/heads/main' && always()
+        # Only update badges on main branch and only if secrets are configured
+        if: github.ref == 'refs/heads/main' && always() && secrets.GIST_SECRET != '' && secrets.GIST_ID != ''
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}

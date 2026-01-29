@@ -85,8 +85,8 @@ Replace `YOUR_GIST_ID` with the actual gist ID from Step 1.
 ## Coverage Badge Colors
 
 The coverage badge automatically changes color based on percentage:
-- 🔴 Red: 0-60%
-- 🟡 Yellow: 60-75%
+- 🔴 Red: 0-59%
+- 🟡 Yellow: 60-74%
 - 🟢 Green: 75-100%
 
 ## Local Testing
