@@ -302,3 +302,218 @@ class TestGetMediaDurationMs:
         duration = get_media_duration_ms(Path("test.mp4"))
 
         assert duration == 50000
+
+
+class TestValidateMediaFile:
+    """Tests for validate_media_file function."""
+
+    def test_validate_media_file_success(self, mocker: MockerFixture) -> None:
+        """Test validating a valid media file."""
+        from gtranscriber.core.media import validate_media_file
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        # Should not raise any exception
+        validate_media_file("test.mp4")
+
+    def test_validate_media_file_moov_atom_not_found(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Test validation error for missing moov atom."""
+        from gtranscriber.core.media import validate_media_file
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "moov atom not found"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(CorruptedMediaError) as exc_info:
+            validate_media_file("test.mp4")
+
+        assert "moov atom" in str(exc_info.value).lower()
+
+    def test_validate_media_file_invalid_data(self, mocker: MockerFixture) -> None:
+        """Test validation error for invalid data."""
+        from gtranscriber.core.media import validate_media_file
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Invalid data found in stream"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(CorruptedMediaError) as exc_info:
+            validate_media_file("test.mp4")
+
+        assert "Invalid data" in str(exc_info.value) or "damaged" in str(exc_info.value)
+
+    def test_validate_media_file_timeout(self, mocker: MockerFixture) -> None:
+        """Test validation timeout handling."""
+        from gtranscriber.core.media import validate_media_file
+
+        mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffprobe", 30),
+        )
+
+        with pytest.raises(CorruptedMediaError) as exc_info:
+            validate_media_file("test.mp4")
+
+        assert "timed out" in str(exc_info.value).lower()
+
+    def test_validate_media_file_generic_error(self, mocker: MockerFixture) -> None:
+        """Test validation with generic ffprobe error."""
+        from gtranscriber.core.media import validate_media_file
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Some other error"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(CorruptedMediaError) as exc_info:
+            validate_media_file("test.mp4")
+
+        assert "Some other error" in str(exc_info.value)
+
+
+class TestRequiresAudioExtraction:
+    """Tests for requires_audio_extraction function."""
+
+    def test_requires_extraction_video_mp4(self) -> None:
+        """Test that video/mp4 requires extraction."""
+        from gtranscriber.core.media import requires_audio_extraction
+
+        assert requires_audio_extraction("video/mp4") is True
+
+    def test_requires_extraction_video_quicktime(self) -> None:
+        """Test that video/quicktime requires extraction."""
+        from gtranscriber.core.media import requires_audio_extraction
+
+        assert requires_audio_extraction("video/quicktime") is True
+
+    def test_no_extraction_audio_mpeg(self) -> None:
+        """Test that audio/mpeg does not require extraction."""
+        from gtranscriber.core.media import requires_audio_extraction
+
+        assert requires_audio_extraction("audio/mpeg") is False
+
+    def test_no_extraction_audio_wav(self) -> None:
+        """Test that audio/wav does not require extraction."""
+        from gtranscriber.core.media import requires_audio_extraction
+
+        assert requires_audio_extraction("audio/wav") is False
+
+
+class TestExtractAudio:
+    """Tests for extract_audio function."""
+
+    def test_extract_audio_success(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test successful audio extraction."""
+        from gtranscriber.core.media import extract_audio
+
+        # Mock validate_media_file
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+
+        # Mock has_audio_stream
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        # Mock ffmpeg subprocess
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        result = extract_audio(input_file, output_file)
+
+        assert result == output_file
+
+    def test_extract_audio_no_audio_stream(
+        self, mocker: MockerFixture, tmp_path: Path
+    ) -> None:
+        """Test extraction when no audio stream is found."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=False)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "No audio stream" in str(exc_info.value)
+
+    def test_extract_audio_timeout(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction timeout handling."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffmpeg", 300),
+        )
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "timed out" in str(exc_info.value).lower()
+
+    def test_extract_audio_stereo(
+        self, mocker: MockerFixture, tmp_path: Path
+    ) -> None:
+        """Test audio extraction with stereo output."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        extract_audio(input_file, output_file, mono=False)
+
+        # Check that -ac 1 (mono) was not in the command
+        call_args = mock_run.call_args[0][0]
+        assert "-ac" not in call_args
+
+    def test_extract_audio_custom_sample_rate(
+        self, mocker: MockerFixture, tmp_path: Path
+    ) -> None:
+        """Test audio extraction with custom sample rate."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        extract_audio(input_file, output_file, sample_rate=48000)
+
+        # Check sample rate in command
+        call_args = mock_run.call_args[0][0]
+        assert "48000" in call_args
