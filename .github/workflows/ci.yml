@@ -39,6 +39,9 @@ jobs:
   test:
     name: Test with pytest
     runs-on: ubuntu-latest
+    env:
+      GIST_SECRET: ${{ secrets.GIST_SECRET }}
+      GIST_ID: ${{ secrets.GIST_ID }}
     steps:
       - uses: actions/checkout@v4
       
@@ -84,7 +87,7 @@ jobs:
       
       - name: Create Coverage Badge
         # Only update badges on main branch and only if secrets are configured
-        if: github.ref == 'refs/heads/main' && always() && secrets.GIST_SECRET != '' && secrets.GIST_ID != ''
+        if: github.ref == 'refs/heads/main' && always() && env.GIST_SECRET != '' && env.GIST_ID != ''
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
@@ -95,10 +98,10 @@ jobs:
           valColorRange: ${{ steps.coverage.outputs.percentage }}
           maxColorRange: 100
           minColorRange: 0
-      
+
       - name: Create Tests Badge
         # Only update badges on main branch and only if secrets are configured
-        if: github.ref == 'refs/heads/main' && always() && secrets.GIST_SECRET != '' && secrets.GIST_ID != ''
+        if: github.ref == 'refs/heads/main' && always() && env.GIST_SECRET != '' && env.GIST_ID != ''
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
