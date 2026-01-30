@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from gtranscriber.main import (
     _create_segments_from_result,
     _ensure_float,
@@ -174,13 +176,12 @@ class TestMainModuleImports:
     def test_version_callback_with_true(self) -> None:
         """Test version callback with True value."""
         import typer
+
         from gtranscriber.main import version_callback
 
-        try:
+        with pytest.raises(typer.Exit) as exc_info:
             version_callback(True)
-            assert False, "Should have raised typer.Exit"
-        except typer.Exit as e:
-            assert e.exit_code == 0
+        assert exc_info.value.exit_code == 0
 
     def test_version_callback_with_false(self) -> None:
         """Test version callback with False value does nothing."""

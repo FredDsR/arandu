@@ -42,7 +42,7 @@ class TranscriberConfig(BaseSettings):
     )
     language: str | None = Field(
         default=None,
-        description="Language code for transcription (e.g., 'pt' for Portuguese). If None, auto-detect.",
+        description="Language code for transcription (e.g., 'pt'). If None, auto-detect.",
     )
     return_timestamps: bool = Field(
         default=True,

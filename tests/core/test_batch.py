@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, Mock, patch
 
-from pytest_mock import MockerFixture
+import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pytest_mock import MockerFixture
 
 from gtranscriber.core.batch import (
     AUDIO_VIDEO_MIME_TYPES,
@@ -103,8 +108,9 @@ class TestBatchProcessingErrors:
 
     def test_no_audio_stream_error_import(self) -> None:
         """Test that NoAudioStreamError can be imported."""
-        from gtranscriber.core.drive import NoAudioStreamError
         from pathlib import Path
+
+        from gtranscriber.core.drive import NoAudioStreamError
 
         error = NoAudioStreamError("test_id", "test.mp4", Path("/tmp/test.mp4"))
         assert error.file_id == "test_id"
@@ -423,8 +429,8 @@ class TestLoadCatalog:
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
             "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
-            'file1,test.mp3,audio/mpeg,1024,"[\'folder1\']",http://example.com/file1,60000\n'
-            'file2,test.mp4,video/mp4,2048,"[\'folder2\']",http://example.com/file2,120000\n'
+            "file1,test.mp3,audio/mpeg,1024,\"['folder1']\",http://example.com/file1,60000\n"
+            "file2,test.mp4,video/mp4,2048,\"['folder2']\",http://example.com/file2,120000\n"
         )
 
         tasks = load_catalog(catalog_file)
@@ -460,22 +466,16 @@ class TestLoadCatalog:
             "file1,test.mp3\n"
         )
 
-        try:
+        with pytest.raises(ValueError, match="missing required columns"):
             load_catalog(catalog_file)
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "missing required columns" in str(e).lower()
 
     def test_load_catalog_empty_file(self, tmp_path: Path) -> None:
         """Test that load_catalog raises error for empty file."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text("")
 
-        try:
+        with pytest.raises(ValueError, match="empty or invalid"):
             load_catalog(catalog_file)
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "empty or invalid" in str(e).lower()
 
     def test_load_catalog_skips_rows_with_missing_id_or_name(self, tmp_path: Path) -> None:
         """Test that rows with missing gdrive_id or name are skipped."""
@@ -557,7 +557,17 @@ class TestTranscribeSingleFile:
 
         # Mock WhisperEngine
         mock_engine_instance = Mock()
-        mock_result = Mock(spec=['text', 'segments', 'detected_language', 'language_probability', 'model_id', 'device', 'processing_duration_sec'])
+        mock_result = Mock(
+            spec=[
+                "text",
+                "segments",
+                "detected_language",
+                "language_probability",
+                "model_id",
+                "device",
+                "processing_duration_sec",
+            ]
+        )
         mock_result.text = "Test transcription"
         mock_result.segments = []
         mock_result.detected_language = "en"
@@ -694,7 +704,17 @@ class TestTranscribeSingleFile:
 
         # Mock WhisperEngine
         mock_engine_instance = Mock()
-        mock_result = Mock(spec=['text', 'segments', 'detected_language', 'language_probability', 'model_id', 'device', 'processing_duration_sec'])
+        mock_result = Mock(
+            spec=[
+                "text",
+                "segments",
+                "detected_language",
+                "language_probability",
+                "model_id",
+                "device",
+                "processing_duration_sec",
+            ]
+        )
         mock_result.text = "Test transcription"
         mock_result.segments = []
         mock_result.detected_language = "en"
@@ -906,5 +926,3 @@ class TestTranscribeSingleFile:
         assert file_id == "test_id"
         assert success is False
         assert message == "Generic error"
-
-

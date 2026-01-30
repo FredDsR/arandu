@@ -5,13 +5,14 @@ This module provides common fixtures used across all test modules.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 import pytest
 
 if TYPE_CHECKING:
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
     from pytest_mock import MockerFixture
 
 

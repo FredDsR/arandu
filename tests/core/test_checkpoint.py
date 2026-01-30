@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
-from pytest_mock import MockerFixture
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
+    from pytest_mock import MockerFixture
 
 from gtranscriber.core.checkpoint import CheckpointManager, CheckpointState
 

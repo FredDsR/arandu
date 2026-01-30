@@ -7,9 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
-import pytest
-
 if TYPE_CHECKING:
+    import pytest
     from pytest_mock import MockerFixture
 
 from gtranscriber.config import QAConfig
@@ -675,9 +674,9 @@ class TestRunBatchQAGeneration:
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = '''[
+        mock_response.choices[0].message.content = """[
             {"question": "What?", "answer": "Test transcription", "confidence": 0.9}
-        ]'''
+        ]"""
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
 

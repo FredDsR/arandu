@@ -62,7 +62,8 @@ class IncompleteDownloadError(DownloadError):
 
         super().__init__(
             f"Incomplete download for '{file_name}' (ID: {file_id}): "
-            f"expected {expected_mb:.2f} MB but got {actual_mb:.2f} MB ({percentage:.1f}% complete). "
+            f"expected {expected_mb:.2f} MB but got {actual_mb:.2f} MB "
+            f"({percentage:.1f}% complete). "
             f"This may be due to network issues or Google Drive rate limiting. "
             f"The file will be retried automatically."
         )
@@ -334,9 +335,7 @@ class DriveClient:
                     file_id, display_name, expected_size, actual_size, destination
                 )
 
-        logger.debug(
-            f"Download validated: {display_name} ({actual_size / (1024*1024):.2f} MB)"
-        )
+        logger.debug(f"Download validated: {display_name} ({actual_size / (1024 * 1024):.2f} MB)")
         return destination
 
     @retry(

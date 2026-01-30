@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pytest_mock import MockerFixture
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
 
 from gtranscriber.core.io import (
     cleanup_temp_files,

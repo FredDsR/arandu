@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -140,14 +141,11 @@ class TestDriveClientMethods:
 
         # Should handle missing token gracefully (would trigger OAuth flow)
         # In actual usage, this would prompt for authentication
-        try:
+        with contextlib.suppress(FileNotFoundError):
             DriveClient(
                 credentials_file=str(tmp_path / "credentials.json"),
                 token_file=str(token_file),
             )
-        except FileNotFoundError:
-            # Expected if credentials file doesn't exist
-            pass
 
 
 class TestDriveRetryLogic:
@@ -155,9 +153,7 @@ class TestDriveRetryLogic:
 
     def test_download_error_inheritance(self) -> None:
         """Test that custom errors inherit from DownloadError."""
-        incomplete_error = IncompleteDownloadError(
-            "id", "name", 100, 50, Path("/tmp/test")
-        )
+        incomplete_error = IncompleteDownloadError("id", "name", 100, 50, Path("/tmp/test"))
         empty_error = EmptyDownloadError("id", "name", Path("/tmp/test"))
 
         assert isinstance(incomplete_error, DownloadError)
@@ -357,8 +353,9 @@ class TestNoAudioStreamError:
 
     def test_no_audio_stream_error_creation(self) -> None:
         """Test creating NoAudioStreamError."""
-        from gtranscriber.core.drive import NoAudioStreamError
         from pathlib import Path
+
+        from gtranscriber.core.drive import NoAudioStreamError
 
         error = NoAudioStreamError("file123", "test.mp4", Path("/tmp/test.mp4"))
 

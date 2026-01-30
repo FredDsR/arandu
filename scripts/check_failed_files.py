@@ -13,7 +13,6 @@ import argparse
 import csv
 import json
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -29,14 +28,14 @@ REPORT_PATH = PROJECT_ROOT / "results" / "failed_files_report.json"
 
 def load_checkpoint() -> dict[str, Any]:
     """Load the checkpoint file with failed files information."""
-    with open(CHECKPOINT_PATH, "r") as f:
+    with open(CHECKPOINT_PATH) as f:
         return json.load(f)
 
 
 def load_catalog() -> dict[str, dict[str, Any]]:
     """Load the catalog CSV and index by gdrive_id."""
     catalog = {}
-    with open(CATALOG_PATH, "r", newline="", encoding="utf-8") as f:
+    with open(CATALOG_PATH, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             catalog[row["gdrive_id"]] = row
@@ -132,7 +131,7 @@ def download_and_analyze(file_id: str, url: str, filename: str) -> dict[str, Any
             result["downloaded_size"] = total_size
 
             # Run ffprobe
-            print(f"  Analyzing with ffprobe...", end=" ", flush=True)
+            print("  Analyzing with ffprobe...", end=" ", flush=True)
             ffprobe_result = run_ffprobe(tmp_file.name)
             result["ffprobe"] = ffprobe_result
 
@@ -182,7 +181,7 @@ def download_and_analyze(file_id: str, url: str, filename: str) -> dict[str, Any
     return result
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Diagnose failed transcription files")
     parser.add_argument(
         "--limit", "-l", type=int, default=None, help="Limit number of files to check (for testing)"

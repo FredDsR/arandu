@@ -22,9 +22,7 @@ logger = logging.getLogger(__name__)
 class CheckpointState(BaseModel):
     """State tracking for batch transcription checkpoint."""
 
-    completed_files: set[str] = Field(
-        default_factory=set, description="Set of completed file IDs"
-    )
+    completed_files: set[str] = Field(default_factory=set, description="Set of completed file IDs")
     failed_files: dict[str, str] = Field(
         default_factory=dict, description="Map of file ID to error message"
     )

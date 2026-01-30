@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from gtranscriber.core.engine import TranscriptionResult, WhisperEngine
 
@@ -62,9 +65,9 @@ class TestWhisperEngineInitialization:
         mock_device: MagicMock,
     ) -> None:
         """Test WhisperEngine initialization with defaults."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -88,9 +91,9 @@ class TestWhisperEngineInitialization:
         mock_device: MagicMock,
     ) -> None:
         """Test WhisperEngine with custom parameters."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cuda:0",
@@ -136,9 +139,9 @@ class TestWhisperEngineInitialization:
         mock_device: MagicMock,
     ) -> None:
         """Test valid quantize_bits=4."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -158,9 +161,9 @@ class TestWhisperEngineInitialization:
         mock_device: MagicMock,
     ) -> None:
         """Test valid quantize_bits=8."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -190,9 +193,9 @@ class TestWhisperEnginePipeline:
         mock_pipeline: MagicMock,
     ) -> None:
         """Test that pipeline is initialized lazily."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -224,9 +227,9 @@ class TestWhisperEnginePipeline:
         mock_model: MagicMock,
     ) -> None:
         """Test handling of OSError during model loading."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -254,9 +257,9 @@ class TestWhisperEnginePipeline:
         mock_model: MagicMock,
     ) -> None:
         """Test handling of ValueError during model loading."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -284,9 +287,9 @@ class TestWhisperEnginePipeline:
         mock_model: MagicMock,
     ) -> None:
         """Test handling of unexpected errors during model loading."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -313,9 +316,9 @@ class TestWhisperEngineConfiguration:
         mock_device: MagicMock,
     ) -> None:
         """Test pipe_kwargs when only chunk_length_s is specified."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -337,9 +340,9 @@ class TestWhisperEngineConfiguration:
         mock_device: MagicMock,
     ) -> None:
         """Test pipe_kwargs when only stride_length_s is specified."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -373,9 +376,9 @@ class TestWhisperEngineTranscription:
         tmp_path: Path,
     ) -> None:
         """Test basic transcription."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -432,9 +435,9 @@ class TestWhisperEngineTranscription:
         tmp_path: Path,
     ) -> None:
         """Test transcription without chunks."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -475,9 +478,9 @@ class TestWhisperEngineTranscription:
         tmp_path: Path,
     ) -> None:
         """Test transcription with specified language."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -524,9 +527,9 @@ class TestWhisperEngineDeviceFallback:
         mock_pipeline: MagicMock,
     ) -> None:
         """Test fallback to CPU when device placement fails."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         # Initially try CUDA
         mock_device.return_value = HardwareConfig(
@@ -571,9 +574,9 @@ class TestWhisperEngineEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Test transcription with empty chunks list."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -613,9 +616,9 @@ class TestWhisperEngineEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Test transcription with missing timestamp data."""
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
-
         import torch
+
+        from gtranscriber.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",

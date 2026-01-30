@@ -10,10 +10,6 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -228,9 +224,11 @@ def validate_media_file(file_path: str | Path) -> None:
     try:
         cmd = [
             "ffprobe",
-            "-v", "error",
+            "-v",
+            "error",
             "-show_format",
-            "-of", "json",
+            "-of",
+            "json",
             str(file_path),
         ]
 
@@ -248,13 +246,12 @@ def validate_media_file(file_path: str | Path) -> None:
             raise CorruptedMediaError(
                 file_path,
                 "Missing moov atom (MP4 metadata header). "
-                "The recording may have been interrupted or the file was not properly finalized"
+                "The recording may have been interrupted or the file was not properly finalized",
             )
 
         if "invalid data found" in stderr:
             raise CorruptedMediaError(
-                file_path,
-                "Invalid data structure. The file format is damaged or unrecognizable"
+                file_path, "Invalid data structure. The file format is damaged or unrecognizable"
             )
 
         if result.returncode != 0:
@@ -262,11 +259,10 @@ def validate_media_file(file_path: str | Path) -> None:
             error_detail = result.stderr.strip() if result.stderr else "Unknown error"
             raise CorruptedMediaError(file_path, error_detail)
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as err:
         raise CorruptedMediaError(
-            file_path,
-            "File analysis timed out - file may be extremely large or corrupted"
-        )
+            file_path, "File analysis timed out - file may be extremely large or corrupted"
+        ) from err
     except CorruptedMediaError:
         raise
     except Exception as e:
@@ -321,18 +317,20 @@ def extract_audio(
     # Check for audio stream
     if not has_audio_stream(input_path):
         raise AudioExtractionError(
-            input_path,
-            "No audio stream found. The file may be a silent video or have an unsupported audio codec"
+            input_path, "No audio stream found. The file may be silent or have unsupported codec"
         )
 
     # Build ffmpeg command
     cmd = [
         "ffmpeg",
         "-y",  # Overwrite output file
-        "-i", str(input_path),
+        "-i",
+        str(input_path),
         "-vn",  # No video
-        "-acodec", "pcm_s16le",  # 16-bit PCM
-        "-ar", str(sample_rate),  # Sample rate
+        "-acodec",
+        "pcm_s16le",  # 16-bit PCM
+        "-ar",
+        str(sample_rate),  # Sample rate
     ]
 
     if mono:
@@ -355,10 +353,7 @@ def extract_audio(
 
             # Parse common ffmpeg errors for better messages
             if "moov atom not found" in stderr.lower():
-                raise CorruptedMediaError(
-                    input_path,
-                    "Missing moov atom (MP4 metadata header)"
-                )
+                raise CorruptedMediaError(input_path, "Missing moov atom (MP4 metadata header)")
             elif "no such file" in stderr.lower():
                 raise AudioExtractionError(input_path, "Input file not found")
             elif "invalid data" in stderr.lower():
@@ -385,17 +380,16 @@ def extract_audio(
 
         return output_path
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as err:
         # Clean up partial output
         if output_path.exists():
             output_path.unlink()
         raise AudioExtractionError(
-            input_path,
-            f"Audio extraction timed out after {FFMPEG_EXTRACT_TIMEOUT_SECONDS} seconds"
-        )
+            input_path, f"Audio extraction timed out after {FFMPEG_EXTRACT_TIMEOUT_SECONDS} seconds"
+        ) from err
     except (CorruptedMediaError, AudioExtractionError):
         raise
     except Exception as e:
         if output_path.exists():
             output_path.unlink()
-        raise AudioExtractionError(input_path, str(e))
+        raise AudioExtractionError(input_path, str(e)) from e

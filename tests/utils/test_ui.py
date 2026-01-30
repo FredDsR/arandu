@@ -159,9 +159,7 @@ class TestDisplayConfigTable:
         assert hasattr(table_arg, "title")
 
     @patch("gtranscriber.utils.ui.console")
-    def test_display_config_table_no_quantization(
-        self, mock_console: MagicMock
-    ) -> None:
+    def test_display_config_table_no_quantization(self, mock_console: MagicMock) -> None:
         """Test displaying config table with quantization disabled."""
         display_config_table(
             model_id="openai/whisper-tiny",

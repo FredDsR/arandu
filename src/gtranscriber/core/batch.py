@@ -79,9 +79,7 @@ def _parse_parents_from_string(parents_str: str | list[str]) -> list[str]:
     return []
 
 
-def _init_worker(
-    model_id: str, force_cpu: bool, quantize: bool, language: str | None
-) -> None:
+def _init_worker(model_id: str, force_cpu: bool, quantize: bool, language: str | None) -> None:
     """Initialize worker process with a WhisperEngine instance.
 
     This function is called once per worker process to load the model,

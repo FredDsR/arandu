@@ -5,6 +5,7 @@ the OpenAI SDK's base_url parameter.
 """
 
 from enum import Enum
+from typing import ClassVar
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -42,7 +43,7 @@ class LLMClient:
     """
 
     # Default base URLs for known providers
-    PROVIDER_URLS: dict[LLMProvider, str | None] = {
+    PROVIDER_URLS: ClassVar[dict[LLMProvider, str | None]] = {
         LLMProvider.OPENAI: None,  # Uses OpenAI default
         LLMProvider.OLLAMA: "http://localhost:11434/v1",
         LLMProvider.CUSTOM: None,  # Must be provided explicitly
@@ -179,9 +180,7 @@ def create_llm_client(
             provider = LLMProvider(provider.lower())
         except ValueError as e:
             valid = [p.value for p in LLMProvider]
-            raise ValueError(
-                f"Invalid provider: {provider!r}. Must be one of {valid}"
-            ) from e
+            raise ValueError(f"Invalid provider: {provider!r}. Must be one of {valid}") from e
 
     return LLMClient(
         provider=provider,

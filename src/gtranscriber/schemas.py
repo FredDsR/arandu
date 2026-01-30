@@ -124,15 +124,18 @@ class QAPair(BaseModel):
     end_time: float | None = Field(None, description="Segment end time in seconds")
 
     @model_validator(mode="after")
-    def validate_time_range(self) -> "Self":
+    def validate_time_range(self) -> Self:
         """Validate temporal constraints for start/end times."""
         if self.start_time is not None and self.end_time is None:
             raise ValueError("end_time required when start_time is provided")
         if self.end_time is not None and self.start_time is None:
             raise ValueError("start_time required when end_time is provided")
-        if self.start_time is not None and self.end_time is not None:
-            if self.start_time >= self.end_time:
-                raise ValueError("start_time must be less than end_time")
+        if (
+            self.start_time is not None
+            and self.end_time is not None
+            and self.start_time >= self.end_time
+        ):
+            raise ValueError("start_time must be less than end_time")
         return self
 
 
@@ -151,7 +154,7 @@ class QARecord(BaseModel):
     total_pairs: int = Field(..., description="Total number of QA pairs generated")
 
     @model_validator(mode="after")
-    def validate_total_pairs(self) -> "Self":
+    def validate_total_pairs(self) -> Self:
         """Validate that total_pairs matches actual count."""
         if self.total_pairs != len(self.qa_pairs):
             raise ValueError(
@@ -164,7 +167,7 @@ class QARecord(BaseModel):
         Path(path).write_text(self.model_dump_json(indent=2))
 
     @classmethod
-    def load(cls, path: str | Path) -> "QARecord":
+    def load(cls, path: str | Path) -> QARecord:
         """Load QA record from JSON file."""
         return cls.model_validate_json(Path(path).read_text())
 
@@ -199,7 +202,7 @@ class KGMetadata(BaseModel):
         Path(path).write_text(self.model_dump_json(indent=2))
 
     @classmethod
-    def load(cls, path: str | Path) -> "KGMetadata":
+    def load(cls, path: str | Path) -> KGMetadata:
         """Load metadata from JSON file."""
         return cls.model_validate_json(Path(path).read_text())
 
@@ -336,13 +339,13 @@ class EvaluationReport(BaseModel):
 
         # Compute weighted average with normalized weights
         total_weight = sum(weights)
-        return sum(c * w for c, w in zip(components, weights)) / total_weight
+        return sum(c * w for c, w in zip(components, weights, strict=True)) / total_weight
 
     def save(self, path: str | Path) -> None:
         """Save evaluation report to JSON file."""
         Path(path).write_text(self.model_dump_json(indent=2))
 
     @classmethod
-    def load(cls, path: str | Path) -> "EvaluationReport":
+    def load(cls, path: str | Path) -> EvaluationReport:
         """Load evaluation report from JSON file."""
         return cls.model_validate_json(Path(path).read_text())

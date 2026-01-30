@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
-from pytest_mock import MockerFixture
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
 
 from gtranscriber.core.media import (
     AudioExtractionError,
@@ -319,9 +322,7 @@ class TestValidateMediaFile:
         # Should not raise any exception
         validate_media_file("test.mp4")
 
-    def test_validate_media_file_moov_atom_not_found(
-        self, mocker: MockerFixture
-    ) -> None:
+    def test_validate_media_file_moov_atom_not_found(self, mocker: MockerFixture) -> None:
         """Test validation error for missing moov atom."""
         from gtranscriber.core.media import validate_media_file
 
@@ -428,7 +429,7 @@ class TestExtractAudio:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        def create_output_file(*args, **kwargs):
+        def create_output_file(*args: object, **kwargs: object) -> Mock:
             output_file.write_bytes(b"fake audio data")
             return mock_result
 
@@ -438,9 +439,7 @@ class TestExtractAudio:
 
         assert result == output_file
 
-    def test_extract_audio_no_audio_stream(
-        self, mocker: MockerFixture, tmp_path: Path
-    ) -> None:
+    def test_extract_audio_no_audio_stream(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction when no audio stream is found."""
         from gtranscriber.core.media import extract_audio
 
@@ -477,9 +476,7 @@ class TestExtractAudio:
 
         assert "timed out" in str(exc_info.value).lower()
 
-    def test_extract_audio_stereo(
-        self, mocker: MockerFixture, tmp_path: Path
-    ) -> None:
+    def test_extract_audio_stereo(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test audio extraction with stereo output."""
         from gtranscriber.core.media import extract_audio
 
@@ -493,7 +490,7 @@ class TestExtractAudio:
         mock_result = Mock()
         mock_result.returncode = 0
 
-        def create_output_file(*args, **kwargs):
+        def create_output_file(*args: object, **kwargs: object) -> Mock:
             output_file.write_bytes(b"fake audio data")
             return mock_result
 
@@ -505,9 +502,7 @@ class TestExtractAudio:
         call_args = mock_run.call_args[0][0]
         assert "-ac" not in call_args
 
-    def test_extract_audio_custom_sample_rate(
-        self, mocker: MockerFixture, tmp_path: Path
-    ) -> None:
+    def test_extract_audio_custom_sample_rate(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test audio extraction with custom sample rate."""
         from gtranscriber.core.media import extract_audio
 
@@ -521,7 +516,7 @@ class TestExtractAudio:
         mock_result = Mock()
         mock_result.returncode = 0
 
-        def create_output_file(*args, **kwargs):
+        def create_output_file(*args: object, **kwargs: object) -> Mock:
             output_file.write_bytes(b"fake audio data")
             return mock_result
 
