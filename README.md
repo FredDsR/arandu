@@ -1,7 +1,8 @@
 # G-Transcriber
 
-![Tests](https://img.shields.io/badge/tests-345%20passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-79%25-yellowgreen)
+[![.github/workflows/ci.yml](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml/badge.svg)](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/tests-badge.json)
+![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
 Automated transcription and knowledge graph construction pipeline for ethnographic audio/video archives.
