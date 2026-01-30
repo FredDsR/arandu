@@ -1,6 +1,6 @@
 # G-Transcriber
 
-![CI](https://github.com/FredDsR/etno-kgc-preprocessing/workflows/CI/badge.svg)
+[![.github/workflows/ci.yml](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml/badge.svg)](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml)
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/tests-badge.json)
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
