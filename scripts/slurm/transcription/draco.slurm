@@ -22,4 +22,4 @@ export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-small}"
 export USE_CPU="${USE_CPU:-true}"
 
 # Source the main job script
-source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
+source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

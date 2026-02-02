@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=gtranscriber
-#SBATCH --partition=grace
+#SBATCH --partition=blaise
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -10,16 +10,16 @@
 #SBATCH --error=logs/%x_%j.err
 
 # =============================================================================
-# G-Transcriber SLURM Job Script for PCAD - GRACE Partition
+# G-Transcriber SLURM Job Script for PCAD - BLAISE Partition
 #
-# Partition: grace
-# GPU: NVIDIA L40S (46 GB)
-# Recommended: 6-8 workers with quantization (large VRAM)
+# Partition: blaise
+# GPU: 4x Tesla P100 (16 GB each)
+# Recommended: 2-3 workers with quantization
 # =============================================================================
 
 # Use the base script with partition-specific settings
-export WORKERS="${WORKERS:-6}"
-export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3}"
+export WORKERS="${WORKERS:-3}"
+export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
 
 # Source the main job script
-source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
+source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

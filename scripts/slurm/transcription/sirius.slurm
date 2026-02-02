@@ -26,4 +26,4 @@ export GTRANSCRIBER_RESULTS_DIR="${HOME}/etno-kgc-preprocessing/results_sirius"
 
 
 # Source the main job script
-source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
+source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"
