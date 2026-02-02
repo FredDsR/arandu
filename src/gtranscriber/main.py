@@ -775,6 +775,15 @@ def generate_qa(
             "Can be set via GTRANSCRIBER_QA_BASE_URL env var.",
         ),
     ] = None,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Language for QA prompts: 'en' (English) or 'pt' (Portuguese). "
+            "Can be set via GTRANSCRIBER_QA_LANGUAGE env var.",
+        ),
+    ] = None,
 ) -> None:
     """Generate synthetic QA pairs from transcriptions.
 
@@ -826,6 +835,8 @@ def generate_qa(
         base_config.output_dir = output_dir
     if workers is not None:
         base_config.workers = workers
+    if language is not None:
+        base_config.language = language
 
     # Now use the resolved config
     qa_config = base_config
@@ -850,6 +861,14 @@ def generate_qa(
             print_error(f"Invalid strategy: {s!r}. Must be one of {sorted(valid_strategies)}")
             raise typer.Exit(code=1)
 
+    # Validate language
+    valid_languages = {"en", "pt"}
+    if qa_config.language not in valid_languages:
+        print_error(
+            f"Invalid language: {qa_config.language!r}. Must be one of {sorted(valid_languages)}"
+        )
+        raise typer.Exit(code=1)
+
     # Display configuration
     console.print("\n[bold]QA Generation Configuration[/bold]\n")
     console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
@@ -859,6 +878,7 @@ def generate_qa(
     console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
     console.print(f"[cyan]Questions per document:[/cyan] {qa_config.questions_per_document}")
     console.print(f"[cyan]Strategies:[/cyan] {', '.join(qa_config.strategies)}")
+    console.print(f"[cyan]Language:[/cyan] {qa_config.language}")
     console.print(f"[cyan]Temperature:[/cyan] {qa_config.temperature}")
     if qa_config.provider == "ollama":
         console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")

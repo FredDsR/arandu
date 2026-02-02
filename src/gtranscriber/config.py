@@ -199,11 +199,32 @@ class QAConfig(BaseSettings):
         description="Output directory for QA datasets",
     )
 
+    # Language and prompts
+    language: str = Field(
+        default="pt",
+        description="Language code for QA generation prompts (ISO 639-1: 'en' or 'pt')",
+    )
+    prompt_path: str | None = Field(
+        default=None,
+        description="Path to custom prompt templates JSON. If None, uses built-in prompts.",
+    )
+
     # Workers (shared setting, loaded from GTRANSCRIBER_WORKERS)
     workers: int = Field(
         default=2,
         description="Number of parallel workers for QA generation",
     )
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        """Validate language code for QA generation."""
+        valid_languages = {"en", "pt"}
+        if v not in valid_languages:
+            raise ValueError(
+                f"Invalid QA language: {v!r}. Must be one of {sorted(valid_languages)}"
+            )
+        return v
 
     @field_validator("strategies")
     @classmethod

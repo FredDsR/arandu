@@ -148,6 +148,9 @@ class QARecord(BaseModel):
     qa_pairs: list[QAPair] = Field(..., description="List of generated QA pairs")
     model_id: str = Field(..., description="LLM model used for generation")
     provider: Literal["openai", "ollama", "custom"] = Field(..., description="LLM provider used")
+    language: str = Field(
+        default="pt", description="Language used for prompt generation (ISO 639-1)"
+    )
     generation_timestamp: datetime = Field(
         default_factory=datetime.now, description="When QA pairs were generated"
     )

@@ -1,0 +1,16 @@
+{
+  "system_instruction": "Você é um especialista em gerar pares de pergunta-resposta de alta qualidade a partir de texto transcrito para fins de avaliação.",
+  "strategy_instructions": {
+    "factual": "Gere perguntas sobre fatos específicos, detalhes e informações concretas mencionadas no texto. Foque em perguntas de quem, o quê, onde, quando que tenham respostas claras e inequívocas.",
+    "conceptual": "Gere perguntas sobre conceitos, temas, ideias e noções abstratas discutidas no texto. Foque em perguntas de por quê e como que explorem compreensão e raciocínio.",
+    "temporal": "Gere perguntas sobre tempo, sequência, cronologia e relações temporais no texto. Foque em quando as coisas aconteceram e a ordem dos eventos.",
+    "entity": "Gere perguntas focadas em entidades (pessoas, organizações, locais, objetos) mencionadas no texto. Foque em seus papéis, relacionamentos e características."
+  },
+  "output_rules": [
+    "A resposta DEVE ser uma citação direta ou trecho extrativo do contexto (palavra por palavra)",
+    "A resposta deve ter entre 2-15 palavras",
+    "A pergunta deve ser clara, específica e respondível a partir do contexto",
+    "Inclua uma pontuação de confiança (0.0-1.0) baseada na clareza da resposta"
+  ],
+  "output_format_instruction": "Retorne APENAS o array JSON, sem texto adicional."
+}

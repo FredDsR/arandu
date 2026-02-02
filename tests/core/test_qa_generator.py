@@ -48,7 +48,7 @@ class TestQAGenerator:
     def test_initialization_logging(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test that initialization logs provider and model information."""
+        """Test that initialization logs provider, model and language information."""
         caplog.set_level("INFO")
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
 
@@ -66,6 +66,7 @@ class TestQAGenerator:
         QAGenerator(llm_client, config)
 
         assert "QAGenerator initialized with ollama/llama3.1:8b" in caplog.text
+        assert "language=pt" in caplog.text
 
     def test_generate_qa_pairs_success(self, mocker: MockerFixture) -> None:
         """Test successful QA generation from a valid transcription."""
@@ -724,3 +725,127 @@ class TestErrorHandling:
 
         # With 0 questions, the prompt is still built but may return empty
         assert isinstance(pairs, list)
+
+
+class TestLanguageSupport:
+    """Tests for language support in QA generation."""
+
+    def test_qa_config_valid_english_language(self) -> None:
+        """Test QAConfig accepts 'en' language."""
+        config = QAConfig(language="en")
+        assert config.language == "en"
+
+    def test_qa_config_valid_portuguese_language(self) -> None:
+        """Test QAConfig accepts 'pt' language."""
+        config = QAConfig(language="pt")
+        assert config.language == "pt"
+
+    def test_qa_config_default_language_is_portuguese(self) -> None:
+        """Test QAConfig defaults to 'pt' language."""
+        config = QAConfig()
+        assert config.language == "pt"
+
+    def test_qa_config_invalid_language_raises_error(self) -> None:
+        """Test QAConfig rejects invalid language codes."""
+        with pytest.raises(ValueError) as exc_info:
+            QAConfig(language="fr")
+        assert "Invalid QA language" in str(exc_info.value)
+
+    def test_generator_loads_english_prompts(self, mocker: MockerFixture) -> None:
+        """Test QAGenerator loads English prompts correctly."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        llm_client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+        config = QAConfig(language="en")
+        generator = QAGenerator(llm_client, config)
+
+        assert "system_instruction" in generator._prompts
+        assert "strategy_instructions" in generator._prompts
+        assert "factual" in generator._prompts["strategy_instructions"]
+        assert "expert" in generator._prompts["system_instruction"].lower()
+
+    def test_generator_loads_portuguese_prompts(self, mocker: MockerFixture) -> None:
+        """Test QAGenerator loads Portuguese prompts correctly."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        llm_client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+        config = QAConfig(language="pt")
+        generator = QAGenerator(llm_client, config)
+
+        assert "system_instruction" in generator._prompts
+        assert "strategy_instructions" in generator._prompts
+        assert "especialista" in generator._prompts["system_instruction"].lower()
+
+    def test_generator_uses_loaded_prompts_in_build_prompt(self, mocker: MockerFixture) -> None:
+        """Test that _build_prompt uses prompts from loaded file."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        llm_client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+        config = QAConfig(language="pt")
+        generator = QAGenerator(llm_client, config)
+
+        prompt = generator._build_prompt("Test context", "factual", 3)
+
+        # Should contain Portuguese text from the prompts file
+        assert "especialista" in prompt.lower()
+
+    def test_generator_logs_language(
+        self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that initialization logs language information."""
+        caplog.set_level("INFO")
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        llm_client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+        config = QAConfig(language="pt")
+        QAGenerator(llm_client, config)
+
+        assert "language=pt" in caplog.text
+
+    def test_qa_record_includes_language(self, mocker: MockerFixture) -> None:
+        """Test that generated QARecord includes language field."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "Test?", "answer": "transcription about climate", "confidence": 0.8}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        llm_client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+        config = QAConfig(language="pt", questions_per_document=1)
+        generator = QAGenerator(llm_client, config)
+
+        transcription = EnrichedRecord(
+            gdrive_id="test123",
+            name="test.mp3",
+            mimeType="audio/mpeg",
+            parents=["folder_id"],
+            webContentLink="https://drive.google.com/test",
+            transcription_text=("This is a transcription about climate change. " * 10),
+            detected_language="pt",
+            language_probability=0.95,
+            model_id="openai/whisper-large-v3",
+            compute_device="cpu",
+            processing_duration_sec=30.0,
+            transcription_status="completed",
+        )
+
+        result = generator.generate_qa_pairs(transcription)
+
+        assert result.language == "pt"
+
+    def test_missing_prompt_file_raises_error(self, mocker: MockerFixture) -> None:
+        """Test that missing prompt file raises FileNotFoundError."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        llm_client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+        config = QAConfig(prompt_path="/nonexistent/path/prompts.json")
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            QAGenerator(llm_client, config)
+
+        assert "Prompt file not found" in str(exc_info.value)

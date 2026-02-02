@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from gtranscriber.schemas import EnrichedRecord, QAPair, QARecord
 
@@ -27,6 +28,9 @@ MAX_CONTEXT_LENGTH = 4000
 
 # Minimum context length to attempt QA generation (in characters)
 MIN_CONTEXT_LENGTH = 100
+
+# Default prompts directory (relative to package root)
+DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts" / "qa"
 
 
 class QAGenerator:
@@ -50,9 +54,35 @@ class QAGenerator:
         """
         self.llm_client = llm_client
         self.config = config
+        self._prompts = self._load_prompts()
         logger.info(
-            f"QAGenerator initialized with {llm_client.provider.value}/{llm_client.model_id}"
+            f"QAGenerator initialized with {llm_client.provider.value}/{llm_client.model_id} "
+            f"(language={config.language})"
         )
+
+    def _load_prompts(self) -> dict[str, Any]:
+        """Load prompt templates based on language configuration.
+
+        Returns:
+            Dictionary containing prompt templates.
+
+        Raises:
+            FileNotFoundError: If prompt file not found.
+            ValueError: If prompt file is invalid JSON.
+        """
+        if self.config.prompt_path:
+            prompt_file = Path(self.config.prompt_path)
+        else:
+            prompt_file = DEFAULT_PROMPTS_DIR / f"{self.config.language}.json"
+
+        if not prompt_file.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+
+        with open(prompt_file, encoding="utf-8") as f:
+            prompts = json.load(f)
+
+        logger.debug(f"Loaded prompts from {prompt_file}")
+        return prompts
 
     def generate_qa_pairs(self, transcription: EnrichedRecord) -> QARecord:
         """Generate QA pairs from a transcription.
@@ -129,6 +159,7 @@ class QAGenerator:
             qa_pairs=all_pairs,
             model_id=self.llm_client.model_id,
             provider=self.llm_client.provider.value,  # type: ignore[arg-type]
+            language=self.config.language,
             total_pairs=len(all_pairs),
         )
 
@@ -227,47 +258,25 @@ class QAGenerator:
         Returns:
             Formatted prompt string.
         """
-        # Strategy-specific instructions
-        strategy_instructions = {
-            "factual": (
-                "Generate questions about specific facts, details, and concrete "
-                "information mentioned in the text. Focus on who, what, where, when "
-                "questions that have clear, unambiguous answers."
-            ),
-            "conceptual": (
-                "Generate questions about concepts, themes, ideas, and abstract "
-                "notions discussed in the text. Focus on why and how questions that "
-                "explore understanding and reasoning."
-            ),
-            "temporal": (
-                "Generate questions about time, sequence, chronology, and temporal "
-                "relationships in the text. Focus on when things happened and the "
-                "order of events."
-            ),
-            "entity": (
-                "Generate questions focused on entities (people, organizations, "
-                "locations, objects) mentioned in the text. Focus on their roles, "
-                "relationships, and characteristics."
-            ),
-        }
+        # Get localized instructions from loaded prompts
+        system_instruction = self._prompts["system_instruction"]
+        strategy_instruction = self._prompts["strategy_instructions"][strategy]
+        output_rules = "\n".join(
+            f"{i + 1}. {rule}" for i, rule in enumerate(self._prompts["output_rules"])
+        )
+        output_format = self._prompts["output_format_instruction"]
 
-        instruction = strategy_instructions[strategy]
-
-        prompt = f"""You are an expert at generating high-quality question-answer pairs \
-from transcribed text for evaluation purposes.
+        prompt = f"""{system_instruction}
 
 Context:
 {context}
 
 Task:
-{instruction}
+{strategy_instruction}
 
 Generate exactly {num_questions} question-answer pair(s) in JSON format. \
 Each pair must follow these rules:
-1. The answer MUST be a direct quote or extractive span from the context (word-for-word)
-2. The answer should be 2-15 words long
-3. The question should be clear, specific, and answerable from the context
-4. Include a confidence score (0.0-1.0) based on answer clarity
+{output_rules}
 
 Output format (JSON array):
 [
@@ -278,7 +287,7 @@ Output format (JSON array):
   }}
 ]
 
-Return ONLY the JSON array, no additional text."""
+{output_format}"""
 
         return prompt
 
