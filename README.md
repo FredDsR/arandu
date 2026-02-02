@@ -294,11 +294,12 @@ etno-kgc-preprocessing/
 
 ## Documentation
 
-- [Usage Overview](docs/usage/README.md)
-- [QA Generation Guide](docs/usage/QA_GENERATION.md)
-- [KG Construction Guide](docs/usage/KG_CONSTRUCTION.md)
-- [Evaluation Guide](docs/usage/EVALUATION.md)
-- [Configuration Reference](docs/usage/CONFIGURATION.md)
+- [Documentation Index](docs/README.md)
+- [Getting Started](docs/user-guide/getting-started.md)
+- [QA Generation Guide](docs/user-guide/qa-generation.md)
+- [KG Construction Guide](docs/user-guide/kg-construction.md)
+- [Evaluation Guide](docs/user-guide/evaluation.md)
+- [Configuration Reference](docs/user-guide/configuration.md)
 
 ## License
 

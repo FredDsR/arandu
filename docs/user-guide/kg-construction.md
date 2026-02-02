@@ -333,4 +333,4 @@ docker compose --profile kg up
 
 ---
 
-**See also**: [QA Generation](QA_GENERATION.md) | [Evaluation](EVALUATION.md) | [Configuration](CONFIGURATION.md)
+**See also**: [QA Generation](qa-generation.md) | [Evaluation](evaluation.md) | [Configuration](configuration.md)

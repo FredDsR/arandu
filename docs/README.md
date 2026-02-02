@@ -1,249 +1,89 @@
 # G-Transcriber Documentation
 
-Complete documentation for the Knowledge Graph Construction Pipeline (v2.0)
+Welcome to the G-Transcriber documentation. This guide will help you find the information you need based on your role.
 
-## Overview
+## Quick Navigation
 
-G-Transcriber is an automated transcription and knowledge extraction system that processes audio/video files, generates synthetic QA datasets, constructs knowledge graphs, and evaluates knowledge elicitation quality.
+### New Users
+
+Start here if you're new to G-Transcriber:
+
+1. **[Getting Started](user-guide/getting-started.md)** - Installation and first steps
+2. **[Transcription Guide](user-guide/transcription.md)** - Process audio/video files
+3. **[Configuration Reference](user-guide/configuration.md)** - Environment variables and settings
+
+### Pipeline Users
+
+Guides for each processing pipeline:
+
+| Pipeline | Guide | Description |
+|----------|-------|-------------|
+| Transcription | [transcription.md](user-guide/transcription.md) | Audio/video to text |
+| QA Generation | [qa-generation.md](user-guide/qa-generation.md) | Generate question-answer pairs |
+| KG Construction | [kg-construction.md](user-guide/kg-construction.md) | Build knowledge graphs |
+| Evaluation | [evaluation.md](user-guide/evaluation.md) | Measure quality metrics |
+
+### Operators & DevOps
+
+Deployment guides for different environments:
+
+- **[Docker Deployment](deployment/docker.md)** - Local Docker setup (GPU/CPU/ROCm)
+- **[PCAD Cluster](deployment/pcad.md)** - PCAD HPC cluster deployment
+- **[SLURM Guide](deployment/slurm.md)** - Generic SLURM job configuration
+
+### Developers
+
+Technical documentation for contributors:
+
+- **[Architecture](development/architecture.md)** - System design and patterns
+- **[Data Schemas](development/schemas.md)** - Pydantic models and validation
+- **[Testing Guide](development/testing.md)** - Test suite and coverage
+- **[Dependencies](development/dependencies.md)** - Package requirements
+- **[CI/CD Setup](development/ci-cd.md)** - GitHub Actions workflow
+
+### Implementation Planning
+
+Active implementation guides (Phase 2 of 5 complete):
+
+- **[Implementation Plan](planning/IMPLEMENTATION_PLAN.md)** - Master plan for all phases
+- **[Phase Status](planning/PHASE_STATUS.md)** - Current progress and completed phases
+- **[Quick Start for Implementers](planning/IMPLEMENTATION_QUICKSTART.md)** - Getting started with development
 
 ## Documentation Structure
 
-### Main Documentation
-
-- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - Complete implementation plan for P2 and P3 tasks
-  - Executive summary
-  - Architecture overview
-  - Task breakdown
-  - Implementation phases
-  - Success criteria
-
-### Implementation Details
-
-Located in `docs/implementation/`:
-
-1. **[DATA_SCHEMAS.md](implementation/DATA_SCHEMAS.md)** - Complete data schema specifications
-   - QA generation schemas (QAPair, QARecord)
-   - Knowledge graph approach (AutoSchemaKG GraphML + KGMetadata)
-   - Evaluation schemas (EvaluationReport)
-   - Schema relationships and examples
-
-2. **[CONFIGURATION.md](implementation/CONFIGURATION.md)** - Configuration reference
-   - All configuration settings
-   - Environment variables
-   - Configuration examples
-   - Best practices
-
-3. **[CLI_REFERENCE.md](implementation/CLI_REFERENCE.md)** - CLI commands reference
-   - Command overview
-   - Detailed command documentation
-   - Usage examples
-   - Tips and best practices
-
-4. **[FILE_STRUCTURE.md](implementation/FILE_STRUCTURE.md)** - Project file structure
-   - Directory structure
-   - Existing files to modify
-   - New files to create
-   - Generated files and directories
-
-5. **[DEPENDENCIES.md](implementation/DEPENDENCIES.md)** - Dependency documentation
-   - Complete dependency list
-   - Installation instructions
-   - Version compatibility
-   - License information
-
-## Quick Start
-
-### For Developers
-
-**First Time Setup**:
-```bash
-# Clone repository
-git clone <repo-url>
-cd etno-kgc-preprocessing
-
-# Install dependencies
-pip install -e ".[dev]"
-
-# Copy environment template
-cp .env.example .env
-# Edit .env with your settings
-
-# Run tests
-pytest
+```
+docs/
+├── README.md                 # This file (documentation index)
+├── user-guide/               # End-user documentation
+│   ├── getting-started.md
+│   ├── transcription.md
+│   ├── qa-generation.md
+│   ├── kg-construction.md
+│   ├── evaluation.md
+│   ├── configuration.md
+│   └── cli-reference.md
+├── deployment/               # Deployment guides
+│   ├── docker.md
+│   ├── pcad.md
+│   └── slurm.md
+├── development/              # Developer documentation
+│   ├── architecture.md
+│   ├── schemas.md
+│   ├── testing.md
+│   ├── dependencies.md
+│   └── ci-cd.md
+└── planning/                 # Implementation planning (active)
+    ├── IMPLEMENTATION_PLAN.md
+    ├── PHASE_STATUS.md
+    └── IMPLEMENTATION_QUICKSTART.md
 ```
 
-**Read These First**:
-1. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Understand the overall plan
-2. [FILE_STRUCTURE.md](implementation/FILE_STRUCTURE.md) - Know what to build
-3. [DATA_SCHEMAS.md](implementation/DATA_SCHEMAS.md) - Understand data models
+## External Resources
 
-### For Users
-
-**Installation**:
-```bash
-pip install -e .
-```
-
-**Basic Usage**:
-```bash
-# Generate QA dataset
-gtranscriber generate-qa results/ -o qa_dataset/
-
-# Build knowledge graphs
-gtranscriber build-kg results/ -o knowledge_graphs/
-
-# Evaluate quality
-gtranscriber evaluate qa_dataset/ results/
-```
-
-**Read These First**:
-1. [CLI_REFERENCE.md](implementation/CLI_REFERENCE.md) - Learn the commands
-2. [CONFIGURATION.md](implementation/CONFIGURATION.md) - Configure the system
-
-## Features
-
-### Existing (v1.0)
-
-- **Automated Transcription** - Whisper ASR models from Hugging Face
-- **Google Drive Integration** - Download, transcribe, upload workflow
-- **Batch Processing** - Parallel workers with checkpointing
-- **Multi-Environment** - Docker support (GPU, CPU, ROCm)
-- **SLURM Integration** - Optimized for HPC clusters
-
-### New (v2.0)
-
-- **Synthetic QA Generation** - Generate question-answer pairs from transcriptions
-- **Knowledge Graph Construction** - Build graphs using AutoSchemaKG framework
-- **Knowledge Evaluation** - Measure quality across four dimensions
-- **Hybrid LLM Support** - OpenAI, Ollama, and any OpenAI-compatible endpoint
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    G-Transcriber v2.0                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │ Transcription│→ │      QA      │→ │      KG      │    │
-│  │   Pipeline   │  │  Generation  │  │ Construction │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘    │
-│         │                 │                   │            │
-│         └─────────────────┴───────────────────┘            │
-│                           ↓                                │
-│                  ┌──────────────┐                         │
-│                  │  Evaluation  │                         │
-│                  └──────────────┘                         │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Implementation Status
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| **Planning** | ✅ Complete | Documentation and architecture |
-| **Phase 1** | 🔲 Pending | Foundation (LLM client, config, schemas) |
-| **Phase 2** | 🔲 Pending | QA Generation |
-| **Phase 3** | 🔲 Pending | KG Construction |
-| **Phase 4** | 🔲 Pending | Evaluation |
-| **Phase 5** | 🔲 Pending | Research (GraphRAG, frameworks) |
-
-## Key Technologies
-
-- **Language**: Python 3.13+
-- **CLI Framework**: Typer
-- **Configuration**: Pydantic Settings
-- **LLM APIs**: OpenAI, Ollama (via OpenAI-compatible API)
-- **KG Framework**: AutoSchemaKG (atlas-rag)
-- **Graph Library**: NetworkX
-- **Containerization**: Docker
-- **Cluster**: SLURM
-
-## Project Structure
-
-```
-etno-kgc-preprocessing/
-├── src/gtranscriber/           # Main package
-│   ├── main.py                 # CLI entrypoint
-│   ├── config.py               # Configuration
-│   ├── schemas.py              # Data models
-│   └── core/                   # Core modules
-├── scripts/slurm/              # SLURM job scripts
-├── docs/                       # Documentation (this directory)
-├── tests/                      # Test suite
-├── docker-compose.yml          # Docker services
-└── pyproject.toml             # Project metadata
-```
+- [AutoSchemaKG Documentation](https://hkust-knowcomp.github.io/AutoSchemaKG/)
+- [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
+- [Ollama Documentation](https://github.com/ollama/ollama)
 
 ## Contributing
 
-### Development Workflow
-
-1. **Branch Naming**: `feature/<phase>-<description>`
-2. **Commit Messages**: Follow conventional commits
-3. **Code Style**: Use `black` for formatting, `ruff` for linting
-4. **Testing**: Write tests for all new features
-5. **Documentation**: Update docs with changes
-
-### Code Standards
-
-- **Python Version**: >= 3.13
-- **Type Hints**: Required for all functions
-- **Docstrings**: Google-style docstrings
-- **Testing**: Minimum 80% coverage
-
-## Resources
-
-### External Documentation
-
-- [AutoSchemaKG GitHub](https://github.com/HKUST-KnowComp/AutoSchemaKG)
-- [AutoSchemaKG Paper](https://arxiv.org/abs/2505.23628)
-- [Microsoft GraphRAG](https://github.com/microsoft/graphrag)
-- [OpenAI API](https://platform.openai.com/docs/api-reference)
-- [Ollama](https://github.com/ollama/ollama)
-- [Ollama OpenAI Compatibility](https://ollama.com/blog/openai-compatibility)
-
-### Research Papers
-
-- **AutoSchemaKG**: Huang et al. (2025) - Dynamic schema induction
-- **GraphRAG**: Microsoft Research - Community detection for RAG
-- **Whisper**: OpenAI - Robust speech recognition
-
-## License
-
-MIT License - See LICENSE file
-
-## Citation
-
-If you use this project in research, please cite:
-
-```bibtex
-@software{gtranscriber2026,
-  title={G-Transcriber: Knowledge Graph Construction Pipeline},
-  year={2026},
-  version={2.0}
-}
-```
-
-And cite AutoSchemaKG:
-
-```bibtex
-@article{huang2025autoschemakg,
-  title={AutoSchemaKG: Autonomous Knowledge Graph Construction through Dynamic Schema Induction from Web-Scale Corpora},
-  author={Huang, Haoyu and others},
-  journal={arXiv preprint arXiv:2505.23628},
-  year={2025}
-}
-```
-
-## Support
-
-- **Issues**: https://github.com/<org>/<repo>/issues
-- **Discussions**: https://github.com/<org>/<repo>/discussions
-- **Email**: [Project maintainer email]
-
----
-
-**Documentation Version**: 1.0
-**Last Updated**: 2026-01-14
-**Project Version**: 2.0 (in development)
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines, coding standards, and the contribution workflow.

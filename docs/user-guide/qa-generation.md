@@ -262,4 +262,4 @@ docker compose --profile qa exec ollama curl http://localhost:11434/api/tags
 
 ---
 
-**See also**: [KG Construction](KG_CONSTRUCTION.md) | [Evaluation](EVALUATION.md) | [Configuration](CONFIGURATION.md)
+**See also**: [KG Construction](kg-construction.md) | [Evaluation](evaluation.md) | [Configuration](configuration.md)

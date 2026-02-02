@@ -1,0 +1,198 @@
+# Generic SLURM Deployment Guide
+
+This guide covers running G-Transcriber on any SLURM-based HPC cluster.
+
+## Prerequisites
+
+- SLURM job scheduler
+- Docker or Singularity/Apptainer (recommended for HPC)
+- GPU nodes (NVIDIA CUDA or AMD ROCm)
+
+## SLURM Scripts
+
+G-Transcriber provides SLURM scripts for each pipeline in `scripts/slurm/`:
+
+| Script | Pipeline | Description |
+|--------|----------|-------------|
+| `run_transcription.slurm` | Transcription | Batch transcription with Whisper |
+| `run_qa_generation.slurm` | QA | Generate QA pairs from transcriptions |
+| `run_kg_construction.slurm` | KG | Build knowledge graphs |
+| `run_evaluation.slurm` | Evaluation | Compute quality metrics |
+
+## Basic Usage
+
+### Submit a Job
+
+```bash
+sbatch scripts/slurm/run_qa_generation.slurm
+```
+
+### Override Settings
+
+```bash
+# Override workers and model
+WORKERS=8 QA_MODEL=llama3.1:70b sbatch scripts/slurm/run_qa_generation.slurm
+
+# Override partition
+sbatch --partition=gpu scripts/slurm/run_kg_construction.slurm
+```
+
+### Monitor Jobs
+
+```bash
+# View your jobs
+squeue -u $USER
+
+# View job details
+scontrol show job <job_id>
+
+# View logs
+tail -f logs/gtranscriber_<job_id>.out
+```
+
+### Cancel a Job
+
+```bash
+scancel <job_id>
+```
+
+## Script Structure
+
+A typical SLURM script:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=gtranscriber-qa
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:1
+#SBATCH --time=24:00:00
+#SBATCH --output=logs/gtranscriber_%j.out
+#SBATCH --error=logs/gtranscriber_%j.err
+
+# Load modules (cluster-specific)
+module load python/3.13
+module load cuda/12.4
+
+# Activate environment
+source .venv/bin/activate
+
+# Set environment variables
+export GTRANSCRIBER_QA_PROVIDER=ollama
+export GTRANSCRIBER_QA_MODEL_ID=${QA_MODEL:-llama3.1:8b}
+export GTRANSCRIBER_WORKERS=${WORKERS:-4}
+
+# Run pipeline
+gtranscriber generate-qa results/ -o qa_dataset/
+```
+
+## Environment Variables
+
+Override via command line or in script:
+
+| Variable | Description |
+|----------|-------------|
+| `WORKERS` | Number of parallel workers |
+| `QA_MODEL` | Model for QA generation |
+| `KG_MODEL` | Model for KG construction |
+| `QA_PROVIDER` | LLM provider (ollama, openai) |
+| `QUESTIONS_PER_DOCUMENT` | QA pairs per document |
+| `KG_LANGUAGE` | Language for KG extraction |
+
+## Using Docker on SLURM
+
+If Docker is available:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=gtranscriber-qa
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+
+# Run via Docker Compose
+docker compose --profile qa up --abort-on-container-exit
+```
+
+## Using Singularity/Apptainer
+
+For HPC clusters without Docker:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=gtranscriber-qa
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+
+# Build container (once)
+singularity build gtranscriber.sif docker://ghcr.io/fredDsR/gtranscriber:latest
+
+# Run
+singularity exec --nv gtranscriber.sif \
+    gtranscriber generate-qa results/ -o qa_dataset/
+```
+
+## Resource Recommendations
+
+### QA Generation
+
+| Resource | Recommendation |
+|----------|----------------|
+| CPUs | 8-16 per worker |
+| Memory | 16-32 GB |
+| Time | 1-4 hours (depends on corpus size) |
+
+### KG Construction
+
+| Resource | Recommendation |
+|----------|----------------|
+| CPUs | 16-32 per worker |
+| Memory | 32-64 GB |
+| Time | 2-8 hours (depends on corpus size) |
+
+### GPU vs CPU
+
+- GPU recommended for Ollama LLM inference
+- CPU-only possible but slower
+- Set `--gres=gpu:0` for CPU-only
+
+## Checkpoint and Resume
+
+All pipelines support checkpointing. If a job fails:
+
+```bash
+# Simply resubmit - checkpoint resumes automatically
+sbatch scripts/slurm/run_qa_generation.slurm
+```
+
+To start fresh:
+
+```bash
+rm qa_dataset/qa_checkpoint.json
+sbatch scripts/slurm/run_qa_generation.slurm
+```
+
+## Troubleshooting
+
+### Job Fails Immediately
+
+Check error log:
+```bash
+cat logs/gtranscriber_<job_id>.err
+```
+
+### Out of Memory
+
+Reduce workers:
+```bash
+WORKERS=2 sbatch scripts/slurm/run_qa_generation.slurm
+```
+
+### Module Not Found
+
+Ensure Python environment is activated in script.
+
+---
+
+**See also**: [PCAD Guide](pcad.md) | [Docker Deployment](docker.md)

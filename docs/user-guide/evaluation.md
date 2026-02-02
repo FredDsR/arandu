@@ -400,4 +400,4 @@ tail -f logs/gtranscriber-eval_<jobid>.out
 
 ---
 
-**See also**: [QA Generation](QA_GENERATION.md) | [KG Construction](KG_CONSTRUCTION.md) | [Configuration](CONFIGURATION.md)
+**See also**: [QA Generation](qa-generation.md) | [KG Construction](kg-construction.md) | [Configuration](configuration.md)
