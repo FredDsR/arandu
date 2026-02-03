@@ -30,6 +30,7 @@ from gtranscriber.utils.logger import (
     print_error,
     print_info,
     print_success,
+    print_warning,
     setup_logging,
 )
 from gtranscriber.utils.ui import (
@@ -892,6 +893,252 @@ def generate_qa(
 
     except Exception as e:
         print_error(f"QA generation failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
+def generate_pec_qa(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing transcription JSON files.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Output directory for PEC QA dataset JSON files.",
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            help="LLM provider: openai, ollama, custom.",
+        ),
+    ] = None,
+    model_id: Annotated[
+        str | None,
+        typer.Option(
+            "--model-id",
+            "-m",
+            help="Model ID for QA generation (e.g., llama3.1:8b, gpt-4).",
+        ),
+    ] = None,
+    workers: Annotated[
+        int | None,
+        typer.Option(
+            "--workers",
+            "-w",
+            help="Number of parallel workers.",
+        ),
+    ] = None,
+    questions: Annotated[
+        int | None,
+        typer.Option(
+            "--questions",
+            help="Number of QA pairs to generate per document (1-50).",
+        ),
+    ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option(
+            "--temperature",
+            help="LLM temperature for generation (0.0-2.0).",
+        ),
+    ] = None,
+    ollama_url: Annotated[
+        str | None,
+        typer.Option(
+            "--ollama-url",
+            help="Ollama API base URL.",
+        ),
+    ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--base-url",
+            help="Custom base URL for OpenAI-compatible endpoints.",
+        ),
+    ] = None,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Language for prompts: 'pt' (Portuguese) or 'en' (English). Default: pt",
+        ),
+    ] = None,
+    validate: Annotated[
+        bool,
+        typer.Option(
+            "--validate/--no-validate",
+            help="Enable LLM-as-a-Judge validation. Default: disabled",
+        ),
+    ] = False,
+    validator_model: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-model",
+            help="Model ID for LLM-as-a-Judge validation.",
+        ),
+    ] = None,
+    bloom_dist: Annotated[
+        str | None,
+        typer.Option(
+            "--bloom-dist",
+            help="Bloom level distribution as 'level:weight,...' "
+            "(e.g., 'remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2').",
+        ),
+    ] = None,
+    export_jsonl: Annotated[
+        bool,
+        typer.Option(
+            "--jsonl/--no-jsonl",
+            help="Also export QA pairs to JSONL format for KGQA training.",
+        ),
+    ] = False,
+) -> None:
+    """Generate PEC (cognitive scaffolding) QA pairs from transcriptions.
+
+    Uses the Pipeline de Elicitação Cognitiva (PEC) with:
+    - Module I: Bloom Scaffolding (question generation by cognitive level)
+    - Module II: Reasoning & Grounding (reasoning traces and multi-hop detection)
+    - Module III: LLM-as-a-Judge Validation (optional quality evaluation)
+
+    Questions are distributed across Bloom taxonomy levels (remember, understand,
+    analyze, evaluate) to create cognitively scaffolded QA datasets.
+
+    Examples:
+        # Basic PEC generation (default: Portuguese)
+        gtranscriber generate-pec-qa results/ -o pec_dataset/
+
+        # With LLM-as-a-Judge validation
+        gtranscriber generate-pec-qa results/ --validate --validator-model gpt-4
+
+        # Adjust Bloom level distribution
+        gtranscriber generate-pec-qa results/ \\
+            --bloom-dist "remember:0.1,understand:0.3,analyze:0.4,evaluate:0.2"
+
+        # Export to JSONL for KGQA training
+        gtranscriber generate-pec-qa results/ --jsonl
+    """
+    from gtranscriber.config import PECConfig, QAConfig
+    from gtranscriber.core.qa_batch import run_batch_pec_generation
+
+    # Load configs with defaults from environment variables
+    qa_config = QAConfig()
+    pec_config = PECConfig()
+
+    # Override QA config with CLI args if provided
+    if provider is not None:
+        qa_config.provider = provider
+    if model_id is not None:
+        qa_config.model_id = model_id
+    if ollama_url is not None:
+        qa_config.ollama_url = ollama_url
+    if base_url is not None:
+        qa_config.base_url = base_url
+    if questions is not None:
+        qa_config.questions_per_document = questions
+    if temperature is not None:
+        qa_config.temperature = temperature
+    if output_dir is not None:
+        qa_config.output_dir = output_dir
+    if workers is not None:
+        qa_config.workers = workers
+
+    # Override PEC config with CLI args if provided
+    if language is not None:
+        pec_config.language = language
+    if validate:
+        pec_config.enable_validation = True
+    if validator_model is not None:
+        pec_config.validator_model_id = validator_model
+
+    # Parse Bloom distribution if provided
+    if bloom_dist is not None:
+        try:
+            dist_dict = {}
+            for item in bloom_dist.split(","):
+                level, weight = item.strip().split(":")
+                dist_dict[level.strip()] = float(weight.strip())
+            pec_config.bloom_distribution = dist_dict
+            pec_config.bloom_levels = list(dist_dict.keys())
+        except ValueError as e:
+            print_error(f"Invalid bloom-dist format: {e}")
+            print_error("Expected format: 'level:weight,level:weight,...'")
+            raise typer.Exit(code=1) from e
+
+    # Validate configs
+    if qa_config.workers < 1:
+        print_error("Number of workers must be at least 1")
+        raise typer.Exit(code=1)
+
+    if qa_config.questions_per_document < 1 or qa_config.questions_per_document > 50:
+        print_error("Number of questions must be between 1 and 50")
+        raise typer.Exit(code=1)
+
+    valid_languages = {"en", "pt"}
+    if pec_config.language not in valid_languages:
+        print_error(
+            f"Invalid language: {pec_config.language!r}. Must be one of {sorted(valid_languages)}"
+        )
+        raise typer.Exit(code=1)
+
+    # Display configuration
+    console.print("\n[bold]PEC QA Generation Configuration[/bold]\n")
+    console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
+    console.print(f"[cyan]Output Directory:[/cyan] {qa_config.output_dir}")
+    console.print(f"[cyan]Provider:[/cyan] {qa_config.provider}")
+    console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
+    console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
+    console.print(f"[cyan]Questions per document:[/cyan] {qa_config.questions_per_document}")
+    console.print(f"[cyan]Language:[/cyan] {pec_config.language}")
+    console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(pec_config.bloom_levels)}")
+    console.print(f"[cyan]Bloom Distribution:[/cyan] {pec_config.bloom_distribution}")
+    console.print(f"[cyan]Reasoning Traces:[/cyan] {pec_config.enable_reasoning_traces}")
+    console.print(f"[cyan]Validation Enabled:[/cyan] {pec_config.enable_validation}")
+    if pec_config.enable_validation:
+        console.print(f"[cyan]Validator Model:[/cyan] {pec_config.validator_model_id}")
+    console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
+    if qa_config.provider == "ollama":
+        console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
+    console.print()
+
+    try:
+        run_batch_pec_generation(
+            input_dir,
+            qa_config.output_dir,
+            qa_config,
+            pec_config,
+            qa_config.workers,
+        )
+
+        # Export to JSONL if requested
+        if export_jsonl:
+            from gtranscriber.schemas import QARecordPEC
+
+            console.print("\n[cyan]Exporting to JSONL format...[/cyan]")
+            for json_file in qa_config.output_dir.glob("*_pec_qa.json"):
+                try:
+                    record = QARecordPEC.load(json_file)
+                    jsonl_file = json_file.with_suffix(".jsonl")
+                    record.to_jsonl(jsonl_file)
+                    console.print(f"  Exported: {jsonl_file.name}")
+                except Exception as e:
+                    print_warning(f"Failed to export {json_file.name}: {e}")
+
+        print_success("PEC QA generation completed!")
+
+    except Exception as e:
+        print_error(f"PEC QA generation failed: {e}")
         raise typer.Exit(code=1) from e
 
 

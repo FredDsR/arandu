@@ -239,6 +239,139 @@ class QAConfig(BaseSettings):
         return v
 
 
+class PECConfig(BaseSettings):
+    """Configuration settings for the PEC (Pipeline de Elicitação Cognitiva).
+
+    Cognitive scaffolding QA generation based on Bloom's Taxonomy with
+    LLM-as-a-Judge validation.
+
+    Settings are loaded from environment variables with the GTRANSCRIBER_PEC_ prefix.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_PEC_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Module toggles (progressive adoption)
+    enable_bloom_scaffolding: bool = Field(
+        default=True,
+        description="Enable Bloom taxonomy scaffolding for QA generation",
+    )
+    enable_reasoning_traces: bool = Field(
+        default=True,
+        description="Enable reasoning trace generation for answers",
+    )
+    enable_validation: bool = Field(
+        default=False,
+        description="Enable LLM-as-a-Judge validation (requires additional LLM calls)",
+    )
+
+    # Module I - Bloom Scaffolding settings
+    bloom_levels: list[str] = Field(
+        default=["remember", "understand", "analyze", "evaluate"],
+        description="Bloom levels to use for question generation",
+    )
+    bloom_distribution: dict[str, float] = Field(
+        default={
+            "remember": 0.2,
+            "understand": 0.3,
+            "analyze": 0.3,
+            "evaluate": 0.2,
+        },
+        description="Distribution of questions per Bloom level (must sum to 1.0)",
+    )
+
+    # Module II - Reasoning settings
+    max_hop_count: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Maximum reasoning hops to detect for multi-hop questions",
+    )
+
+    # Module III - LLM-as-a-Judge validation settings
+    validator_provider: str = Field(
+        default="ollama",
+        description="LLM provider for validation: openai, ollama, custom",
+    )
+    validator_model_id: str = Field(
+        default="llama3.1:8b",
+        description="Model ID for LLM-as-a-Judge validation",
+    )
+    validator_temperature: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Temperature for validator (low for consistent evaluation)",
+    )
+    validation_threshold: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="Minimum overall score to pass validation",
+    )
+    faithfulness_weight: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Weight for faithfulness score in overall calculation",
+    )
+    bloom_calibration_weight: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Weight for Bloom calibration score in overall calculation",
+    )
+    informativeness_weight: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Weight for informativeness score in overall calculation",
+    )
+
+    # Language settings
+    language: str = Field(
+        default="pt",
+        description="Language for PEC prompts (ISO 639-1: 'pt' or 'en')",
+    )
+
+    @field_validator("bloom_levels")
+    @classmethod
+    def validate_bloom_levels(cls, v: list[str]) -> list[str]:
+        """Validate Bloom taxonomy levels."""
+        valid_levels = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
+        for level in v:
+            if level not in valid_levels:
+                raise ValueError(
+                    f"Invalid Bloom level: {level!r}. Must be one of {sorted(valid_levels)}"
+                )
+        return v
+
+    @field_validator("bloom_distribution")
+    @classmethod
+    def validate_bloom_distribution(cls, v: dict[str, float]) -> dict[str, float]:
+        """Validate Bloom distribution sums to 1.0."""
+        total = sum(v.values())
+        if not (0.99 <= total <= 1.01):  # Allow small floating point errors
+            raise ValueError(f"Bloom distribution must sum to 1.0, got {total}")
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        """Validate language code for PEC prompts."""
+        valid_languages = {"en", "pt"}
+        if v not in valid_languages:
+            raise ValueError(
+                f"Invalid PEC language: {v!r}. Must be one of {sorted(valid_languages)}"
+            )
+        return v
+
+
 class KGConfig(BaseSettings):
     """Configuration settings for the knowledge graph construction pipeline.
 
@@ -414,6 +547,11 @@ def get_transcriber_config() -> TranscriberConfig:
 def get_qa_config() -> QAConfig:
     """Get QA pipeline configuration."""
     return QAConfig()
+
+
+def get_pec_config() -> PECConfig:
+    """Get PEC (Cognitive Elicitation Pipeline) configuration."""
+    return PECConfig()
 
 
 def get_kg_config() -> KGConfig:
