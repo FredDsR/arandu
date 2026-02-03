@@ -239,17 +239,17 @@ class QAConfig(BaseSettings):
         return v
 
 
-class PECConfig(BaseSettings):
-    """Configuration settings for the PEC (Pipeline de Elicitação Cognitiva).
+class CEPConfig(BaseSettings):
+    """Configuration settings for the CEP (Cognitive Elicitation Pipeline).
 
     Cognitive scaffolding QA generation based on Bloom's Taxonomy with
     LLM-as-a-Judge validation.
 
-    Settings are loaded from environment variables with the GTRANSCRIBER_PEC_ prefix.
+    Settings are loaded from environment variables with the GTRANSCRIBER_CEP_ prefix.
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="GTRANSCRIBER_PEC_",
+        env_prefix="GTRANSCRIBER_CEP_",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -336,7 +336,7 @@ class PECConfig(BaseSettings):
     # Language settings
     language: str = Field(
         default="pt",
-        description="Language for PEC prompts (ISO 639-1: 'pt' or 'en')",
+        description="Language for CEP prompts (ISO 639-1: 'pt' or 'en')",
     )
 
     @field_validator("bloom_levels")
@@ -363,11 +363,11 @@ class PECConfig(BaseSettings):
     @field_validator("language")
     @classmethod
     def validate_language(cls, v: str) -> str:
-        """Validate language code for PEC prompts."""
+        """Validate language code for CEP prompts."""
         valid_languages = {"en", "pt"}
         if v not in valid_languages:
             raise ValueError(
-                f"Invalid PEC language: {v!r}. Must be one of {sorted(valid_languages)}"
+                f"Invalid CEP language: {v!r}. Must be one of {sorted(valid_languages)}"
             )
         return v
 
@@ -549,9 +549,9 @@ def get_qa_config() -> QAConfig:
     return QAConfig()
 
 
-def get_pec_config() -> PECConfig:
-    """Get PEC (Cognitive Elicitation Pipeline) configuration."""
-    return PECConfig()
+def get_cep_config() -> CEPConfig:
+    """Get CEP (Cognitive Elicitation Pipeline) configuration."""
+    return CEPConfig()
 
 
 def get_kg_config() -> KGConfig:

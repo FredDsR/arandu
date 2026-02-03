@@ -1,10 +1,10 @@
-# PEC QA Generation Guide
+# CEP QA Generation Guide
 
-Generate cognitively-calibrated question-answer pairs using the **Pipeline de Elicitação Cognitiva** (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding and LLM-as-a-Judge validation.
+Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding and LLM-as-a-Judge validation.
 
 ## Overview
 
-The PEC pipeline extends the standard QA generation with three specialized modules:
+The CEP pipeline extends the standard QA generation with three specialized modules:
 
 1. **Module I: Bloom Scaffolding** - Generates questions distributed across Bloom's taxonomy levels
 2. **Module II: Reasoning & Grounding** - Enriches higher-level questions with reasoning traces
@@ -30,34 +30,34 @@ The PEC pipeline extends the standard QA generation with three specialized modul
 ### Using Docker Compose
 
 ```bash
-# Start PEC QA generation with Ollama sidecar
-docker compose --profile pec up
+# Start CEP QA generation with Ollama sidecar
+docker compose --profile cep up
 ```
 
 ### Using SLURM
 
 ```bash
 # Grace partition (NVIDIA L40S)
-sbatch scripts/slurm/pec/grace.slurm
+sbatch scripts/slurm/cep/grace.slurm
 
 # Tupi partition (NVIDIA RTX 4090)
-sbatch scripts/slurm/pec/tupi.slurm
+sbatch scripts/slurm/cep/tupi.slurm
 
 # Sirius partition (AMD, CPU mode)
-sbatch scripts/slurm/pec/sirius.slurm
+sbatch scripts/slurm/cep/sirius.slurm
 ```
 
 ### Using CLI
 
 ```bash
 # Basic usage
-gtranscriber generate-pec-qa results/ --output-dir pec_dataset/
+gtranscriber generate-cep-qa results/ --output-dir cep_dataset/
 
 # With validation enabled
-gtranscriber generate-pec-qa results/ --validate --output-dir pec_dataset/
+gtranscriber generate-cep-qa results/ --validate --output-dir cep_dataset/
 
 # Export to JSONL format
-gtranscriber generate-pec-qa results/ --jsonl --output-dir pec_dataset/
+gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 ```
 
 ## Configuration
@@ -73,14 +73,14 @@ gtranscriber generate-pec-qa results/ --jsonl --output-dir pec_dataset/
 | `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
 | `GTRANSCRIBER_QA_WORKERS` | `2` | Parallel workers |
 
-### PEC-Specific Variables
+### CEP-Specific Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_PEC_ENABLE_VALIDATION` | `false` | Enable LLM-as-a-Judge validation |
-| `GTRANSCRIBER_PEC_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
-| `GTRANSCRIBER_PEC_VALIDATOR_MODEL_ID` | `llama3.1:8b` | Validator model |
-| `GTRANSCRIBER_PEC_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
+| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `false` | Enable LLM-as-a-Judge validation |
+| `GTRANSCRIBER_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
+| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `llama3.1:8b` | Validator model |
+| `GTRANSCRIBER_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
 
 ### Bloom Distribution
 
@@ -95,7 +95,7 @@ Default distribution allocates questions across cognitive levels:
 
 Customize via CLI:
 ```bash
-gtranscriber generate-pec-qa results/ \
+gtranscriber generate-cep-qa results/ \
   --bloom-dist "remember=0.1,understand=0.2,analyze=0.4,evaluate=0.3"
 ```
 
@@ -109,66 +109,66 @@ GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
 GTRANSCRIBER_QA_TEMPERATURE=0.7
 GTRANSCRIBER_QA_WORKERS=4
 
-# PEC-Specific Settings
-GTRANSCRIBER_PEC_ENABLE_VALIDATION=true
-GTRANSCRIBER_PEC_VALIDATOR_MODEL_ID=llama3.1:8b
-GTRANSCRIBER_PEC_LANGUAGE=pt
+# CEP-Specific Settings
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_CEP_LANGUAGE=pt
 
 # Directories
 GTRANSCRIBER_RESULTS_DIR=./results
-GTRANSCRIBER_PEC_DIR=./pec_dataset
+GTRANSCRIBER_CEP_DIR=./cep_dataset
 ```
 
 ## Usage Examples
 
-### Basic PEC Generation
+### Basic CEP Generation
 
 ```bash
 # Default configuration (Portuguese prompts, no validation)
-docker compose --profile pec up
+docker compose --profile cep up
 ```
 
 ### With LLM-as-a-Judge Validation
 
 ```bash
 # Enable validation to filter low-quality pairs
-GTRANSCRIBER_PEC_ENABLE_VALIDATION=true docker compose --profile pec up
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true docker compose --profile cep up
 ```
 
 ### GPU-Accelerated Ollama
 
 ```bash
 # Use GPU profile for faster inference
-docker compose --profile pec-gpu up
+docker compose --profile cep-gpu up
 ```
 
 ### English Language Prompts
 
 ```bash
 # Generate QA pairs with English prompts
-GTRANSCRIBER_PEC_LANGUAGE=en docker compose --profile pec up
+GTRANSCRIBER_CEP_LANGUAGE=en docker compose --profile cep up
 ```
 
 ### Export to JSONL
 
 ```bash
 # Generate and export to JSONL format for training
-gtranscriber generate-pec-qa results/ --jsonl --output-dir pec_dataset/
+gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 ```
 
 ## Output Format
 
-PEC records are saved as JSON files in `pec_dataset/`:
+CEP records are saved as JSON files in `cep_dataset/`:
 
 ```
-pec_dataset/
-├── <gdrive_id_1>_pec_qa.json
-├── <gdrive_id_2>_pec_qa.json
-├── pec_checkpoint.json          # For resumption
+cep_dataset/
+├── <gdrive_id_1>_cep_qa.json
+├── <gdrive_id_2>_cep_qa.json
+├── cep_checkpoint.json          # For resumption
 └── pec_qa_export.jsonl          # Optional JSONL export
 ```
 
-### QARecordPEC Schema
+### QARecordCEP Schema
 
 ```json
 {
@@ -218,7 +218,7 @@ pec_dataset/
     "avg_informativeness": 0.72,
     "avg_overall": 0.79
   },
-  "pec_version": "1.0"
+  "cep_version": "1.0"
 }
 ```
 
@@ -306,11 +306,11 @@ The overall score is a weighted average. QA pairs below the threshold (default 0
 ## Programmatic Usage
 
 ```python
-from gtranscriber.schemas import QARecordPEC, QAPairPEC
-from gtranscriber.config import PECConfig, QAConfig, get_pec_config
+from gtranscriber.schemas import QARecordCEP, QAPairCEP
+from gtranscriber.config import CEPConfig, QAConfig, get_cep_config
 
-# Load existing PEC record
-record = QARecordPEC.load("pec_dataset/1abc123xyz_pec_qa.json")
+# Load existing CEP record
+record = QARecordCEP.load("cep_dataset/1abc123xyz_cep_qa.json")
 
 # Access QA pairs with Bloom levels
 for qa in record.qa_pairs:
@@ -333,10 +333,10 @@ jsonl_content = record.to_jsonl()
 # Export to JSONL file
 record.to_jsonl("output.jsonl")
 
-# Get PEC configuration
-pec_config = get_pec_config()
-print(f"Validation enabled: {pec_config.enable_validation}")
-print(f"Bloom levels: {pec_config.bloom_levels}")
+# Get CEP configuration
+cep_config = get_cep_config()
+print(f"Validation enabled: {cep_config.enable_validation}")
+print(f"Bloom levels: {cep_config.bloom_levels}")
 ```
 
 ## Monitoring Progress
@@ -344,11 +344,11 @@ print(f"Bloom levels: {pec_config.bloom_levels}")
 ### Docker Logs
 
 ```bash
-# Watch PEC generation logs
-docker compose --profile pec logs -f gtranscriber-pec
+# Watch CEP generation logs
+docker compose --profile cep logs -f gtranscriber-cep
 
 # Check Ollama status
-docker compose --profile pec logs ollama
+docker compose --profile cep logs ollama
 ```
 
 ### SLURM Logs
@@ -367,10 +367,10 @@ The pipeline automatically checkpoints progress. To resume an interrupted job:
 
 ```bash
 # Simply restart - checkpoint is detected automatically
-docker compose --profile pec up
+docker compose --profile cep up
 ```
 
-The checkpoint file (`pec_dataset/pec_checkpoint.json`) tracks:
+The checkpoint file (`cep_dataset/cep_checkpoint.json`) tracks:
 - Completed documents
 - Failed documents (for retry)
 - Processing statistics
@@ -406,7 +406,7 @@ The checkpoint file (`pec_dataset/pec_checkpoint.json`) tracks:
 ls -la results/*.json
 
 # Verify Ollama is running
-docker compose --profile pec exec ollama ollama list
+docker compose --profile cep exec ollama ollama list
 
 # Check for minimum context length
 # Text must be at least 100 characters
@@ -428,13 +428,13 @@ docker compose --profile pec exec ollama ollama list
 
 ```bash
 # Restart Ollama service
-docker compose --profile pec restart ollama
+docker compose --profile cep restart ollama
 
 # Check Ollama health
-docker compose --profile pec exec ollama curl http://localhost:11434/api/tags
+docker compose --profile cep exec ollama curl http://localhost:11434/api/tags
 
 # Pull model if missing
-docker compose --profile pec exec ollama ollama pull llama3.1:8b
+docker compose --profile cep exec ollama ollama pull llama3.1:8b
 ```
 
 ---

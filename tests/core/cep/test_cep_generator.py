@@ -1,4 +1,4 @@
-"""Tests for PEC QA Generator orchestrator."""
+"""Tests for CEP QA Generator orchestrator."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import PECConfig, QAConfig
-from gtranscriber.core.pec.pec_generator import PECQAGenerator
-from gtranscriber.schemas import EnrichedRecord, QARecordPEC
+from gtranscriber.config import CEPConfig, QAConfig
+from gtranscriber.core.cep.cep_generator import CEPQAGenerator
+from gtranscriber.schemas import EnrichedRecord, QARecordCEP
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -61,9 +61,9 @@ def qa_config() -> QAConfig:
 
 
 @pytest.fixture
-def pec_config() -> PECConfig:
-    """Create a PEC config for testing."""
-    return PECConfig(
+def cep_config() -> CEPConfig:
+    """Create a CEP config for testing."""
+    return CEPConfig(
         enable_bloom_scaffolding=True,
         enable_reasoning_traces=True,
         enable_validation=False,
@@ -99,25 +99,25 @@ def sample_transcription() -> EnrichedRecord:
     )
 
 
-class TestPECQAGenerator:
-    """Tests for PECQAGenerator class."""
+class TestCEPQAGenerator:
+    """Tests for CEPQAGenerator class."""
 
     def test_initialization(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test generator initialization."""
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         assert generator.llm_client == mock_llm_client
         assert generator.qa_config == qa_config
-        assert generator.pec_config == pec_config
+        assert generator.cep_config == cep_config
 
     def test_initialization_with_validator(
         self,
@@ -126,12 +126,12 @@ class TestPECQAGenerator:
         qa_config: QAConfig,
     ) -> None:
         """Test generator initialization with validator client."""
-        pec_config = PECConfig(enable_validation=True)
+        cep_config = CEPConfig(enable_validation=True)
 
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
             validator_client=mock_validator_client,
         )
 
@@ -141,19 +141,19 @@ class TestPECQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
         sample_transcription: EnrichedRecord,
     ) -> None:
-        """Test that generate_qa_pairs returns a QARecordPEC."""
-        generator = PECQAGenerator(
+        """Test that generate_qa_pairs returns a QARecordCEP."""
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = generator.generate_qa_pairs(sample_transcription)
 
-        assert isinstance(result, QARecordPEC)
+        assert isinstance(result, QARecordCEP)
         assert result.source_gdrive_id == "test123"
         assert result.source_filename == "test.mp3"
         assert result.model_id == qa_config.model_id
@@ -163,21 +163,21 @@ class TestPECQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
         sample_transcription: EnrichedRecord,
     ) -> None:
         """Test that result includes Bloom level distribution."""
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = generator.generate_qa_pairs(sample_transcription)
 
         assert result.bloom_distribution is not None
         # Should have distribution for all configured levels
-        for level in pec_config.bloom_levels:
+        for level in cep_config.bloom_levels:
             assert level in result.bloom_distribution
 
     def test_generate_qa_pairs_with_validation(
@@ -188,15 +188,15 @@ class TestPECQAGenerator:
         sample_transcription: EnrichedRecord,
     ) -> None:
         """Test generation with validation enabled."""
-        pec_config = PECConfig(
+        cep_config = CEPConfig(
             enable_validation=True,
             validation_threshold=0.6,
         )
 
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
             validator_client=mock_validator_client,
         )
 
@@ -210,14 +210,14 @@ class TestPECQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
         sample_transcription: EnrichedRecord,
     ) -> None:
         """Test generation without validation."""
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = generator.generate_qa_pairs(sample_transcription)
@@ -228,7 +228,7 @@ class TestPECQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test handling of empty transcription text."""
         empty_transcription = EnrichedRecord(
@@ -248,10 +248,10 @@ class TestPECQAGenerator:
             transcription_status="completed",
         )
 
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         # Empty transcription should raise ValueError
@@ -262,7 +262,7 @@ class TestPECQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test handling of very short transcription."""
         short_transcription = EnrichedRecord(
@@ -282,10 +282,10 @@ class TestPECQAGenerator:
             transcription_status="completed",
         )
 
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         # Short transcription below MIN_CONTEXT_LENGTH should raise ValueError
@@ -296,14 +296,14 @@ class TestPECQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
         sample_transcription: EnrichedRecord,
     ) -> None:
         """Test JSONL export format."""
-        generator = PECQAGenerator(
+        generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = generator.generate_qa_pairs(sample_transcription)
@@ -321,15 +321,15 @@ class TestPECQAGenerator:
             assert "context" in data
 
 
-class TestQARecordPEC:
-    """Tests for QARecordPEC schema."""
+class TestQARecordCEP:
+    """Tests for QARecordCEP schema."""
 
     def test_bloom_distribution_validation(self) -> None:
         """Test Bloom distribution validation."""
-        from gtranscriber.schemas import QAPairPEC
+        from gtranscriber.schemas import QAPairCEP
 
         pairs = [
-            QAPairPEC(
+            QAPairCEP(
                 question="Q1?",
                 answer="A1",
                 context="C1",
@@ -337,7 +337,7 @@ class TestQARecordPEC:
                 confidence=0.9,
                 bloom_level="remember",
             ),
-            QAPairPEC(
+            QAPairCEP(
                 question="Q2?",
                 answer="A2",
                 context="C2",
@@ -347,7 +347,7 @@ class TestQARecordPEC:
             ),
         ]
 
-        record = QARecordPEC(
+        record = QARecordCEP(
             source_gdrive_id="test123",
             source_filename="test.mp3",
             transcription_text="Test text.",
@@ -363,10 +363,10 @@ class TestQARecordPEC:
 
     def test_validation_summary_optional(self) -> None:
         """Test that validation_summary is optional."""
-        from gtranscriber.schemas import QAPairPEC
+        from gtranscriber.schemas import QAPairCEP
 
         pairs = [
-            QAPairPEC(
+            QAPairCEP(
                 question="Q?",
                 answer="A",
                 context="C",
@@ -376,7 +376,7 @@ class TestQARecordPEC:
             ),
         ]
 
-        record = QARecordPEC(
+        record = QARecordCEP(
             source_gdrive_id="test123",
             source_filename="test.mp3",
             transcription_text="Test text.",
@@ -392,10 +392,10 @@ class TestQARecordPEC:
 
     def test_to_jsonl_with_bloom_level(self) -> None:
         """Test JSONL export includes Bloom level."""
-        from gtranscriber.schemas import QAPairPEC
+        from gtranscriber.schemas import QAPairCEP
 
         pairs = [
-            QAPairPEC(
+            QAPairCEP(
                 question="Por que?",
                 answer="Porque sim.",
                 context="Contexto de teste.",
@@ -406,7 +406,7 @@ class TestQARecordPEC:
             ),
         ]
 
-        record = QARecordPEC(
+        record = QARecordCEP(
             source_gdrive_id="test123",
             source_filename="test.mp3",
             transcription_text="Test text.",

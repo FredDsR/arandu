@@ -196,7 +196,7 @@ services:
     profiles:
       - qa
       - kg
-      - pec
+      - cep
       - ollama
 
   # Ollama with GPU support (use --profile ollama-gpu)
@@ -237,7 +237,7 @@ services:
     profiles:
       - qa-gpu
       - kg-gpu
-      - pec-gpu
+      - cep-gpu
       - ollama-gpu
 
   # QA Generation Service
@@ -295,16 +295,16 @@ services:
       - qa
       - qa-gpu
 
-  # PEC QA Generation Service (Cognitive Elicitation Pipeline)
-  gtranscriber-pec:
+  # CEP QA Generation Service (Cognitive Elicitation Pipeline)
+  gtranscriber-cep:
     build:
       context: .
       dockerfile: Dockerfile
     image: gtranscriber:latest
-    container_name: gtranscriber-pec-${SLURM_JOB_ID:-local}
+    container_name: gtranscriber-cep-${SLURM_JOB_ID:-local}
     working_dir: /app
 
-    # No GPU needed (PEC generation is CPU/API-based)
+    # No GPU needed (CEP generation is CPU/API-based)
     deploy: {}
 
     # Wait for Ollama to be ready when using Ollama provider
@@ -323,23 +323,23 @@ services:
       - GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}
       - GTRANSCRIBER_QA_TEMPERATURE=${GTRANSCRIBER_QA_TEMPERATURE:-0.7}
       - GTRANSCRIBER_QA_WORKERS=${GTRANSCRIBER_QA_WORKERS:-2}
-      # PEC-specific configuration
-      - GTRANSCRIBER_PEC_ENABLE_VALIDATION=${GTRANSCRIBER_PEC_ENABLE_VALIDATION:-false}
-      - GTRANSCRIBER_PEC_VALIDATOR_PROVIDER=${GTRANSCRIBER_PEC_VALIDATOR_PROVIDER:-ollama}
-      - GTRANSCRIBER_PEC_VALIDATOR_MODEL_ID=${GTRANSCRIBER_PEC_VALIDATOR_MODEL_ID:-llama3.1:8b}
-      - GTRANSCRIBER_PEC_LANGUAGE=${GTRANSCRIBER_PEC_LANGUAGE:-pt}
+      # CEP-specific configuration
+      - GTRANSCRIBER_CEP_ENABLE_VALIDATION=${GTRANSCRIBER_CEP_ENABLE_VALIDATION:-false}
+      - GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=${GTRANSCRIBER_CEP_VALIDATOR_PROVIDER:-ollama}
+      - GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=${GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID:-llama3.1:8b}
+      - GTRANSCRIBER_CEP_LANGUAGE=${GTRANSCRIBER_CEP_LANGUAGE:-pt}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
     command: >
-      generate-pec-qa
+      generate-cep-qa
       /app/results
-      --output-dir /app/pec_dataset
+      --output-dir /app/cep_dataset
       --workers ${GTRANSCRIBER_QA_WORKERS:-2}
 
     volumes:
       - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_PEC_DIR:-./pec_dataset}:/app/pec_dataset:rw
+      - ${GTRANSCRIBER_CEP_DIR:-./cep_dataset}:/app/cep_dataset:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
@@ -352,8 +352,8 @@ services:
         max-file: "3"
 
     profiles:
-      - pec
-      - pec-gpu
+      - cep
+      - cep-gpu
 
   # KG Construction Service
   gtranscriber-kg:

@@ -897,7 +897,7 @@ def generate_qa(
 
 
 @app.command()
-def generate_pec_qa(
+def generate_cep_qa(
     input_dir: Annotated[
         Path,
         typer.Argument(
@@ -913,7 +913,7 @@ def generate_pec_qa(
         typer.Option(
             "--output-dir",
             "-o",
-            help="Output directory for PEC QA dataset JSON files.",
+            help="Output directory for CEP QA dataset JSON files.",
         ),
     ] = None,
     provider: Annotated[
@@ -1005,9 +1005,9 @@ def generate_pec_qa(
         ),
     ] = False,
 ) -> None:
-    """Generate PEC (cognitive scaffolding) QA pairs from transcriptions.
+    """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
 
-    Uses the Pipeline de Elicitação Cognitiva (PEC) with:
+    Uses the Cognitive Elicitation Pipeline (CEP) with:
     - Module I: Bloom Scaffolding (question generation by cognitive level)
     - Module II: Reasoning & Grounding (reasoning traces and multi-hop detection)
     - Module III: LLM-as-a-Judge Validation (optional quality evaluation)
@@ -1016,25 +1016,25 @@ def generate_pec_qa(
     analyze, evaluate) to create cognitively scaffolded QA datasets.
 
     Examples:
-        # Basic PEC generation (default: Portuguese)
-        gtranscriber generate-pec-qa results/ -o pec_dataset/
+        # Basic CEP generation (default: Portuguese)
+        gtranscriber generate-cep-qa results/ -o cep_dataset/
 
         # With LLM-as-a-Judge validation
-        gtranscriber generate-pec-qa results/ --validate --validator-model gpt-4
+        gtranscriber generate-cep-qa results/ --validate --validator-model gpt-4
 
         # Adjust Bloom level distribution
-        gtranscriber generate-pec-qa results/ \\
+        gtranscriber generate-cep-qa results/ \\
             --bloom-dist "remember:0.1,understand:0.3,analyze:0.4,evaluate:0.2"
 
         # Export to JSONL for KGQA training
-        gtranscriber generate-pec-qa results/ --jsonl
+        gtranscriber generate-cep-qa results/ --jsonl
     """
-    from gtranscriber.config import PECConfig, QAConfig
+    from gtranscriber.config import CEPConfig, QAConfig
     from gtranscriber.core.qa_batch import run_batch_pec_generation
 
     # Load configs with defaults from environment variables
     qa_config = QAConfig()
-    pec_config = PECConfig()
+    cep_config = CEPConfig()
 
     # Override QA config with CLI args if provided
     if provider is not None:
@@ -1054,13 +1054,13 @@ def generate_pec_qa(
     if workers is not None:
         qa_config.workers = workers
 
-    # Override PEC config with CLI args if provided
+    # Override CEP config with CLI args if provided
     if language is not None:
-        pec_config.language = language
+        cep_config.language = language
     if validate:
-        pec_config.enable_validation = True
+        cep_config.enable_validation = True
     if validator_model is not None:
-        pec_config.validator_model_id = validator_model
+        cep_config.validator_model_id = validator_model
 
     # Parse Bloom distribution if provided
     if bloom_dist is not None:
@@ -1069,8 +1069,8 @@ def generate_pec_qa(
             for item in bloom_dist.split(","):
                 level, weight = item.strip().split(":")
                 dist_dict[level.strip()] = float(weight.strip())
-            pec_config.bloom_distribution = dist_dict
-            pec_config.bloom_levels = list(dist_dict.keys())
+            cep_config.bloom_distribution = dist_dict
+            cep_config.bloom_levels = list(dist_dict.keys())
         except ValueError as e:
             print_error(f"Invalid bloom-dist format: {e}")
             print_error("Expected format: 'level:weight,level:weight,...'")
@@ -1086,27 +1086,27 @@ def generate_pec_qa(
         raise typer.Exit(code=1)
 
     valid_languages = {"en", "pt"}
-    if pec_config.language not in valid_languages:
+    if cep_config.language not in valid_languages:
         print_error(
-            f"Invalid language: {pec_config.language!r}. Must be one of {sorted(valid_languages)}"
+            f"Invalid language: {cep_config.language!r}. Must be one of {sorted(valid_languages)}"
         )
         raise typer.Exit(code=1)
 
     # Display configuration
-    console.print("\n[bold]PEC QA Generation Configuration[/bold]\n")
+    console.print("\n[bold]CEP QA Generation Configuration[/bold]\n")
     console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
     console.print(f"[cyan]Output Directory:[/cyan] {qa_config.output_dir}")
     console.print(f"[cyan]Provider:[/cyan] {qa_config.provider}")
     console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
     console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
     console.print(f"[cyan]Questions per document:[/cyan] {qa_config.questions_per_document}")
-    console.print(f"[cyan]Language:[/cyan] {pec_config.language}")
-    console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(pec_config.bloom_levels)}")
-    console.print(f"[cyan]Bloom Distribution:[/cyan] {pec_config.bloom_distribution}")
-    console.print(f"[cyan]Reasoning Traces:[/cyan] {pec_config.enable_reasoning_traces}")
-    console.print(f"[cyan]Validation Enabled:[/cyan] {pec_config.enable_validation}")
-    if pec_config.enable_validation:
-        console.print(f"[cyan]Validator Model:[/cyan] {pec_config.validator_model_id}")
+    console.print(f"[cyan]Language:[/cyan] {cep_config.language}")
+    console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_levels)}")
+    console.print(f"[cyan]Bloom Distribution:[/cyan] {cep_config.bloom_distribution}")
+    console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
+    console.print(f"[cyan]Validation Enabled:[/cyan] {cep_config.enable_validation}")
+    if cep_config.enable_validation:
+        console.print(f"[cyan]Validator Model:[/cyan] {cep_config.validator_model_id}")
     console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
     if qa_config.provider == "ollama":
         console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
@@ -1117,28 +1117,28 @@ def generate_pec_qa(
             input_dir,
             qa_config.output_dir,
             qa_config,
-            pec_config,
+            cep_config,
             qa_config.workers,
         )
 
         # Export to JSONL if requested
         if export_jsonl:
-            from gtranscriber.schemas import QARecordPEC
+            from gtranscriber.schemas import QARecordCEP
 
             console.print("\n[cyan]Exporting to JSONL format...[/cyan]")
-            for json_file in qa_config.output_dir.glob("*_pec_qa.json"):
+            for json_file in qa_config.output_dir.glob("*_cep_qa.json"):
                 try:
-                    record = QARecordPEC.load(json_file)
+                    record = QARecordCEP.load(json_file)
                     jsonl_file = json_file.with_suffix(".jsonl")
                     record.to_jsonl(jsonl_file)
                     console.print(f"  Exported: {jsonl_file.name}")
                 except Exception as e:
                     print_warning(f"Failed to export {json_file.name}: {e}")
 
-        print_success("PEC QA generation completed!")
+        print_success("CEP QA generation completed!")
 
     except Exception as e:
-        print_error(f"PEC QA generation failed: {e}")
+        print_error(f"CEP QA generation failed: {e}")
         raise typer.Exit(code=1) from e
 
 

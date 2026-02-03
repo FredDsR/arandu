@@ -6,7 +6,7 @@ This document provides complete specifications for all data schemas used in the 
 
 1. [Input Schemas](#input-schemas)
 2. [QA Generation Schemas](#qa-generation-schemas)
-3. [PEC QA Generation Schemas](#pec-qa-generation-schemas)
+3. [CEP QA Generation Schemas](#cep-qa-generation-schemas)
 4. [Knowledge Graph Schemas](#knowledge-graph-schemas)
 5. [Evaluation Schemas](#evaluation-schemas)
 6. [Schema Relationships](#schema-relationships)
@@ -252,11 +252,11 @@ class QARecord(BaseModel):
 
 ---
 
-## PEC QA Generation Schemas
+## CEP QA Generation Schemas
 
-The PEC (Pipeline de Elicitação Cognitiva) extends the standard QA schemas with cognitive scaffolding based on Bloom's Taxonomy.
+The CEP (Cognitive Elicitation Pipeline) extends the standard QA schemas with cognitive scaffolding based on Bloom's Taxonomy.
 
-### QAPairPEC
+### QAPairCEP
 
 Extends QAPair with Bloom taxonomy levels and reasoning traces for cognitively-calibrated question generation.
 
@@ -299,7 +299,7 @@ Extends QAPair with Bloom taxonomy levels and reasoning traces for cognitively-c
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
-class QAPairPEC(BaseModel):
+class QAPairCEP(BaseModel):
     """QA pair with Bloom's Taxonomy cognitive scaffolding."""
     question: str
     answer: str
@@ -371,9 +371,9 @@ class ValidationScore(BaseModel):
 
 ### QAPairValidated
 
-Extends QAPairPEC with validation results.
+Extends QAPairCEP with validation results.
 
-**Fields** (in addition to QAPairPEC fields):
+**Fields** (in addition to QAPairCEP fields):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -399,19 +399,19 @@ Extends QAPairPEC with validation results.
 }
 ```
 
-### QARecordPEC
+### QARecordCEP
 
-Complete PEC QA dataset for a single transcription, extending QARecord with cognitive scaffolding metadata.
+Complete CEP QA dataset for a single transcription, extending QARecord with cognitive scaffolding metadata.
 
 **Fields** (in addition to QARecord fields):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `qa_pairs` | `list[QAPairPEC]` | Yes | PEC-enhanced QA pairs |
+| `qa_pairs` | `list[QAPairCEP]` | Yes | CEP-enhanced QA pairs |
 | `bloom_distribution` | `dict[str, int]` | Yes | Count of pairs per Bloom level |
 | `validated_pairs` | `int \| None` | No | Number of pairs passing validation |
 | `validation_summary` | `ValidationSummary \| None` | No | Aggregate validation statistics |
-| `pec_version` | `str` | Yes | PEC pipeline version |
+| `cep_version` | `str` | Yes | CEP pipeline version |
 
 **Example**:
 ```json
@@ -437,16 +437,16 @@ Complete PEC QA dataset for a single transcription, extending QARecord with cogn
     "avg_informativeness": 0.72,
     "avg_overall": 0.79
   },
-  "pec_version": "1.0"
+  "cep_version": "1.0"
 }
 ```
 
 **JSONL Export**:
 
-QARecordPEC supports JSONL export for KGQA training compatibility:
+QARecordCEP supports JSONL export for KGQA training compatibility:
 
 ```python
-record = QARecordPEC.load("pec_dataset/1abc123xyz_pec_qa.json")
+record = QARecordCEP.load("cep_dataset/1abc123xyz_cep_qa.json")
 
 # Export to file
 record.to_jsonl("output.jsonl")
@@ -455,7 +455,7 @@ record.to_jsonl("output.jsonl")
 jsonl_content = record.to_jsonl()
 ```
 
-Each line in the JSONL contains one QA pair with all PEC fields:
+Each line in the JSONL contains one QA pair with all CEP fields:
 ```json
 {"question": "O que aconteceu?", "answer": "...", "context": "...", "bloom_level": "remember", "confidence": 0.92}
 {"question": "Por que isso aconteceu?", "answer": "...", "context": "...", "bloom_level": "analyze", "reasoning_trace": "..."}
@@ -474,12 +474,12 @@ class ValidationSummary(BaseModel):
     avg_informativeness: float = Field(ge=0.0, le=1.0)
     avg_overall: float = Field(ge=0.0, le=1.0)
 
-class QARecordPEC(BaseModel):
-    """Complete PEC QA dataset for a single transcription."""
+class QARecordCEP(BaseModel):
+    """Complete CEP QA dataset for a single transcription."""
     source_gdrive_id: str
     source_filename: str
     transcription_text: str
-    qa_pairs: list[QAPairPEC]
+    qa_pairs: list[QAPairCEP]
     model_id: str
     provider: str
     generation_timestamp: datetime = Field(default_factory=datetime.now)
@@ -487,7 +487,7 @@ class QARecordPEC(BaseModel):
     bloom_distribution: dict[str, int]
     validated_pairs: int | None = None
     validation_summary: ValidationSummary | None = None
-    pec_version: str = "1.0"
+    cep_version: str = "1.0"
 
     def to_jsonl(self, path: str | Path | None = None) -> str | None:
         """Export QA pairs to JSONL format."""
@@ -505,7 +505,7 @@ class QARecordPEC(BaseModel):
         Path(path).write_text(self.model_dump_json(indent=2))
 
     @classmethod
-    def load(cls, path: str | Path) -> "QARecordPEC":
+    def load(cls, path: str | Path) -> "QARecordCEP":
         return cls.model_validate_json(Path(path).read_text())
 ```
 
@@ -935,9 +935,9 @@ graph TD
     B --> C[QARecord]
     C --> D[QAPair]
 
-    A --> P[PECQAGenerator]
-    P --> Q[QARecordPEC]
-    Q --> R[QAPairPEC]
+    A --> P[CEPQAGenerator]
+    P --> Q[QARecordCEP]
+    Q --> R[QAPairCEP]
     R --> S[ValidationScore]
     R --> T[QAPairValidated]
 

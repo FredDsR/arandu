@@ -20,7 +20,7 @@ Guides for each processing pipeline:
 |----------|-------|-------------|
 | Transcription | [transcription.md](user-guide/transcription.md) | Audio/video to text |
 | QA Generation | [qa-generation.md](user-guide/qa-generation.md) | Generate question-answer pairs |
-| PEC QA Generation | [pec-qa-generation.md](user-guide/pec-qa-generation.md) | Cognitive scaffolding with Bloom's Taxonomy |
+| CEP QA Generation | [cep-qa-generation.md](user-guide/cep-qa-generation.md) | Cognitive scaffolding with Bloom's Taxonomy |
 | KG Construction | [kg-construction.md](user-guide/kg-construction.md) | Build knowledge graphs |
 | Evaluation | [evaluation.md](user-guide/evaluation.md) | Measure quality metrics |
 
@@ -59,7 +59,7 @@ docs/
 │   ├── getting-started.md
 │   ├── transcription.md
 │   ├── qa-generation.md
-│   ├── pec-qa-generation.md  # PEC cognitive scaffolding pipeline
+│   ├── cep-qa-generation.md  # CEP cognitive scaffolding pipeline
 │   ├── kg-construction.md
 │   ├── evaluation.md
 │   ├── configuration.md

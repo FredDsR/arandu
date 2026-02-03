@@ -12,24 +12,24 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gtranscriber.schemas import QAPairPEC
+from gtranscriber.schemas import QAPairCEP
 
 if TYPE_CHECKING:
-    from gtranscriber.config import PECConfig, QAConfig
+    from gtranscriber.config import CEPConfig, QAConfig
     from gtranscriber.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-# Default prompts directory (repo_root/prompts/qa/pec)
-DEFAULT_PEC_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "pec"
+# Default prompts directory (repo_root/prompts/qa/cep)
+DEFAULT_CEP_PROMPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "cep"
 )
 
 
 class BloomScaffoldingGenerator:
     """Generate QA pairs calibrated to Bloom's taxonomy levels.
 
-    Implements Module I of the PEC pipeline for cognitive scaffolding-based
+    Implements Module I of the CEP pipeline for cognitive scaffolding-based
     QA generation. Questions are distributed across Bloom levels according
     to the configured distribution.
     """
@@ -38,23 +38,23 @@ class BloomScaffoldingGenerator:
         self,
         llm_client: LLMClient,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Initialize the Bloom scaffolding generator.
 
         Args:
             llm_client: LLM client for generation.
             qa_config: QA configuration.
-            pec_config: PEC configuration.
+            cep_config: CEP configuration.
         """
         self.llm_client = llm_client
         self.qa_config = qa_config
-        self.pec_config = pec_config
+        self.cep_config = cep_config
         self._prompts = self._load_prompts()
-        logger.info(f"BloomScaffoldingGenerator initialized with levels: {pec_config.bloom_levels}")
+        logger.info(f"BloomScaffoldingGenerator initialized with levels: {cep_config.bloom_levels}")
 
     def _load_prompts(self) -> dict[str, Any]:
-        """Load PEC prompt templates based on language configuration.
+        """Load CEP prompt templates based on language configuration.
 
         Returns:
             Dictionary containing prompt templates.
@@ -62,22 +62,22 @@ class BloomScaffoldingGenerator:
         Raises:
             FileNotFoundError: If prompt file not found.
         """
-        prompt_file = DEFAULT_PEC_PROMPTS_DIR / f"{self.pec_config.language}.json"
+        prompt_file = DEFAULT_CEP_PROMPTS_DIR / f"{self.cep_config.language}.json"
 
         if not prompt_file.exists():
-            raise FileNotFoundError(f"PEC prompt file not found: {prompt_file}")
+            raise FileNotFoundError(f"CEP prompt file not found: {prompt_file}")
 
         with open(prompt_file, encoding="utf-8") as f:
             prompts = json.load(f)
 
-        logger.debug(f"Loaded PEC prompts from {prompt_file}")
+        logger.debug(f"Loaded CEP prompts from {prompt_file}")
         return prompts
 
     def generate(
         self,
         context: str,
         num_questions: int,
-    ) -> list[QAPairPEC]:
+    ) -> list[QAPairCEP]:
         """Generate Bloom-calibrated QA pairs from context.
 
         Args:
@@ -85,9 +85,9 @@ class BloomScaffoldingGenerator:
             num_questions: Total number of questions to generate.
 
         Returns:
-            List of QAPairPEC with Bloom levels assigned.
+            List of QAPairCEP with Bloom levels assigned.
         """
-        pairs: list[QAPairPEC] = []
+        pairs: list[QAPairCEP] = []
 
         # Calculate questions per Bloom level based on distribution
         level_counts = self._calculate_level_distribution(num_questions)
@@ -118,13 +118,13 @@ class BloomScaffoldingGenerator:
         # Get levels from config (only those enabled)
         levels = [
             level
-            for level in self.pec_config.bloom_levels
-            if level in self.pec_config.bloom_distribution
+            for level in self.cep_config.bloom_levels
+            if level in self.cep_config.bloom_distribution
         ]
 
         # Calculate counts based on distribution weights
         for i, level in enumerate(levels):
-            weight = self.pec_config.bloom_distribution.get(level, 0)
+            weight = self.cep_config.bloom_distribution.get(level, 0)
 
             if i == len(levels) - 1:
                 # Last level gets remaining
@@ -141,7 +141,7 @@ class BloomScaffoldingGenerator:
         context: str,
         bloom_level: str,
         num_questions: int,
-    ) -> list[QAPairPEC]:
+    ) -> list[QAPairCEP]:
         """Generate QA pairs for a specific Bloom level.
 
         Args:
@@ -150,7 +150,7 @@ class BloomScaffoldingGenerator:
             num_questions: Number of questions to generate.
 
         Returns:
-            List of QAPairPEC objects.
+            List of QAPairCEP objects.
         """
         prompt = self._build_prompt(context, bloom_level, num_questions)
 
@@ -245,8 +245,8 @@ Formato de saída (array JSON):
         response: str,
         context: str,
         bloom_level: str,
-    ) -> list[QAPairPEC]:
-        """Parse LLM response into QAPairPEC objects.
+    ) -> list[QAPairCEP]:
+        """Parse LLM response into QAPairCEP objects.
 
         Args:
             response: Raw LLM response text.
@@ -254,7 +254,7 @@ Formato de saída (array JSON):
             bloom_level: Bloom level used for generation.
 
         Returns:
-            List of QAPairPEC objects.
+            List of QAPairCEP objects.
         """
         # Extract JSON from response (handle markdown code blocks)
         response = response.strip()
@@ -271,7 +271,7 @@ Formato de saída (array JSON):
             logger.warning("Response is not a JSON array")
             return []
 
-        pairs: list[QAPairPEC] = []
+        pairs: list[QAPairCEP] = []
 
         for item in data:
             if not isinstance(item, dict):
@@ -294,7 +294,7 @@ Formato de saída (array JSON):
             except (ValueError, TypeError):
                 confidence = 0.5
 
-            # Get optional PEC fields
+            # Get optional CEP fields
             reasoning_trace = item.get("reasoning_trace")
             is_multi_hop = item.get("is_multi_hop", False)
             hop_count = item.get("hop_count")
@@ -313,7 +313,7 @@ Formato de saída (array JSON):
             question_type = self._bloom_to_question_type(bloom_level)
 
             try:
-                pair = QAPairPEC(
+                pair = QAPairCEP(
                     question=question,
                     answer=answer,
                     context=context,
@@ -327,7 +327,7 @@ Formato de saída (array JSON):
                 )
                 pairs.append(pair)
             except Exception as e:
-                logger.warning(f"Failed to create QAPairPEC: {e}")
+                logger.warning(f"Failed to create QAPairCEP: {e}")
                 continue
 
         return pairs

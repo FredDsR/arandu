@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import PECConfig
-from gtranscriber.core.pec.validator import QAValidator
-from gtranscriber.schemas import QAPairPEC, QAPairValidated, ValidationScore
+from gtranscriber.config import CEPConfig
+from gtranscriber.core.cep.validator import QAValidator
+from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -25,9 +25,9 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
 
 
 @pytest.fixture
-def pec_config() -> PECConfig:
-    """Create a PEC config for testing."""
-    return PECConfig(
+def cep_config() -> CEPConfig:
+    """Create a CEP config for testing."""
+    return CEPConfig(
         enable_validation=True,
         validation_threshold=0.6,
         faithfulness_weight=0.4,
@@ -38,9 +38,9 @@ def pec_config() -> PECConfig:
 
 
 @pytest.fixture
-def sample_qa_pair() -> QAPairPEC:
+def sample_qa_pair() -> QAPairCEP:
     """Create a sample QA pair for validation."""
-    return QAPairPEC(
+    return QAPairCEP(
         question="Por que o pescador guarda o barco?",
         answer="Para evitar perda durante enchentes.",
         context="Se o rio sobe rápido, guardo o barco para evitar perda.",
@@ -56,22 +56,22 @@ class TestQAValidator:
     def test_initialization(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test validator initialization."""
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         assert validator.validator_client == mock_llm_client
-        assert validator.pec_config == pec_config
+        assert validator.cep_config == cep_config
 
     def test_validate_returns_validated_pair(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that validate returns a QAPairValidated with scores."""
         mock_llm_client.generate.return_value = json.dumps(
@@ -85,7 +85,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -100,8 +100,8 @@ class TestQAValidator:
     def test_validate_calculates_overall_score(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that overall score is calculated correctly."""
         mock_llm_client.generate.return_value = json.dumps(
@@ -115,7 +115,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -126,8 +126,8 @@ class TestQAValidator:
     def test_validate_is_valid_above_threshold(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that is_valid is True when overall score >= threshold."""
         mock_llm_client.generate.return_value = json.dumps(
@@ -140,7 +140,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -152,8 +152,8 @@ class TestQAValidator:
     def test_validate_is_valid_below_threshold(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that is_valid is False when overall score < threshold."""
         mock_llm_client.generate.return_value = json.dumps(
@@ -166,7 +166,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -178,8 +178,8 @@ class TestQAValidator:
     def test_validate_handles_markdown_response(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test parsing response wrapped in markdown code block."""
         mock_llm_client.generate.return_value = """```json
@@ -193,7 +193,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -203,15 +203,15 @@ class TestQAValidator:
     def test_validate_handles_invalid_json(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that invalid JSON returns pair with default scores."""
         mock_llm_client.generate.return_value = "not valid json {"
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -226,15 +226,15 @@ class TestQAValidator:
     def test_validate_handles_llm_error(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that LLM errors result in unvalidated pair."""
         mock_llm_client.generate.side_effect = Exception("LLM error")
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -246,8 +246,8 @@ class TestQAValidator:
     def test_validate_clamps_scores(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that scores outside [0, 1] are clamped."""
         mock_llm_client.generate.return_value = json.dumps(
@@ -260,7 +260,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -271,8 +271,8 @@ class TestQAValidator:
     def test_validate_batch(
         self,
         mock_llm_client: Any,
-        pec_config: PECConfig,
-        sample_qa_pair: QAPairPEC,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test batch validation of multiple QA pairs."""
         mock_llm_client.generate.return_value = json.dumps(
@@ -285,7 +285,7 @@ class TestQAValidator:
 
         validator = QAValidator(
             validator_client=mock_llm_client,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         pairs = [sample_qa_pair, sample_qa_pair]

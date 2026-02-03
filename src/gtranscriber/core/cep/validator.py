@@ -12,24 +12,24 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gtranscriber.schemas import QAPairPEC, QAPairValidated, ValidationScore
+from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
 
 if TYPE_CHECKING:
-    from gtranscriber.config import PECConfig
+    from gtranscriber.config import CEPConfig
     from gtranscriber.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-# Default validation prompts directory (repo_root/prompts/qa/pec/validation)
+# Default validation prompts directory (repo_root/prompts/qa/cep/validation)
 DEFAULT_VALIDATION_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "pec" / "validation"
+    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "cep" / "validation"
 )
 
 
 class QAValidator:
     """Validate QA pairs using LLM-as-a-Judge approach.
 
-    Implements Module III of the PEC pipeline. Evaluates each QA pair
+    Implements Module III of the CEP pipeline. Evaluates each QA pair
     on three criteria:
     - Faithfulness: Is the answer grounded in the context?
     - Bloom Calibration: Does the question match the proposed cognitive level?
@@ -39,16 +39,16 @@ class QAValidator:
     def __init__(
         self,
         validator_client: LLMClient,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Initialize validator with separate LLM client.
 
         Args:
             validator_client: LLM client for validation (can differ from generator).
-            pec_config: PEC configuration.
+            cep_config: CEP configuration.
         """
         self.validator_client = validator_client
-        self.pec_config = pec_config
+        self.cep_config = cep_config
         self._prompts = self._load_prompts()
         logger.info(
             f"QAValidator initialized with {validator_client.provider.value}/"
@@ -61,7 +61,7 @@ class QAValidator:
         Returns:
             Dictionary containing validation prompts.
         """
-        prompt_file = DEFAULT_VALIDATION_PROMPTS_DIR / f"{self.pec_config.language}.json"
+        prompt_file = DEFAULT_VALIDATION_PROMPTS_DIR / f"{self.cep_config.language}.json"
 
         if not prompt_file.exists():
             raise FileNotFoundError(f"Validation prompt file not found: {prompt_file}")
@@ -73,7 +73,7 @@ class QAValidator:
 
     def validate(
         self,
-        qa_pair: QAPairPEC,
+        qa_pair: QAPairCEP,
         context: str,
     ) -> QAPairValidated:
         """Validate a single QA pair.
@@ -90,7 +90,7 @@ class QAValidator:
 
             response = self.validator_client.generate(
                 prompt=prompt,
-                temperature=self.pec_config.validator_temperature,
+                temperature=self.cep_config.validator_temperature,
                 max_tokens=512,
             )
 
@@ -101,7 +101,7 @@ class QAValidator:
             scores.overall_score = overall
 
             # Determine if valid based on threshold
-            is_valid = overall >= self.pec_config.validation_threshold
+            is_valid = overall >= self.cep_config.validation_threshold
 
             return QAPairValidated(
                 question=qa_pair.question,
@@ -142,7 +142,7 @@ class QAValidator:
 
     def validate_batch(
         self,
-        qa_pairs: list[QAPairPEC],
+        qa_pairs: list[QAPairCEP],
         context: str,
     ) -> list[QAPairValidated]:
         """Validate multiple QA pairs.
@@ -158,7 +158,7 @@ class QAValidator:
 
     def _build_validation_prompt(
         self,
-        qa_pair: QAPairPEC,
+        qa_pair: QAPairCEP,
         context: str,
     ) -> str:
         """Build prompt for LLM-as-a-Judge validation.
@@ -290,7 +290,7 @@ Critérios de Avaliação:
             Weighted overall score.
         """
         return (
-            scores.faithfulness * self.pec_config.faithfulness_weight
-            + scores.bloom_calibration * self.pec_config.bloom_calibration_weight
-            + scores.informativeness * self.pec_config.informativeness_weight
+            scores.faithfulness * self.cep_config.faithfulness_weight
+            + scores.bloom_calibration * self.cep_config.bloom_calibration_weight
+            + scores.informativeness * self.cep_config.informativeness_weight
         )

@@ -1,6 +1,6 @@
-"""PEC QA Generator - Main orchestrator for Cognitive Elicitation Pipeline.
+"""CEP QA Generator - Main orchestrator for Cognitive Elicitation Pipeline.
 
-Coordinates all three modules of the PEC pipeline:
+Coordinates all three modules of the CEP pipeline:
 - Module I: Bloom Scaffolding (question generation by cognitive level)
 - Module II: Reasoning & Grounding (reasoning traces and multi-hop detection)
 - Module III: LLM-as-a-Judge Validation (quality evaluation)
@@ -13,13 +13,13 @@ import re
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from gtranscriber.core.pec.bloom_scaffolding import BloomScaffoldingGenerator
-from gtranscriber.core.pec.reasoning import ReasoningEnricher
-from gtranscriber.core.pec.validator import QAValidator
-from gtranscriber.schemas import EnrichedRecord, QAPairPEC, QAPairValidated, QARecordPEC
+from gtranscriber.core.cep.bloom_scaffolding import BloomScaffoldingGenerator
+from gtranscriber.core.cep.reasoning import ReasoningEnricher
+from gtranscriber.core.cep.validator import QAValidator
+from gtranscriber.schemas import EnrichedRecord, QAPairCEP, QAPairValidated, QARecordCEP
 
 if TYPE_CHECKING:
-    from gtranscriber.config import PECConfig, QAConfig
+    from gtranscriber.config import CEPConfig, QAConfig
     from gtranscriber.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -29,8 +29,8 @@ MAX_CONTEXT_LENGTH = 4000
 MIN_CONTEXT_LENGTH = 100
 
 
-class PECQAGenerator:
-    """Orchestrate PEC pipeline for cognitive knowledge elicitation.
+class CEPQAGenerator:
+    """Orchestrate CEP pipeline for cognitive knowledge elicitation.
 
     Combines Bloom scaffolding, reasoning enrichment, and LLM-as-a-Judge
     validation to generate high-quality, cognitively calibrated QA pairs.
@@ -40,48 +40,48 @@ class PECQAGenerator:
         self,
         llm_client: LLMClient,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
         validator_client: LLMClient | None = None,
     ) -> None:
-        """Initialize PEC QA generator.
+        """Initialize CEP QA generator.
 
         Args:
             llm_client: Main LLM client for generation.
             qa_config: QA configuration.
-            pec_config: PEC configuration.
+            cep_config: CEP configuration.
             validator_client: Optional separate client for validation.
         """
         self.llm_client = llm_client
         self.qa_config = qa_config
-        self.pec_config = pec_config
+        self.cep_config = cep_config
         self.validator_client = validator_client
 
         # Initialize Module I: Bloom Scaffolding
-        self._bloom_generator = BloomScaffoldingGenerator(llm_client, qa_config, pec_config)
+        self._bloom_generator = BloomScaffoldingGenerator(llm_client, qa_config, cep_config)
 
         # Initialize Module II: Reasoning Enrichment
-        self._reasoning_enricher = ReasoningEnricher(llm_client, pec_config)
+        self._reasoning_enricher = ReasoningEnricher(llm_client, cep_config)
 
         # Initialize Module III: Validation (if enabled)
         self._validator: QAValidator | None = None
-        if pec_config.enable_validation and validator_client:
-            self._validator = QAValidator(validator_client, pec_config)
+        if cep_config.enable_validation and validator_client:
+            self._validator = QAValidator(validator_client, cep_config)
 
         logger.info(
-            f"PECQAGenerator initialized - "
-            f"Bloom={pec_config.enable_bloom_scaffolding}, "
-            f"Reasoning={pec_config.enable_reasoning_traces}, "
-            f"Validation={pec_config.enable_validation}"
+            f"CEPQAGenerator initialized - "
+            f"Bloom={cep_config.enable_bloom_scaffolding}, "
+            f"Reasoning={cep_config.enable_reasoning_traces}, "
+            f"Validation={cep_config.enable_validation}"
         )
 
-    def generate_qa_pairs(self, transcription: EnrichedRecord) -> QARecordPEC:
-        """Generate PEC-enhanced QA pairs from a transcription.
+    def generate_qa_pairs(self, transcription: EnrichedRecord) -> QARecordCEP:
+        """Generate CEP-enhanced QA pairs from a transcription.
 
         Args:
             transcription: EnrichedRecord containing transcription text.
 
         Returns:
-            QARecordPEC with cognitive-level QA pairs.
+            QARecordCEP with cognitive-level QA pairs.
 
         Raises:
             ValueError: If transcription text is too short.
@@ -94,7 +94,7 @@ class PECQAGenerator:
                 f"({len(text)} chars < {MIN_CONTEXT_LENGTH})"
             )
 
-        logger.info(f"Generating PEC QA pairs for {transcription.gdrive_id} ({len(text)} chars)")
+        logger.info(f"Generating CEP QA pairs for {transcription.gdrive_id} ({len(text)} chars)")
 
         # Chunk text if too long
         contexts = self._chunk_text(text)
@@ -103,7 +103,7 @@ class PECQAGenerator:
         # Calculate questions per chunk
         questions_per_chunk = max(1, self.qa_config.questions_per_document // len(contexts))
 
-        all_pairs: list[QAPairPEC | QAPairValidated] = []
+        all_pairs: list[QAPairCEP | QAPairValidated] = []
 
         for i, context in enumerate(contexts):
             num_questions = questions_per_chunk
@@ -116,7 +116,7 @@ class PECQAGenerator:
             logger.debug(f"Chunk {i + 1}: Generated {len(pairs)} pairs")
 
             # Module II: Reasoning Enrichment
-            if self.pec_config.enable_reasoning_traces:
+            if self.cep_config.enable_reasoning_traces:
                 pairs = self._reasoning_enricher.enrich_batch(pairs, context)
                 logger.debug(f"Chunk {i + 1}: Enriched with reasoning traces")
 
@@ -137,11 +137,11 @@ class PECQAGenerator:
         validated_count = self._count_validated_pairs(all_pairs)
 
         logger.info(
-            f"Generated {len(all_pairs)} PEC QA pairs for {transcription.gdrive_id} "
+            f"Generated {len(all_pairs)} CEP QA pairs for {transcription.gdrive_id} "
             f"(validated: {validated_count})"
         )
 
-        return QARecordPEC(
+        return QARecordCEP(
             source_gdrive_id=transcription.gdrive_id,
             source_filename=transcription.name,
             transcription_text=text,
@@ -149,7 +149,7 @@ class PECQAGenerator:
             model_id=self.llm_client.model_id,
             validator_model_id=(self.validator_client.model_id if self.validator_client else None),
             provider=self.llm_client.provider.value,  # type: ignore[arg-type]
-            language=self.pec_config.language,
+            language=self.cep_config.language,
             total_pairs=len(all_pairs),
             validated_pairs=validated_count,
             bloom_distribution=bloom_dist,
@@ -198,7 +198,7 @@ class PECQAGenerator:
 
     def _calculate_bloom_distribution(
         self,
-        pairs: list[QAPairPEC | QAPairValidated],
+        pairs: list[QAPairCEP | QAPairValidated],
     ) -> dict[str, int]:
         """Calculate distribution of QA pairs across Bloom levels.
 
@@ -213,7 +213,7 @@ class PECQAGenerator:
 
     def _calculate_validation_summary(
         self,
-        pairs: list[QAPairPEC | QAPairValidated],
+        pairs: list[QAPairCEP | QAPairValidated],
     ) -> dict[str, float] | None:
         """Calculate aggregated validation metrics.
 
@@ -242,7 +242,7 @@ class PECQAGenerator:
 
     def _count_validated_pairs(
         self,
-        pairs: list[QAPairPEC | QAPairValidated],
+        pairs: list[QAPairCEP | QAPairValidated],
     ) -> int:
         """Count pairs that passed validation.
 

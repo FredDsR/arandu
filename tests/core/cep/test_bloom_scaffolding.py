@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import PECConfig, QAConfig
-from gtranscriber.core.pec.bloom_scaffolding import BloomScaffoldingGenerator
+from gtranscriber.config import CEPConfig, QAConfig
+from gtranscriber.core.cep.bloom_scaffolding import BloomScaffoldingGenerator
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -32,9 +32,9 @@ def qa_config() -> QAConfig:
 
 
 @pytest.fixture
-def pec_config() -> PECConfig:
-    """Create a PEC config for testing."""
-    return PECConfig(
+def cep_config() -> CEPConfig:
+    """Create a CEP config for testing."""
+    return CEPConfig(
         bloom_levels=["remember", "understand", "analyze", "evaluate"],
         bloom_distribution={
             "remember": 0.25,
@@ -53,30 +53,30 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test generator initialization."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         assert generator.llm_client == mock_llm_client
         assert generator.qa_config == qa_config
-        assert generator.pec_config == pec_config
+        assert generator.cep_config == cep_config
 
     def test_calculate_level_distribution_equal(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test level distribution calculation with equal weights."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         # With 4 levels and 10 questions (25% each)
@@ -95,7 +95,7 @@ class TestBloomScaffoldingGenerator:
         qa_config: QAConfig,
     ) -> None:
         """Test level distribution with uneven weights."""
-        pec_config = PECConfig(
+        cep_config = CEPConfig(
             bloom_levels=["remember", "understand"],
             bloom_distribution={
                 "remember": 0.7,
@@ -106,7 +106,7 @@ class TestBloomScaffoldingGenerator:
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         distribution = generator._calculate_level_distribution(10)
@@ -119,7 +119,7 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test that generate calls LLM for each Bloom level."""
         # Setup mock to return valid JSON response
@@ -138,7 +138,7 @@ class TestBloomScaffoldingGenerator:
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         context = "Este é um texto de contexto para teste."
@@ -153,13 +153,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test parsing valid JSON response."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = json.dumps(
@@ -186,13 +186,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test parsing response wrapped in markdown code block."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = """```json
@@ -216,13 +216,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test parsing invalid JSON response returns empty list."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = "Invalid JSON { not valid"
@@ -235,13 +235,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test that invalid items in response are skipped."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = json.dumps(
@@ -262,13 +262,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test that confidence values outside [0, 1] are normalized."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = json.dumps(
@@ -289,13 +289,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test Bloom level to question type mapping."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         assert generator._bloom_to_question_type("remember") == "factual"
@@ -310,13 +310,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
-        """Test parsing response with PEC-specific fields."""
+        """Test parsing response with CEP-specific fields."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = json.dumps(
@@ -348,13 +348,13 @@ class TestBloomScaffoldingGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Test that hop_count is validated to be within 1-5."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
-            pec_config=pec_config,
+            cep_config=cep_config,
         )
 
         response = json.dumps(

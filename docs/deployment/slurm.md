@@ -16,9 +16,9 @@ G-Transcriber provides SLURM scripts for each pipeline in `scripts/slurm/`:
 |--------|----------|-------------|
 | `run_transcription.slurm` | Transcription | Batch transcription with Whisper |
 | `run_qa_generation.slurm` | QA | Generate QA pairs from transcriptions |
-| `pec/grace.slurm` | PEC QA | Cognitive QA generation (Grace/L40S) |
-| `pec/tupi.slurm` | PEC QA | Cognitive QA generation (Tupi/RTX 4090) |
-| `pec/sirius.slurm` | PEC QA | Cognitive QA generation (Sirius/AMD CPU) |
+| `cep/grace.slurm` | CEP QA | Cognitive QA generation (Grace/L40S) |
+| `cep/tupi.slurm` | CEP QA | Cognitive QA generation (Tupi/RTX 4090) |
+| `cep/sirius.slurm` | CEP QA | Cognitive QA generation (Sirius/AMD CPU) |
 | `run_kg_construction.slurm` | KG | Build knowledge graphs |
 | `run_evaluation.slurm` | Evaluation | Compute quality metrics |
 
@@ -160,62 +160,62 @@ singularity exec --nv gtranscriber.sif \
 - CPU-only possible but slower
 - Set `--gres=gpu:0` for CPU-only
 
-## PEC QA Generation Scripts
+## CEP QA Generation Scripts
 
-The PEC (Pipeline de Elicitação Cognitiva) pipeline has dedicated SLURM scripts organized by cluster partition:
+The CEP (Cognitive Elicitation Pipeline) pipeline has dedicated SLURM scripts organized by cluster partition:
 
 ```
-scripts/slurm/pec/
-├── pec_common.sh      # Shared logic for all PEC jobs
+scripts/slurm/cep/
+├── cep_common.sh      # Shared logic for all CEP jobs
 ├── grace.slurm        # Grace partition (NVIDIA L40S)
 ├── tupi.slurm         # Tupi partition (NVIDIA RTX 4090)
 └── sirius.slurm       # Sirius partition (AMD, CPU mode)
 ```
 
-### Submit PEC Jobs
+### Submit CEP Jobs
 
 ```bash
 # Grace partition (best for large models)
-sbatch scripts/slurm/pec/grace.slurm
+sbatch scripts/slurm/cep/grace.slurm
 
 # Tupi partition (good balance of speed/availability)
-sbatch scripts/slurm/pec/tupi.slurm
+sbatch scripts/slurm/cep/tupi.slurm
 
 # Sirius partition (CPU-only, for AMD nodes)
-sbatch scripts/slurm/pec/sirius.slurm
+sbatch scripts/slurm/cep/sirius.slurm
 ```
 
-### PEC Script Architecture
+### CEP Script Architecture
 
-Each partition script sources `pec_common.sh` which handles:
+Each partition script sources `cep_common.sh` which handles:
 
 1. **Ollama Sidecar Management**: Starts Ollama container, pulls required model
 2. **Container Lifecycle**: Unique container names per job to avoid conflicts
-3. **PEC Configuration**: Bloom taxonomy distribution, validation settings
+3. **CEP Configuration**: Bloom taxonomy distribution, validation settings
 4. **Cleanup**: Automatic container removal on job completion
 
-### PEC-Specific Environment Variables
+### CEP-Specific Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PEC_WORKERS` | Parallel workers for PEC generation | Partition-dependent |
-| `PEC_GPU_MODE` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
-| `GTRANSCRIBER_PEC_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `false` |
-| `GTRANSCRIBER_PEC_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
+| `CEP_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
+| `CEP_GPU_MODE` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
+| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `false` |
+| `GTRANSCRIBER_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
 
-### Override PEC Settings
+### Override CEP Settings
 
 ```bash
 # Enable validation with custom model
-GTRANSCRIBER_PEC_ENABLE_VALIDATION=true \
-GTRANSCRIBER_PEC_VALIDATOR_MODEL_ID=llama3.1:70b \
-sbatch scripts/slurm/pec/grace.slurm
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true \
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.1:70b \
+sbatch scripts/slurm/cep/grace.slurm
 
 # Use English prompts
-GTRANSCRIBER_PEC_LANGUAGE=en sbatch scripts/slurm/pec/tupi.slurm
+GTRANSCRIBER_CEP_LANGUAGE=en sbatch scripts/slurm/cep/tupi.slurm
 ```
 
-### PEC Resource Recommendations
+### CEP Resource Recommendations
 
 | Partition | GPUs | Workers | Best For |
 |-----------|------|---------|----------|
@@ -223,15 +223,15 @@ GTRANSCRIBER_PEC_LANGUAGE=en sbatch scripts/slurm/pec/tupi.slurm
 | Tupi (RTX 4090) | 1 | 3 | Standard generation (8B models) |
 | Sirius (AMD) | 0 | 2 | CPU-only fallback |
 
-### Monitor PEC Jobs
+### Monitor CEP Jobs
 
 ```bash
 # View job output
-tail -f logs/pec_grace_<jobid>.out
+tail -f logs/cep_grace_<jobid>.out
 
 # Check container status
-docker ps --filter name=ollama-pec
-docker ps --filter name=gtranscriber-pec
+docker ps --filter name=ollama-cep
+docker ps --filter name=gtranscriber-cep
 ```
 
 ## Checkpoint and Resume

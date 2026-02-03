@@ -176,7 +176,7 @@ class QARecord(BaseModel):
 
 
 # =============================================================================
-# PEC (Pipeline de Elicitação Cognitiva) Schemas
+# CEP (Cognitive Elicitation Pipeline) Schemas
 # =============================================================================
 # Cognitive scaffolding QA generation based on Bloom's Taxonomy with
 # LLM-as-a-Judge validation.
@@ -185,8 +185,8 @@ class QARecord(BaseModel):
 BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
 
-class QAPairPEC(QAPair):
-    """Extended QA pair with PEC cognitive elicitation fields.
+class QAPairCEP(QAPair):
+    """Extended QA pair with CEP cognitive elicitation fields.
 
     Adds Bloom's taxonomy level, reasoning traces, and tacit knowledge inference
     to the base QAPair for cognitive scaffolding-based QA generation.
@@ -247,7 +247,7 @@ class ValidationScore(BaseModel):
     judge_rationale: str | None = Field(None, description="Judge model's reasoning for the scores")
 
 
-class QAPairValidated(QAPairPEC):
+class QAPairValidated(QAPairCEP):
     """QA pair with LLM-as-a-Judge validation results."""
 
     validation: ValidationScore | None = Field(
@@ -256,8 +256,8 @@ class QAPairValidated(QAPairPEC):
     is_valid: bool = Field(default=True, description="Whether pair passes validation threshold")
 
 
-class QARecordPEC(BaseModel):
-    """Extended QA dataset record with PEC metadata and validation summary.
+class QARecordCEP(BaseModel):
+    """Extended QA dataset record with CEP metadata and validation summary.
 
     Contains Bloom-scaffolded QA pairs with optional LLM-as-a-Judge validation.
     """
@@ -265,8 +265,8 @@ class QARecordPEC(BaseModel):
     source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
     source_filename: str = Field(..., description="Original filename")
     transcription_text: str = Field(..., description="Full transcription text")
-    qa_pairs: list[QAPairPEC | QAPairValidated] = Field(
-        ..., description="List of PEC-enhanced QA pairs"
+    qa_pairs: list[QAPairCEP | QAPairValidated] = Field(
+        ..., description="List of CEP-enhanced QA pairs"
     )
     model_id: str = Field(..., description="LLM model used for generation")
     validator_model_id: str | None = Field(
@@ -285,7 +285,7 @@ class QARecordPEC(BaseModel):
     validation_summary: dict[str, float] | None = Field(
         None, description="Aggregated validation metrics"
     )
-    pec_version: str = Field(default="1.0", description="PEC pipeline version")
+    cep_version: str = Field(default="1.0", description="CEP pipeline version")
 
     @model_validator(mode="after")
     def validate_counts(self) -> Self:
@@ -305,7 +305,7 @@ class QARecordPEC(BaseModel):
         return self.validated_pairs / self.total_pairs
 
     def save(self, path: str | Path) -> None:
-        """Save PEC QA record to JSON file."""
+        """Save CEP QA record to JSON file."""
         Path(path).write_text(self.model_dump_json(indent=2))
 
     def to_jsonl(self, path: str | Path | None = None) -> str | None:
@@ -328,8 +328,8 @@ class QARecordPEC(BaseModel):
         return jsonl_content
 
     @classmethod
-    def load(cls, path: str | Path) -> QARecordPEC:
-        """Load PEC QA record from JSON file."""
+    def load(cls, path: str | Path) -> QARecordCEP:
+        """Load CEP QA record from JSON file."""
         return cls.model_validate_json(Path(path).read_text())
 
 

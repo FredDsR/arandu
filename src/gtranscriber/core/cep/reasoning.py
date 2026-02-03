@@ -12,17 +12,17 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gtranscriber.schemas import QAPairPEC
+from gtranscriber.schemas import QAPairCEP
 
 if TYPE_CHECKING:
-    from gtranscriber.config import PECConfig
+    from gtranscriber.config import CEPConfig
     from gtranscriber.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-# Default prompts directory (repo_root/prompts/qa/pec)
-DEFAULT_PEC_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "pec"
+# Default prompts directory (repo_root/prompts/qa/cep)
+DEFAULT_CEP_PROMPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "cep"
 )
 
 # Bloom levels that benefit from reasoning traces
@@ -32,7 +32,7 @@ REASONING_LEVELS = {"analyze", "evaluate", "create"}
 class ReasoningEnricher:
     """Enrich QA pairs with reasoning traces and multi-hop detection.
 
-    Implements Module II of the PEC pipeline. Adds logical reasoning
+    Implements Module II of the CEP pipeline. Adds logical reasoning
     explanations and identifies questions that require connecting
     distant parts of the text.
     """
@@ -40,29 +40,29 @@ class ReasoningEnricher:
     def __init__(
         self,
         llm_client: LLMClient,
-        pec_config: PECConfig,
+        cep_config: CEPConfig,
     ) -> None:
         """Initialize reasoning enricher.
 
         Args:
             llm_client: LLM client for reasoning generation.
-            pec_config: PEC configuration.
+            cep_config: CEP configuration.
         """
         self.llm_client = llm_client
-        self.pec_config = pec_config
+        self.cep_config = cep_config
         self._prompts = self._load_prompts()
         logger.info("ReasoningEnricher initialized")
 
     def _load_prompts(self) -> dict[str, Any]:
-        """Load PEC prompt templates.
+        """Load CEP prompt templates.
 
         Returns:
             Dictionary containing prompt templates.
         """
-        prompt_file = DEFAULT_PEC_PROMPTS_DIR / f"{self.pec_config.language}.json"
+        prompt_file = DEFAULT_CEP_PROMPTS_DIR / f"{self.cep_config.language}.json"
 
         if not prompt_file.exists():
-            raise FileNotFoundError(f"PEC prompt file not found: {prompt_file}")
+            raise FileNotFoundError(f"CEP prompt file not found: {prompt_file}")
 
         with open(prompt_file, encoding="utf-8") as f:
             prompts = json.load(f)
@@ -71,9 +71,9 @@ class ReasoningEnricher:
 
     def enrich(
         self,
-        qa_pair: QAPairPEC,
+        qa_pair: QAPairCEP,
         context: str,
-    ) -> QAPairPEC:
+    ) -> QAPairCEP:
         """Enrich a QA pair with reasoning information.
 
         Only enriches pairs at analyze/evaluate/create levels if they
@@ -84,9 +84,9 @@ class ReasoningEnricher:
             context: Full source context.
 
         Returns:
-            Enriched QAPairPEC with reasoning trace and multi-hop info.
+            Enriched QAPairCEP with reasoning trace and multi-hop info.
         """
-        if not self.pec_config.enable_reasoning_traces:
+        if not self.cep_config.enable_reasoning_traces:
             return qa_pair
 
         # Only enrich higher-level questions that lack reasoning
@@ -101,7 +101,7 @@ class ReasoningEnricher:
             enriched_data = self._generate_reasoning(qa_pair, context)
 
             # Create new pair with enriched data
-            return QAPairPEC(
+            return QAPairCEP(
                 question=qa_pair.question,
                 answer=qa_pair.answer,
                 context=qa_pair.context,
@@ -122,9 +122,9 @@ class ReasoningEnricher:
 
     def enrich_batch(
         self,
-        qa_pairs: list[QAPairPEC],
+        qa_pairs: list[QAPairCEP],
         context: str,
-    ) -> list[QAPairPEC]:
+    ) -> list[QAPairCEP]:
         """Enrich multiple QA pairs.
 
         Args:
@@ -132,13 +132,13 @@ class ReasoningEnricher:
             context: Full source context.
 
         Returns:
-            List of enriched QAPairPEC objects.
+            List of enriched QAPairCEP objects.
         """
         return [self.enrich(pair, context) for pair in qa_pairs]
 
     def _generate_reasoning(
         self,
-        qa_pair: QAPairPEC,
+        qa_pair: QAPairCEP,
         context: str,
     ) -> dict[str, Any]:
         """Generate reasoning trace for a QA pair.
@@ -162,7 +162,7 @@ class ReasoningEnricher:
 
     def _build_reasoning_prompt(
         self,
-        qa_pair: QAPairPEC,
+        qa_pair: QAPairCEP,
         context: str,
     ) -> str:
         """Build prompt for reasoning generation.
@@ -237,7 +237,7 @@ Retorne APENAS um objeto JSON no seguinte formato:
             if hop_count is not None and result["is_multi_hop"]:
                 try:
                     hop_count = int(hop_count)
-                    if 1 <= hop_count <= self.pec_config.max_hop_count:
+                    if 1 <= hop_count <= self.cep_config.max_hop_count:
                         result["hop_count"] = hop_count
                 except (ValueError, TypeError):
                     pass

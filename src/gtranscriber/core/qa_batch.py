@@ -3,7 +3,7 @@
 Provides functionality to generate QA pairs from multiple transcription files
 with parallel processing, checkpoint/resume capability, and progress tracking.
 
-Supports both standard QA generation and PEC (cognitive scaffolding) generation.
+Supports both standard QA generation and CEP (cognitive scaffolding) generation.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from gtranscriber.config import PECConfig, QAConfig
+from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.checkpoint import CheckpointManager
 from gtranscriber.core.llm_client import LLMClient, LLMProvider
 from gtranscriber.core.qa_generator import QAGenerator
@@ -335,38 +335,38 @@ def run_batch_qa_generation(
 
 
 # =============================================================================
-# PEC (Cognitive Elicitation Pipeline) Batch Processing
+# CEP (Cognitive Elicitation Pipeline) Batch Processing
 # =============================================================================
 
-# Global PEC generator instance per worker process
-_worker_pec_generator = None
+# Global CEP generator instance per worker process
+_worker_cep_generator = None
 
 
-def _init_pec_worker(
+def _init_cep_worker(
     provider: str,
     model_id: str,
     qa_config_dict: dict,
-    pec_config_dict: dict,
+    cep_config_dict: dict,
     validator_provider: str | None,
     validator_model_id: str | None,
 ) -> None:
-    """Initialize PEC worker process with generator instance.
+    """Initialize CEP worker process with generator instance.
 
     Args:
         provider: LLM provider name.
         model_id: Model identifier.
         qa_config_dict: QAConfig as dictionary.
-        pec_config_dict: PECConfig as dictionary.
+        cep_config_dict: CEPConfig as dictionary.
         validator_provider: Validator LLM provider (if validation enabled).
         validator_model_id: Validator model identifier (if validation enabled).
     """
-    global _worker_pec_generator
+    global _worker_cep_generator
 
-    from gtranscriber.core.pec import PECQAGenerator
+    from gtranscriber.core.cep import CEPQAGenerator
 
     # Reconstruct configs
     qa_config = QAConfig(**qa_config_dict)
-    pec_config = PECConfig(**pec_config_dict)
+    cep_config = CEPConfig(**cep_config_dict)
 
     # Determine base URL
     base_url = qa_config.base_url
@@ -382,7 +382,7 @@ def _init_pec_worker(
 
     # Create validator client if validation is enabled
     validator_client = None
-    if pec_config.enable_validation and validator_provider and validator_model_id:
+    if cep_config.enable_validation and validator_provider and validator_model_id:
         validator_base_url = base_url
         if validator_provider == "ollama":
             validator_base_url = qa_config.ollama_url
@@ -393,43 +393,43 @@ def _init_pec_worker(
             base_url=validator_base_url,
         )
 
-    # Create PEC generator
-    _worker_pec_generator = PECQAGenerator(
+    # Create CEP generator
+    _worker_cep_generator = CEPQAGenerator(
         llm_client=llm_client,
         qa_config=qa_config,
-        pec_config=pec_config,
+        cep_config=cep_config,
         validator_client=validator_client,
     )
 
-    logger.info(f"PEC worker initialized with {provider}/{model_id}")
+    logger.info(f"CEP worker initialized with {provider}/{model_id}")
 
 
-def generate_pec_qa_for_transcription(
+def generate_cep_qa_for_transcription(
     task: QAGenerationTask,
     qa_config_dict: dict,
-    pec_config_dict: dict,
+    cep_config_dict: dict,
 ) -> tuple[str, bool, str]:
-    """Generate PEC QA pairs for a single transcription (worker function).
+    """Generate CEP QA pairs for a single transcription (worker function).
 
     Args:
         task: QAGenerationTask with file information.
         qa_config_dict: QAConfig as dictionary.
-        pec_config_dict: PECConfig as dictionary.
+        cep_config_dict: CEPConfig as dictionary.
 
     Returns:
         Tuple of (gdrive_id, success, message).
     """
-    global _worker_pec_generator
+    global _worker_cep_generator
 
     try:
-        logger.info(f"Processing (PEC): {task.filename} ({task.gdrive_id})")
+        logger.info(f"Processing (CEP): {task.filename} ({task.gdrive_id})")
 
         # For sequential processing, initialize on first use
-        if _worker_pec_generator is None:
-            from gtranscriber.core.pec import PECQAGenerator
+        if _worker_cep_generator is None:
+            from gtranscriber.core.cep import CEPQAGenerator
 
             qa_config = QAConfig(**qa_config_dict)
-            pec_config = PECConfig(**pec_config_dict)
+            cep_config = CEPConfig(**cep_config_dict)
             provider = qa_config.provider
             model_id = qa_config.model_id
             base_url = qa_config.base_url or qa_config.ollama_url
@@ -442,17 +442,17 @@ def generate_pec_qa_for_transcription(
 
             # Create validator client if enabled
             validator_client = None
-            if pec_config.enable_validation:
+            if cep_config.enable_validation:
                 validator_client = LLMClient(
-                    provider=LLMProvider(pec_config.validator_provider),
-                    model_id=pec_config.validator_model_id,
+                    provider=LLMProvider(cep_config.validator_provider),
+                    model_id=cep_config.validator_model_id,
                     base_url=base_url,
                 )
 
-            _worker_pec_generator = PECQAGenerator(
+            _worker_cep_generator = CEPQAGenerator(
                 llm_client=llm_client,
                 qa_config=qa_config,
-                pec_config=pec_config,
+                cep_config=cep_config,
                 validator_client=validator_client,
             )
 
@@ -461,15 +461,15 @@ def generate_pec_qa_for_transcription(
             data = json.load(f)
             enriched = EnrichedRecord(**data)
 
-        # Generate PEC QA pairs
-        qa_record = _worker_pec_generator.generate_qa_pairs(enriched)
+        # Generate CEP QA pairs
+        qa_record = _worker_cep_generator.generate_qa_pairs(enriched)
 
         # Save result
         task.output_file.parent.mkdir(parents=True, exist_ok=True)
         qa_record.save(task.output_file)
 
         logger.info(
-            f"Generated {len(qa_record.qa_pairs)} PEC QA pairs for {task.filename} "
+            f"Generated {len(qa_record.qa_pairs)} CEP QA pairs for {task.filename} "
             f"(validated: {qa_record.validated_pairs})"
         )
         return task.gdrive_id, True, "Success"
@@ -487,23 +487,23 @@ def run_batch_pec_generation(
     input_dir: Path,
     output_dir: Path,
     qa_config: QAConfig,
-    pec_config: PECConfig,
+    cep_config: CEPConfig,
     num_workers: int = 2,
 ) -> None:
-    """Run batch PEC QA generation with parallel processing and checkpointing.
+    """Run batch CEP QA generation with parallel processing and checkpointing.
 
     Args:
         input_dir: Directory containing transcription JSON files.
-        output_dir: Directory for PEC QA dataset outputs.
+        output_dir: Directory for CEP QA dataset outputs.
         qa_config: QA generation configuration.
-        pec_config: PEC configuration.
+        cep_config: CEP configuration.
         num_workers: Number of parallel workers.
     """
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize checkpoint
-    checkpoint_file = output_dir / "pec_checkpoint.json"
+    checkpoint_file = output_dir / "cep_checkpoint.json"
     checkpoint = CheckpointManager(checkpoint_file)
 
     # Load tasks (reuse existing function, but change output suffix)
@@ -518,8 +518,8 @@ def run_batch_pec_generation(
             gdrive_id = data.get("gdrive_id", "unknown")
             filename = data.get("name", json_file.name)
 
-            # Output filename: {gdrive_id}_pec_qa.json
-            output_file = output_dir / f"{gdrive_id}_pec_qa.json"
+            # Output filename: {gdrive_id}_cep_qa.json
+            output_file = output_dir / f"{gdrive_id}_cep_qa.json"
 
             all_tasks.append(
                 QAGenerationTask(
@@ -565,18 +565,18 @@ def run_batch_pec_generation(
 
     # Convert configs to dict for pickling
     qa_config_dict = qa_config.model_dump()
-    pec_config_dict = pec_config.model_dump()
+    cep_config_dict = cep_config.model_dump()
 
     # Validator info for worker initialization
-    validator_provider = pec_config.validator_provider if pec_config.enable_validation else None
-    validator_model_id = pec_config.validator_model_id if pec_config.enable_validation else None
+    validator_provider = cep_config.validator_provider if cep_config.enable_validation else None
+    validator_model_id = cep_config.validator_model_id if cep_config.enable_validation else None
 
     # Process files
     if num_workers == 1:
         # Sequential processing
         for task in remaining_tasks:
-            gdrive_id, success, message = generate_pec_qa_for_transcription(
-                task, qa_config_dict, pec_config_dict
+            gdrive_id, success, message = generate_cep_qa_for_transcription(
+                task, qa_config_dict, cep_config_dict
             )
 
             if success:
@@ -593,12 +593,12 @@ def run_batch_pec_generation(
         # Parallel processing with worker initialization
         with ProcessPoolExecutor(
             max_workers=num_workers,
-            initializer=_init_pec_worker,
+            initializer=_init_cep_worker,
             initargs=(
                 qa_config.provider,
                 qa_config.model_id,
                 qa_config_dict,
-                pec_config_dict,
+                cep_config_dict,
                 validator_provider,
                 validator_model_id,
             ),
@@ -613,10 +613,10 @@ def run_batch_pec_generation(
                 try:
                     task = next(task_iter)
                     future = executor.submit(
-                        generate_pec_qa_for_transcription,
+                        generate_cep_qa_for_transcription,
                         task,
                         qa_config_dict,
-                        pec_config_dict,
+                        cep_config_dict,
                     )
                     pending_futures[future] = task
                 except StopIteration:
@@ -648,10 +648,10 @@ def run_batch_pec_generation(
                 try:
                     next_task = next(task_iter)
                     next_future = executor.submit(
-                        generate_pec_qa_for_transcription,
+                        generate_cep_qa_for_transcription,
                         next_task,
                         qa_config_dict,
-                        pec_config_dict,
+                        cep_config_dict,
                     )
                     pending_futures[next_future] = next_task
                 except StopIteration:
@@ -662,7 +662,7 @@ def run_batch_pec_generation(
     failed_count = len(checkpoint.state.failed_files)
 
     logger.info("=" * 60)
-    logger.info("Batch PEC QA generation completed!")
+    logger.info("Batch CEP QA generation completed!")
     logger.info(f"Total files: {total}")
     logger.info(f"Successfully processed: {completed}")
     logger.info(f"Failed: {failed_count}")
