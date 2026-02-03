@@ -183,8 +183,8 @@ services:
     volumes:
       - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
 
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+    # Note: No host port binding needed - services communicate via internal Docker network
+    # This avoids port conflicts when multiple SLURM jobs run on the same node
 
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -223,8 +223,8 @@ services:
     volumes:
       - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
 
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+    # Note: No host port binding needed - services communicate via internal Docker network
+    # This avoids port conflicts when multiple SLURM jobs run on the same node
 
     healthcheck:
       test: ["CMD", "ollama", "list"]

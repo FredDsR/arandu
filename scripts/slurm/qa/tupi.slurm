@@ -22,6 +22,6 @@ export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-4}"
 export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}"
 export USE_GPU_OLLAMA=true
 export GTRANSCRIBER_QA_DIR="${GTRANSCRIBER_QA_DIR:-${HOME}/etno-kgc-preprocessing/qa_dataset_tupi}"
-
+export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-${HOME}/etno-kgc-preprocessing/results_tupi}"
 # Source the common QA script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/qa/qa_common.sh"

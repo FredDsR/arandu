@@ -10,6 +10,7 @@ WORKDIR /app
 # Note: src/ must be present before sync for the package to be installed
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
+COPY prompts/ prompts/
 
 # Install dependencies and the gtranscriber package using uv sync
 # --frozen ensures exact lockfile reproduction without re-resolving
@@ -31,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+COPY --from=builder /app/prompts /app/prompts
 COPY --from=builder /app/pyproject.toml /app/pyproject.toml
 
 # Set environment variables

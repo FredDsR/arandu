@@ -105,6 +105,11 @@ fi
 # -----------------------------------------------------------------------------
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
+# Clean up any orphan containers from previous runs to avoid conflicts
+echo ""
+echo "Cleaning up any orphan containers from previous runs..."
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
+
 echo ""
 echo "Building Docker images..."
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build gtranscriber-kg
