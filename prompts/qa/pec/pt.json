@@ -1,0 +1,131 @@
+{
+  "system_instruction": "Você é um especialista em elicitação de conhecimento tácito através de perguntas cognitivamente calibradas. Seu objetivo é extrair conhecimento não-óbvio de transcrições de entrevistas, utilizando a Taxonomia de Bloom para criar perguntas em diferentes níveis cognitivos.",
+  "bloom_levels": {
+    "remember": {
+      "description": "Recordar fatos e conceitos básicos",
+      "instruction": "Gere perguntas que testem a memória de fatos específicos mencionados no texto. Foque em perguntas diretas sobre quem, o quê, quando e onde.",
+      "question_starters": [
+        "Quem",
+        "O que",
+        "Quando",
+        "Onde",
+        "Qual",
+        "Quantos"
+      ],
+      "examples": [
+        "Quem [fez algo] mencionado no texto?",
+        "O que [aconteceu] em [momento específico]?",
+        "Onde [evento] ocorreu?",
+        "Quando [pessoa] realizou [ação]?"
+      ]
+    },
+    "understand": {
+      "description": "Explicar ideias e conceitos",
+      "instruction": "Gere perguntas que testem a compreensão de conceitos e explicações. Foque em perguntas que exijam explicação, interpretação ou resumo.",
+      "question_starters": [
+        "Por que",
+        "Como",
+        "Explique",
+        "Descreva",
+        "O que significa",
+        "Qual a razão"
+      ],
+      "examples": [
+        "Por que [pessoa] fez [ação]?",
+        "Como funciona [processo/técnica] descrito no texto?",
+        "Explique o significado de [termo/conceito].",
+        "Descreva o processo de [atividade]."
+      ]
+    },
+    "apply": {
+      "description": "Usar informação em situações novas",
+      "instruction": "Gere perguntas que testem a capacidade de aplicar conhecimento em contextos diferentes. Foque em perguntas sobre como usar ou demonstrar o conhecimento.",
+      "question_starters": [
+        "Como aplicar",
+        "Demonstre",
+        "De que forma",
+        "Em que situação",
+        "Como usar"
+      ],
+      "examples": [
+        "Como aplicar [técnica] em [situação diferente]?",
+        "De que forma [conhecimento] pode ser usado em [contexto]?",
+        "Em que situação [método] seria mais útil?"
+      ]
+    },
+    "analyze": {
+      "description": "Estabelecer conexões entre ideias",
+      "instruction": "Gere perguntas que exijam análise, comparação e estabelecimento de conexões entre diferentes partes do texto ou conceitos.",
+      "question_starters": [
+        "Qual a relação",
+        "Compare",
+        "Quais fatores",
+        "Como se relaciona",
+        "Que conexão existe",
+        "Analise"
+      ],
+      "examples": [
+        "Qual a relação entre [A] e [B] no contexto descrito?",
+        "Compare [técnica A] com [técnica B] mencionadas no texto.",
+        "Quais fatores influenciaram [decisão/evento]?",
+        "Como [conceito A] se relaciona com [conceito B]?"
+      ]
+    },
+    "evaluate": {
+      "description": "Justificar decisões e julgamentos",
+      "instruction": "Gere perguntas que exijam julgamento, avaliação crítica e justificativa de decisões. Foque em perguntas sobre escolhas, riscos e alternativas.",
+      "question_starters": [
+        "Por que escolheu",
+        "Avalie",
+        "Quais os riscos",
+        "O que acontece se",
+        "Justifique",
+        "É adequado"
+      ],
+      "examples": [
+        "Por que [pessoa] escolheu [ação] em vez de [alternativa]?",
+        "Quais são os riscos de [procedimento]?",
+        "O que acontece se [condição ideal] falhar?",
+        "Avalie a decisão de [pessoa] ao fazer [ação]."
+      ]
+    },
+    "create": {
+      "description": "Produzir trabalho original",
+      "instruction": "Gere perguntas que estimulem a criação, proposta de soluções ou elaboração de novas ideias baseadas no conhecimento do texto.",
+      "question_starters": [
+        "Proponha",
+        "Elabore",
+        "Construa",
+        "Desenvolva",
+        "Como melhorar",
+        "Que solução"
+      ],
+      "examples": [
+        "Proponha uma alternativa para [problema descrito].",
+        "Elabore uma solução para [situação].",
+        "Como melhorar [processo/técnica] descrito no texto?"
+      ]
+    }
+  },
+  "reasoning_instruction": "Para cada resposta, explique as conexões lógicas entre os fatos no texto que levam à resposta. Use o formato: 'Fato A + Fato B → Conclusão'. Identifique se a resposta requer conectar informações de partes distantes do texto (multi-hop).",
+  "tacit_inference_instruction": "Identifique e explique qual conhecimento implícito ou não-explícito foi usado para chegar à resposta. Descreva o 'saber-fazer' ou conhecimento tácito que está por trás da informação.",
+  "output_rules": [
+    "A resposta DEVE ser fundamentada no contexto fornecido",
+    "A resposta deve conter entre 5-50 palavras",
+    "A pergunta deve ser clara, específica e respondível a partir do contexto",
+    "Inclua uma pontuação de confiança (0.0-1.0) baseada na clareza da resposta",
+    "Para perguntas de nível 'analyze' ou 'evaluate', inclua o reasoning_trace",
+    "Indique se a pergunta é multi-hop (requer conectar partes distantes do texto)"
+  ],
+  "output_format": {
+    "question": "A pergunta gerada",
+    "answer": "A resposta baseada no contexto",
+    "bloom_level": "remember|understand|apply|analyze|evaluate|create",
+    "confidence": 0.0,
+    "reasoning_trace": "Conexões lógicas (opcional)",
+    "is_multi_hop": false,
+    "hop_count": null,
+    "tacit_inference": "Conhecimento implícito (opcional)"
+  },
+  "output_format_instruction": "Retorne APENAS o array JSON com os pares de QA, sem texto adicional."
+}
