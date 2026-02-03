@@ -6,9 +6,10 @@ This document provides complete specifications for all data schemas used in the 
 
 1. [Input Schemas](#input-schemas)
 2. [QA Generation Schemas](#qa-generation-schemas)
-3. [Knowledge Graph Schemas](#knowledge-graph-schemas)
-4. [Evaluation Schemas](#evaluation-schemas)
-5. [Schema Relationships](#schema-relationships)
+3. [PEC QA Generation Schemas](#pec-qa-generation-schemas)
+4. [Knowledge Graph Schemas](#knowledge-graph-schemas)
+5. [Evaluation Schemas](#evaluation-schemas)
+6. [Schema Relationships](#schema-relationships)
 
 ---
 
@@ -246,6 +247,265 @@ class QARecord(BaseModel):
     @classmethod
     def load(cls, path: str | Path) -> "QARecord":
         """Load QA record from JSON file."""
+        return cls.model_validate_json(Path(path).read_text())
+```
+
+---
+
+## PEC QA Generation Schemas
+
+The PEC (Pipeline de Elicitação Cognitiva) extends the standard QA schemas with cognitive scaffolding based on Bloom's Taxonomy.
+
+### QAPairPEC
+
+Extends QAPair with Bloom taxonomy levels and reasoning traces for cognitively-calibrated question generation.
+
+**Fields** (in addition to QAPair fields):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `bloom_level` | `Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]` | Yes | Bloom's taxonomy cognitive level |
+| `reasoning_trace` | `str \| None` | No | Logical connection chain for higher-level questions |
+| `is_multi_hop` | `bool` | No | Whether question requires connecting distant information |
+| `hop_count` | `int \| None` | No | Number of reasoning hops (1-5 when is_multi_hop=True) |
+| `tacit_inference` | `str \| None` | No | Explanation of implicit domain knowledge surfaced |
+
+**Example**:
+```json
+{
+  "question": "Por que o pescador guarda o barco quando o rio sobe?",
+  "answer": "Para evitar perda do equipamento devido ao risco de enchente",
+  "context": "Se o rio sobe rápido, guardo o barco para evitar perda",
+  "question_type": "conceptual",
+  "confidence": 0.88,
+  "bloom_level": "analyze",
+  "reasoning_trace": "Fato: rio sobe → Ação: guardar barco → Razão: evitar perda",
+  "is_multi_hop": false,
+  "hop_count": null,
+  "tacit_inference": "Subida rápida do rio indica risco iminente de enchente"
+}
+```
+
+**Bloom Level Semantics**:
+- `remember`: Recall explicit facts from text
+- `understand`: Explain and interpret concepts
+- `apply`: Use knowledge in new situations
+- `analyze`: Identify relationships and patterns
+- `evaluate`: Make judgments and justify decisions
+- `create`: Propose solutions or create something new
+
+**Python Implementation**:
+```python
+from typing import Literal
+from pydantic import BaseModel, Field, field_validator
+
+class QAPairPEC(BaseModel):
+    """QA pair with Bloom's Taxonomy cognitive scaffolding."""
+    question: str
+    answer: str
+    context: str
+    question_type: Literal["factual", "conceptual", "temporal", "entity"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    bloom_level: Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
+    reasoning_trace: str | None = None
+    is_multi_hop: bool = False
+    hop_count: int | None = Field(default=None, ge=1, le=5)
+    tacit_inference: str | None = None
+    start_time: float | None = None
+    end_time: float | None = None
+
+    @field_validator("hop_count", mode="before")
+    @classmethod
+    def validate_hop_count(cls, v, info):
+        """Validate hop_count is only set when is_multi_hop is True."""
+        is_multi_hop = info.data.get("is_multi_hop", False)
+        if v is not None and not is_multi_hop:
+            return None
+        if is_multi_hop and v is not None and not (1 <= v <= 5):
+            return 2  # Default to 2 hops for multi-hop questions
+        return v
+```
+
+### ValidationScore
+
+Represents LLM-as-a-Judge validation scores for a QA pair.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `faithfulness` | `float` | Yes | Answer grounded in context (0.0-1.0) |
+| `bloom_calibration` | `float` | Yes | Question matches declared cognitive level (0.0-1.0) |
+| `informativeness` | `float` | Yes | Answer reveals non-obvious knowledge (0.0-1.0) |
+| `overall_score` | `float` | Yes | Weighted average of criteria |
+| `judge_rationale` | `str \| None` | No | LLM's explanation of the scores |
+
+**Scoring Weights** (default):
+- Faithfulness: 40%
+- Bloom Calibration: 30%
+- Informativeness: 30%
+
+**Example**:
+```json
+{
+  "faithfulness": 0.85,
+  "bloom_calibration": 0.78,
+  "informativeness": 0.72,
+  "overall_score": 0.79,
+  "judge_rationale": "Answer well grounded, question requires appropriate analysis level."
+}
+```
+
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field
+
+class ValidationScore(BaseModel):
+    """LLM-as-a-Judge validation scores."""
+    faithfulness: float = Field(ge=0.0, le=1.0)
+    bloom_calibration: float = Field(ge=0.0, le=1.0)
+    informativeness: float = Field(ge=0.0, le=1.0)
+    overall_score: float = Field(ge=0.0, le=1.0)
+    judge_rationale: str | None = None
+```
+
+### QAPairValidated
+
+Extends QAPairPEC with validation results.
+
+**Fields** (in addition to QAPairPEC fields):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `validation` | `ValidationScore \| None` | No | Validation scores from LLM-as-a-Judge |
+| `is_valid` | `bool` | Yes | Whether pair passes validation threshold |
+
+**Example**:
+```json
+{
+  "question": "Por que o pescador guarda o barco?",
+  "answer": "Para evitar perda durante enchentes.",
+  "context": "Se o rio sobe rápido, guardo o barco para evitar perda.",
+  "question_type": "conceptual",
+  "confidence": 0.9,
+  "bloom_level": "analyze",
+  "validation": {
+    "faithfulness": 0.9,
+    "bloom_calibration": 0.8,
+    "informativeness": 0.7,
+    "overall_score": 0.81
+  },
+  "is_valid": true
+}
+```
+
+### QARecordPEC
+
+Complete PEC QA dataset for a single transcription, extending QARecord with cognitive scaffolding metadata.
+
+**Fields** (in addition to QARecord fields):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `qa_pairs` | `list[QAPairPEC]` | Yes | PEC-enhanced QA pairs |
+| `bloom_distribution` | `dict[str, int]` | Yes | Count of pairs per Bloom level |
+| `validated_pairs` | `int \| None` | No | Number of pairs passing validation |
+| `validation_summary` | `ValidationSummary \| None` | No | Aggregate validation statistics |
+| `pec_version` | `str` | Yes | PEC pipeline version |
+
+**Example**:
+```json
+{
+  "source_gdrive_id": "1abc123xyz",
+  "source_filename": "interview_2023.mp3",
+  "transcription_text": "O pescador contou que quando o rio sobe...",
+  "qa_pairs": [...],
+  "model_id": "llama3.1:8b",
+  "provider": "ollama",
+  "generation_timestamp": "2026-02-03T10:30:00Z",
+  "total_pairs": 12,
+  "bloom_distribution": {
+    "remember": 3,
+    "understand": 4,
+    "analyze": 3,
+    "evaluate": 2
+  },
+  "validated_pairs": 10,
+  "validation_summary": {
+    "avg_faithfulness": 0.85,
+    "avg_bloom_calibration": 0.78,
+    "avg_informativeness": 0.72,
+    "avg_overall": 0.79
+  },
+  "pec_version": "1.0"
+}
+```
+
+**JSONL Export**:
+
+QARecordPEC supports JSONL export for KGQA training compatibility:
+
+```python
+record = QARecordPEC.load("pec_dataset/1abc123xyz_pec_qa.json")
+
+# Export to file
+record.to_jsonl("output.jsonl")
+
+# Get as string
+jsonl_content = record.to_jsonl()
+```
+
+Each line in the JSONL contains one QA pair with all PEC fields:
+```json
+{"question": "O que aconteceu?", "answer": "...", "context": "...", "bloom_level": "remember", "confidence": 0.92}
+{"question": "Por que isso aconteceu?", "answer": "...", "context": "...", "bloom_level": "analyze", "reasoning_trace": "..."}
+```
+
+**Python Implementation**:
+```python
+from datetime import datetime
+from pathlib import Path
+from pydantic import BaseModel, Field
+
+class ValidationSummary(BaseModel):
+    """Aggregate validation statistics."""
+    avg_faithfulness: float = Field(ge=0.0, le=1.0)
+    avg_bloom_calibration: float = Field(ge=0.0, le=1.0)
+    avg_informativeness: float = Field(ge=0.0, le=1.0)
+    avg_overall: float = Field(ge=0.0, le=1.0)
+
+class QARecordPEC(BaseModel):
+    """Complete PEC QA dataset for a single transcription."""
+    source_gdrive_id: str
+    source_filename: str
+    transcription_text: str
+    qa_pairs: list[QAPairPEC]
+    model_id: str
+    provider: str
+    generation_timestamp: datetime = Field(default_factory=datetime.now)
+    total_pairs: int
+    bloom_distribution: dict[str, int]
+    validated_pairs: int | None = None
+    validation_summary: ValidationSummary | None = None
+    pec_version: str = "1.0"
+
+    def to_jsonl(self, path: str | Path | None = None) -> str | None:
+        """Export QA pairs to JSONL format."""
+        lines = [pair.model_dump_json() for pair in self.qa_pairs]
+        jsonl_content = "\n".join(lines)
+
+        if path is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(jsonl_content + "\n" if jsonl_content else "")
+            return None
+
+        return jsonl_content
+
+    def save(self, path: str | Path) -> None:
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "QARecordPEC":
         return cls.model_validate_json(Path(path).read_text())
 ```
 
@@ -675,6 +935,12 @@ graph TD
     B --> C[QARecord]
     C --> D[QAPair]
 
+    A --> P[PECQAGenerator]
+    P --> Q[QARecordPEC]
+    Q --> R[QAPairPEC]
+    R --> S[ValidationScore]
+    R --> T[QAPairValidated]
+
     A --> E[AutoSchemaKG]
     E --> F[GraphML File]
     E --> G[KGMetadata]
@@ -682,6 +948,7 @@ graph TD
     F --> H[NetworkX Graph]
 
     C --> I[Evaluator]
+    Q --> I
     H --> I
     A --> I
     I --> J[EvaluationReport]
@@ -813,5 +1080,5 @@ stats = {
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-01-23
+**Document Version**: 1.2
+**Last Updated**: 2026-02-03

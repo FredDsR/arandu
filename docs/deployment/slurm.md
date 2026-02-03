@@ -16,6 +16,9 @@ G-Transcriber provides SLURM scripts for each pipeline in `scripts/slurm/`:
 |--------|----------|-------------|
 | `run_transcription.slurm` | Transcription | Batch transcription with Whisper |
 | `run_qa_generation.slurm` | QA | Generate QA pairs from transcriptions |
+| `pec/grace.slurm` | PEC QA | Cognitive QA generation (Grace/L40S) |
+| `pec/tupi.slurm` | PEC QA | Cognitive QA generation (Tupi/RTX 4090) |
+| `pec/sirius.slurm` | PEC QA | Cognitive QA generation (Sirius/AMD CPU) |
 | `run_kg_construction.slurm` | KG | Build knowledge graphs |
 | `run_evaluation.slurm` | Evaluation | Compute quality metrics |
 
@@ -156,6 +159,80 @@ singularity exec --nv gtranscriber.sif \
 - GPU recommended for Ollama LLM inference
 - CPU-only possible but slower
 - Set `--gres=gpu:0` for CPU-only
+
+## PEC QA Generation Scripts
+
+The PEC (Pipeline de Elicitação Cognitiva) pipeline has dedicated SLURM scripts organized by cluster partition:
+
+```
+scripts/slurm/pec/
+├── pec_common.sh      # Shared logic for all PEC jobs
+├── grace.slurm        # Grace partition (NVIDIA L40S)
+├── tupi.slurm         # Tupi partition (NVIDIA RTX 4090)
+└── sirius.slurm       # Sirius partition (AMD, CPU mode)
+```
+
+### Submit PEC Jobs
+
+```bash
+# Grace partition (best for large models)
+sbatch scripts/slurm/pec/grace.slurm
+
+# Tupi partition (good balance of speed/availability)
+sbatch scripts/slurm/pec/tupi.slurm
+
+# Sirius partition (CPU-only, for AMD nodes)
+sbatch scripts/slurm/pec/sirius.slurm
+```
+
+### PEC Script Architecture
+
+Each partition script sources `pec_common.sh` which handles:
+
+1. **Ollama Sidecar Management**: Starts Ollama container, pulls required model
+2. **Container Lifecycle**: Unique container names per job to avoid conflicts
+3. **PEC Configuration**: Bloom taxonomy distribution, validation settings
+4. **Cleanup**: Automatic container removal on job completion
+
+### PEC-Specific Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PEC_WORKERS` | Parallel workers for PEC generation | Partition-dependent |
+| `PEC_GPU_MODE` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
+| `GTRANSCRIBER_PEC_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `false` |
+| `GTRANSCRIBER_PEC_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
+
+### Override PEC Settings
+
+```bash
+# Enable validation with custom model
+GTRANSCRIBER_PEC_ENABLE_VALIDATION=true \
+GTRANSCRIBER_PEC_VALIDATOR_MODEL_ID=llama3.1:70b \
+sbatch scripts/slurm/pec/grace.slurm
+
+# Use English prompts
+GTRANSCRIBER_PEC_LANGUAGE=en sbatch scripts/slurm/pec/tupi.slurm
+```
+
+### PEC Resource Recommendations
+
+| Partition | GPUs | Workers | Best For |
+|-----------|------|---------|----------|
+| Grace (L40S) | 1 | 4 | Large models (70B), validation |
+| Tupi (RTX 4090) | 1 | 3 | Standard generation (8B models) |
+| Sirius (AMD) | 0 | 2 | CPU-only fallback |
+
+### Monitor PEC Jobs
+
+```bash
+# View job output
+tail -f logs/pec_grace_<jobid>.out
+
+# Check container status
+docker ps --filter name=ollama-pec
+docker ps --filter name=gtranscriber-pec
+```
 
 ## Checkpoint and Resume
 
