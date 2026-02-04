@@ -200,14 +200,17 @@ Each partition script sources `cep_common.sh` which handles:
 |----------|-------------|---------|
 | `GTRANSCRIBER_QA_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
 | `USE_GPU_OLLAMA` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
-| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `false` |
+| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `true` |
 | `GTRANSCRIBER_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
 
 ### Override CEP Settings
 
 ```bash
-# Enable validation with custom model
-GTRANSCRIBER_CEP_ENABLE_VALIDATION=true \
+# Disable validation for faster processing
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=false \
+sbatch scripts/slurm/cep/tupi.slurm
+
+# Use custom validator model
 GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.1:70b \
 sbatch scripts/slurm/cep/grace.slurm
 

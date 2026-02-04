@@ -266,7 +266,7 @@ class CEPConfig(BaseSettings):
         description="Enable reasoning trace generation for answers",
     )
     enable_validation: bool = Field(
-        default=False,
+        default=True,
         description="Enable LLM-as-a-Judge validation (requires additional LLM calls)",
     )
 

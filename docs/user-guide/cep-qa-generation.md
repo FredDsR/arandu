@@ -50,11 +50,11 @@ sbatch scripts/slurm/cep/sirius.slurm
 ### Using CLI
 
 ```bash
-# Basic usage
+# Basic usage (validation enabled by default)
 gtranscriber generate-cep-qa results/ --output-dir cep_dataset/
 
-# With validation enabled
-gtranscriber generate-cep-qa results/ --validate --output-dir cep_dataset/
+# Disable validation for faster processing
+gtranscriber generate-cep-qa results/ --no-validate --output-dir cep_dataset/
 
 # Export to JSONL format
 gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
@@ -77,7 +77,7 @@ gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `false` | Enable LLM-as-a-Judge validation |
+| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
 | `GTRANSCRIBER_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
 | `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `llama3.1:8b` | Validator model |
 | `GTRANSCRIBER_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
@@ -124,15 +124,15 @@ GTRANSCRIBER_CEP_DIR=./cep_dataset
 ### Basic CEP Generation
 
 ```bash
-# Default configuration (Portuguese prompts, no validation)
+# Default configuration (Portuguese prompts, validation enabled)
 docker compose --profile cep up
 ```
 
-### With LLM-as-a-Judge Validation
+### Without LLM-as-a-Judge Validation
 
 ```bash
-# Enable validation to filter low-quality pairs
-GTRANSCRIBER_CEP_ENABLE_VALIDATION=true docker compose --profile cep up
+# Disable validation for faster processing
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=false docker compose --profile cep up
 ```
 
 ### GPU-Accelerated Ollama
@@ -384,8 +384,8 @@ The checkpoint file (`cep_dataset/cep_checkpoint.json`) tracks:
 - **qwen2.5:14b**: Good alternative with strong PT-BR support
 
 ### Validation Strategy
-1. Run initial generation without validation for speed
-2. Enable validation for final dataset quality check
+1. Keep validation enabled (default) for quality assurance
+2. Disable validation (`--no-validate`) for faster iteration during development
 3. Use validation threshold of 0.6-0.7 to balance coverage and quality
 
 ### Bloom Distribution

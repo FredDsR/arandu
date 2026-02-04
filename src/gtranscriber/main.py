@@ -979,9 +979,9 @@ def generate_cep_qa(
         bool,
         typer.Option(
             "--validate/--no-validate",
-            help="Enable LLM-as-a-Judge validation. Default: disabled",
+            help="Enable LLM-as-a-Judge validation. Default: enabled",
         ),
-    ] = False,
+    ] = True,
     validator_model: Annotated[
         str | None,
         typer.Option(
@@ -1016,11 +1016,14 @@ def generate_cep_qa(
     analyze, evaluate) to create cognitively scaffolded QA datasets.
 
     Examples:
-        # Basic CEP generation (default: Portuguese)
+        # Basic CEP generation (default: Portuguese, validation enabled)
         gtranscriber generate-cep-qa results/ -o cep_dataset/
 
-        # With LLM-as-a-Judge validation
-        gtranscriber generate-cep-qa results/ --validate --validator-model gpt-4
+        # Disable validation for faster processing
+        gtranscriber generate-cep-qa results/ --no-validate
+
+        # Use custom validator model
+        gtranscriber generate-cep-qa results/ --validator-model gpt-4
 
         # Adjust Bloom level distribution
         gtranscriber generate-cep-qa results/ \\
@@ -1057,8 +1060,8 @@ def generate_cep_qa(
     # Override CEP config with CLI args if provided
     if language is not None:
         cep_config.language = language
-    if validate:
-        cep_config.enable_validation = True
+    if not validate:
+        cep_config.enable_validation = False
     if validator_model is not None:
         cep_config.validator_model_id = validator_model
 
