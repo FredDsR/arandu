@@ -1193,5 +1193,283 @@ def info() -> None:
     console.print()
 
 
+@app.command()
+def list_runs(
+    pipeline: Annotated[
+        str | None,
+        typer.Option(
+            "--pipeline",
+            "-p",
+            help="Filter by pipeline type: transcription, qa, cep, kg, evaluation.",
+        ),
+    ] = None,
+    results_dir: Annotated[
+        Path,
+        typer.Option(
+            "--results-dir",
+            "-r",
+            help="Base results directory. Can be set via GTRANSCRIBER_RESULTS_BASE_DIR env var.",
+        ),
+    ] = Path("./results"),
+) -> None:
+    """List all pipeline runs with status and metadata.
+
+    Displays a table of all recorded pipeline runs including status, timing,
+    and success rates. Use --pipeline to filter by a specific pipeline type.
+
+    Examples:
+        # List all runs
+        gtranscriber list-runs
+
+        # List only transcription runs
+        gtranscriber list-runs --pipeline transcription
+
+        # Use custom results directory
+        gtranscriber list-runs --results-dir /path/to/results
+    """
+    from rich.table import Table
+
+    from gtranscriber.core.results_manager import ResultsManager
+    from gtranscriber.schemas import PipelineType
+
+    # Parse pipeline type if provided
+    pipeline_filter = None
+    if pipeline:
+        try:
+            pipeline_filter = PipelineType(pipeline.lower())
+        except ValueError:
+            valid_types = ", ".join(p.value for p in PipelineType)
+            print_error(f"Invalid pipeline type: {pipeline!r}. Valid types: {valid_types}")
+            raise typer.Exit(code=1) from None
+
+    # Get runs
+    runs = ResultsManager.list_runs(results_dir, pipeline_filter)
+
+    if not runs:
+        print_info("No runs found.")
+        return
+
+    # Create table
+    table = Table(title="Pipeline Runs")
+    table.add_column("Run ID", style="cyan")
+    table.add_column("Pipeline", style="magenta")
+    table.add_column("Status", style="bold")
+    table.add_column("Started At", style="dim")
+    table.add_column("Duration", style="dim")
+    table.add_column("Progress", style="green")
+    table.add_column("Success Rate", style="yellow")
+
+    for run in runs:
+        # Format status with color
+        status = run.get("status", "unknown")
+        if status == "completed":
+            status_styled = "[green]completed[/green]"
+        elif status == "failed":
+            status_styled = "[red]failed[/red]"
+        elif status == "in_progress":
+            status_styled = "[yellow]in_progress[/yellow]"
+        else:
+            status_styled = status
+
+        # Format duration
+        duration = run.get("duration_seconds")
+        duration_str = f"{duration:.1f}s" if duration else "-"
+
+        # Format progress
+        completed = run.get("completed_items", 0)
+        total = run.get("total_items", 0)
+        progress_str = f"{completed}/{total}" if total else "-"
+
+        # Format success rate
+        rate = run.get("success_rate")
+        rate_str = f"{rate:.1f}%" if rate is not None else "-"
+
+        # Format started_at
+        started = run.get("started_at", "-")
+        if started != "-":
+            try:
+                dt = datetime.fromisoformat(started)
+                started = dt.strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                pass
+
+        table.add_row(
+            run.get("run_id", "unknown"),
+            run.get("pipeline_type", "unknown"),
+            status_styled,
+            started,
+            duration_str,
+            progress_str,
+            rate_str,
+        )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@app.command()
+def run_info(
+    run_id: Annotated[
+        str,
+        typer.Argument(
+            help='Run ID to display, or "latest" for the most recent run.',
+        ),
+    ],
+    pipeline: Annotated[
+        str,
+        typer.Option(
+            "--pipeline",
+            "-p",
+            help='Pipeline type (required when using "latest").',
+        ),
+    ] = "transcription",
+    results_dir: Annotated[
+        Path,
+        typer.Option(
+            "--results-dir",
+            "-r",
+            help="Base results directory.",
+        ),
+    ] = Path("./results"),
+) -> None:
+    """Display detailed information about a specific run.
+
+    Shows complete metadata including execution environment, hardware info,
+    configuration snapshot, and processing statistics.
+
+    Examples:
+        # Show latest transcription run
+        gtranscriber run-info latest --pipeline transcription
+
+        # Show specific run by ID
+        gtranscriber run-info 20260204_143052_slurm_grace_1234
+
+        # Show latest QA generation run
+        gtranscriber run-info latest --pipeline qa
+    """
+    from rich.panel import Panel
+    from rich.tree import Tree
+
+    from gtranscriber.core.results_manager import ResultsManager
+    from gtranscriber.schemas import PipelineType, RunMetadata
+
+    # Parse pipeline type
+    try:
+        pipeline_type = PipelineType(pipeline.lower())
+    except ValueError:
+        valid_types = ", ".join(p.value for p in PipelineType)
+        print_error(f"Invalid pipeline type: {pipeline!r}. Valid types: {valid_types}")
+        raise typer.Exit(code=1) from None
+
+    metadata: RunMetadata | None = None
+
+    if run_id.lower() == "latest":
+        # Get latest run for the pipeline
+        metadata = ResultsManager.get_latest_run(results_dir, pipeline_type)
+        if not metadata:
+            print_error(f"No runs found for pipeline: {pipeline}")
+            raise typer.Exit(code=1)
+    else:
+        # Find the specific run
+        pipeline_dir = results_dir / pipeline_type.value / run_id
+        metadata_path = pipeline_dir / "run_metadata.json"
+
+        if not metadata_path.exists():
+            # Try to find in any pipeline directory
+            for p in PipelineType:
+                test_path = results_dir / p.value / run_id / "run_metadata.json"
+                if test_path.exists():
+                    metadata = RunMetadata.load(test_path)
+                    break
+
+            if not metadata:
+                print_error(f"Run not found: {run_id}")
+                raise typer.Exit(code=1)
+        else:
+            metadata = RunMetadata.load(metadata_path)
+
+    # Display metadata
+    console.print()
+
+    # Status with color
+    status = metadata.status.value
+    if status == "completed":
+        status_display = "[green]✓ completed[/green]"
+    elif status == "failed":
+        status_display = "[red]✗ failed[/red]"
+    elif status == "in_progress":
+        status_display = "[yellow]⏳ in_progress[/yellow]"
+    else:
+        status_display = status
+
+    # Build tree display
+    tree = Tree(f"[bold cyan]{metadata.run_id}[/bold cyan]")
+
+    # Identity
+    identity = tree.add("[bold]Identity[/bold]")
+    identity.add(f"Pipeline: [magenta]{metadata.pipeline_type.value}[/magenta]")
+    identity.add(f"Status: {status_display}")
+    identity.add(f"G-Transcriber: v{metadata.gtranscriber_version}")
+
+    # Timing
+    timing = tree.add("[bold]Timing[/bold]")
+    timing.add(f"Started: {metadata.started_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    if metadata.ended_at:
+        timing.add(f"Ended: {metadata.ended_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    if metadata.duration_seconds:
+        timing.add(f"Duration: {metadata.duration_seconds:.1f} seconds")
+
+    # Progress
+    progress = tree.add("[bold]Progress[/bold]")
+    progress.add(f"Total items: {metadata.total_items}")
+    progress.add(f"Completed: [green]{metadata.completed_items}[/green]")
+    progress.add(f"Failed: [red]{metadata.failed_items}[/red]")
+    if metadata.success_rate is not None:
+        progress.add(f"Success rate: [yellow]{metadata.success_rate:.1f}%[/yellow]")
+
+    # Execution Environment
+    env = tree.add("[bold]Execution Environment[/bold]")
+    if metadata.execution.is_slurm:
+        env.add("Environment: [cyan]SLURM[/cyan]")
+        env.add(f"Job ID: {metadata.execution.slurm_job_id}")
+        env.add(f"Partition: {metadata.execution.slurm_partition}")
+        if metadata.execution.slurm_node:
+            env.add(f"Node: {metadata.execution.slurm_node}")
+    else:
+        env.add("Environment: [cyan]Local[/cyan]")
+    env.add(f"Hostname: {metadata.execution.hostname}")
+    env.add(f"Username: {metadata.execution.username}")
+
+    # Hardware
+    hw = tree.add("[bold]Hardware[/bold]")
+    hw.add(f"Device: {metadata.hardware.device_type}")
+    if metadata.hardware.gpu_name:
+        hw.add(f"GPU: {metadata.hardware.gpu_name}")
+    if metadata.hardware.gpu_memory_gb:
+        hw.add(f"GPU Memory: {metadata.hardware.gpu_memory_gb} GB")
+    if metadata.hardware.cuda_version:
+        hw.add(f"CUDA: {metadata.hardware.cuda_version}")
+    hw.add(f"CPU Cores: {metadata.hardware.cpu_count}")
+    hw.add(f"PyTorch: {metadata.hardware.torch_version}")
+    hw.add(f"Python: {metadata.hardware.python_version}")
+
+    # Paths
+    paths = tree.add("[bold]Paths[/bold]")
+    paths.add(f"Output: {metadata.output_directory}")
+    if metadata.checkpoint_file:
+        paths.add(f"Checkpoint: {metadata.checkpoint_file}")
+    if metadata.input_source:
+        paths.add(f"Input source: {metadata.input_source}")
+
+    # Error message if failed
+    if metadata.error_message:
+        error = tree.add("[bold red]Error[/bold red]")
+        error.add(f"[red]{metadata.error_message}[/red]")
+
+    console.print(Panel(tree, title="Run Details", border_style="blue"))
+    console.print()
+
+
 if __name__ == "__main__":
     app()

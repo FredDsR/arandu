@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -512,4 +513,225 @@ class EvaluationReport(BaseModel):
     @classmethod
     def load(cls, path: str | Path) -> EvaluationReport:
         """Load evaluation report from JSON file."""
+        return cls.model_validate_json(Path(path).read_text())
+
+
+# =============================================================================
+# Results Versioning Schemas
+# =============================================================================
+
+
+class PipelineType(str, Enum):
+    """Enum representing the different pipeline types."""
+
+    TRANSCRIPTION = "transcription"
+    QA = "qa"
+    CEP = "cep"
+    KG = "kg"
+    EVALUATION = "evaluation"
+
+
+class RunStatus(str, Enum):
+    """Enum representing the status of a pipeline run."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ExecutionEnvironment(BaseModel):
+    """Captures execution environment information including SLURM detection."""
+
+    is_slurm: bool = Field(default=False, description="Whether running in SLURM environment")
+    is_local: bool = Field(default=True, description="Whether running locally")
+    slurm_job_id: str | None = Field(default=None, description="SLURM job ID")
+    slurm_partition: str | None = Field(default=None, description="SLURM partition name")
+    slurm_node: str | None = Field(default=None, description="SLURM node hostname")
+    hostname: str = Field(..., description="System hostname")
+    username: str = Field(..., description="Current username")
+
+    @classmethod
+    def detect(cls) -> ExecutionEnvironment:
+        """Detect execution environment from environment variables.
+
+        Returns:
+            ExecutionEnvironment instance with detected values.
+        """
+        import getpass
+        import os
+        import socket
+
+        slurm_job_id = os.environ.get("SLURM_JOB_ID")
+        slurm_partition = os.environ.get("SLURM_JOB_PARTITION")
+        slurm_node = os.environ.get("SLURMD_NODENAME")
+        is_slurm = slurm_job_id is not None
+
+        return cls(
+            is_slurm=is_slurm,
+            is_local=not is_slurm,
+            slurm_job_id=slurm_job_id,
+            slurm_partition=slurm_partition,
+            slurm_node=slurm_node,
+            hostname=socket.gethostname(),
+            username=getpass.getuser(),
+        )
+
+
+class HardwareInfo(BaseModel):
+    """Captures hardware information for reproducibility."""
+
+    device_type: str = Field(..., description="Device type: cpu, cuda, mps")
+    gpu_name: str | None = Field(default=None, description="GPU name if available")
+    gpu_memory_gb: float | None = Field(default=None, description="GPU memory in GB")
+    cuda_version: str | None = Field(default=None, description="CUDA version if available")
+    cpu_count: int = Field(..., description="Number of CPU cores")
+    torch_version: str = Field(..., description="PyTorch version")
+    python_version: str = Field(..., description="Python version")
+
+    @classmethod
+    def capture(cls) -> HardwareInfo:
+        """Capture current hardware information.
+
+        Returns:
+            HardwareInfo instance with current hardware details.
+        """
+        import os
+        import sys
+
+        import torch
+
+        device_type = "cpu"
+        gpu_name = None
+        gpu_memory_gb = None
+        cuda_version = None
+
+        if torch.cuda.is_available():
+            device_type = "cuda"
+            gpu_name = torch.cuda.get_device_name(0)
+            props = torch.cuda.get_device_properties(0)
+            gpu_memory_gb = round(props.total_memory / (1024**3), 2)
+            cuda_version = torch.version.cuda
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device_type = "mps"
+
+        return cls(
+            device_type=device_type,
+            gpu_name=gpu_name,
+            gpu_memory_gb=gpu_memory_gb,
+            cuda_version=cuda_version,
+            cpu_count=os.cpu_count() or 1,
+            torch_version=torch.__version__,
+            python_version=sys.version.split()[0],
+        )
+
+
+class ConfigSnapshot(BaseModel):
+    """Captures configuration at the time of run execution."""
+
+    config_type: str = Field(..., description="Configuration class name")
+    config_values: dict = Field(..., description="Configuration values as dictionary")
+    environment_variables: dict[str, str] = Field(
+        default_factory=dict, description="Relevant environment variables"
+    )
+
+    @classmethod
+    def from_config(cls, config: BaseModel, env_prefix: str = "GTRANSCRIBER_") -> ConfigSnapshot:
+        """Create snapshot from a Pydantic BaseSettings/BaseModel.
+
+        Args:
+            config: The configuration object to snapshot.
+            env_prefix: Prefix for environment variables to capture.
+
+        Returns:
+            ConfigSnapshot instance.
+        """
+        import os
+
+        # Capture relevant environment variables
+        env_vars = {key: value for key, value in os.environ.items() if key.startswith(env_prefix)}
+
+        return cls(
+            config_type=config.__class__.__name__,
+            config_values=config.model_dump(mode="json"),
+            environment_variables=env_vars,
+        )
+
+
+class RunMetadata(BaseModel):
+    """Complete metadata for a pipeline run.
+
+    Tracks identity, timing, status, execution context, and progress for
+    a versioned pipeline run.
+    """
+
+    # Identity
+    run_id: str = Field(..., description="Unique run identifier (YYYYMMDD_HHMMSS_context)")
+    pipeline_type: PipelineType = Field(..., description="Type of pipeline executed")
+
+    # Timing
+    started_at: datetime = Field(default_factory=datetime.now, description="Run start time")
+    ended_at: datetime | None = Field(default=None, description="Run end time")
+
+    # Status
+    status: RunStatus = Field(default=RunStatus.PENDING, description="Current run status")
+    error_message: str | None = Field(default=None, description="Error message if failed")
+
+    # Context
+    execution: ExecutionEnvironment = Field(..., description="Execution environment details")
+    hardware: HardwareInfo = Field(..., description="Hardware information")
+    config: ConfigSnapshot = Field(..., description="Configuration snapshot")
+
+    # Progress
+    total_items: int = Field(default=0, description="Total items to process")
+    completed_items: int = Field(default=0, description="Successfully completed items")
+    failed_items: int = Field(default=0, description="Failed items")
+
+    # Paths
+    output_directory: str = Field(..., description="Path to run output directory")
+    checkpoint_file: str | None = Field(default=None, description="Path to checkpoint file")
+
+    # Version info
+    gtranscriber_version: str = Field(..., description="G-Transcriber version")
+    schema_version: str = Field(default="1.0", description="Schema version for compatibility")
+
+    # Optional input source
+    input_source: str | None = Field(default=None, description="Input source (catalog, directory)")
+
+    @computed_field
+    @property
+    def duration_seconds(self) -> float | None:
+        """Compute run duration in seconds."""
+        if self.ended_at is None:
+            return None
+        return (self.ended_at - self.started_at).total_seconds()
+
+    @computed_field
+    @property
+    def success_rate(self) -> float | None:
+        """Compute success rate as percentage."""
+        total = self.completed_items + self.failed_items
+        if total == 0:
+            return None
+        return round(self.completed_items / total * 100, 2)
+
+    def save(self, path: str | Path) -> None:
+        """Save run metadata to JSON file.
+
+        Args:
+            path: Path to save the metadata file.
+        """
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> RunMetadata:
+        """Load run metadata from JSON file.
+
+        Args:
+            path: Path to the metadata file.
+
+        Returns:
+            RunMetadata instance.
+        """
         return cls.model_validate_json(Path(path).read_text())
