@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
+import pytest
+
 if TYPE_CHECKING:
-    import pytest
     from pytest_mock import MockerFixture
 
 from gtranscriber.config import CEPConfig, QAConfig
@@ -22,6 +24,12 @@ from gtranscriber.core.qa_batch import (
     run_batch_cep_generation,
     run_batch_qa_generation,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_versioning(mocker: MockerFixture) -> None:
+    """Disable results versioning for all tests in this module."""
+    mocker.patch.dict(os.environ, {"GTRANSCRIBER_RESULTS_ENABLE_VERSIONING": "false"})
 
 
 def create_test_enriched_data(
