@@ -253,6 +253,9 @@ class TestLLMClient:
 
     def test_generate_retry_on_failure(self, mocker: MockerFixture) -> None:
         """Test that generate retries on failure (tenacity decorator)."""
+        # Skip retry delays for faster tests
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
 
