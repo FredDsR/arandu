@@ -1239,7 +1239,9 @@ class TestGenerateCEPQAForTranscription:
                     "mimeType": "audio/mpeg",
                     "parents": ["folder_id"],
                     "webContentLink": "https://drive.google.com/test",
-                    "transcription_text": "This is a long transcription about climate events. " * 30,
+                    "transcription_text": (
+                        "This is a long transcription about climate events. " * 30
+                    ),
                     "detected_language": "pt",
                     "language_probability": 0.95,
                     "model_id": "openai/whisper-large-v3",
@@ -1271,7 +1273,7 @@ class TestGenerateCEPQAForTranscription:
             validator_model_id="llama3.1:8b",
         ).model_dump()
 
-        gdrive_id, success, message = generate_cep_qa_for_transcription(
+        gdrive_id, success, _ = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
         )
 

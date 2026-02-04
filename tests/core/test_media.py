@@ -612,7 +612,9 @@ class TestExtractAudio:
 
         assert "No audio stream" in str(exc_info.value)
 
-    def test_extract_audio_generic_ffmpeg_error(self, mocker: MockerFixture, tmp_path: Path) -> None:
+    def test_extract_audio_generic_ffmpeg_error(
+        self, mocker: MockerFixture, tmp_path: Path
+    ) -> None:
         """Test extraction with generic ffmpeg error."""
         from gtranscriber.core.media import extract_audio
 
