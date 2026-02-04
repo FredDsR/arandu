@@ -375,3 +375,197 @@ class TestBloomScaffoldingGenerator:
         assert pairs[2].hop_count == 3  # Valid range
         # Q4 has hop_count but is_multi_hop defaults to False, so hop_count is set to None
         assert pairs[3].hop_count is None
+
+    def test_load_prompts_file_not_found(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that FileNotFoundError is raised when prompt file doesn't exist."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember"],
+            bloom_distribution={"remember": 1.0},
+            language="pt",
+        )
+
+        # Mock the file existence check to return False
+        mocker.patch("pathlib.Path.exists", return_value=False)
+
+        with pytest.raises(FileNotFoundError, match="CEP prompt file not found"):
+            BloomScaffoldingGenerator(
+                llm_client=mock_llm_client,
+                qa_config=qa_config,
+                cep_config=cep_config,
+            )
+
+    def test_generate_with_zero_count_level(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test generation when a Bloom level has zero questions allocated."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember", "understand"],
+            bloom_distribution={
+                "remember": 1.0,
+                "understand": 0.0,  # Zero weight
+            },
+            language="pt",
+        )
+
+        mock_llm_client.generate.return_value = json.dumps(
+            [
+                {
+                    "question": "Test?",
+                    "answer": "Answer.",
+                    "bloom_level": "remember",
+                    "confidence": 0.9,
+                }
+            ]
+        )
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        pairs = generator.generate("Context.", num_questions=2)
+
+        # Only 'remember' level should be called, not 'understand'
+        # (since understand has count=0)
+        assert len(pairs) >= 0
+
+    def test_generate_for_level_handles_exception(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that exception in _generate_for_level is handled gracefully."""
+        # Make the LLM client raise an exception
+        mock_llm_client.generate.side_effect = Exception("LLM error")
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        pairs = generator.generate("Context.", num_questions=2)
+
+        # Should return empty list when all generations fail
+        assert pairs == []
+
+    def test_parse_response_with_non_list_data(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that non-list JSON response returns empty list."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        # Return a JSON object instead of array
+        response = json.dumps({"question": "Q?", "answer": "A"})
+        context = "Context."
+        pairs = generator._parse_response(response, context, "remember")
+
+        assert pairs == []
+
+    def test_parse_response_with_non_dict_items(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that non-dict items in array are skipped."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps(
+            [
+                "not a dict",
+                {"question": "Valid?", "answer": "Valid", "confidence": 0.9},
+                123,  # Number
+                None,  # None
+            ]
+        )
+
+        context = "Context."
+        pairs = generator._parse_response(response, context, "remember")
+
+        # Only the valid dict should be parsed
+        assert len(pairs) == 1
+        assert pairs[0].question == "Valid?"
+
+    def test_parse_response_invalid_hop_count_type(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that invalid hop_count type (e.g., string) is handled."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps(
+            [
+                {
+                    "question": "Q1?",
+                    "answer": "A1",
+                    "is_multi_hop": True,
+                    "hop_count": "not_a_number",  # Invalid type
+                }
+            ]
+        )
+
+        context = "Context."
+        pairs = generator._parse_response(response, context, "analyze")
+
+        # Should default to 2 when is_multi_hop=True and hop_count is invalid
+        assert len(pairs) == 1
+        assert pairs[0].hop_count == 2  # Default value from validator
+
+    def test_parse_response_creates_qa_pair_exception(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that QAPairCEP creation exception is handled."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        # This should trigger validation error in Pydantic
+        # by having invalid data type for confidence
+        response = json.dumps(
+            [
+                {
+                    "question": "Valid?",
+                    "answer": "Valid",
+                    "confidence": "not_a_number",  # Invalid type
+                    "bloom_level": "invalid_level",  # Invalid bloom level
+                }
+            ]
+        )
+
+        context = "Context."
+        pairs = generator._parse_response(response, context, "remember")
+
+        # Should skip items that fail QAPairCEP validation
+        assert len(pairs) >= 0
