@@ -12,7 +12,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -370,6 +370,21 @@ class CEPConfig(BaseSettings):
                 f"Invalid CEP language: {v!r}. Must be one of {sorted(valid_languages)}"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_scoring_weights(self) -> CEPConfig:
+        """Validate that scoring weights sum to 1.0."""
+        total = (
+            self.faithfulness_weight + self.bloom_calibration_weight + self.informativeness_weight
+        )
+        if not (0.99 <= total <= 1.01):
+            raise ValueError(
+                f"Scoring weights must sum to 1.0, got {total:.3f} "
+                f"(faithfulness={self.faithfulness_weight}, "
+                f"bloom_calibration={self.bloom_calibration_weight}, "
+                f"informativeness={self.informativeness_weight})"
+            )
+        return self
 
 
 class KGConfig(BaseSettings):

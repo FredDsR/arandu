@@ -435,7 +435,8 @@ Complete CEP QA dataset for a single transcription, extending QARecord with cogn
     "avg_faithfulness": 0.85,
     "avg_bloom_calibration": 0.78,
     "avg_informativeness": 0.72,
-    "avg_overall": 0.79
+    "avg_overall_score": 0.79,
+    "validation_pass_rate": 0.83
   },
   "cep_version": "1.0"
 }

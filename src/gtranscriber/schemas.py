@@ -265,6 +265,9 @@ class QARecordCEP(BaseModel):
     source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
     source_filename: str = Field(..., description="Original filename")
     transcription_text: str = Field(..., description="Full transcription text")
+    # NOTE: QAPairValidated must be listed first in the union. Since it's a subclass
+    # of QAPairCEP with optional fields that have defaults, Pydantic will try types
+    # in order and QAPairValidated must match first to preserve validation fields.
     qa_pairs: list[QAPairValidated | QAPairCEP] = Field(
         ..., description="List of CEP-enhanced QA pairs"
     )

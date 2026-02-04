@@ -29,6 +29,27 @@ DEFAULT_CEP_PROMPTS_DIR = (
 REASONING_LEVELS = {"analyze", "evaluate", "create"}
 
 
+def _parse_bool(value: Any) -> bool:
+    """Parse a boolean value from various representations.
+
+    Handles actual booleans, strings ("true", "false", "1", "0"),
+    and numeric values (1, 0).
+
+    Args:
+        value: Value to parse as boolean.
+
+    Returns:
+        Parsed boolean value, defaults to False for unrecognized values.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    return False
+
+
 class ReasoningEnricher:
     """Enrich QA pairs with reasoning traces and multi-hop detection.
 
@@ -227,7 +248,7 @@ Retorne APENAS um objeto JSON no seguinte formato:
             # Validate and clean data
             result: dict[str, Any] = {
                 "reasoning_trace": data.get("reasoning_trace"),
-                "is_multi_hop": bool(data.get("is_multi_hop", False)),
+                "is_multi_hop": _parse_bool(data.get("is_multi_hop", False)),
                 "hop_count": None,
                 "tacit_inference": data.get("tacit_inference"),
             }

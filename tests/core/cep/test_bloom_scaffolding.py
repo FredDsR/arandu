@@ -435,7 +435,9 @@ class TestBloomScaffoldingGenerator:
 
         # Only 'remember' level should be called, not 'understand'
         # (since understand has count=0)
-        assert len(pairs) >= 0
+        assert mock_llm_client.generate.call_count == 1
+        for pair in pairs:
+            assert pair.bloom_level == "remember"
 
     def test_generate_for_level_handles_exception(
         self,
@@ -538,28 +540,29 @@ class TestBloomScaffoldingGenerator:
         assert len(pairs) == 1
         assert pairs[0].hop_count == 2  # Default value from validator
 
-    def test_parse_response_creates_qa_pair_exception(
+    def test_parse_response_normalizes_invalid_values(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test that QAPairCEP creation exception is handled."""
+        """Test that invalid values are normalized gracefully."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
             cep_config=cep_config,
         )
 
-        # This should trigger validation error in Pydantic
-        # by having invalid data type for confidence
+        # Parser should normalize invalid values:
+        # - invalid confidence -> 0.5 (default)
+        # - bloom_level from JSON is ignored, uses method parameter
         response = json.dumps(
             [
                 {
                     "question": "Valid?",
                     "answer": "Valid",
-                    "confidence": "not_a_number",  # Invalid type
-                    "bloom_level": "invalid_level",  # Invalid bloom level
+                    "confidence": "not_a_number",  # Invalid type -> normalized to 0.5
+                    "bloom_level": "invalid_level",  # Ignored, uses parameter
                 }
             ]
         )
@@ -567,5 +570,7 @@ class TestBloomScaffoldingGenerator:
         context = "Context."
         pairs = generator._parse_response(response, context, "remember")
 
-        # Should skip items that fail QAPairCEP validation
-        assert len(pairs) >= 0
+        # Parser is lenient: normalizes invalid values instead of skipping
+        assert len(pairs) == 1
+        assert pairs[0].confidence == 0.5  # Normalized from invalid
+        assert pairs[0].bloom_level == "remember"  # Uses method parameter

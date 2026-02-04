@@ -1039,31 +1039,37 @@ def generate_cep_qa(
     qa_config = QAConfig()
     cep_config = CEPConfig()
 
-    # Override QA config with CLI args if provided
+    # Build QA config overrides dict for CLI args
+    # Using model_validate ensures validators run on CLI-provided values
+    qa_overrides: dict[str, Any] = {}
     if provider is not None:
-        qa_config.provider = provider
+        qa_overrides["provider"] = provider
     if model_id is not None:
-        qa_config.model_id = model_id
+        qa_overrides["model_id"] = model_id
     if ollama_url is not None:
-        qa_config.ollama_url = ollama_url
+        qa_overrides["ollama_url"] = ollama_url
     if base_url is not None:
-        qa_config.base_url = base_url
+        qa_overrides["base_url"] = base_url
     if questions is not None:
-        qa_config.questions_per_document = questions
+        qa_overrides["questions_per_document"] = questions
     if temperature is not None:
-        qa_config.temperature = temperature
+        qa_overrides["temperature"] = temperature
     if output_dir is not None:
-        qa_config.output_dir = output_dir
+        qa_overrides["output_dir"] = output_dir
     if workers is not None:
-        qa_config.workers = workers
+        qa_overrides["workers"] = workers
 
-    # Override CEP config with CLI args if provided
+    if qa_overrides:
+        qa_config = QAConfig.model_validate({**qa_config.model_dump(), **qa_overrides})
+
+    # Build CEP config overrides dict for CLI args
+    cep_overrides: dict[str, Any] = {}
     if language is not None:
-        cep_config.language = language
+        cep_overrides["language"] = language
     if not validate:
-        cep_config.enable_validation = False
+        cep_overrides["enable_validation"] = False
     if validator_model is not None:
-        cep_config.validator_model_id = validator_model
+        cep_overrides["validator_model_id"] = validator_model
 
     # Parse Bloom distribution if provided
     if bloom_dist is not None:
@@ -1072,15 +1078,18 @@ def generate_cep_qa(
             for item in bloom_dist.split(","):
                 level, weight = item.strip().split(":")
                 dist_dict[level.strip()] = float(weight.strip())
-            # Validate distribution sums to 1.0 before applying
-            if abs(sum(dist_dict.values()) - 1.0) > 0.001:
-                print_error("bloom_dist values must sum to 1.0")
-                raise typer.Exit(code=1)
-            cep_config.bloom_distribution = dist_dict
-            cep_config.bloom_levels = list(dist_dict.keys())
+            cep_overrides["bloom_distribution"] = dist_dict
+            cep_overrides["bloom_levels"] = list(dist_dict.keys())
         except ValueError as e:
             print_error(f"Invalid bloom-dist format: {e}")
             print_error("Expected format: 'level:weight,level:weight,...'")
+            raise typer.Exit(code=1) from e
+
+    if cep_overrides:
+        try:
+            cep_config = CEPConfig.model_validate({**cep_config.model_dump(), **cep_overrides})
+        except ValueError as e:
+            print_error(f"Invalid CEP configuration: {e}")
             raise typer.Exit(code=1) from e
 
     # Validate configs
