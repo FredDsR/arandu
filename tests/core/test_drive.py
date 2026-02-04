@@ -834,3 +834,524 @@ class TestListMediaFiles:
         result = client.list_media_files(status_filter="completed")
 
         assert len(result) == 1
+
+
+class TestDownloadFile:
+    """Tests for download_file method."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_success(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test successful file download."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock get_media request
+        mock_service.files().get_media.return_value = Mock()
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        # Setup download mock to write file content
+        destination = tmp_path / "downloaded_file.mp3"
+        expected_size = 1024
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            # Write content to the destination file
+            destination.write_bytes(b"x" * expected_size)
+            status = Mock()
+            status.progress.return_value = 1.0
+            return status, True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        result = client.download_file(
+            file_id="abc123",
+            destination=destination,
+            expected_size=expected_size,
+            file_name="test.mp3",
+        )
+
+        assert result == destination
+        assert destination.exists()
+
+    @patch("tenacity.nap.time.sleep", return_value=None)  # Skip retry delays
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_empty_raises_error(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        mock_sleep: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that empty download raises EmptyDownloadError."""
+        from gtranscriber.core.drive import DriveClient, EmptyDownloadError
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            # Create empty file
+            destination.touch()
+            return Mock(), True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        with pytest.raises(EmptyDownloadError):
+            client.download_file(
+                file_id="abc123",
+                destination=destination,
+                expected_size=1024,
+                file_name="test.mp3",
+            )
+
+    @patch("tenacity.nap.time.sleep", return_value=None)  # Skip retry delays
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_incomplete_raises_error(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        mock_sleep: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that incomplete download raises IncompleteDownloadError."""
+        from gtranscriber.core.drive import DriveClient, IncompleteDownloadError
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+        expected_size = 10000
+        actual_size = 5000  # Only half downloaded
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            # Create partially downloaded file
+            destination.write_bytes(b"x" * actual_size)
+            return Mock(), True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        with pytest.raises(IncompleteDownloadError):
+            client.download_file(
+                file_id="abc123",
+                destination=destination,
+                expected_size=expected_size,
+                file_name="test.mp3",
+            )
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_within_tolerance(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that download within tolerance (0.1%) succeeds."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+        expected_size = 10000
+        # Slightly different size (within 0.1% tolerance)
+        actual_size = expected_size + 5
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            destination.write_bytes(b"x" * actual_size)
+            return Mock(), True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        # Should not raise
+        result = client.download_file(
+            file_id="abc123",
+            destination=destination,
+            expected_size=expected_size,
+            file_name="test.mp3",
+        )
+
+        assert result == destination
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_fetches_metadata_if_no_size(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that download fetches metadata if expected_size not provided."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        # Mock get_file_metadata call
+        mock_files_get = Mock()
+        mock_files_get.execute.return_value = {
+            "id": "abc123",
+            "name": "test.mp3",
+            "size": "1024",
+        }
+        mock_service.files().get.return_value = mock_files_get
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            destination.write_bytes(b"x" * 1024)
+            return Mock(), True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        # Download without expected_size
+        result = client.download_file(
+            file_id="abc123",
+            destination=destination,
+        )
+
+        assert result == destination
+        # Should have called get to fetch metadata
+        mock_service.files().get.assert_called()
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_with_progress(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test download with progress bar updates."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+        expected_size = 1024
+
+        # Track progress calls
+        progress_mock = Mock()
+        task_id = 1
+
+        call_count = [0]
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                status = Mock()
+                status.progress.return_value = 0.5
+                return status, False
+            else:
+                destination.write_bytes(b"x" * expected_size)
+                status = Mock()
+                status.progress.return_value = 1.0
+                return status, True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        result = client.download_file(
+            file_id="abc123",
+            destination=destination,
+            expected_size=expected_size,
+            file_name="test.mp3",
+            progress=progress_mock,
+            task_id=task_id,
+        )
+
+        assert result == destination
+        # Progress should have been updated
+        assert progress_mock.update.call_count >= 1
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("gtranscriber.core.drive.io.FileIO")
+    def test_download_file_os_error_cleans_up(
+        self,
+        mock_file_io: MagicMock,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that OS errors are raised and cleanup occurs."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+
+        # Mock FileIO to raise an error
+        mock_file_io.side_effect = OSError("Disk full")
+
+        with pytest.raises(OSError) as exc_info:
+            client.download_file(
+                file_id="abc123",
+                destination=destination,
+                expected_size=1024,
+                file_name="test.mp3",
+            )
+
+        assert "Disk full" in str(exc_info.value)
+
+
+class TestUploadFileWithProgress:
+    """Tests for upload_file with progress updates."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaFileUpload")
+    def test_upload_file_with_progress(
+        self,
+        mock_media_upload: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test uploading a file with progress tracking."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+
+        # Mock upload response
+        mock_service.files().create().execute.return_value = {
+            "id": "uploaded_file_id",
+            "name": "test.json",
+            "webViewLink": "https://drive.google.com/file/d/uploaded_file_id/view",
+        }
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        # Create a file to upload
+        test_file = tmp_path / "test.json"
+        test_file.write_text('{"test": "data"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        progress_mock = Mock()
+        task_id = 1
+
+        result = client.upload_file(
+            file_path=test_file,
+            parent_folder_id="parent_folder_id",
+            mime_type="application/json",
+            progress=progress_mock,
+            task_id=task_id,
+        )
+
+        assert result["id"] == "uploaded_file_id"
+        # Progress should have been updated to 100
+        progress_mock.update.assert_called_with(task_id, completed=100)
+
+
+class TestDownloadFileMetadataFetch:
+    """Tests for metadata fetch behavior in download_file."""
+
+    @patch("gtranscriber.core.drive.build")
+    @patch("gtranscriber.core.drive.Credentials")
+    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    def test_download_file_metadata_fetch_fails_gracefully(
+        self,
+        mock_download: MagicMock,
+        mock_credentials: MagicMock,
+        mock_build: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that download continues when metadata fetch fails."""
+        from gtranscriber.core.drive import DriveClient
+
+        # Setup mocks
+        mock_creds = Mock()
+        mock_creds.valid = True
+        mock_credentials.from_authorized_user_file.return_value = mock_creds
+        mock_service = Mock()
+        mock_build.return_value = mock_service
+        mock_service.files().get_media.return_value = Mock()
+
+        # Mock get_file_metadata to fail
+        mock_files_get = Mock()
+        mock_files_get.execute.side_effect = Exception("API error")
+        mock_service.files().get.return_value = mock_files_get
+
+        credentials_file = tmp_path / "creds.json"
+        credentials_file.write_text('{"test": "data"}')
+        token_file = tmp_path / "token.json"
+        token_file.write_text('{"token": "test"}')
+
+        client = DriveClient(
+            credentials_file=str(credentials_file),
+            token_file=str(token_file),
+        )
+
+        destination = tmp_path / "downloaded_file.mp3"
+
+        def mock_next_chunk() -> tuple[Mock, bool]:
+            # Create file with some content
+            destination.write_bytes(b"x" * 1024)
+            return Mock(), True
+
+        mock_downloader = Mock()
+        mock_downloader.next_chunk.side_effect = mock_next_chunk
+        mock_download.return_value = mock_downloader
+
+        # Download without expected_size - should try to fetch metadata and continue
+        result = client.download_file(
+            file_id="abc123",
+            destination=destination,
+            # expected_size not provided - triggers metadata fetch attempt
+        )
+
+        # Should succeed despite metadata fetch failure
+        assert result == destination
+        assert destination.exists()

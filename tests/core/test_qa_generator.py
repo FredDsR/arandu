@@ -698,6 +698,9 @@ class TestErrorHandling:
 
     def test_generate_for_context_llm_exception(self, mocker: MockerFixture) -> None:
         """Test that LLM exceptions are caught and return empty list."""
+        # Skip retry delays for faster tests
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
         mock_client = Mock()
         mock_client.chat.completions.create.side_effect = Exception("LLM API error")

@@ -9,10 +9,19 @@ from pydantic import ValidationError
 from pytest import MonkeyPatch
 
 from gtranscriber.config import (
+    CEPConfig,
     EvaluationConfig,
     KGConfig,
+    LLMConfig,
     QAConfig,
     TranscriberConfig,
+    _get_default_temp_dir,
+    get_cep_config,
+    get_evaluation_config,
+    get_kg_config,
+    get_llm_config,
+    get_qa_config,
+    get_transcriber_config,
 )
 
 
@@ -265,3 +274,209 @@ class TestConfigEnvPrefix:
         monkeypatch.setenv("gtranscriber_model_id", "lowercase-model")
         config = TranscriberConfig()
         assert config.model_id == "lowercase-model"
+
+
+class TestCEPConfig:
+    """Tests for CEPConfig."""
+
+    def test_default_initialization(self) -> None:
+        """Test default CEP configuration initialization."""
+        config = CEPConfig()
+
+        assert config.enable_bloom_scaffolding is True
+        assert config.enable_reasoning_traces is True
+        assert config.enable_validation is True
+        assert config.bloom_levels == ["remember", "understand", "analyze", "evaluate"]
+        assert config.max_hop_count == 3
+        assert config.validator_provider == "ollama"
+        assert config.validator_model_id == "llama3.1:8b"
+        assert config.validator_temperature == 0.3
+        assert config.validation_threshold == 0.6
+        assert config.language == "pt"
+
+    def test_valid_bloom_levels(self) -> None:
+        """Test valid Bloom taxonomy levels."""
+        config = CEPConfig(bloom_levels=["remember", "understand", "apply", "analyze"])
+        assert config.bloom_levels == ["remember", "understand", "apply", "analyze"]
+
+    def test_invalid_bloom_level(self) -> None:
+        """Test validation error for invalid Bloom level."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_levels=["remember", "invalid_level"])
+        assert "Invalid Bloom level" in str(exc_info.value)
+
+    def test_valid_bloom_distribution(self) -> None:
+        """Test valid Bloom distribution summing to 1.0."""
+        config = CEPConfig(
+            bloom_distribution={
+                "remember": 0.25,
+                "understand": 0.25,
+                "analyze": 0.25,
+                "evaluate": 0.25,
+            }
+        )
+        assert sum(config.bloom_distribution.values()) == 1.0
+
+    def test_invalid_bloom_distribution_sum(self) -> None:
+        """Test validation error when Bloom distribution doesn't sum to 1.0."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(
+                bloom_distribution={
+                    "remember": 0.5,
+                    "understand": 0.5,
+                    "analyze": 0.5,  # Sum = 1.5, invalid
+                }
+            )
+        assert "must sum to 1.0" in str(exc_info.value)
+
+    def test_valid_language(self) -> None:
+        """Test valid language codes for CEP."""
+        config_pt = CEPConfig(language="pt")
+        config_en = CEPConfig(language="en")
+        assert config_pt.language == "pt"
+        assert config_en.language == "en"
+
+    def test_invalid_language(self) -> None:
+        """Test validation error for invalid CEP language."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(language="fr")
+        assert "Invalid CEP language" in str(exc_info.value)
+
+    def test_valid_scoring_weights(self) -> None:
+        """Test valid scoring weights summing to 1.0."""
+        config = CEPConfig(
+            faithfulness_weight=0.5,
+            bloom_calibration_weight=0.3,
+            informativeness_weight=0.2,
+        )
+        total = (
+            config.faithfulness_weight
+            + config.bloom_calibration_weight
+            + config.informativeness_weight
+        )
+        assert 0.99 <= total <= 1.01
+
+    def test_invalid_scoring_weights_sum(self) -> None:
+        """Test validation error when scoring weights don't sum to 1.0."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(
+                faithfulness_weight=0.5,
+                bloom_calibration_weight=0.5,
+                informativeness_weight=0.5,  # Sum = 1.5, invalid
+            )
+        assert "Scoring weights must sum to 1.0" in str(exc_info.value)
+
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
+        """Test CEP config loading from environment variables."""
+        monkeypatch.setenv("GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID", "gpt-4")
+        monkeypatch.setenv("GTRANSCRIBER_CEP_ENABLE_VALIDATION", "false")
+
+        config = CEPConfig()
+
+        assert config.validator_model_id == "gpt-4"
+        assert config.enable_validation is False
+
+    def test_max_hop_count_boundaries(self) -> None:
+        """Test max_hop_count boundary values."""
+        config_min = CEPConfig(max_hop_count=1)
+        config_max = CEPConfig(max_hop_count=5)
+        assert config_min.max_hop_count == 1
+        assert config_max.max_hop_count == 5
+
+    def test_max_hop_count_below_min(self) -> None:
+        """Test validation error when max_hop_count is below minimum."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(max_hop_count=0)
+        assert "greater than or equal to 1" in str(exc_info.value)
+
+    def test_max_hop_count_above_max(self) -> None:
+        """Test validation error when max_hop_count is above maximum."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(max_hop_count=6)
+        assert "less than or equal to 5" in str(exc_info.value)
+
+
+class TestLLMConfig:
+    """Tests for LLMConfig."""
+
+    def test_default_initialization(self) -> None:
+        """Test default LLM configuration initialization."""
+        config = LLMConfig()
+
+        assert config.openai_api_key is None
+        assert config.base_url is None
+
+    def test_openai_api_key_from_env(self, monkeypatch: MonkeyPatch) -> None:
+        """Test OpenAI API key loaded from environment."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key-123")
+
+        config = LLMConfig()
+
+        assert config.openai_api_key == "sk-test-key-123"
+
+    def test_base_url_from_env(self, monkeypatch: MonkeyPatch) -> None:
+        """Test base URL loaded from environment."""
+        monkeypatch.setenv("GTRANSCRIBER_LLM_BASE_URL", "http://custom-llm.example.com")
+
+        config = LLMConfig()
+
+        assert config.base_url == "http://custom-llm.example.com"
+
+
+class TestQAConfigLanguage:
+    """Tests for QAConfig language validation."""
+
+    def test_valid_language_pt(self) -> None:
+        """Test valid Portuguese language code."""
+        config = QAConfig(language="pt")
+        assert config.language == "pt"
+
+    def test_valid_language_en(self) -> None:
+        """Test valid English language code."""
+        config = QAConfig(language="en")
+        assert config.language == "en"
+
+    def test_invalid_language(self) -> None:
+        """Test validation error for invalid QA language."""
+        with pytest.raises(ValidationError) as exc_info:
+            QAConfig(language="de")
+        assert "Invalid QA language" in str(exc_info.value)
+
+
+class TestConfigHelperFunctions:
+    """Tests for configuration helper functions."""
+
+    def test_get_default_temp_dir(self) -> None:
+        """Test _get_default_temp_dir returns gtranscriber path."""
+        temp_dir = _get_default_temp_dir()
+        assert "gtranscriber" in temp_dir
+
+    def test_get_transcriber_config(self) -> None:
+        """Test get_transcriber_config returns TranscriberConfig instance."""
+        config = get_transcriber_config()
+        assert isinstance(config, TranscriberConfig)
+
+    def test_get_qa_config(self) -> None:
+        """Test get_qa_config returns QAConfig instance."""
+        config = get_qa_config()
+        assert isinstance(config, QAConfig)
+
+    def test_get_cep_config(self) -> None:
+        """Test get_cep_config returns CEPConfig instance."""
+        config = get_cep_config()
+        assert isinstance(config, CEPConfig)
+
+    def test_get_kg_config(self) -> None:
+        """Test get_kg_config returns KGConfig instance."""
+        config = get_kg_config()
+        assert isinstance(config, KGConfig)
+
+    def test_get_evaluation_config(self) -> None:
+        """Test get_evaluation_config returns EvaluationConfig instance."""
+        config = get_evaluation_config()
+        assert isinstance(config, EvaluationConfig)
+
+    def test_get_llm_config(self) -> None:
+        """Test get_llm_config returns LLMConfig instance."""
+        config = get_llm_config()
+        assert isinstance(config, LLMConfig)

@@ -527,3 +527,259 @@ class TestExtractAudio:
         # Check sample rate in command
         call_args = mock_run.call_args[0][0]
         assert "48000" in call_args
+
+    def test_extract_audio_moov_atom_error(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error when moov atom is missing."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "moov atom not found"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(CorruptedMediaError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "moov atom" in str(exc_info.value).lower()
+
+    def test_extract_audio_no_such_file(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error when input file not found."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "no such file or directory"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_extract_audio_invalid_data(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error for invalid data."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Invalid data found"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(CorruptedMediaError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "Invalid data" in str(exc_info.value)
+
+    def test_extract_audio_no_stream_in_file(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error when file doesn't contain any stream."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "does not contain any stream"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "No audio stream" in str(exc_info.value)
+
+    def test_extract_audio_generic_ffmpeg_error(
+        self, mocker: MockerFixture, tmp_path: Path
+    ) -> None:
+        """Test extraction with generic ffmpeg error."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Some unknown error occurred"
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "Some unknown error" in str(exc_info.value)
+
+    def test_extract_audio_output_not_created(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error when output file is not created."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 0  # Success but no output created
+
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "not created" in str(exc_info.value).lower()
+
+    def test_extract_audio_empty_output(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error when output file is empty."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        def create_empty_output(*args: object, **kwargs: object) -> Mock:
+            output_file.touch()  # Create empty file
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_empty_output)
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "empty" in str(exc_info.value).lower()
+
+    def test_extract_audio_timeout_cleans_up(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test that timeout cleans up partial output file."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        # Create a partial output file before timeout
+        output_file.write_bytes(b"partial data")
+
+        mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffmpeg", 300),
+        )
+
+        with pytest.raises(AudioExtractionError):
+            extract_audio(input_file, output_file)
+
+        # Output file should be cleaned up
+        assert not output_file.exists()
+
+    def test_extract_audio_generic_exception(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction with generic unexpected exception."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        # Create an output file to test cleanup
+        output_file.write_bytes(b"test data")
+
+        mocker.patch(
+            "subprocess.run",
+            side_effect=RuntimeError("Unexpected runtime error"),
+        )
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "Unexpected runtime error" in str(exc_info.value)
+        # Output file should be cleaned up
+        assert not output_file.exists()
+
+    def test_extract_audio_ffmpeg_empty_stderr(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        """Test extraction error with empty stderr."""
+        from gtranscriber.core.media import extract_audio
+
+        mocker.patch("gtranscriber.core.media.validate_media_file")
+        mocker.patch("gtranscriber.core.media.has_audio_stream", return_value=True)
+
+        input_file = tmp_path / "input.mp4"
+        input_file.touch()
+        output_file = tmp_path / "output.wav"
+
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = ""  # Empty stderr
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        with pytest.raises(AudioExtractionError) as exc_info:
+            extract_audio(input_file, output_file)
+
+        assert "Unknown ffmpeg error" in str(exc_info.value)
+
+
+class TestGetAudioStreamInfoUnexpectedError:
+    """Tests for get_audio_stream_info unexpected error path."""
+
+    def test_get_audio_stream_info_unexpected_exception(self, mocker: MockerFixture) -> None:
+        """Test handling of unexpected exceptions in get_audio_stream_info."""
+        mocker.patch(
+            "subprocess.run",
+            side_effect=RuntimeError("Unexpected error"),
+        )
+
+        info = get_audio_stream_info("test.mp4")
+
+        assert info is None
+
+
+class TestValidateMediaFileUnexpectedError:
+    """Tests for validate_media_file unexpected error path."""
+
+    def test_validate_media_file_unexpected_exception(self, mocker: MockerFixture) -> None:
+        """Test handling of unexpected exceptions in validate_media_file."""
+        from gtranscriber.core.media import validate_media_file
+
+        mocker.patch(
+            "subprocess.run",
+            side_effect=RuntimeError("Unexpected subprocess error"),
+        )
+
+        # Should not raise (unexpected errors are logged but not raised)
+        validate_media_file("test.mp4")

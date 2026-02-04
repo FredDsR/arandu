@@ -1,0 +1,57 @@
+{
+  "system_instruction": "You are a rigorous evaluator of question-answer pairs. Your task is to judge the quality of QAs generated for knowledge elicitation, evaluating three criteria: faithfulness, Bloom calibration, and informativeness.",
+  "evaluation_criteria": {
+    "faithfulness": {
+      "description": "Is the answer grounded in the provided context?",
+      "instruction": "Evaluate if the answer is grounded in the context (1.0) or contains hallucinations (0.0).",
+      "rubric": {
+        "1.0": "Answer completely grounded in text - all information can be verified in context",
+        "0.8": "Answer well grounded with minimal and reasonable inferences",
+        "0.6": "Answer mostly grounded, but with some non-trivial inferences",
+        "0.4": "Answer partially grounded with significant inferences or unverifiable information",
+        "0.2": "Answer weakly grounded - most is inference or unverifiable",
+        "0.0": "Answer not grounded, hallucinated or contradictory to context"
+      }
+    },
+    "bloom_calibration": {
+      "description": "Does the question match the proposed Bloom cognitive level?",
+      "instruction": "Evaluate if the question actually requires the declared cognitive level.",
+      "levels": {
+        "remember": "Requires only recalling explicit facts from text",
+        "understand": "Requires explaining, interpreting or summarizing concepts",
+        "apply": "Requires using knowledge in new or different situation",
+        "analyze": "Requires identifying relationships, patterns or connections between ideas",
+        "evaluate": "Requires making judgments, evaluating decisions or justifying choices",
+        "create": "Requires proposing solutions, elaborating ideas or creating something new"
+      },
+      "rubric": {
+        "1.0": "Perfectly calibrated question - requires exactly the declared cognitive level",
+        "0.8": "Well calibrated question - requires predominantly the declared level",
+        "0.6": "Reasonably calibrated question - requires the declared level with some overlap",
+        "0.4": "Undercalibrated question - requires lower cognitive level than declared",
+        "0.2": "Significantly miscalibrated question",
+        "0.0": "Completely miscalibrated question - completely different cognitive level"
+      }
+    },
+    "informativeness": {
+      "description": "Does the answer reveal non-obvious or tacit knowledge?",
+      "instruction": "Evaluate if the answer reveals knowledge that wouldn't be found in generic technical manuals.",
+      "rubric": {
+        "1.0": "Reveals significant tacit knowledge - practical 'know-how' or valuable insight",
+        "0.8": "Reveals useful and non-obvious knowledge - relevant practical information",
+        "0.6": "Reveals moderately useful knowledge - interesting contextual information",
+        "0.4": "Common but well-articulated information - basic knowledge well explained",
+        "0.2": "Relatively trivial information - could be easily found elsewhere",
+        "0.0": "Trivial or obvious information - adds no significant value"
+      }
+    }
+  },
+  "validation_instruction": "Analyze the provided question-answer pair and evaluate each criterion. Provide a score from 0.0 to 1.0 for each criterion and a brief justification.",
+  "output_format": {
+    "faithfulness": 0.0,
+    "bloom_calibration": 0.0,
+    "informativeness": 0.0,
+    "judge_rationale": "Explanation of the assigned scores"
+  },
+  "output_format_instruction": "Return ONLY the JSON object with scores and rationale, no additional text."
+}

@@ -11,11 +11,15 @@ if TYPE_CHECKING:
     import pytest
     from pytest_mock import MockerFixture
 
-from gtranscriber.config import QAConfig
+from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.qa_batch import (
     QAGenerationTask,
+    _init_cep_worker,
+    _init_qa_worker,
+    generate_cep_qa_for_transcription,
     generate_qa_for_transcription,
     load_transcription_tasks,
+    run_batch_cep_generation,
     run_batch_qa_generation,
 )
 
@@ -778,3 +782,879 @@ class TestRunBatchQAGeneration:
 
         # Check summary mentions failures
         assert "Failed:" in caplog.text or "failed" in caplog.text.lower()
+
+
+class TestInitQAWorker:
+    """Tests for _init_qa_worker initialization function."""
+
+    def test_init_qa_worker_ollama_provider(self, mocker: MockerFixture) -> None:
+        """Test worker initialization with Ollama provider."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_qa_generator = None
+
+        config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            ollama_url="http://localhost:11434/v1",
+        )
+        config_dict = config.model_dump()
+
+        _init_qa_worker("ollama", "llama3.1:8b", config_dict)
+
+        assert qa_batch_module._worker_qa_generator is not None
+
+    def test_init_qa_worker_custom_base_url(self, mocker: MockerFixture) -> None:
+        """Test worker initialization with custom base URL."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_qa_generator = None
+
+        config = QAConfig(
+            provider="custom",
+            model_id="custom-model",
+            base_url="http://custom-llm:8080/v1",
+        )
+        config_dict = config.model_dump()
+
+        _init_qa_worker("custom", "custom-model", config_dict)
+
+        assert qa_batch_module._worker_qa_generator is not None
+        mock_openai.assert_called_once()
+        call_kwargs = mock_openai.call_args.kwargs
+        assert call_kwargs["base_url"] == "http://custom-llm:8080/v1"
+
+    def test_init_qa_worker_openai_provider(self, mocker: MockerFixture) -> None:
+        """Test worker initialization with OpenAI provider."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_qa_generator = None
+
+        config = QAConfig(
+            provider="openai",
+            model_id="gpt-4",
+        )
+        config_dict = config.model_dump()
+
+        _init_qa_worker("openai", "gpt-4", config_dict)
+
+        assert qa_batch_module._worker_qa_generator is not None
+
+
+class TestWorkerCountLogging:
+    """Tests for worker count > CPU count logging paths."""
+
+    def test_workers_greater_than_cpu_count_logs_info(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that using more workers than CPUs logs info message."""
+        caplog.set_level("INFO")
+
+        # Mock cpu_count to return small number
+        mocker.patch("gtranscriber.core.qa_batch.mp.cpu_count", return_value=2)
+
+        # Mock generate to succeed
+        mock_gen = mocker.patch("gtranscriber.core.qa_batch.generate_qa_for_transcription")
+        mock_gen.return_value = ("id1", True, "Success")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Create 5 test files (more than mocked cpu_count)
+        for i in range(5):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        gdrive_id=f"id{i}",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+
+        # Use 4 workers (more than mocked cpu_count of 2)
+        run_batch_qa_generation(input_dir, output_dir, config, num_workers=4)
+
+        # Check that the info log about workers > CPU count was emitted
+        assert "more than" in caplog.text.lower() and "cpu" in caplog.text.lower()
+
+
+class TestFinalSummaryPaths:
+    """Tests for final summary edge cases."""
+
+    def test_final_summary_zero_total_files(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test final summary when total is zero (N/A case)."""
+        caplog.set_level("INFO")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Create empty checkpoint to simulate no files to process
+        output_dir.mkdir()
+        checkpoint_file = output_dir / "qa_checkpoint.json"
+        checkpoint_file.write_text(
+            json.dumps(
+                {
+                    "total_files": 0,
+                    "completed_files": [],
+                    "failed_files": {},
+                }
+            )
+        )
+
+        config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+
+        run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
+
+        # Should exit early with "No tasks to process"
+        assert "no tasks" in caplog.text.lower()
+
+
+class TestParallelProcessingEdgeCases:
+    """Tests for parallel processing edge cases and exception handling."""
+
+    def test_parallel_processing_with_future_exception(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test parallel processing handles future.result() exceptions."""
+        caplog.set_level("INFO")
+
+        # We need to simulate the parallel execution path
+        # Since multiprocessing doesn't work well with mocks, we mock the ProcessPoolExecutor
+
+        mock_executor_class = mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor")
+        mock_executor = Mock()
+        mock_executor.__enter__ = Mock(return_value=mock_executor)
+        mock_executor.__exit__ = Mock(return_value=False)
+
+        # Create futures that raise exceptions when getting result
+        mock_future1 = Mock()
+        mock_future1.result.side_effect = RuntimeError("Worker crashed")
+
+        mock_executor.submit.return_value = mock_future1
+
+        # Mock as_completed to return our futures
+        mocker.patch(
+            "gtranscriber.core.qa_batch.as_completed",
+            return_value=iter([mock_future1]),
+        )
+
+        mock_executor_class.return_value = mock_executor
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(3):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        gdrive_id=f"id{i}",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+
+        # Use 2+ workers to trigger parallel path
+        run_batch_qa_generation(input_dir, output_dir, config, num_workers=2)
+
+        # Check that exception was logged
+        assert "exception" in caplog.text.lower() or "failed" in caplog.text.lower()
+
+
+class TestInitCEPWorker:
+    """Tests for _init_cep_worker initialization function."""
+
+    def test_init_cep_worker_without_validation(self, mocker: MockerFixture) -> None:
+        """Test CEP worker initialization without validation enabled."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+
+        # Mock CEPQAGenerator
+        mock_cep_generator_class = mocker.patch("gtranscriber.core.cep.CEPQAGenerator")
+        mock_cep_generator = Mock()
+        mock_cep_generator_class.return_value = mock_cep_generator
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+        cep_config = CEPConfig(
+            enable_validation=False,
+        )
+
+        _init_cep_worker(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            qa_config_dict=qa_config.model_dump(),
+            cep_config_dict=cep_config.model_dump(),
+            validator_provider=None,
+            validator_model_id=None,
+        )
+
+        assert qa_batch_module._worker_cep_generator is not None
+        # Should be called with validator_client=None
+        call_kwargs = mock_cep_generator_class.call_args.kwargs
+        assert call_kwargs["validator_client"] is None
+
+    def test_init_cep_worker_with_validation(self, mocker: MockerFixture) -> None:
+        """Test CEP worker initialization with validation enabled."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+
+        # Mock CEPQAGenerator
+        mock_cep_generator_class = mocker.patch("gtranscriber.core.cep.CEPQAGenerator")
+        mock_cep_generator = Mock()
+        mock_cep_generator_class.return_value = mock_cep_generator
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+        cep_config = CEPConfig(
+            enable_validation=True,
+            validator_provider="ollama",
+            validator_model_id="llama3.1:8b",
+        )
+
+        _init_cep_worker(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            qa_config_dict=qa_config.model_dump(),
+            cep_config_dict=cep_config.model_dump(),
+            validator_provider="ollama",
+            validator_model_id="llama3.1:8b",
+        )
+
+        assert qa_batch_module._worker_cep_generator is not None
+        # Should be called with a validator_client
+        call_kwargs = mock_cep_generator_class.call_args.kwargs
+        assert call_kwargs["validator_client"] is not None
+
+
+class TestGenerateCEPQAForTranscription:
+    """Tests for generate_cep_qa_for_transcription function."""
+
+    def test_generate_cep_qa_success(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test successful CEP QA generation."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test transcription", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        input_file = tmp_path / "test_transcription.json"
+        input_file.write_text(
+            json.dumps(
+                {
+                    "gdrive_id": "cep_test123",
+                    "name": "test.mp3",
+                    "mimeType": "audio/mpeg",
+                    "parents": ["folder_id"],
+                    "webContentLink": "https://drive.google.com/test",
+                    "transcription_text": "This is a test transcription about climate. " * 20,
+                    "detected_language": "pt",
+                    "language_probability": 0.95,
+                    "model_id": "openai/whisper-large-v3",
+                    "compute_device": "cpu",
+                    "processing_duration_sec": 30.0,
+                    "transcription_status": "completed",
+                }
+            )
+        )
+
+        output_file = tmp_path / "cep_test_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            gdrive_id="cep_test123",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            questions_per_document=1,
+        ).model_dump()
+
+        cep_config_dict = CEPConfig(
+            enable_validation=False,
+        ).model_dump()
+
+        gdrive_id, success, message = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict
+        )
+
+        assert gdrive_id == "cep_test123"
+        assert success is True
+        assert message == "Success"
+        assert output_file.exists()
+
+    def test_generate_cep_qa_validation_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test CEP QA generation with validation error (too short transcription)."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        input_file = tmp_path / "short_transcription.json"
+        input_file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    gdrive_id="short_cep",
+                    name="short.mp3",
+                    transcription_text="Short",
+                )
+            )
+        )
+
+        output_file = tmp_path / "short_cep_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            gdrive_id="short_cep",
+            filename="short.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
+        cep_config_dict = CEPConfig(enable_validation=False).model_dump()
+
+        gdrive_id, success, message = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict
+        )
+
+        assert gdrive_id == "short_cep"
+        assert success is False
+        assert "short" in message.lower() or len(message) > 0
+
+    def test_generate_cep_qa_generic_exception(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test CEP QA generation with generic exception (file not found)."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        # Non-existent file
+        input_file = tmp_path / "nonexistent.json"
+        output_file = tmp_path / "output_cep_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            gdrive_id="test_cep",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
+        cep_config_dict = CEPConfig(enable_validation=False).model_dump()
+
+        gdrive_id, success, message = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict
+        )
+
+        assert gdrive_id == "test_cep"
+        assert success is False
+        assert len(message) > 0
+
+    def test_generate_cep_qa_with_validation_enabled(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test CEP QA generation with validation enabled."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What is this about?", "answer": "test transcription",
+             "confidence": 0.9, "bloom_level": "understand",
+             "reasoning_trace": "Direct recall from text"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import gtranscriber.core.qa_batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        input_file = tmp_path / "test_transcription.json"
+        input_file.write_text(
+            json.dumps(
+                {
+                    "gdrive_id": "cep_validated",
+                    "name": "test.mp3",
+                    "mimeType": "audio/mpeg",
+                    "parents": ["folder_id"],
+                    "webContentLink": "https://drive.google.com/test",
+                    "transcription_text": (
+                        "This is a long transcription about climate events. " * 30
+                    ),
+                    "detected_language": "pt",
+                    "language_probability": 0.95,
+                    "model_id": "openai/whisper-large-v3",
+                    "compute_device": "cpu",
+                    "processing_duration_sec": 30.0,
+                    "transcription_status": "completed",
+                }
+            )
+        )
+
+        output_file = tmp_path / "cep_validated_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            gdrive_id="cep_validated",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            questions_per_document=1,
+        ).model_dump()
+
+        cep_config_dict = CEPConfig(
+            enable_validation=True,
+            validator_provider="ollama",
+            validator_model_id="llama3.1:8b",
+        ).model_dump()
+
+        gdrive_id, success, _ = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict
+        )
+
+        assert gdrive_id == "cep_validated"
+        assert success is True
+        assert output_file.exists()
+
+
+class TestRunBatchCEPGeneration:
+    """Tests for run_batch_cep_generation function."""
+
+    def test_run_batch_cep_creates_output_dir(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test that output directory is created for CEP batch."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert output_dir.exists()
+
+    def test_run_batch_cep_no_tasks_early_exit(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test early exit when no transcription files found for CEP."""
+        caplog.set_level("INFO")
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert "no tasks" in caplog.text.lower()
+
+    def test_run_batch_cep_all_completed_early_exit(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test early exit when all CEP files already completed."""
+        caplog.set_level("INFO")
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+        output_dir.mkdir()
+
+        # Create transcription file
+        file = input_dir / "test_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    gdrive_id="cep_id1",
+                    name="test.mp3",
+                )
+            )
+        )
+
+        # Create checkpoint with file already completed
+        checkpoint_file = output_dir / "cep_checkpoint.json"
+        checkpoint_file.write_text(
+            json.dumps(
+                {
+                    "total_files": 1,
+                    "completed_files": ["cep_id1"],
+                    "failed_files": {},
+                }
+            )
+        )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert "already processed" in caplog.text.lower() or "all files" in caplog.text.lower()
+
+    def test_run_batch_cep_sequential_processing(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test CEP sequential processing with single worker."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(2):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        gdrive_id=f"cep_id{i}",
+                        name=f"test{i}.mp3",
+                        transcription_text="Test transcription text. " * 20,
+                    )
+                )
+            )
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            questions_per_document=1,
+        )
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check outputs were created
+        assert (output_dir / "cep_id0_cep_qa.json").exists()
+        assert (output_dir / "cep_id1_cep_qa.json").exists()
+
+    def test_run_batch_cep_sequential_with_failures(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test CEP sequential processing with failures."""
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        # Mock generate to succeed for one, fail for another
+        mock_gen = mocker.patch("gtranscriber.core.qa_batch.generate_cep_qa_for_transcription")
+        mock_gen.side_effect = [
+            ("valid_cep", True, "Success"),
+            ("invalid_cep", False, "Too short"),
+        ]
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(2):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        gdrive_id=f"{'valid' if i == 0 else 'invalid'}_cep",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check checkpoint records failure
+        checkpoint_file = output_dir / "cep_checkpoint.json"
+        checkpoint_data = json.loads(checkpoint_file.read_text())
+        assert "invalid_cep" in checkpoint_data["failed_files"]
+
+    def test_run_batch_cep_final_summary_logged(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that CEP final summary is logged."""
+        caplog.set_level("INFO")
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        file = input_dir / "test_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    gdrive_id="cep_test",
+                    name="test.mp3",
+                    transcription_text="Test transcription text. " * 20,
+                )
+            )
+        )
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            questions_per_document=1,
+        )
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check summary was logged
+        assert "Batch CEP QA generation completed" in caplog.text
+
+    def test_run_batch_cep_workers_greater_than_cpu_count(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP batch logs when workers > CPU count."""
+        caplog.set_level("INFO")
+
+        # Mock cpu_count to return small number
+        mocker.patch("gtranscriber.core.qa_batch.mp.cpu_count", return_value=2)
+
+        # Mock generate to succeed
+        mock_gen = mocker.patch("gtranscriber.core.qa_batch.generate_cep_qa_for_transcription")
+        mock_gen.return_value = ("id1", True, "Success")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create 5 test files
+        for i in range(5):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        gdrive_id=f"cep_id{i}",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        # Use 4 workers (more than mocked cpu_count of 2)
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=4)
+
+        # Check that info about workers > CPU count was logged
+        assert "more than" in caplog.text.lower() and "cpu" in caplog.text.lower()
+
+    def test_run_batch_cep_invalid_file_skipped(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that invalid transcription files are skipped during CEP task loading."""
+        caplog.set_level("WARNING")
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create invalid JSON file
+        invalid_file = input_dir / "invalid_transcription.json"
+        invalid_file.write_text("{ not valid json")
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check that warning was logged
+        assert "skipping invalid file" in caplog.text.lower()
+
+    def test_run_batch_cep_parallel_with_exception(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP parallel processing handles future.result() exceptions."""
+        caplog.set_level("INFO")
+
+        mock_executor_class = mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor")
+        mock_executor = Mock()
+        mock_executor.__enter__ = Mock(return_value=mock_executor)
+        mock_executor.__exit__ = Mock(return_value=False)
+
+        mock_future1 = Mock()
+        mock_future1.result.side_effect = RuntimeError("CEP Worker crashed")
+
+        mock_executor.submit.return_value = mock_future1
+
+        mocker.patch(
+            "gtranscriber.core.qa_batch.as_completed",
+            return_value=iter([mock_future1]),
+        )
+
+        mock_executor_class.return_value = mock_executor
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(3):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        gdrive_id=f"cep_id{i}",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        # Use 2+ workers to trigger parallel path
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=2)
+
+        # Check that exception was logged
+        assert "exception" in caplog.text.lower() or "failed" in caplog.text.lower()
+
+    def test_run_batch_cep_final_summary_with_failures(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP final summary includes failure information."""
+        caplog.set_level("INFO")
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create file that will fail (too short)
+        file = input_dir / "fail_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    gdrive_id="fail_cep",
+                    name="fail.mp3",
+                    transcription_text="Short",
+                )
+            )
+        )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check summary mentions failures
+        assert "Failed:" in caplog.text or "failed" in caplog.text.lower()
+
+    def test_run_batch_cep_zero_total_files(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP final summary when total is zero."""
+        caplog.set_level("INFO")
+        mocker.patch("gtranscriber.core.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create empty checkpoint
+        output_dir.mkdir()
+        checkpoint_file = output_dir / "cep_checkpoint.json"
+        checkpoint_file.write_text(
+            json.dumps(
+                {
+                    "total_files": 0,
+                    "completed_files": [],
+                    "failed_files": {},
+                }
+            )
+        )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Should exit early
+        assert "no tasks" in caplog.text.lower()

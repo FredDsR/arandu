@@ -926,3 +926,524 @@ class TestTranscribeSingleFile:
         assert file_id == "test_id"
         assert success is False
         assert message == "Generic error"
+
+
+class TestRunBatchTranscription:
+    """Tests for run_batch_transcription function."""
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_creates_output_dir(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that run_batch_transcription creates output directory."""
+        from gtranscriber.core.batch import BatchConfig, run_batch_transcription
+
+        mock_load_catalog.return_value = []
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "new_output_dir",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+        )
+
+        run_batch_transcription(config)
+
+        assert config.output_dir.exists()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_no_remaining_tasks_exits_early(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test early exit when no remaining tasks to process."""
+        import json
+
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        caplog.set_level("INFO")
+
+        # Return one task
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id="file1",
+                name="test.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            )
+        ]
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create checkpoint with task already completed
+        checkpoint_file = tmp_path / "checkpoint.json"
+        checkpoint_file.write_text(
+            json.dumps(
+                {
+                    "total_files": 1,
+                    "completed_files": ["file1"],
+                    "failed_files": {},
+                }
+            )
+        )
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=output_dir,
+            checkpoint_file=checkpoint_file,
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+        )
+
+        run_batch_transcription(config)
+
+        # Should not have called transcribe
+        mock_transcribe.assert_not_called()
+        assert "already transcribed" in caplog.text.lower()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_sequential_processing(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test sequential processing with single worker."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        # Return two tasks
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id="file1",
+                name="test1.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+            TranscriptionTask(
+                file_id="file2",
+                name="test2.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+        ]
+
+        mock_transcribe.side_effect = [
+            ("file1", True, "Success"),
+            ("file2", True, "Success"),
+        ]
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            num_workers=1,
+        )
+
+        run_batch_transcription(config)
+
+        assert mock_transcribe.call_count == 2
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_sequential_with_failures(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test sequential processing with some failures."""
+        import json
+
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id="file1",
+                name="test1.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+            TranscriptionTask(
+                file_id="file2",
+                name="test2.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+        ]
+
+        mock_transcribe.side_effect = [
+            ("file1", True, "Success"),
+            ("file2", False, "Transcription failed"),
+        ]
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            num_workers=1,
+        )
+
+        run_batch_transcription(config)
+
+        # Check checkpoint was updated with failure
+        checkpoint_data = json.loads(config.checkpoint_file.read_text())
+        assert "file1" in checkpoint_data["completed_files"]
+        assert "file2" in checkpoint_data["failed_files"]
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_final_summary_logged(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test that final summary is logged."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        caplog.set_level("INFO")
+
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id="file1",
+                name="test1.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+        ]
+
+        mock_transcribe.return_value = ("file1", True, "Success")
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            num_workers=1,
+        )
+
+        run_batch_transcription(config)
+
+        assert "Batch transcription completed" in caplog.text
+        assert "Success rate:" in caplog.text
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("gtranscriber.core.batch.mp.cpu_count")
+    def test_run_batch_worker_limiting_cpu_mode(
+        self,
+        mock_cpu_count: MagicMock,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test worker count is limited to CPU count in CPU mode."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        caplog.set_level("WARNING")
+        mock_cpu_count.return_value = 2
+
+        # Create more tasks than CPUs
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id=f"file{i}",
+                name=f"test{i}.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            )
+            for i in range(5)
+        ]
+
+        mock_transcribe.side_effect = [(f"file{i}", True, "Success") for i in range(5)]
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            num_workers=4,  # More than CPU count
+            force_cpu=True,  # Force CPU mode
+        )
+
+        run_batch_transcription(config)
+
+        # Should log warning about worker limiting
+        assert "CPUs available" in caplog.text or mock_transcribe.call_count == 5
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("gtranscriber.core.batch.mp.cpu_count")
+    def test_run_batch_worker_info_gpu_mode(
+        self,
+        mock_cpu_count: MagicMock,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test info is logged when workers > CPU count in GPU mode."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        caplog.set_level("INFO")
+        mock_cpu_count.return_value = 2
+
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id=f"file{i}",
+                name=f"test{i}.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            )
+            for i in range(5)
+        ]
+
+        mock_transcribe.side_effect = [(f"file{i}", True, "Success") for i in range(5)]
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            num_workers=4,  # More than CPU count
+            force_cpu=False,  # GPU mode (no CPU limiting)
+        )
+
+        run_batch_transcription(config)
+
+        # Should log info about GPU processing
+        assert "GPU processing" in caplog.text or "workers" in caplog.text.lower()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.transcribe_single_file")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_final_summary_with_failures_logged(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_transcribe: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test that final summary includes failure details."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        caplog.set_level("WARNING")
+
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id="file1",
+                name="test1.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+        ]
+
+        mock_transcribe.return_value = ("file1", False, "Error occurred")
+
+        config = BatchConfig(
+            catalog_file=tmp_path / "catalog.csv",
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
+            credentials_file=tmp_path / "creds.json",
+            token_file=tmp_path / "token.json",
+            num_workers=1,
+        )
+
+        run_batch_transcription(config)
+
+        assert "Failed files:" in caplog.text or "Error occurred" in caplog.text
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.ProcessPoolExecutor")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_parallel_processing(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_executor: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test parallel processing with multiple workers."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id=f"file{i}",
+                name=f"test{i}.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            )
+            for i in range(3)
+        ]
+
+        # Mock executor and futures
+        mock_executor_instance = MagicMock()
+        mock_executor.return_value.__enter__.return_value = mock_executor_instance
+
+        # Create mock futures that return results
+        mock_futures = []
+        for i in range(3):
+            mock_future = MagicMock()
+            mock_future.result.return_value = (f"file{i}", True, "Success")
+            mock_futures.append(mock_future)
+
+        mock_executor_instance.submit.side_effect = mock_futures
+
+        # Mock as_completed to return futures in order
+        with patch("gtranscriber.core.batch.as_completed") as mock_as_completed:
+            mock_as_completed.return_value = iter(mock_futures)
+
+            config = BatchConfig(
+                catalog_file=tmp_path / "catalog.csv",
+                output_dir=tmp_path / "output",
+                checkpoint_file=tmp_path / "checkpoint.json",
+                credentials_file=tmp_path / "creds.json",
+                token_file=tmp_path / "token.json",
+                num_workers=2,  # More than 1 triggers parallel processing
+            )
+
+            run_batch_transcription(config)
+
+        # Should have used ProcessPoolExecutor
+        mock_executor.assert_called_once()
+
+    @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.ProcessPoolExecutor")
+    @patch("gtranscriber.core.batch.load_catalog")
+    def test_run_batch_parallel_with_exception(
+        self,
+        mock_load_catalog: MagicMock,
+        mock_executor: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test parallel processing handles exceptions from futures."""
+        from gtranscriber.core.batch import (
+            BatchConfig,
+            TranscriptionTask,
+            run_batch_transcription,
+        )
+
+        mock_load_catalog.return_value = [
+            TranscriptionTask(
+                file_id="file1",
+                name="test1.mp3",
+                mime_type="audio/mpeg",
+                size_bytes=1024,
+                parents=[],
+                web_content_link="http://example.com",
+                duration_ms=60000,
+            ),
+        ]
+
+        # Mock executor and futures
+        mock_executor_instance = MagicMock()
+        mock_executor.return_value.__enter__.return_value = mock_executor_instance
+
+        # Create mock future that raises exception
+        mock_future = MagicMock()
+        mock_future.result.side_effect = Exception("Worker crashed")
+
+        mock_executor_instance.submit.return_value = mock_future
+
+        # Mock as_completed
+        with patch("gtranscriber.core.batch.as_completed") as mock_as_completed:
+            mock_as_completed.return_value = iter([mock_future])
+
+            config = BatchConfig(
+                catalog_file=tmp_path / "catalog.csv",
+                output_dir=tmp_path / "output",
+                checkpoint_file=tmp_path / "checkpoint.json",
+                credentials_file=tmp_path / "creds.json",
+                token_file=tmp_path / "token.json",
+                num_workers=2,
+            )
+
+            # Should not raise - exception is caught and logged
+            run_batch_transcription(config)

@@ -196,6 +196,7 @@ services:
     profiles:
       - qa
       - kg
+      - cep
       - ollama
 
   # Ollama with GPU support (use --profile ollama-gpu)
@@ -236,6 +237,7 @@ services:
     profiles:
       - qa-gpu
       - kg-gpu
+      - cep-gpu
       - ollama-gpu
 
   # QA Generation Service
@@ -292,6 +294,66 @@ services:
     profiles:
       - qa
       - qa-gpu
+
+  # CEP QA Generation Service (Cognitive Elicitation Pipeline)
+  gtranscriber-cep:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gtranscriber:latest
+    container_name: gtranscriber-cep-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed (CEP generation is CPU/API-based)
+    deploy: {}
+
+    # Wait for Ollama to be ready when using Ollama provider
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false  # Allow running without Ollama (e.g., with OpenAI)
+
+    environment:
+      - GTRANSCRIBER_QA_PROVIDER=${GTRANSCRIBER_QA_PROVIDER:-ollama}
+      - GTRANSCRIBER_QA_MODEL_ID=${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}
+      # Use Ollama sidecar service by default
+      - GTRANSCRIBER_QA_OLLAMA_URL=${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
+      - GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}
+      - GTRANSCRIBER_QA_TEMPERATURE=${GTRANSCRIBER_QA_TEMPERATURE:-0.7}
+      - GTRANSCRIBER_QA_WORKERS=${GTRANSCRIBER_QA_WORKERS:-2}
+      # CEP-specific configuration
+      - GTRANSCRIBER_CEP_ENABLE_VALIDATION=${GTRANSCRIBER_CEP_ENABLE_VALIDATION:-true}
+      - GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=${GTRANSCRIBER_CEP_VALIDATOR_PROVIDER:-ollama}
+      - GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=${GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID:-llama3.1:8b}
+      - GTRANSCRIBER_CEP_LANGUAGE=${GTRANSCRIBER_CEP_LANGUAGE:-pt}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      generate-cep-qa
+      /app/results
+      --output-dir /app/cep_dataset
+      --workers ${GTRANSCRIBER_QA_WORKERS:-2}
+
+    volumes:
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
+      - ${GTRANSCRIBER_CEP_DIR:-./cep_dataset}:/app/cep_dataset:rw
+      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - cep
+      - cep-gpu
 
   # KG Construction Service
   gtranscriber-kg:
