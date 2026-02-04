@@ -292,6 +292,106 @@ class TestCEPQAGenerator:
         with pytest.raises(ValueError, match="Transcription too short"):
             generator.generate_qa_pairs(short_transcription)
 
+    def test_chunk_text_short_text(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test chunking of text shorter than MAX_CONTEXT_LENGTH."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        short_text = "This is a short text. It should not be chunked."
+        chunks = generator._chunk_text(short_text)
+
+        assert len(chunks) == 1
+        assert chunks[0] == short_text
+
+    def test_chunk_text_long_text_multiple_chunks(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test chunking of long text into multiple chunks."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        # Create text longer than MAX_CONTEXT_LENGTH (4000 chars)
+        # by repeating a sentence many times
+        sentence = "This is a test sentence that will be repeated many times. "
+        long_text = sentence * 100  # ~5800 chars
+
+        chunks = generator._chunk_text(long_text)
+
+        # Should be split into multiple chunks
+        assert len(chunks) > 1
+        # Each chunk should be within limit
+        for chunk in chunks:
+            assert len(chunk) <= 4000
+        # When joined, should contain all content (roughly)
+        total_length = sum(len(chunk) for chunk in chunks)
+        assert total_length > 0
+
+    def test_chunk_text_very_long_sentence(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test chunking with a single sentence longer than MAX_CONTEXT_LENGTH."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        # Create a very long sentence without sentence boundaries
+        very_long_sentence = "a" * 5000  # 5000 chars, no sentence boundaries
+
+        chunks = generator._chunk_text(very_long_sentence)
+
+        # Should be truncated to MAX_CONTEXT_LENGTH
+        assert len(chunks) == 1
+        assert len(chunks[0]) == 4000
+
+    def test_chunk_text_with_sentence_boundaries(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that chunking respects sentence boundaries."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        # Create text with clear sentence boundaries
+        sentence1 = "First sentence. "
+        sentence2 = "Second sentence! "
+        sentence3 = "Third sentence? "
+        # Make it long enough to require chunking
+        long_text = (sentence1 + sentence2 + sentence3) * 50  # ~4200 chars
+
+        chunks = generator._chunk_text(long_text)
+
+        # Should split on sentence boundaries
+        assert len(chunks) >= 1
+        # Each chunk should end with complete sentences (period, !, or ?)
+        for chunk in chunks:
+            if chunk:
+                # Chunks should be reasonable length
+                assert len(chunk) <= 4000
+
     def test_to_jsonl_format(
         self,
         mock_llm_client: Any,

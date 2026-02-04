@@ -378,3 +378,75 @@ class TestReasoningEnricher:
 
         # Should return original pair on error
         assert result == sample_qa_pair_analyze
+
+    def test_load_prompts_file_not_found(
+        self,
+        mock_llm_client: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that FileNotFoundError is raised when prompt file doesn't exist."""
+        cep_config = CEPConfig(
+            enable_reasoning_traces=True,
+            language="pt",
+        )
+
+        # Mock the file existence check to return False
+        mocker.patch("pathlib.Path.exists", return_value=False)
+
+        with pytest.raises(FileNotFoundError, match="CEP prompt file not found"):
+            ReasoningEnricher(
+                llm_client=mock_llm_client,
+                cep_config=cep_config,
+            )
+
+    def test_parse_reasoning_validates_hop_count_when_not_multi_hop(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that hop_count is set to None when is_multi_hop is False."""
+        enricher = ReasoningEnricher(
+            llm_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        # is_multi_hop is False, so hop_count should be ignored
+        response = json.dumps(
+            {
+                "reasoning_trace": "Trace",
+                "is_multi_hop": False,
+                "hop_count": 3,  # This should be ignored
+            }
+        )
+
+        result = enricher._parse_reasoning_response(response)
+
+        assert result["is_multi_hop"] is False
+        # hop_count should be None when is_multi_hop is False
+        assert result["hop_count"] is None
+
+    def test_parse_reasoning_response_invalid_hop_count_type(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that invalid hop_count type (e.g., string) is handled."""
+        enricher = ReasoningEnricher(
+            llm_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        # hop_count is a string instead of int
+        response = json.dumps(
+            {
+                "reasoning_trace": "Trace",
+                "is_multi_hop": True,
+                "hop_count": "not_a_number",
+            }
+        )
+
+        result = enricher._parse_reasoning_response(response)
+
+        assert result["is_multi_hop"] is True
+        # hop_count should be None due to invalid type
+        assert result["hop_count"] is None

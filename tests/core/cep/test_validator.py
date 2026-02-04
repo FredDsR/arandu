@@ -368,3 +368,49 @@ class TestQAPairValidated:
 
         assert pair.validation is None
         assert pair.is_valid is False
+
+
+class TestQAValidatorEdgeCases:
+    """Additional edge case tests for QAValidator."""
+
+    def test_load_prompts_file_not_found(
+        self,
+        mock_llm_client: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that FileNotFoundError is raised when prompt file doesn't exist."""
+        cep_config = CEPConfig(
+            enable_validation=True,
+            language="pt",
+        )
+
+        # Mock the file existence check to return False
+        mocker.patch("pathlib.Path.exists", return_value=False)
+
+        with pytest.raises(FileNotFoundError, match="Validation prompt file not found"):
+            QAValidator(
+                validator_client=mock_llm_client,
+                cep_config=cep_config,
+            )
+
+    def test_validate_score_with_invalid_types(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test _validate_score handles various invalid input types."""
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        # Test various invalid types
+        assert validator._validate_score(None) == 0.5
+        assert validator._validate_score("not_a_number") == 0.5
+        assert validator._validate_score([1, 2, 3]) == 0.5
+        assert validator._validate_score({"key": "value"}) == 0.5
+
+        # Test valid types
+        assert validator._validate_score(0.7) == 0.7
+        assert validator._validate_score(1) == 1.0
+        assert validator._validate_score(0) == 0.0
