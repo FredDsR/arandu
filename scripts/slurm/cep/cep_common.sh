@@ -132,14 +132,21 @@ docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SER
 
 # Wait for Ollama to be ready
 echo "Waiting for Ollama to be ready..."
+OLLAMA_READY=false
 for i in {1..30}; do
     if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
         echo "Ollama is ready!"
+        OLLAMA_READY=true
         break
     fi
     echo "  Waiting... ($i/30)"
     sleep 5
 done
+
+if [ "$OLLAMA_READY" = false ]; then
+    echo "ERROR: Ollama failed to start after 30 attempts"
+    exit 1
+fi
 
 # Pull the model if using Ollama provider
 if [ "$GTRANSCRIBER_QA_PROVIDER" = "ollama" ]; then

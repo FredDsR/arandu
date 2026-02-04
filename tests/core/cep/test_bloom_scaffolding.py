@@ -306,7 +306,7 @@ class TestBloomScaffoldingGenerator:
         assert generator._bloom_to_question_type("create") == "conceptual"
         assert generator._bloom_to_question_type("unknown") == "factual"
 
-    def test_parse_response_with_pec_fields(
+    def test_parse_response_with_cep_fields(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,

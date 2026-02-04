@@ -198,8 +198,8 @@ Each partition script sources `cep_common.sh` which handles:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CEP_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
-| `CEP_GPU_MODE` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
+| `GTRANSCRIBER_QA_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
+| `USE_GPU_OLLAMA` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
 | `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `false` |
 | `GTRANSCRIBER_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
 

@@ -239,8 +239,12 @@ Retorne APENAS um objeto JSON no seguinte formato:
                     hop_count = int(hop_count)
                     if 1 <= hop_count <= self.cep_config.max_hop_count:
                         result["hop_count"] = hop_count
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.debug(
+                        "Ignoring non-integer hop_count in reasoning response: %r (error: %s)",
+                        hop_count,
+                        exc,
+                    )
 
             return result
 

@@ -68,7 +68,7 @@ gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 |----------|---------|-------------|
 | `GTRANSCRIBER_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
 | `GTRANSCRIBER_QA_MODEL_ID` | `llama3.1:8b` | Model for QA generation |
-| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://ollama:11434` | Ollama API URL |
+| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://ollama:11434/v1` | Ollama API URL |
 | `GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
 | `GTRANSCRIBER_QA_WORKERS` | `2` | Parallel workers |
@@ -96,7 +96,7 @@ Default distribution allocates questions across cognitive levels:
 Customize via CLI:
 ```bash
 gtranscriber generate-cep-qa results/ \
-  --bloom-dist "remember=0.1,understand=0.2,analyze=0.4,evaluate=0.3"
+  --bloom-dist "remember:0.1,understand:0.2,analyze:0.4,evaluate:0.3"
 ```
 
 ### Example .env Configuration
@@ -163,9 +163,10 @@ CEP records are saved as JSON files in `cep_dataset/`:
 ```
 cep_dataset/
 ├── <gdrive_id_1>_cep_qa.json
+├── <gdrive_id_1>_cep_qa.jsonl   # JSONL export for this record
 ├── <gdrive_id_2>_cep_qa.json
-├── cep_checkpoint.json          # For resumption
-└── pec_qa_export.jsonl          # Optional JSONL export
+├── <gdrive_id_2>_cep_qa.jsonl   # JSONL export for this record
+└── cep_checkpoint.json          # For resumption
 ```
 
 ### QARecordCEP Schema
@@ -354,8 +355,8 @@ docker compose --profile cep logs ollama
 ### SLURM Logs
 
 ```bash
-# Monitor job output
-tail -f logs/pec_<partition>_<jobid>.out
+# Monitor CEP job output
+tail -f logs/cep_<partition>_<jobid>.out
 
 # Check job status
 squeue -u $USER

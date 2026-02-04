@@ -1030,7 +1030,7 @@ def generate_cep_qa(
         gtranscriber generate-cep-qa results/ --jsonl
     """
     from gtranscriber.config import CEPConfig, QAConfig
-    from gtranscriber.core.qa_batch import run_batch_pec_generation
+    from gtranscriber.core.qa_batch import run_batch_cep_generation
 
     # Load configs with defaults from environment variables
     qa_config = QAConfig()
@@ -1069,6 +1069,10 @@ def generate_cep_qa(
             for item in bloom_dist.split(","):
                 level, weight = item.strip().split(":")
                 dist_dict[level.strip()] = float(weight.strip())
+            # Validate distribution sums to 1.0 before applying
+            if abs(sum(dist_dict.values()) - 1.0) > 0.001:
+                print_error("bloom_dist values must sum to 1.0")
+                raise typer.Exit(code=1)
             cep_config.bloom_distribution = dist_dict
             cep_config.bloom_levels = list(dist_dict.keys())
         except ValueError as e:
@@ -1113,7 +1117,7 @@ def generate_cep_qa(
     console.print()
 
     try:
-        run_batch_pec_generation(
+        run_batch_cep_generation(
             input_dir,
             qa_config.output_dir,
             qa_config,

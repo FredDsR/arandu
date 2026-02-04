@@ -265,7 +265,7 @@ class QARecordCEP(BaseModel):
     source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
     source_filename: str = Field(..., description="Original filename")
     transcription_text: str = Field(..., description="Full transcription text")
-    qa_pairs: list[QAPairCEP | QAPairValidated] = Field(
+    qa_pairs: list[QAPairValidated | QAPairCEP] = Field(
         ..., description="List of CEP-enhanced QA pairs"
     )
     model_id: str = Field(..., description="LLM model used for generation")

@@ -4,8 +4,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
 #SBATCH --time=24:00:00
+# Note: GPU not requested - Ollama runs in CPU mode on this partition (ROCm not well supported)
 #SBATCH --output=logs/cep_sirius_%x_%j.out
 #SBATCH --error=logs/cep_sirius_%x_%j.err
 

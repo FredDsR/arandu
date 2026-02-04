@@ -432,7 +432,10 @@ def generate_cep_qa_for_transcription(
             cep_config = CEPConfig(**cep_config_dict)
             provider = qa_config.provider
             model_id = qa_config.model_id
-            base_url = qa_config.base_url or qa_config.ollama_url
+            # Only fall back to ollama_url when provider is ollama
+            base_url = qa_config.base_url
+            if not base_url and provider == "ollama":
+                base_url = qa_config.ollama_url
 
             llm_client = LLMClient(
                 provider=LLMProvider(provider),
@@ -443,10 +446,16 @@ def generate_cep_qa_for_transcription(
             # Create validator client if enabled
             validator_client = None
             if cep_config.enable_validation:
+                # Choose validator base URL based on validator provider
+                if cep_config.validator_provider == LLMProvider.OLLAMA.value:
+                    validator_base_url = qa_config.ollama_url
+                else:
+                    validator_base_url = qa_config.base_url
+
                 validator_client = LLMClient(
                     provider=LLMProvider(cep_config.validator_provider),
                     model_id=cep_config.validator_model_id,
-                    base_url=base_url,
+                    base_url=validator_base_url,
                 )
 
             _worker_cep_generator = CEPQAGenerator(
@@ -483,7 +492,7 @@ def generate_cep_qa_for_transcription(
         return task.gdrive_id, False, str(e)
 
 
-def run_batch_pec_generation(
+def run_batch_cep_generation(
     input_dir: Path,
     output_dir: Path,
     qa_config: QAConfig,

@@ -20,10 +20,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Default prompts directory (repo_root/prompts/qa/cep)
-DEFAULT_CEP_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "cep"
-)
+DEFAULT_CEP_PROMPTS_DIR = Path(__file__).parents[4] / "prompts" / "qa" / "cep"
 
 
 class BloomScaffoldingGenerator:
