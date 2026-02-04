@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -456,7 +456,7 @@ class TestResultsManager:
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
     ) -> None:
         """Test that updating symlink replaces existing one."""
-        import time
+        from datetime import datetime as dt
 
         from pydantic import BaseModel
 
@@ -465,7 +465,13 @@ class TestResultsManager:
 
         mocker.patch.dict(os.environ, {}, clear=True)
 
-        # Create first run
+        # Mock datetime.now to return different timestamps
+        mock_datetime = mocker.patch("gtranscriber.core.results_manager.datetime", wraps=dt)
+        first_time = dt(2026, 2, 4, 14, 30, 0, tzinfo=UTC)
+        second_time = dt(2026, 2, 4, 14, 30, 5, tzinfo=UTC)
+
+        # Create first run with mocked time
+        mock_datetime.now.return_value = first_time
         manager1 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
         manager1.create_run(TestConfig())
         manager1.complete_run(success=True)
@@ -473,10 +479,8 @@ class TestResultsManager:
         latest_symlink = tmp_path / "latest" / "transcription"
         first_target = latest_symlink.resolve()
 
-        # Wait to ensure different timestamp
-        time.sleep(1.1)
-
-        # Create second run
+        # Create second run with different mocked time
+        mock_datetime.now.return_value = second_time
         manager2 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
         metadata2 = manager2.create_run(TestConfig())
         manager2.complete_run(success=True)

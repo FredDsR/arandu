@@ -10,7 +10,7 @@ import fcntl
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -102,7 +102,7 @@ class ResultsManager:
         Returns:
             Unique run ID string.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
 
         if execution.is_slurm and execution.slurm_partition and execution.slurm_job_id:
             context = f"slurm_{execution.slurm_partition}_{execution.slurm_job_id}"
@@ -155,7 +155,7 @@ class ResultsManager:
         self._metadata = RunMetadata(
             run_id=run_id,
             pipeline_type=self.pipeline_type,
-            started_at=datetime.now(),
+            started_at=datetime.now(UTC),
             status=RunStatus.IN_PROGRESS,
             execution=execution,
             hardware=hardware,
@@ -205,7 +205,7 @@ class ResultsManager:
             raise RuntimeError("create_run() must be called before complete_run()")
 
         # 1. Set ended_at and status
-        self._metadata.ended_at = datetime.now()
+        self._metadata.ended_at = datetime.now(UTC)
         self._metadata.status = RunStatus.COMPLETED if success else RunStatus.FAILED
         if error:
             self._metadata.error_message = error
@@ -307,7 +307,7 @@ class ResultsManager:
 
                     # Add new entry at the beginning
                     index_data["runs"].insert(0, run_entry)
-                    index_data["last_updated"] = datetime.now().isoformat()
+                    index_data["last_updated"] = datetime.now(UTC).isoformat()
 
                     # Write updated index
                     f.seek(0)

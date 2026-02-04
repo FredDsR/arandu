@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -521,6 +521,11 @@ class EvaluationReport(BaseModel):
 # =============================================================================
 
 
+def _utc_now() -> datetime:
+    """Return the current UTC datetime for consistent timestamp capture."""
+    return datetime.now(UTC)
+
+
 class PipelineType(str, Enum):
     """Enum representing the different pipeline types."""
 
@@ -671,8 +676,8 @@ class RunMetadata(BaseModel):
     pipeline_type: PipelineType = Field(..., description="Type of pipeline executed")
 
     # Timing
-    started_at: datetime = Field(default_factory=datetime.now, description="Run start time")
-    ended_at: datetime | None = Field(default=None, description="Run end time")
+    started_at: datetime = Field(default_factory=_utc_now, description="Run start time (UTC)")
+    ended_at: datetime | None = Field(default=None, description="Run end time (UTC)")
 
     # Status
     status: RunStatus = Field(default=RunStatus.PENDING, description="Current run status")
