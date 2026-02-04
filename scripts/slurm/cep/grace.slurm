@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-cep
+#SBATCH --job-name=cep_qa_dataset_gen
 #SBATCH --partition=grace
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
