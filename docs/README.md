@@ -88,4 +88,4 @@ docs/
 
 ## Contributing
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines, coding standards, and the contribution workflow.
+See [AGENT.md](../AGENT.md) for development guidelines, coding standards, and the contribution workflow.
