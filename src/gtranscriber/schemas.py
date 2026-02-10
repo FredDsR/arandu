@@ -91,6 +91,13 @@ class EnrichedRecord(InputRecord):
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"
     )
+    transcription_quality: TranscriptionQualityScore | None = Field(
+        None, description="Transcription quality check results"
+    )
+    is_valid: bool | None = Field(
+        default=None,
+        description="Whether transcription passes quality check (None = not yet checked)",
+    )
 
     def ensure_language_metadata(self) -> None:
         """Ensure metadata compatibility for AutoSchemaKG language routing.
@@ -218,6 +225,30 @@ class QAPairCEP(QAPair):
         if not self.is_multi_hop and self.hop_count is not None:
             object.__setattr__(self, "hop_count", None)
         return self
+
+
+class TranscriptionQualityScore(BaseModel):
+    """Quality scores for transcription validation.
+
+    Distinct from ValidationScore (LLM-as-a-Judge for QA pairs).
+    This evaluates Whisper transcription output quality using heuristics.
+    """
+
+    script_match_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Text uses expected character set (Latin for pt/en)"
+    )
+    repetition_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Text is free from excessive repetition"
+    )
+    segment_quality_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Segment timestamps are natural, not suspicious"
+    )
+    content_density_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Words per minute within reasonable range"
+    )
+    overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
+    issues_detected: list[str] = Field(default_factory=list, description="List of quality issues")
+    quality_rationale: str | None = Field(None, description="Explanation of quality assessment")
 
 
 class ValidationScore(BaseModel):
