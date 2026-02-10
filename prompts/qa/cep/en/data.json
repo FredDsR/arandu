@@ -106,6 +106,8 @@
       ]
     }
   },
+  "starters_label": "Suggested starters",
+  "examples_label": "Question examples",
   "output_rules": [
     "The answer MUST be grounded in the provided context",
     "The answer should contain between 5-50 words",

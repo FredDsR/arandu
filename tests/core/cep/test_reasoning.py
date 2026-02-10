@@ -399,6 +399,25 @@ class TestReasoningEnricher:
                 cep_config=cep_config,
             )
 
+    def test_load_prompts_template_not_found(
+        self,
+        mock_llm_client: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that FileNotFoundError is raised when template file doesn't exist."""
+        cep_config = CEPConfig(
+            enable_reasoning_traces=True,
+            language="pt",
+        )
+
+        mocker.patch("pathlib.Path.exists", side_effect=[True, False])
+
+        with pytest.raises(FileNotFoundError, match="CEP template file not found"):
+            ReasoningEnricher(
+                llm_client=mock_llm_client,
+                cep_config=cep_config,
+            )
+
     def test_parse_reasoning_validates_hop_count_when_not_multi_hop(
         self,
         mock_llm_client: Any,

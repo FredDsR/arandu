@@ -201,14 +201,16 @@ class BloomScaffoldingGenerator:
             f"{i + 1}. {rule}" for i, rule in enumerate(self._prompts["output_rules"])
         )
 
-        # Pre-build conditional sections
-        examples_section = ""
-        if examples:
-            examples_section = "\n" + "\n".join(f"- {ex}" for ex in examples)
-
+        # Pre-build conditional sections with localized labels
         starters_section = ""
         if question_starters:
-            starters_section = "\n" + ", ".join(question_starters)
+            starters_label = self._prompts.get("starters_label", "Suggested starters")
+            starters_section = f"\n{starters_label}: {', '.join(question_starters)}"
+
+        examples_section = ""
+        if examples:
+            examples_label = self._prompts.get("examples_label", "Question examples")
+            examples_section = f"\n{examples_label}:\n" + "\n".join(f"- {ex}" for ex in examples)
 
         template = Template(self._prompts["_template"])
         return template.safe_substitute(

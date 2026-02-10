@@ -106,6 +106,8 @@
       ]
     }
   },
+  "starters_label": "Iniciadores sugeridos",
+  "examples_label": "Exemplos de perguntas",
   "output_rules": [
     "A resposta DEVE ser fundamentada no contexto fornecido",
     "A resposta deve conter entre 5-50 palavras",

@@ -40,4 +40,10 @@ Evaluation Criteria:
    - 0.2: Relatively trivial information - could be easily found elsewhere
    - 0.0: Trivial or obvious information - adds no significant value
 
-Return ONLY the JSON object with scores and rationale, no additional text.
+Return ONLY a JSON object in the following format:
+{
+  "faithfulness": 0.0,
+  "bloom_calibration": 0.0,
+  "informativeness": 0.0,
+  "judge_rationale": "Explanation of the assigned scores"
+}

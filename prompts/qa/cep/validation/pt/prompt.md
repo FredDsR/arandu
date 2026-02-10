@@ -40,4 +40,10 @@ Critérios de Avaliação:
    - 0.2: Informação relativamente trivial - poderia ser encontrada facilmente
    - 0.0: Informação trivial ou óbvia - não agrega valor significativo
 
-Retorne APENAS o objeto JSON com as pontuações e justificativa, sem texto adicional.
+Retorne APENAS um objeto JSON no seguinte formato:
+{
+  "faithfulness": 0.0,
+  "bloom_calibration": 0.0,
+  "informativeness": 0.0,
+  "judge_rationale": "Explicação das pontuações atribuídas"
+}
