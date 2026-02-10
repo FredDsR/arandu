@@ -189,7 +189,6 @@ class BloomScaffoldingGenerator:
         Returns:
             Formatted prompt string.
         """
-        system_instruction = self._prompts["system_instruction"]
         level_info = self._prompts["bloom_levels"].get(bloom_level, {})
 
         level_description = level_info.get("description", bloom_level)
