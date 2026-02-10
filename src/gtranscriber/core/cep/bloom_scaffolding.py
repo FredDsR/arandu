@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from string import Template
 from typing import TYPE_CHECKING, Any
 
 from gtranscriber.schemas import QAPairCEP
@@ -59,16 +60,23 @@ class BloomScaffoldingGenerator:
         Raises:
             FileNotFoundError: If prompt file not found.
         """
-        prompt_file = DEFAULT_CEP_PROMPTS_DIR / f"{self.cep_config.language}.json"
+        lang_dir = DEFAULT_CEP_PROMPTS_DIR / self.cep_config.language
 
-        if not prompt_file.exists():
-            raise FileNotFoundError(f"CEP prompt file not found: {prompt_file}")
+        data_file = lang_dir / "data.json"
+        template_file = lang_dir / "bloom_scaffolding.md"
 
-        with open(prompt_file, encoding="utf-8") as f:
-            prompts = json.load(f)
+        if not data_file.exists():
+            raise FileNotFoundError(f"CEP data file not found: {data_file}")
+        if not template_file.exists():
+            raise FileNotFoundError(f"CEP template file not found: {template_file}")
 
-        logger.debug(f"Loaded CEP prompts from {prompt_file}")
-        return prompts
+        with open(data_file, encoding="utf-8") as f:
+            data = json.load(f)
+
+        data["_template"] = template_file.read_text(encoding="utf-8")
+
+        logger.debug(f"Loaded CEP prompts from {lang_dir}")
+        return data
 
     def generate(
         self,
@@ -194,48 +202,29 @@ class BloomScaffoldingGenerator:
             f"{i + 1}. {rule}" for i, rule in enumerate(self._prompts["output_rules"])
         )
 
-        # Build examples section
-        examples_text = ""
+        # Pre-build conditional sections
+        examples_section = ""
         if examples:
-            examples_text = "\nExemplos de perguntas:\n" + "\n".join(f"- {ex}" for ex in examples)
+            examples_section = "\n" + "\n".join(f"- {ex}" for ex in examples)
 
-        starters_text = ""
+        starters_section = ""
         if question_starters:
-            starters_text = f"\nIniciadores sugeridos: {', '.join(question_starters)}"
+            starters_section = "\n" + ", ".join(question_starters)
 
-        prompt = f"""{system_instruction}
-
-Nível Cognitivo: {bloom_level.upper()} ({level_description})
-
-Contexto:
-{context}
-
-Tarefa:
-{level_instruction}
-{starters_text}
-{examples_text}
-
-Gere exatamente {num_questions} par(es) pergunta-resposta no formato JSON.
-Cada par deve seguir estas regras:
-{output_rules}
-
-Formato de saída (array JSON):
-[
-  {{
-    "question": "A pergunta gerada",
-    "answer": "A resposta baseada no contexto",
-    "bloom_level": "{bloom_level}",
-    "confidence": 0.85,
-    "reasoning_trace": "Conexões lógicas (para analyze/evaluate)",
-    "is_multi_hop": false,
-    "hop_count": null,
-    "tacit_inference": "Conhecimento implícito (opcional)"
-  }}
-]
-
-{self._prompts["output_format_instruction"]}"""
-
-        return prompt
+        template = Template(self._prompts["_template"])
+        return template.safe_substitute(
+            system_instruction=self._prompts["system_instruction"],
+            bloom_level_upper=bloom_level.upper(),
+            bloom_level=bloom_level,
+            level_description=level_description,
+            context=context,
+            level_instruction=level_instruction,
+            starters_section=starters_section,
+            examples_section=examples_section,
+            num_questions=num_questions,
+            output_rules=output_rules,
+            output_format_instruction=self._prompts["output_format_instruction"],
+        )
 
     def _parse_response(
         self,
