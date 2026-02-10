@@ -212,7 +212,6 @@ class BloomScaffoldingGenerator:
 
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
-            system_instruction=self._prompts["system_instruction"],
             bloom_level_upper=bloom_level.upper(),
             bloom_level=bloom_level,
             level_description=level_description,
@@ -222,7 +221,6 @@ class BloomScaffoldingGenerator:
             examples_section=examples_section,
             num_questions=num_questions,
             output_rules=output_rules,
-            output_format_instruction=self._prompts["output_format_instruction"],
         )
 
     def _parse_response(

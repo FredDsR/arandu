@@ -177,32 +177,16 @@ class QAValidator:
         Returns:
             Formatted validation prompt.
         """
-        criteria = self._prompts["evaluation_criteria"]
-
-        # Get bloom level description from existing JSON data
-        bloom_levels = criteria["bloom_calibration"]["levels"]
+        bloom_levels = self._prompts["bloom_levels"]
         bloom_level_desc = bloom_levels.get(qa_pair.bloom_level, qa_pair.bloom_level)
-
-        # Format rubrics from existing JSON data (6-point scale)
-        def format_rubric_as_list(rubric: dict[str, str]) -> str:
-            return "\n".join(f"   - {score}: {desc}" for score, desc in rubric.items())
 
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
-            system_instruction=self._prompts["system_instruction"],
             context=context,
             question=qa_pair.question,
             answer=qa_pair.answer,
             bloom_level=qa_pair.bloom_level,
             bloom_level_desc=bloom_level_desc,
-            validation_instruction=self._prompts["validation_instruction"],
-            faithfulness_desc=criteria["faithfulness"]["instruction"],
-            bloom_desc=criteria["bloom_calibration"]["instruction"],
-            informativeness_desc=criteria["informativeness"]["instruction"],
-            rubric_faithfulness=format_rubric_as_list(criteria["faithfulness"]["rubric"]),
-            rubric_bloom_calibration=format_rubric_as_list(criteria["bloom_calibration"]["rubric"]),
-            rubric_informativeness=format_rubric_as_list(criteria["informativeness"]["rubric"]),
-            output_format_instruction=self._prompts["output_format_instruction"],
         )
 
     def _parse_validation_response(self, response: str) -> ValidationScore:

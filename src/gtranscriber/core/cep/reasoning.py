@@ -202,23 +202,12 @@ class ReasoningEnricher:
         Returns:
             Formatted prompt string.
         """
-        reasoning_instruction = self._prompts.get(
-            "reasoning_instruction",
-            "Explain the logical connections between facts that lead to the answer.",
-        )
-        tacit_instruction = self._prompts.get(
-            "tacit_inference_instruction",
-            "Identify implicit knowledge used in the answer.",
-        )
-
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
             context=context,
             question=qa_pair.question,
             answer=qa_pair.answer,
             bloom_level=qa_pair.bloom_level,
-            reasoning_instruction=reasoning_instruction,
-            tacit_instruction=tacit_instruction,
         )
 
     def _parse_reasoning_response(self, response: str) -> dict[str, Any]:
