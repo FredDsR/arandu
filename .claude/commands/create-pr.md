@@ -24,3 +24,4 @@ Rules:
 - The base branch is always `main` unless the user specifies otherwise via arguments
 - If $ARGUMENTS is provided and looks like a branch name, use it as the base branch instead of `main`
 - Do not self-reference Claude as a co-author
+- **CRITICAL**: The PR body MUST use actual newlines, NOT literal `\n` escape sequences. Do NOT pass the body as a single-line string with `\n` — use real multi-line text so that Markdown renders correctly on GitHub
