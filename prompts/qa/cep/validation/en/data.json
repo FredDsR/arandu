@@ -1,0 +1,11 @@
+{
+  "bloom_levels": {
+    "remember": "Requires only recalling explicit facts from text",
+    "understand": "Requires explaining, interpreting or summarizing concepts",
+    "apply": "Requires using knowledge in new or different situation",
+    "analyze": "Requires identifying relationships, patterns or connections between ideas",
+    "evaluate": "Requires making judgments, evaluating decisions or justifying choices",
+    "create": "Requires proposing solutions, elaborating ideas or creating something new"
+  },
+  "parse_error_message": "Failed to process validator response"
+}

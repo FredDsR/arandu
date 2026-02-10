@@ -387,7 +387,26 @@ class TestQAValidatorEdgeCases:
         # Mock the file existence check to return False
         mocker.patch("pathlib.Path.exists", return_value=False)
 
-        with pytest.raises(FileNotFoundError, match="Validation prompt file not found"):
+        with pytest.raises(FileNotFoundError, match="Validation data file not found"):
+            QAValidator(
+                validator_client=mock_llm_client,
+                cep_config=cep_config,
+            )
+
+    def test_load_prompts_template_not_found(
+        self,
+        mock_llm_client: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that FileNotFoundError is raised when template file doesn't exist."""
+        cep_config = CEPConfig(
+            enable_validation=True,
+            language="pt",
+        )
+
+        mocker.patch("pathlib.Path.exists", side_effect=[True, False])
+
+        with pytest.raises(FileNotFoundError, match="Validation template not found"):
             QAValidator(
                 validator_client=mock_llm_client,
                 cep_config=cep_config,

@@ -1,0 +1,11 @@
+{
+  "bloom_levels": {
+    "remember": "Requer apenas recordar fatos explícitos do texto",
+    "understand": "Requer explicar, interpretar ou resumir conceitos",
+    "apply": "Requer usar conhecimento em situação nova ou diferente",
+    "analyze": "Requer identificar relações, padrões ou conexões entre ideias",
+    "evaluate": "Requer fazer julgamentos, avaliar decisões ou justificar escolhas",
+    "create": "Requer propor soluções, elaborar ideias ou criar algo novo"
+  },
+  "parse_error_message": "Falha ao processar resposta do validador"
+}

@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from string import Template
 from typing import TYPE_CHECKING, Any
 
 from gtranscriber.schemas import QAPairCEP
@@ -80,15 +81,21 @@ class ReasoningEnricher:
         Returns:
             Dictionary containing prompt templates.
         """
-        prompt_file = DEFAULT_CEP_PROMPTS_DIR / f"{self.cep_config.language}.json"
+        lang_dir = DEFAULT_CEP_PROMPTS_DIR / self.cep_config.language
 
-        if not prompt_file.exists():
-            raise FileNotFoundError(f"CEP prompt file not found: {prompt_file}")
+        data_file = lang_dir / "data.json"
+        template_file = lang_dir / "reasoning.md"
 
-        with open(prompt_file, encoding="utf-8") as f:
-            prompts = json.load(f)
+        if not data_file.exists():
+            raise FileNotFoundError(f"CEP data file not found: {data_file}")
+        if not template_file.exists():
+            raise FileNotFoundError(f"CEP template file not found: {template_file}")
 
-        return prompts
+        with open(data_file, encoding="utf-8") as f:
+            data = json.load(f)
+
+        data["_template"] = template_file.read_text(encoding="utf-8")
+        return data
 
     def enrich(
         self,
@@ -195,39 +202,13 @@ class ReasoningEnricher:
         Returns:
             Formatted prompt string.
         """
-        reasoning_instruction = self._prompts.get(
-            "reasoning_instruction",
-            "Explain the logical connections between facts that lead to the answer.",
+        template = Template(self._prompts["_template"])
+        return template.safe_substitute(
+            context=context,
+            question=qa_pair.question,
+            answer=qa_pair.answer,
+            bloom_level=qa_pair.bloom_level,
         )
-        tacit_instruction = self._prompts.get(
-            "tacit_inference_instruction",
-            "Identify implicit knowledge used in the answer.",
-        )
-
-        prompt = f"""Analise o seguinte par pergunta-resposta e forneça informações de raciocínio.
-
-Contexto:
-{context}
-
-Pergunta: {qa_pair.question}
-Resposta: {qa_pair.answer}
-Nível Bloom: {qa_pair.bloom_level}
-
-Tarefas:
-1. {reasoning_instruction}
-2. Determine se a resposta requer conectar informações de partes distantes do texto (multi-hop).
-3. Se for multi-hop, indique quantos "saltos" de raciocínio são necessários (1-5).
-4. {tacit_instruction}
-
-Retorne APENAS um objeto JSON no seguinte formato:
-{{
-  "reasoning_trace": "Fato A + Fato B → Conclusão",
-  "is_multi_hop": true/false,
-  "hop_count": 2,
-  "tacit_inference": "Conhecimento implícito identificado"
-}}"""
-
-        return prompt
 
     def _parse_reasoning_response(self, response: str) -> dict[str, Any]:
         """Parse reasoning response from LLM.

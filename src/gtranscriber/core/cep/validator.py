@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from string import Template
 from typing import TYPE_CHECKING, Any
 
 from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
@@ -61,15 +62,21 @@ class QAValidator:
         Returns:
             Dictionary containing validation prompts.
         """
-        prompt_file = DEFAULT_VALIDATION_PROMPTS_DIR / f"{self.cep_config.language}.json"
+        lang_dir = DEFAULT_VALIDATION_PROMPTS_DIR / self.cep_config.language
 
-        if not prompt_file.exists():
-            raise FileNotFoundError(f"Validation prompt file not found: {prompt_file}")
+        data_file = lang_dir / "data.json"
+        template_file = lang_dir / "prompt.md"
 
-        with open(prompt_file, encoding="utf-8") as f:
-            prompts = json.load(f)
+        if not data_file.exists():
+            raise FileNotFoundError(f"Validation data file not found: {data_file}")
+        if not template_file.exists():
+            raise FileNotFoundError(f"Validation template not found: {template_file}")
 
-        return prompts
+        with open(data_file, encoding="utf-8") as f:
+            data = json.load(f)
+
+        data["_template"] = template_file.read_text(encoding="utf-8")
+        return data
 
     def validate(
         self,
@@ -170,59 +177,17 @@ class QAValidator:
         Returns:
             Formatted validation prompt.
         """
-        system_instruction = self._prompts["system_instruction"]
-        criteria = self._prompts["evaluation_criteria"]
-        validation_instruction = self._prompts["validation_instruction"]
-        output_format = self._prompts["output_format_instruction"]
+        bloom_levels = self._prompts["bloom_levels"]
+        bloom_level_desc = bloom_levels.get(qa_pair.bloom_level, qa_pair.bloom_level)
 
-        # Build criteria descriptions
-        faithfulness_desc = criteria["faithfulness"]["instruction"]
-        bloom_desc = criteria["bloom_calibration"]["instruction"]
-        informativeness_desc = criteria["informativeness"]["instruction"]
-
-        # Get Bloom level description
-        bloom_levels = criteria["bloom_calibration"]["levels"]
-        bloom_level_desc = bloom_levels.get(qa_pair.bloom_level, f"Nível {qa_pair.bloom_level}")
-
-        prompt = f"""{system_instruction}
-
-Contexto Original:
-{context}
-
-Par Pergunta-Resposta a Avaliar:
-- Pergunta: {qa_pair.question}
-- Resposta: {qa_pair.answer}
-- Nível Bloom Declarado: {qa_pair.bloom_level} ({bloom_level_desc})
-
-{validation_instruction}
-
-Critérios de Avaliação:
-
-1. FAITHFULNESS (Fidelidade): {faithfulness_desc}
-   Rubrica:
-   - 1.0: Resposta completamente fundamentada no texto
-   - 0.7: Resposta principalmente fundamentada com pequenas inferências
-   - 0.4: Resposta parcialmente fundamentada com inferências significativas
-   - 0.0: Resposta não fundamentada ou alucinada
-
-2. BLOOM_CALIBRATION (Calibração de Bloom): {bloom_desc}
-   O nível declarado é "{qa_pair.bloom_level}": {bloom_level_desc}
-   Rubrica:
-   - 1.0: Pergunta perfeitamente calibrada ao nível declarado
-   - 0.7: Pergunta bem calibrada com pequena sobreposição
-   - 0.4: Pergunta subcalibrada (exige nível menor)
-   - 0.0: Pergunta totalmente descalibrada
-
-3. INFORMATIVENESS (Informatividade): {informativeness_desc}
-   Rubrica:
-   - 1.0: Revela conhecimento tácito significativo
-   - 0.7: Revela conhecimento útil e não-óbvio
-   - 0.4: Informação comum mas bem articulada
-   - 0.0: Informação trivial ou óbvia
-
-{output_format}"""
-
-        return prompt
+        template = Template(self._prompts["_template"])
+        return template.safe_substitute(
+            context=context,
+            question=qa_pair.question,
+            answer=qa_pair.answer,
+            bloom_level=qa_pair.bloom_level,
+            bloom_level_desc=bloom_level_desc,
+        )
 
     def _parse_validation_response(self, response: str) -> ValidationScore:
         """Parse validation response from LLM judge.
@@ -262,7 +227,9 @@ Critérios de Avaliação:
                 bloom_calibration=0.5,
                 informativeness=0.5,
                 overall_score=0.5,
-                judge_rationale="Falha ao processar resposta do validador",
+                judge_rationale=self._prompts.get(
+                    "parse_error_message", "Falha ao processar resposta do validador"
+                ),
             )
 
     def _validate_score(self, value: Any) -> float:
