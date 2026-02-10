@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -26,6 +25,7 @@ from gtranscriber.core.qa_batch import (
     run_batch_cep_generation,
     run_batch_qa_generation,
 )
+from gtranscriber.core.results_manager import ResultsManager
 
 
 class _ThreadPoolCompat(ThreadPoolExecutor):
@@ -33,12 +33,6 @@ class _ThreadPoolCompat(ThreadPoolExecutor):
 
     def __init__(self, *args: object, mp_context: object = None, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-
-
-@pytest.fixture(autouse=True)
-def disable_versioning(mocker: MockerFixture) -> None:
-    """Disable results versioning for all tests in this module."""
-    mocker.patch.dict(os.environ, {"GTRANSCRIBER_RESULTS_ENABLE_VERSIONING": "false"})
 
 
 def create_test_enriched_data(
@@ -424,6 +418,22 @@ class TestWorkerFunctions:
 class TestRunBatchQAGeneration:
     """Tests for run_batch_qa_generation orchestration."""
 
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results for QA batch tests."""
+        self.results_dir = (tmp_path / "results").resolve()
+
+        mock_rc = mocker.patch("gtranscriber.core.qa_batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
+
+        self.run_dir = self.results_dir / "qa" / "test_run"
+        self.outputs_dir = self.run_dir / "outputs"
+        self.versioned_checkpoint = self.run_dir / "qa_checkpoint.json"
+
     def test_output_directory_creation(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that output directory is created."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
@@ -436,7 +446,7 @@ class TestRunBatchQAGeneration:
 
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
 
-        assert output_dir.exists()
+        assert self.outputs_dir.exists()
 
     def test_no_remaining_tasks_early_exit(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -448,7 +458,6 @@ class TestRunBatchQAGeneration:
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
-        output_dir.mkdir()
 
         # Create transcription file
         file = input_dir / "test_transcription.json"
@@ -461,9 +470,9 @@ class TestRunBatchQAGeneration:
             )
         )
 
-        # Create checkpoint with file already completed
-        checkpoint_file = output_dir / "qa_checkpoint.json"
-        checkpoint_file.write_text(
+        # Pre-create versioned run dir with checkpoint already completed
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text(
             json.dumps(
                 {
                     "total_files": 1,
@@ -518,9 +527,9 @@ class TestRunBatchQAGeneration:
 
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
 
-        # Check outputs were created
-        assert (output_dir / "id0_qa.json").exists()
-        assert (output_dir / "id1_qa.json").exists()
+        # Check outputs were created in versioned directory
+        assert (self.outputs_dir / "id0_qa.json").exists()
+        assert (self.outputs_dir / "id1_qa.json").exists()
 
     def test_sequential_processing_with_failures(
         self, tmp_path: Path, mocker: MockerFixture
@@ -569,9 +578,8 @@ class TestRunBatchQAGeneration:
 
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
 
-        # Check checkpoint file records failures
-        checkpoint_file = output_dir / "qa_checkpoint.json"
-        assert checkpoint_file.exists()
+        # Check versioned checkpoint records failures
+        assert self.versioned_checkpoint.exists()
 
     def test_checkpoint_updated_on_success(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that checkpoint is updated after successful processing."""
@@ -608,11 +616,10 @@ class TestRunBatchQAGeneration:
 
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
 
-        # Check checkpoint
-        checkpoint_file = output_dir / "qa_checkpoint.json"
-        assert checkpoint_file.exists()
+        # Check versioned checkpoint
+        assert self.versioned_checkpoint.exists()
 
-        checkpoint_data = json.loads(checkpoint_file.read_text())
+        checkpoint_data = json.loads(self.versioned_checkpoint.read_text())
         assert "test123" in checkpoint_data["completed_files"]
 
     def test_checkpoint_updated_on_failure(self, tmp_path: Path, mocker: MockerFixture) -> None:
@@ -641,8 +648,7 @@ class TestRunBatchQAGeneration:
 
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
 
-        checkpoint_file = output_dir / "qa_checkpoint.json"
-        checkpoint_data = json.loads(checkpoint_file.read_text())
+        checkpoint_data = json.loads(self.versioned_checkpoint.read_text())
         assert "fail123" in checkpoint_data["failed_files"]
 
     def test_parallel_processing_multiple_workers(
@@ -658,10 +664,6 @@ class TestRunBatchQAGeneration:
         ]"""
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
-
-        # Use ThreadPoolExecutor to avoid slow forkserver process spawning.
-        # Threads share memory so mocks work and output files are created.
-        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
@@ -688,10 +690,10 @@ class TestRunBatchQAGeneration:
 
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=2)
 
-        # Check all outputs were created
-        assert (output_dir / "id0_qa.json").exists()
-        assert (output_dir / "id1_qa.json").exists()
-        assert (output_dir / "id2_qa.json").exists()
+        # Check all outputs were created in versioned directory
+        assert (self.outputs_dir / "id0_qa.json").exists()
+        assert (self.outputs_dir / "id1_qa.json").exists()
+        assert (self.outputs_dir / "id2_qa.json").exists()
 
     def test_worker_count_limiting(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that worker count doesn't cause issues with few tasks."""
@@ -731,9 +733,9 @@ class TestRunBatchQAGeneration:
         # Use sequential processing to avoid multiprocessing pickle issues with mocks
         run_batch_qa_generation(input_dir, output_dir, config, num_workers=1)
 
-        # Verify all output files were created
-        assert (output_dir / "id0_qa.json").exists()
-        assert (output_dir / "id1_qa.json").exists()
+        # Verify all output files were created in versioned directory
+        assert (self.outputs_dir / "id0_qa.json").exists()
+        assert (self.outputs_dir / "id1_qa.json").exists()
 
     def test_progress_reporting(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -880,14 +882,21 @@ class TestInitQAWorker:
 class TestWorkerCountLogging:
     """Tests for worker count > CPU count logging paths."""
 
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results for worker count tests."""
+        mock_rc = mocker.patch("gtranscriber.core.qa_batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
+
     def test_workers_greater_than_cpu_count_logs_info(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that using more workers than CPUs logs info message."""
         caplog.set_level("INFO")
-
-        # Use ThreadPoolExecutor to avoid slow forkserver process spawning
-        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         # Mock cpu_count to return small number
         mocker.patch("gtranscriber.core.qa_batch.mp.cpu_count", return_value=2)
@@ -924,6 +933,18 @@ class TestWorkerCountLogging:
 class TestFinalSummaryPaths:
     """Tests for final summary edge cases."""
 
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results for summary tests."""
+        mock_rc = mocker.patch("gtranscriber.core.qa_batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+
+        self.run_dir = (tmp_path / "results").resolve() / "qa" / "test_run"
+        self.versioned_checkpoint = self.run_dir / "qa_checkpoint.json"
+
     def test_final_summary_zero_total_files(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -934,10 +955,9 @@ class TestFinalSummaryPaths:
         output_dir = tmp_path / "output"
         input_dir.mkdir()
 
-        # Create empty checkpoint to simulate no files to process
-        output_dir.mkdir()
-        checkpoint_file = output_dir / "qa_checkpoint.json"
-        checkpoint_file.write_text(
+        # Pre-create versioned run dir with empty checkpoint
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text(
             json.dumps(
                 {
                     "total_files": 0,
@@ -957,6 +977,15 @@ class TestFinalSummaryPaths:
 
 class TestParallelProcessingEdgeCases:
     """Tests for parallel processing edge cases and exception handling."""
+
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results for edge case tests."""
+        mock_rc = mocker.patch("gtranscriber.core.qa_batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
 
     def test_parallel_processing_with_future_exception(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -1309,6 +1338,22 @@ class TestGenerateCEPQAForTranscription:
 class TestRunBatchCEPGeneration:
     """Tests for run_batch_cep_generation function."""
 
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results for CEP batch tests."""
+        self.results_dir = (tmp_path / "results").resolve()
+
+        mock_rc = mocker.patch("gtranscriber.core.qa_batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
+
+        self.run_dir = self.results_dir / "cep" / "test_run"
+        self.outputs_dir = self.run_dir / "outputs"
+        self.versioned_checkpoint = self.run_dir / "cep_checkpoint.json"
+
     def test_run_batch_cep_creates_output_dir(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that output directory is created for CEP batch."""
         mocker.patch("gtranscriber.core.llm_client.OpenAI")
@@ -1322,7 +1367,7 @@ class TestRunBatchCEPGeneration:
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
-        assert output_dir.exists()
+        assert self.outputs_dir.exists()
 
     def test_run_batch_cep_no_tasks_early_exit(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -1352,7 +1397,6 @@ class TestRunBatchCEPGeneration:
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
         input_dir.mkdir()
-        output_dir.mkdir()
 
         # Create transcription file
         file = input_dir / "test_transcription.json"
@@ -1365,9 +1409,9 @@ class TestRunBatchCEPGeneration:
             )
         )
 
-        # Create checkpoint with file already completed
-        checkpoint_file = output_dir / "cep_checkpoint.json"
-        checkpoint_file.write_text(
+        # Pre-create versioned run dir with checkpoint already completed
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text(
             json.dumps(
                 {
                     "total_files": 1,
@@ -1425,9 +1469,9 @@ class TestRunBatchCEPGeneration:
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
-        # Check outputs were created
-        assert (output_dir / "cep_id0_cep_qa.json").exists()
-        assert (output_dir / "cep_id1_cep_qa.json").exists()
+        # Check outputs were created in versioned directory
+        assert (self.outputs_dir / "cep_id0_cep_qa.json").exists()
+        assert (self.outputs_dir / "cep_id1_cep_qa.json").exists()
 
     def test_run_batch_cep_sequential_with_failures(
         self, tmp_path: Path, mocker: MockerFixture
@@ -1463,9 +1507,8 @@ class TestRunBatchCEPGeneration:
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
-        # Check checkpoint records failure
-        checkpoint_file = output_dir / "cep_checkpoint.json"
-        checkpoint_data = json.loads(checkpoint_file.read_text())
+        # Check versioned checkpoint records failure
+        checkpoint_data = json.loads(self.versioned_checkpoint.read_text())
         assert "invalid_cep" in checkpoint_data["failed_files"]
 
     def test_run_batch_cep_final_summary_logged(
@@ -1516,9 +1559,6 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test CEP batch logs when workers > CPU count."""
         caplog.set_level("INFO")
-
-        # Use ThreadPoolExecutor to avoid slow forkserver process spawning
-        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         # Mock cpu_count to return small number
         mocker.patch("gtranscriber.core.qa_batch.mp.cpu_count", return_value=2)
@@ -1665,10 +1705,9 @@ class TestRunBatchCEPGeneration:
         output_dir = tmp_path / "cep_output"
         input_dir.mkdir()
 
-        # Create empty checkpoint
-        output_dir.mkdir()
-        checkpoint_file = output_dir / "cep_checkpoint.json"
-        checkpoint_file.write_text(
+        # Pre-create versioned run dir with empty checkpoint
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text(
             json.dumps(
                 {
                     "total_files": 0,
