@@ -393,7 +393,7 @@ class TestReasoningEnricher:
         # Mock the file existence check to return False
         mocker.patch("pathlib.Path.exists", return_value=False)
 
-        with pytest.raises(FileNotFoundError, match="CEP prompt file not found"):
+        with pytest.raises(FileNotFoundError, match="CEP data file not found"):
             ReasoningEnricher(
                 llm_client=mock_llm_client,
                 cep_config=cep_config,

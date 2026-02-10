@@ -392,7 +392,7 @@ class TestBloomScaffoldingGenerator:
         # Mock the file existence check to return False
         mocker.patch("pathlib.Path.exists", return_value=False)
 
-        with pytest.raises(FileNotFoundError, match="CEP prompt file not found"):
+        with pytest.raises(FileNotFoundError, match="CEP data file not found"):
             BloomScaffoldingGenerator(
                 llm_client=mock_llm_client,
                 qa_config=qa_config,
