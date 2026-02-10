@@ -96,8 +96,6 @@ class TranscriptionValidator:
         Returns:
             Tuple of (score, issues) where score is 0.0-1.0.
         """
-        issues = []
-
         # For Portuguese/English/Romance languages, expect Latin characters
         latin_langs = {"pt", "en", "es", "fr", "de", "it"}
 

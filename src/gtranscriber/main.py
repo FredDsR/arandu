@@ -24,8 +24,8 @@ from gtranscriber.core.io import (
     get_output_filename,
     save_enriched_record,
 )
-from gtranscriber.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from gtranscriber.core.transcription_validator import validate_enriched_record
+from gtranscriber.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from gtranscriber.utils.console import console
 from gtranscriber.utils.logger import (
     print_error,

@@ -28,8 +28,8 @@ from gtranscriber.core.media import (
     has_audio_stream,
     requires_audio_extraction,
 )
-from gtranscriber.core.transcription_validator import validate_enriched_record
 from gtranscriber.core.results_manager import ResultsManager
+from gtranscriber.core.transcription_validator import validate_enriched_record
 from gtranscriber.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
 
 if TYPE_CHECKING:
