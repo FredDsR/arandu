@@ -1472,5 +1472,94 @@ def run_info(
     console.print()
 
 
+@app.command()
+def rebuild_index(
+    results_dir: Annotated[
+        Path,
+        typer.Option(
+            "--results-dir",
+            "-r",
+            help="Base results directory. Can be set via GTRANSCRIBER_RESULTS_BASE_DIR env var.",
+        ),
+    ] = _results_config.base_dir,
+) -> None:
+    """Rebuild latest/ symlinks and index.json from existing run directories.
+
+    Scans all pipeline directories for run_metadata.json files, rebuilds the
+    global index.json, and points each latest/ symlink to the most recent run
+    per pipeline type.
+
+    Examples:
+        # Rebuild index in default results directory
+        gtranscriber rebuild-index
+
+        # Rebuild index in custom results directory
+        gtranscriber rebuild-index --results-dir /path/to/results
+    """
+    from gtranscriber.core.results_manager import ResultsManager
+    from gtranscriber.schemas import PipelineType, RunMetadata
+
+    base_dir = results_dir.resolve()
+    if not base_dir.exists():
+        print_error(f"Results directory not found: {base_dir}")
+        raise typer.Exit(code=1)
+
+    # Collect all runs by scanning directories
+    all_metadata: dict[PipelineType, list[RunMetadata]] = {}
+
+    for pipeline in PipelineType:
+        pipeline_dir = base_dir / pipeline.value
+        if not pipeline_dir.is_dir():
+            continue
+
+        for run_dir in sorted(pipeline_dir.iterdir()):
+            if not run_dir.is_dir():
+                continue
+            metadata_path = run_dir / "run_metadata.json"
+            if not metadata_path.exists():
+                continue
+            try:
+                metadata = RunMetadata.load(metadata_path)
+                all_metadata.setdefault(pipeline, []).append(metadata)
+            except Exception as e:
+                print_warning(f"Skipping {run_dir.name}: {e}")
+
+    if not all_metadata:
+        print_warning("No runs found to rebuild from.")
+        return
+
+    # Delete stale index so we rebuild from scratch
+    index_path = base_dir / "index.json"
+    if index_path.exists():
+        index_path.unlink()
+        print_info("Removed stale index.json")
+
+    # Rebuild index and symlinks per pipeline
+    total_runs = 0
+    for pipeline, runs in all_metadata.items():
+        # Sort by started_at ascending so the last _update_index call wins for ordering
+        runs.sort(key=lambda m: m.started_at)
+
+        for metadata in runs:
+            run_dir = base_dir / pipeline.value / metadata.run_id
+            manager = ResultsManager(base_dir, pipeline)
+            manager._run_dir = run_dir
+            manager._metadata = metadata
+            manager._update_index()
+            total_runs += 1
+
+        # Point latest/ symlink to the most recent run
+        latest = runs[-1]
+        latest_dir = base_dir / pipeline.value / latest.run_id
+        manager = ResultsManager(base_dir, pipeline)
+        manager._run_dir = latest_dir
+        manager._metadata = latest
+        manager._update_latest_symlink()
+
+        print_info(f"{pipeline.value}: {len(runs)} run(s), latest -> {latest.run_id}")
+
+    print_success(f"Rebuilt index.json ({total_runs} runs) and latest/ symlinks")
+
+
 if __name__ == "__main__":
     app()
