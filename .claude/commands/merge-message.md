@@ -1,0 +1,25 @@
+Generate a merge commit message for a pull request, then copy it to the system clipboard.
+
+The PR number is: $ARGUMENTS
+
+Steps:
+1. If no PR number was provided, ask the user for the PR number before proceeding.
+2. Use the GitHub MCP `pull_request_read` tool (method: `get`) to fetch the PR title, body, base branch, and head branch.
+3. Use the GitHub MCP `pull_request_read` tool (method: `get_files`) to see which files were changed.
+4. Use the GitHub MCP `list_commits` tool with the PR's head branch to see the commits included in the PR.
+5. Analyze the PR and its commits to determine the appropriate conventional commit type and scope.
+6. Draft a merge commit message following Conventional Commits format: `<type>(<scope>): <description> (#<number>)`
+7. The message body should summarize the "why" with concise bullet points when multiple changes are involved. Each bullet point must be a single unwrapped line — do not insert line breaks within the same paragraph or bullet.
+8. Copy the full message to the clipboard using `xclip -selection clipboard`.
+9. Show the merge commit message to the user and confirm it was copied.
+
+Rules:
+- Use types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+- Scope is optional but encouraged (e.g., versioning, cli, batch, qa)
+- Keep the subject line under 72 characters
+- Use imperative mood ("add feature" not "added feature")
+- Append the PR number at the end of the subject line as `(#<number>)`
+- If the PR description already has a good summary, incorporate it rather than rephrasing unnecessarily
+- Focus on the "why" and high-level "what", not individual file changes
+- Do NOT actually merge the PR, only generate the message and copy it
+- Do not self-reference Claude as a co-author
