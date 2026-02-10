@@ -153,7 +153,7 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed specifications
 
 ## Development Guidelines
 
-For contributing to any phase, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+For contributing to any phase, see [AGENT.md](../../AGENT.md).
 
 ### Quick Reference
 

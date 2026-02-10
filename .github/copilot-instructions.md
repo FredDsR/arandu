@@ -1,6 +1,6 @@
 # GitHub Copilot Instructions
 
-**Read [CONTRIBUTING.md](../CONTRIBUTING.md) for comprehensive development guidelines.**
+**Read [AGENT.md](../AGENT.md) for comprehensive development guidelines.**
 
 ## Project: G-Transcriber
 

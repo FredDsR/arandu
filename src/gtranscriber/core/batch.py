@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gtranscriber.config import TranscriberConfig
+from gtranscriber.config import ResultsConfig, TranscriberConfig
 from gtranscriber.core.checkpoint import CheckpointManager
 from gtranscriber.core.drive import DriveClient, NoAudioStreamError
 from gtranscriber.core.engine import WhisperEngine
@@ -28,7 +28,8 @@ from gtranscriber.core.media import (
     has_audio_stream,
     requires_audio_extraction,
 )
-from gtranscriber.schemas import EnrichedRecord, TranscriptionSegment
+from gtranscriber.core.results_manager import ResultsManager
+from gtranscriber.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
 
 if TYPE_CHECKING:
     from gtranscriber.core.engine import TranscriptionResult
@@ -434,11 +435,37 @@ def run_batch_transcription(config: BatchConfig) -> None:
     Args:
         config: BatchConfig with all processing parameters.
     """
+    # Load results configuration
+    results_config = ResultsConfig()
+    results_mgr: ResultsManager | None = None
+
+    # Initialize versioned results if enabled
+    if results_config.enable_versioning:
+        results_mgr = ResultsManager(
+            results_config.base_dir,
+            PipelineType.TRANSCRIPTION,
+            keep_latest_symlinks=results_config.keep_latest_symlinks,
+        )
+        effective_transcriber_config = TranscriberConfig(
+            model_id=config.model_id,
+            force_cpu=config.force_cpu,
+            quantize=config.quantize,
+            language=config.language or "",
+        )
+        results_mgr.create_run(effective_transcriber_config, input_source=str(config.catalog_file))
+        # Override output directory to use versioned path
+        effective_output_dir = results_mgr.outputs_dir
+        # Use checkpoint file in the run directory
+        effective_checkpoint_file = results_mgr.run_dir / "checkpoint.json"
+    else:
+        effective_output_dir = config.output_dir
+        effective_checkpoint_file = config.checkpoint_file
+
     # Create output directory
-    config.output_dir.mkdir(parents=True, exist_ok=True)
+    effective_output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load checkpoint
-    checkpoint = CheckpointManager(config.checkpoint_file)
+    checkpoint = CheckpointManager(effective_checkpoint_file)
 
     # Load catalog
     tasks = load_catalog(config.catalog_file)
@@ -455,7 +482,24 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
     if not remaining_tasks:
         logger.info("All files already transcribed!")
+        if results_mgr is not None:
+            results_mgr.update_progress(len(tasks), 0, len(tasks))
+            results_mgr.complete_run(success=True)
         return
+
+    # Create a modified config with the effective output directory
+    effective_config = BatchConfig(
+        catalog_file=config.catalog_file,
+        output_dir=effective_output_dir,
+        checkpoint_file=effective_checkpoint_file,
+        credentials_file=config.credentials_file,
+        token_file=config.token_file,
+        model_id=config.model_id,
+        num_workers=config.num_workers,
+        force_cpu=config.force_cpu,
+        quantize=config.quantize,
+        language=config.language,
+    )
 
     # Determine number of workers
     num_workers = min(config.num_workers, len(remaining_tasks))
@@ -471,90 +515,121 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
     logger.info(f"Using {num_workers} parallel workers")
 
-    # Process files in parallel
-    if num_workers == 1:
-        # Sequential processing for single worker
-        for task in remaining_tasks:
-            file_id, success, message = transcribe_single_file(task, config)
+    error_message: str | None = None
+    try:
+        # Process files in parallel
+        if num_workers == 1:
+            # Sequential processing for single worker
+            for task in remaining_tasks:
+                file_id, success, message = transcribe_single_file(task, effective_config)
 
-            if success:
-                checkpoint.mark_completed(file_id)
-                logger.info(f"✓ Completed: {task.name}")
-            else:
-                checkpoint.mark_failed(file_id, message)
-                logger.error(f"✗ Failed: {task.name} - {message}")
-
-            completed, total = checkpoint.get_progress()
-            logger.info(f"Progress: {completed}/{total} files")
-    else:
-        # Parallel processing with worker initialization
-        with ProcessPoolExecutor(
-            max_workers=num_workers,
-            initializer=_init_worker,
-            initargs=(config.model_id, config.force_cpu, config.quantize, config.language),
-        ) as executor:
-            # Submit tasks in batches to avoid spawning all at once
-            # This prevents resource exhaustion with thousands of pending futures
-            batch_size = max(num_workers * 2, 10)
-            task_iter = iter(remaining_tasks)
-            pending_futures = {}
-
-            # Submit initial batch
-            for _ in range(min(batch_size, len(remaining_tasks))):
-                try:
-                    task = next(task_iter)
-                    future = executor.submit(transcribe_single_file, task, config)
-                    pending_futures[future] = task
-                except StopIteration:
-                    break
-
-            # Process results and submit new tasks as workers become available
-            while pending_futures:
-                # Get the next completed future
-                completed_future = next(as_completed(pending_futures))
-                task = pending_futures.pop(completed_future)
-
-                try:
-                    file_id, success, message = completed_future.result()
-
-                    if success:
-                        checkpoint.mark_completed(file_id)
-                        logger.info(f"✓ Completed: {task.name}")
-                    else:
-                        checkpoint.mark_failed(file_id, message)
-                        logger.error(f"✗ Failed: {task.name} - {message}")
-
-                except Exception as e:
-                    logger.exception(f"Task failed with exception: {task.name}")
-                    checkpoint.mark_failed(task.file_id, str(e))
+                if success:
+                    checkpoint.mark_completed(file_id)
+                    logger.info(f"✓ Completed: {task.name}")
+                else:
+                    checkpoint.mark_failed(file_id, message)
+                    logger.error(f"✗ Failed: {task.name} - {message}")
 
                 completed, total = checkpoint.get_progress()
                 logger.info(f"Progress: {completed}/{total} files")
 
-                # Submit next task to replace the completed one
-                try:
-                    next_task = next(task_iter)
-                    next_future = executor.submit(transcribe_single_file, next_task, config)
-                    pending_futures[next_future] = next_task
-                except StopIteration:
-                    pass  # No more tasks to submit
+                # Update results manager progress
+                if results_mgr is not None:
+                    failed_count = len(checkpoint.state.failed_files)
+                    results_mgr.update_progress(completed, failed_count, total)
+        else:
+            # Parallel processing with worker initialization
+            with ProcessPoolExecutor(
+                max_workers=num_workers,
+                mp_context=mp.get_context("forkserver"),
+                initializer=_init_worker,
+                initargs=(
+                    effective_config.model_id,
+                    effective_config.force_cpu,
+                    effective_config.quantize,
+                    effective_config.language,
+                ),
+            ) as executor:
+                # Submit tasks in batches to avoid spawning all at once
+                # This prevents resource exhaustion with thousands of pending futures
+                batch_size = max(num_workers * 2, 10)
+                task_iter = iter(remaining_tasks)
+                pending_futures = {}
 
-    # Final summary
-    completed, total = checkpoint.get_progress()
-    failed_count = len(checkpoint.state.failed_files)
+                # Submit initial batch
+                for _ in range(min(batch_size, len(remaining_tasks))):
+                    try:
+                        task = next(task_iter)
+                        future = executor.submit(transcribe_single_file, task, effective_config)
+                        pending_futures[future] = task
+                    except StopIteration:
+                        break
 
-    logger.info("=" * 60)
-    logger.info("Batch transcription completed!")
-    logger.info(f"Total files: {total}")
-    logger.info(f"Successfully transcribed: {completed}")
-    logger.info(f"Failed: {failed_count}")
-    if total == 0:
-        logger.info("Success rate: N/A (no files to process)")
-    else:
-        logger.info(f"Success rate: {completed / total * 100:.1f}%")
-    logger.info("=" * 60)
+                # Process results and submit new tasks as workers become available
+                while pending_futures:
+                    # Get the next completed future
+                    completed_future = next(as_completed(pending_futures))
+                    task = pending_futures.pop(completed_future)
 
-    if failed_count > 0:
-        logger.warning("Failed files:")
-        for file_id, error in checkpoint.state.failed_files.items():
-            logger.warning(f"  - {file_id}: {error}")
+                    try:
+                        file_id, success, message = completed_future.result()
+
+                        if success:
+                            checkpoint.mark_completed(file_id)
+                            logger.info(f"✓ Completed: {task.name}")
+                        else:
+                            checkpoint.mark_failed(file_id, message)
+                            logger.error(f"✗ Failed: {task.name} - {message}")
+
+                    except Exception as e:
+                        logger.exception(f"Task failed with exception: {task.name}")
+                        checkpoint.mark_failed(task.file_id, str(e))
+
+                    completed, total = checkpoint.get_progress()
+                    logger.info(f"Progress: {completed}/{total} files")
+
+                    # Update results manager progress
+                    if results_mgr is not None:
+                        failed_count = len(checkpoint.state.failed_files)
+                        results_mgr.update_progress(completed, failed_count, total)
+
+                    # Submit next task to replace the completed one
+                    try:
+                        next_task = next(task_iter)
+                        next_future = executor.submit(
+                            transcribe_single_file, next_task, effective_config
+                        )
+                        pending_futures[next_future] = next_task
+                    except StopIteration:
+                        pass  # No more tasks to submit
+
+    except Exception as e:
+        error_message = str(e)
+        logger.exception("Batch transcription failed with exception")
+        raise
+
+    finally:
+        # Final summary
+        completed, total = checkpoint.get_progress()
+        failed_count = len(checkpoint.state.failed_files)
+
+        logger.info("=" * 60)
+        logger.info("Batch transcription completed!")
+        logger.info(f"Total files: {total}")
+        logger.info(f"Successfully transcribed: {completed}")
+        logger.info(f"Failed: {failed_count}")
+        if total == 0:
+            logger.info("Success rate: N/A (no files to process)")
+        else:
+            logger.info(f"Success rate: {completed / total * 100:.1f}%")
+        logger.info("=" * 60)
+
+        if failed_count > 0:
+            logger.warning("Failed files:")
+            for file_id, error in checkpoint.state.failed_files.items():
+                logger.warning(f"  - {file_id}: {error}")
+
+        # Complete the versioned run
+        if results_mgr is not None:
+            success = error_message is None and failed_count < total
+            results_mgr.complete_run(success=success, error=error_message)

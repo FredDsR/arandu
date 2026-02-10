@@ -554,6 +554,34 @@ class LLMConfig(BaseSettings):
     )
 
 
+class ResultsConfig(BaseSettings):
+    """Configuration for versioned results management.
+
+    Settings are loaded from environment variables with the GTRANSCRIBER_RESULTS_ prefix.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_RESULTS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    base_dir: Path = Field(
+        default=Path("./results"),
+        description="Base directory for versioned results",
+    )
+    enable_versioning: bool = Field(
+        default=True,
+        description="Enable versioned result directories",
+    )
+    keep_latest_symlinks: bool = Field(
+        default=True,
+        description="Maintain 'latest' symlinks to most recent runs",
+    )
+
+
 def get_transcriber_config() -> TranscriberConfig:
     """Get transcription pipeline configuration."""
     return TranscriberConfig()
@@ -582,3 +610,8 @@ def get_evaluation_config() -> EvaluationConfig:
 def get_llm_config() -> LLMConfig:
     """Get shared LLM configuration."""
     return LLMConfig()
+
+
+def get_results_config() -> ResultsConfig:
+    """Get results versioning configuration."""
+    return ResultsConfig()

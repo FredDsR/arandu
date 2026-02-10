@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, Mock, patch
 
@@ -19,6 +20,14 @@ from gtranscriber.core.batch import (
     load_catalog,
     transcribe_single_file,
 )
+from gtranscriber.core.results_manager import ResultsManager
+
+
+class _ThreadPoolCompat(ThreadPoolExecutor):
+    """ThreadPoolExecutor that ignores mp_context for test compatibility."""
+
+    def __init__(self, *args: object, mp_context: object = None, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
 
 
 class TestConstants:
@@ -931,6 +940,31 @@ class TestTranscribeSingleFile:
 class TestRunBatchTranscription:
     """Tests for run_batch_transcription function."""
 
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results to use tmp_path for predictable paths."""
+        self.results_dir = (tmp_path / "results").resolve()
+
+        # Mock ResultsConfig to use tmp_path as base directory
+        mock_rc = mocker.patch("gtranscriber.core.batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        # Mock TranscriberConfig for config snapshot
+        mock_tc = mocker.patch("gtranscriber.core.batch.TranscriberConfig")
+        mock_tc.return_value.model_dump.return_value = {"model_id": "test/model"}
+
+        # Fix run ID for predictable paths
+        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+
+        # Use ThreadPoolExecutor to avoid slow forkserver process spawning.
+        # Tests that explicitly @patch ProcessPoolExecutor will override this.
+        mocker.patch("gtranscriber.core.batch.ProcessPoolExecutor", _ThreadPoolCompat)
+
+        self.run_dir = self.results_dir / "transcription" / "test_run"
+        self.outputs_dir = self.run_dir / "outputs"
+        self.versioned_checkpoint = self.run_dir / "checkpoint.json"
+
     @patch("gtranscriber.core.batch._worker_engine", None)
     @patch("gtranscriber.core.batch.transcribe_single_file")
     @patch("gtranscriber.core.batch.load_catalog")
@@ -955,7 +989,8 @@ class TestRunBatchTranscription:
 
         run_batch_transcription(config)
 
-        assert config.output_dir.exists()
+        # Versioned output directory should be created
+        assert self.outputs_dir.exists()
 
     @patch("gtranscriber.core.batch._worker_engine", None)
     @patch("gtranscriber.core.batch.transcribe_single_file")
@@ -991,12 +1026,9 @@ class TestRunBatchTranscription:
             )
         ]
 
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
-
-        # Create checkpoint with task already completed
-        checkpoint_file = tmp_path / "checkpoint.json"
-        checkpoint_file.write_text(
+        # Pre-create versioned run directory with checkpoint already completed
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text(
             json.dumps(
                 {
                     "total_files": 1,
@@ -1008,8 +1040,8 @@ class TestRunBatchTranscription:
 
         config = BatchConfig(
             catalog_file=tmp_path / "catalog.csv",
-            output_dir=output_dir,
-            checkpoint_file=checkpoint_file,
+            output_dir=tmp_path / "output",
+            checkpoint_file=tmp_path / "checkpoint.json",
             credentials_file=tmp_path / "creds.json",
             token_file=tmp_path / "token.json",
         )
@@ -1131,8 +1163,8 @@ class TestRunBatchTranscription:
 
         run_batch_transcription(config)
 
-        # Check checkpoint was updated with failure
-        checkpoint_data = json.loads(config.checkpoint_file.read_text())
+        # Check versioned checkpoint was updated with failure
+        checkpoint_data = json.loads(self.versioned_checkpoint.read_text())
         assert "file1" in checkpoint_data["completed_files"]
         assert "file2" in checkpoint_data["failed_files"]
 
