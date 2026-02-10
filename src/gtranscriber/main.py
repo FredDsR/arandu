@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 
 from gtranscriber import __version__
-from gtranscriber.config import TranscriberConfig
+from gtranscriber.config import ResultsConfig, TranscriberConfig
 from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.hardware import get_device_and_dtype
 from gtranscriber.core.io import (
@@ -58,6 +58,7 @@ app = typer.Typer(
 # CLI arguments will override these defaults, but if not specified, values from
 # environment variables (GTRANSCRIBER_*) or .env file will be used.
 _config = TranscriberConfig()
+_results_config = ResultsConfig()
 logger.debug(f"Loaded configuration:\n{json.dumps(_config.model_dump_json(), indent=2)}")
 # Default paths from config - these are used as CLI parameter defaults
 DEFAULT_CREDENTIALS_PATH = Path(_config.credentials)
@@ -1210,7 +1211,7 @@ def list_runs(
             "-r",
             help="Base results directory. Can be set via GTRANSCRIBER_RESULTS_BASE_DIR env var.",
         ),
-    ] = Path("./results"),
+    ] = _results_config.base_dir,
 ) -> None:
     """List all pipeline runs with status and metadata.
 
@@ -1273,7 +1274,7 @@ def list_runs(
 
         # Format duration
         duration = run.get("duration_seconds")
-        duration_str = f"{duration:.1f}s" if duration else "-"
+        duration_str = f"{duration:.1f}s" if duration is not None else "-"
 
         # Format progress
         completed = run.get("completed_items", 0)
@@ -1291,7 +1292,7 @@ def list_runs(
                 dt = datetime.fromisoformat(started)
                 started = dt.strftime("%Y-%m-%d %H:%M")
             except ValueError:
-                pass
+                pass  # Keep original string if not valid ISO format
 
         table.add_row(
             run.get("run_id", "unknown"),
@@ -1329,9 +1330,9 @@ def run_info(
         typer.Option(
             "--results-dir",
             "-r",
-            help="Base results directory.",
+            help="Base results directory. Can be set via GTRANSCRIBER_RESULTS_BASE_DIR env var.",
         ),
-    ] = Path("./results"),
+    ] = _results_config.base_dir,
 ) -> None:
     """Display detailed information about a specific run.
 
@@ -1417,7 +1418,7 @@ def run_info(
     timing.add(f"Started: {metadata.started_at.strftime('%Y-%m-%d %H:%M:%S')}")
     if metadata.ended_at:
         timing.add(f"Ended: {metadata.ended_at.strftime('%Y-%m-%d %H:%M:%S')}")
-    if metadata.duration_seconds:
+    if metadata.duration_seconds is not None:
         timing.add(f"Duration: {metadata.duration_seconds:.1f} seconds")
 
     # Progress

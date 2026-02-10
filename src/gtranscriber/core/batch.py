@@ -441,9 +441,18 @@ def run_batch_transcription(config: BatchConfig) -> None:
 
     # Initialize versioned results if enabled
     if results_config.enable_versioning:
-        results_mgr = ResultsManager(results_config.base_dir, PipelineType.TRANSCRIPTION)
-        transcriber_config = TranscriberConfig()
-        results_mgr.create_run(transcriber_config, input_source=str(config.catalog_file))
+        results_mgr = ResultsManager(
+            results_config.base_dir,
+            PipelineType.TRANSCRIPTION,
+            keep_latest_symlinks=results_config.keep_latest_symlinks,
+        )
+        effective_transcriber_config = TranscriberConfig(
+            model_id=config.model_id,
+            force_cpu=config.force_cpu,
+            quantize=config.quantize,
+            language=config.language or "",
+        )
+        results_mgr.create_run(effective_transcriber_config, input_source=str(config.catalog_file))
         # Override output directory to use versioned path
         effective_output_dir = results_mgr.outputs_dir
         # Use checkpoint file in the run directory

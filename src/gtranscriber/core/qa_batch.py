@@ -206,8 +206,16 @@ def run_batch_qa_generation(
 
     # Initialize versioned results if enabled
     if results_config.enable_versioning:
-        results_mgr = ResultsManager(results_config.base_dir, PipelineType.QA)
-        results_mgr.create_run(config, input_source=str(input_dir))
+        results_mgr = ResultsManager(
+            results_config.base_dir,
+            PipelineType.QA,
+            keep_latest_symlinks=results_config.keep_latest_symlinks,
+        )
+        results_mgr.create_run(
+            config,
+            input_source=str(input_dir),
+            checkpoint_filename="qa_checkpoint.json",
+        )
         # Override output directory to use versioned path
         effective_output_dir = results_mgr.outputs_dir
         # Use checkpoint file in the run directory
@@ -559,8 +567,23 @@ def run_batch_cep_generation(
 
     # Initialize versioned results if enabled
     if results_config.enable_versioning:
-        results_mgr = ResultsManager(results_config.base_dir, PipelineType.CEP)
-        results_mgr.create_run(qa_config, input_source=str(input_dir))
+        results_mgr = ResultsManager(
+            results_config.base_dir,
+            PipelineType.CEP,
+            keep_latest_symlinks=results_config.keep_latest_symlinks,
+        )
+        results_mgr.create_run(
+            qa_config,
+            input_source=str(input_dir),
+            checkpoint_filename="cep_checkpoint.json",
+        )
+        # Supplement config snapshot with CEP settings for reproducibility
+        if results_mgr.metadata.config:
+            results_mgr.metadata.config.config_values["cep_config"] = cep_config.model_dump(
+                mode="json"
+            )
+            results_mgr.metadata.config.config_type = "QAConfig+CEPConfig"
+            results_mgr.metadata.save(results_mgr.run_dir / "run_metadata.json")
         # Override output directory to use versioned path
         effective_output_dir = results_mgr.outputs_dir
         # Use checkpoint file in the run directory

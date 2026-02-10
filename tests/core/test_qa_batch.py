@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -11,8 +12,6 @@ import pytest
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
-
-from concurrent.futures import ThreadPoolExecutor
 
 from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.qa_batch import (

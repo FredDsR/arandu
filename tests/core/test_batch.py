@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, Mock, patch
 
@@ -11,8 +12,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pytest_mock import MockerFixture
-
-from concurrent.futures import ThreadPoolExecutor
 
 from gtranscriber.core.batch import (
     AUDIO_VIDEO_MIME_TYPES,

@@ -6,10 +6,11 @@ for all pipeline outputs.
 
 from __future__ import annotations
 
-import fcntl
+import fcntl  # Unix-only: this project targets Linux/SLURM environments
 import json
 import logging
 import os
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,21 +36,28 @@ class ResultsManager:
     """Manages versioned result directories and run metadata.
 
     Creates timestamped run directories with format:
-    results/{pipeline}/{YYYYMMDD}_{HHMMSS}_{context}/
+    results/{pipeline}/{YYYYMMDD}_{HHMMSS}_{ffffff}_{context}/
 
     Where context is 'slurm_{partition}_{job_id}' for SLURM jobs or 'local' for
     local execution.
     """
 
-    def __init__(self, base_results_dir: Path, pipeline_type: PipelineType) -> None:
+    def __init__(
+        self,
+        base_results_dir: Path,
+        pipeline_type: PipelineType,
+        keep_latest_symlinks: bool = True,
+    ) -> None:
         """Initialize ResultsManager.
 
         Args:
             base_results_dir: Base directory for all results (e.g., ./results).
             pipeline_type: Type of pipeline being executed.
+            keep_latest_symlinks: Whether to maintain 'latest' symlinks.
         """
         self.base_dir = Path(base_results_dir).resolve()
         self.pipeline_type = pipeline_type
+        self._keep_latest_symlinks = keep_latest_symlinks
         self._run_dir: Path | None = None
         self._metadata: RunMetadata | None = None
 
@@ -93,7 +101,7 @@ class ResultsManager:
     def _generate_run_id(self, execution: ExecutionEnvironment) -> str:
         """Generate a unique run ID based on timestamp and execution context.
 
-        Format: YYYYMMDD_HHMMSS_context
+        Format: YYYYMMDD_HHMMSS_ffffff_context
         Where context is 'slurm_{partition}_{job_id}' or 'local'.
 
         Args:
@@ -102,7 +110,7 @@ class ResultsManager:
         Returns:
             Unique run ID string.
         """
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
 
         if execution.is_slurm and execution.slurm_partition and execution.slurm_job_id:
             context = f"slurm_{execution.slurm_partition}_{execution.slurm_job_id}"
@@ -120,7 +128,10 @@ class ResultsManager:
         return self.base_dir / self.pipeline_type.value
 
     def create_run(
-        self, config: BaseSettings | BaseModel, input_source: str | None = None
+        self,
+        config: BaseSettings | BaseModel,
+        input_source: str | None = None,
+        checkpoint_filename: str = "checkpoint.json",
     ) -> RunMetadata:
         """Create a new versioned run.
 
@@ -129,6 +140,7 @@ class ResultsManager:
         Args:
             config: Pipeline configuration to snapshot.
             input_source: Optional input source description (catalog path, directory).
+            checkpoint_filename: Name of the checkpoint file within the run directory.
 
         Returns:
             RunMetadata for the new run.
@@ -161,7 +173,7 @@ class ResultsManager:
             hardware=hardware,
             config=config_snapshot,
             output_directory=str(self._run_dir),
-            checkpoint_file=str(self._run_dir / "checkpoint.json"),
+            checkpoint_file=str(self._run_dir / checkpoint_filename),
             gtranscriber_version=__version__,
             input_source=input_source,
         )
@@ -214,8 +226,9 @@ class ResultsManager:
         metadata_path = self.run_dir / "run_metadata.json"
         self._metadata.save(metadata_path)
 
-        # 2. Update latest symlink
-        self._update_latest_symlink()
+        # 2. Update latest symlink (if configured)
+        if self._keep_latest_symlinks:
+            self._update_latest_symlink()
 
         # 3. Update index.json
         self._update_index()
@@ -237,11 +250,13 @@ class ResultsManager:
             # e.g., from results/latest to results/transcription/20260204_150000_local
             relative_target = os.path.relpath(self.run_dir, latest_dir)
 
-            # Remove existing symlink if it exists
+            # Remove existing symlink or unexpected file/directory
             if symlink_path.is_symlink():
                 symlink_path.unlink()
+            elif symlink_path.is_dir():
+                logger.warning(f"Removing unexpected directory at symlink path: {symlink_path}")
+                shutil.rmtree(symlink_path)
             elif symlink_path.exists():
-                # If it's a regular file/dir (shouldn't happen), remove it
                 symlink_path.unlink()
 
             # Create new symlink with relative path for portability
@@ -280,16 +295,16 @@ class ResultsManager:
             # Ensure parent directory exists
             index_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Use file locking for thread-safe access
-            mode = "r+" if index_path.exists() else "w"
-            with open(index_path, mode, encoding="utf-8") as f:
+            # Use file locking for thread-safe access.
+            # Open with "a+" to create if missing without truncating.
+            with open(index_path, "a+", encoding="utf-8") as f:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 try:
-                    # Read existing index if it exists
-                    if mode == "r+":
-                        f.seek(0)
+                    f.seek(0)
+                    content = f.read()
+                    if content.strip():
                         try:
-                            index_data = json.load(f)
+                            index_data = json.loads(content)
                         except json.JSONDecodeError:
                             index_data = {"runs": []}
                     else:
