@@ -532,6 +532,7 @@ def run_batch_transcription(config: BatchConfig) -> None:
             # Parallel processing with worker initialization
             with ProcessPoolExecutor(
                 max_workers=num_workers,
+                mp_context=mp.get_context("forkserver"),
                 initializer=_init_worker,
                 initargs=(
                     effective_config.model_id,

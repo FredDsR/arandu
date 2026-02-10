@@ -291,6 +291,7 @@ def run_batch_qa_generation(
             # Parallel processing with worker initialization
             with ProcessPoolExecutor(
                 max_workers=num_workers,
+                mp_context=mp.get_context("forkserver"),
                 initializer=_init_qa_worker,
                 initargs=(config.provider, config.model_id, config_dict),
             ) as executor:
@@ -646,6 +647,7 @@ def run_batch_cep_generation(
         # Parallel processing with worker initialization
         with ProcessPoolExecutor(
             max_workers=num_workers,
+            mp_context=mp.get_context("forkserver"),
             initializer=_init_cep_worker,
             initargs=(
                 qa_config.provider,

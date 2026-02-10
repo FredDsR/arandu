@@ -13,6 +13,8 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
+from concurrent.futures import ThreadPoolExecutor
+
 from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.qa_batch import (
     QAGenerationTask,
@@ -24,6 +26,13 @@ from gtranscriber.core.qa_batch import (
     run_batch_cep_generation,
     run_batch_qa_generation,
 )
+
+
+class _ThreadPoolCompat(ThreadPoolExecutor):
+    """ThreadPoolExecutor that ignores mp_context for test compatibility."""
+
+    def __init__(self, *args: object, mp_context: object = None, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -650,6 +659,10 @@ class TestRunBatchQAGeneration:
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
 
+        # Use ThreadPoolExecutor to avoid slow forkserver process spawning.
+        # Threads share memory so mocks work and output files are created.
+        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
+
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
@@ -872,6 +885,9 @@ class TestWorkerCountLogging:
     ) -> None:
         """Test that using more workers than CPUs logs info message."""
         caplog.set_level("INFO")
+
+        # Use ThreadPoolExecutor to avoid slow forkserver process spawning
+        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         # Mock cpu_count to return small number
         mocker.patch("gtranscriber.core.qa_batch.mp.cpu_count", return_value=2)
@@ -1500,6 +1516,9 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test CEP batch logs when workers > CPU count."""
         caplog.set_level("INFO")
+
+        # Use ThreadPoolExecutor to avoid slow forkserver process spawning
+        mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         # Mock cpu_count to return small number
         mocker.patch("gtranscriber.core.qa_batch.mp.cpu_count", return_value=2)
