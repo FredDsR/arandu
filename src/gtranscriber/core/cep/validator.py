@@ -184,7 +184,7 @@ class QAValidator:
         bloom_level_desc = bloom_levels.get(qa_pair.bloom_level, qa_pair.bloom_level)
 
         # Format rubrics from existing JSON data (6-point scale)
-        def format_rubric(rubric: dict[str, str]) -> str:
+        def format_rubric_as_list(rubric: dict[str, str]) -> str:
             return "\n".join(f"   - {score}: {desc}" for score, desc in rubric.items())
 
         template = Template(self._prompts["_template"])
@@ -199,9 +199,9 @@ class QAValidator:
             faithfulness_desc=criteria["faithfulness"]["instruction"],
             bloom_desc=criteria["bloom_calibration"]["instruction"],
             informativeness_desc=criteria["informativeness"]["instruction"],
-            rubric_faithfulness=format_rubric(criteria["faithfulness"]["rubric"]),
-            rubric_bloom_calibration=format_rubric(criteria["bloom_calibration"]["rubric"]),
-            rubric_informativeness=format_rubric(criteria["informativeness"]["rubric"]),
+            rubric_faithfulness=format_rubric_as_list(criteria["faithfulness"]["rubric"]),
+            rubric_bloom_calibration=format_rubric_as_list(criteria["bloom_calibration"]["rubric"]),
+            rubric_informativeness=format_rubric_as_list(criteria["informativeness"]["rubric"]),
             output_format_instruction=self._prompts["output_format_instruction"],
         )
 
