@@ -638,6 +638,12 @@ class TranscriptionQualityConfig(BaseSettings):
     max_words_per_minute: float = Field(
         default=300.0, description="Maximum words per minute threshold"
     )
+    max_empty_segment_ratio: float = Field(
+        default=0.2, description="Maximum ratio of empty segments before flagging"
+    )
+    uniform_interval_tolerance: float = Field(
+        default=0.1, description="Tolerance (±seconds) for detecting uniform 1-second intervals"
+    )
 
     @model_validator(mode="after")
     def validate_scoring_weights(self) -> TranscriptionQualityConfig:

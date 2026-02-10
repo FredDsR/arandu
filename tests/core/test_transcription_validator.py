@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from pytest import MonkeyPatch
 
 from gtranscriber.config import TranscriptionQualityConfig
 from gtranscriber.core.transcription_validator import (
@@ -52,7 +51,7 @@ class TestTranscriptionQualityConfig:
                 content_density_weight=0.05,  # Total = 0.95, not 1.0
             )
 
-    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
+    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading from environment variables."""
         monkeypatch.setenv("GTRANSCRIBER_QUALITY_ENABLED", "false")
         monkeypatch.setenv("GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD", "0.7")

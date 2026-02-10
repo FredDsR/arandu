@@ -202,23 +202,31 @@ class TranscriptionValidator:
 
         # Check for empty segments
         empty_count = sum(1 for seg in segments if not seg.text.strip())
-        if empty_count > len(segments) * 0.2:  # More than 20% empty
+        empty_ratio = empty_count / len(segments)
+        if empty_ratio > self.config.max_empty_segment_ratio:
             issues.append(f"high_empty_segments:{empty_count}/{len(segments)}")
 
         # Check for suspicious uniform intervals
         consecutive_uniform = 0
         max_consecutive_uniform = 0
 
+        # Calculate tolerance bounds for 1-second intervals
+        tolerance = self.config.uniform_interval_tolerance
+        lower_bound = 1.0 - tolerance
+        upper_bound = 1.0 + tolerance
+
         for i in range(len(segments) - 1):
             duration = segments[i + 1].start - segments[i].start
-            # Check if duration is approximately 1.0 second (±0.1s tolerance)
-            if 0.9 <= duration <= 1.1:
+            # Check if duration is approximately 1.0 second (configurable tolerance)
+            if lower_bound <= duration <= upper_bound:
                 consecutive_uniform += 1
                 max_consecutive_uniform = max(max_consecutive_uniform, consecutive_uniform)
             else:
                 consecutive_uniform = 0
 
-        if max_consecutive_uniform >= self.config.suspicious_uniform_intervals:
+        # Check if we exceeded the suspicious interval threshold
+        exceeds_threshold = max_consecutive_uniform >= self.config.suspicious_uniform_intervals
+        if exceeds_threshold:
             issues.append(f"suspicious_uniform_intervals:{max_consecutive_uniform}")
 
         # Calculate score based on issues found
@@ -227,9 +235,9 @@ class TranscriptionValidator:
 
         # Penalize based on severity
         score = 1.0
-        if empty_count > len(segments) * 0.2:
+        if empty_ratio > self.config.max_empty_segment_ratio:
             score -= 0.3
-        if max_consecutive_uniform >= self.config.suspicious_uniform_intervals:
+        if exceeds_threshold:
             score -= 0.5
 
         return max(0.0, score), issues
