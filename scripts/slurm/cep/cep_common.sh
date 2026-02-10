@@ -44,7 +44,6 @@ USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
 
 # Directories
 export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_CEP_DIR="${GTRANSCRIBER_CEP_DIR:-$PROJECT_DIR/cep_dataset}"
 export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
@@ -68,7 +67,6 @@ echo "Ollama GPU:    $USE_GPU_OLLAMA"
 echo "Questions/Doc: $GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT"
 echo "Workers:       $GTRANSCRIBER_QA_WORKERS"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
-echo "CEP Output:    $GTRANSCRIBER_CEP_DIR"
 echo "=============================================="
 echo "CEP Language:  $GTRANSCRIBER_CEP_LANGUAGE"
 echo "Validation:    $GTRANSCRIBER_CEP_ENABLE_VALIDATION"
@@ -89,7 +87,6 @@ if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
 fi
 
 # Create output directories
-mkdir -p "$GTRANSCRIBER_CEP_DIR"
 mkdir -p "$OLLAMA_MODELS_DIR"
 mkdir -p logs
 
@@ -184,9 +181,9 @@ echo "=============================================="
 echo "G-Transcriber CEP QA Generation Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "CEP Output:    $GTRANSCRIBER_CEP_DIR"
+echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
 
 # Count generated files
-CEP_COUNT=$(find "$GTRANSCRIBER_CEP_DIR" -name "*_cep_qa.json" 2>/dev/null | wc -l)
+CEP_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -name "*_cep_qa.json" 2>/dev/null | wc -l)
 echo "CEP Records:   $CEP_COUNT files generated"
 echo "=============================================="

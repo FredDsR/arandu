@@ -370,6 +370,39 @@ class ResultsManager:
         return None
 
     @classmethod
+    def resolve_latest_outputs(cls, base_dir: Path, pipeline: PipelineType) -> Path | None:
+        """Resolve the outputs directory for the latest run of a pipeline type.
+
+        Checks the ``latest/`` symlink first, then falls back to scanning run
+        directories in reverse chronological order.
+
+        Args:
+            base_dir: Base results directory.
+            pipeline: Pipeline type to look up.
+
+        Returns:
+            Path to the outputs directory if found, or None.
+        """
+        # Try latest/ symlink first (fast path)
+        latest_symlink = Path(base_dir) / "latest" / pipeline.value
+        if latest_symlink.is_symlink():
+            outputs = latest_symlink.resolve() / "outputs"
+            if outputs.is_dir():
+                return outputs
+
+        # Fallback: find the most recent run directory with outputs
+        pipeline_dir = Path(base_dir) / pipeline.value
+        if not pipeline_dir.exists():
+            return None
+
+        for run_dir in sorted(pipeline_dir.iterdir(), reverse=True):
+            outputs = run_dir / "outputs"
+            if outputs.is_dir() and any(outputs.iterdir()):
+                return outputs
+
+        return None
+
+    @classmethod
     def list_runs(cls, base_dir: Path, pipeline: PipelineType | None = None) -> list[dict]:
         """List all runs, optionally filtered by pipeline type.
 

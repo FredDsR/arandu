@@ -35,7 +35,6 @@ USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
 
 # Directories
 export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_QA_DIR="${GTRANSCRIBER_QA_DIR:-$PROJECT_DIR/qa_dataset}"
 export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
@@ -59,7 +58,6 @@ echo "Ollama GPU:    $USE_GPU_OLLAMA"
 echo "Questions/Doc: $GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT"
 echo "Workers:       $GTRANSCRIBER_QA_WORKERS"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
-echo "QA Output:     $GTRANSCRIBER_QA_DIR"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -74,7 +72,6 @@ if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
 fi
 
 # Create output directories
-mkdir -p "$GTRANSCRIBER_QA_DIR"
 mkdir -p "$OLLAMA_MODELS_DIR"
 mkdir -p logs
 
@@ -154,9 +151,9 @@ echo "=============================================="
 echo "G-Transcriber QA Generation Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "QA Output:     $GTRANSCRIBER_QA_DIR"
+echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
 
 # Count generated files
-QA_COUNT=$(find "$GTRANSCRIBER_QA_DIR" -name "*_qa.json" 2>/dev/null | wc -l)
+QA_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -name "*_qa.json" 2>/dev/null | wc -l)
 echo "QA Records:    $QA_COUNT files generated"
 echo "=============================================="

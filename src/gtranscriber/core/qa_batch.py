@@ -136,11 +136,41 @@ def generate_qa_for_transcription(
         return task.gdrive_id, False, str(e)
 
 
+def _resolve_transcription_dir(input_dir: Path) -> Path:
+    """Resolve the directory containing transcription JSON files.
+
+    If ``input_dir`` already contains ``*_transcription.json`` files it is
+    returned as-is.  Otherwise, the directory is treated as a versioned
+    results base directory and the latest transcription outputs are resolved
+    via :pyclass:`ResultsManager`.
+
+    Args:
+        input_dir: Directory provided by the caller (may be the base results
+            directory or a direct path to transcription outputs).
+
+    Returns:
+        The directory that contains ``*_transcription.json`` files.
+    """
+    # Fast path: input_dir already contains transcription files
+    if list(input_dir.glob("*_transcription.json")):
+        return input_dir
+
+    # Treat input_dir as a versioned results base directory
+    resolved = ResultsManager.resolve_latest_outputs(input_dir, PipelineType.TRANSCRIPTION)
+    if resolved is not None:
+        logger.info(f"Resolved transcription outputs from versioned results: {resolved}")
+        return resolved
+
+    # Return original dir so callers get the standard "no files found" warning
+    return input_dir
+
+
 def load_transcription_tasks(input_dir: Path, output_dir: Path) -> list[QAGenerationTask]:
     """Load transcription files and create QA generation tasks.
 
     Args:
-        input_dir: Directory containing EnrichedRecord JSON files.
+        input_dir: Directory containing EnrichedRecord JSON files, or the
+            base versioned results directory.
         output_dir: Directory for QARecord JSON outputs.
 
     Returns:
@@ -148,11 +178,14 @@ def load_transcription_tasks(input_dir: Path, output_dir: Path) -> list[QAGenera
     """
     tasks: list[QAGenerationTask] = []
 
+    # Resolve versioned directory layout when needed
+    effective_input_dir = _resolve_transcription_dir(input_dir)
+
     # Find all transcription JSON files
-    transcription_files = list(input_dir.glob("*_transcription.json"))
+    transcription_files = list(effective_input_dir.glob("*_transcription.json"))
 
     if not transcription_files:
-        logger.warning(f"No transcription files found in {input_dir}")
+        logger.warning(f"No transcription files found in {effective_input_dir}")
         return tasks
 
     for json_file in transcription_files:
@@ -600,7 +633,8 @@ def run_batch_cep_generation(
 
     # Load tasks (reuse existing function, but change output suffix)
     all_tasks = []
-    transcription_files = list(input_dir.glob("*_transcription.json"))
+    effective_input_dir = _resolve_transcription_dir(input_dir)
+    transcription_files = list(effective_input_dir.glob("*_transcription.json"))
 
     for json_file in transcription_files:
         try:

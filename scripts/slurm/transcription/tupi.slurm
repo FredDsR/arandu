@@ -23,7 +23,6 @@ export USE_SCRATCH=false
 export WORKERS="${WORKERS:-4}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
 export GTRANSCRIBER_QUANTIZE=false  # RTX 4090 has enough VRAM, no need for quantization
-export GTRANSCRIBER_RESULTS_DIR="${HOME}/etno-kgc-preprocessing/results_tupi"
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"
