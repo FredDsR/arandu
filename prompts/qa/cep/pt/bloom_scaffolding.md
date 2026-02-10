@@ -9,6 +9,7 @@ Tarefa:
 $level_instruction
 $starters_section
 $examples_section
+$scaffolding_section
 
 Gere exatamente $num_questions par(es) pergunta-resposta no formato JSON.
 Cada par deve seguir estas regras:

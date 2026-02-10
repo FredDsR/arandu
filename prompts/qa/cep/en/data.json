@@ -106,6 +106,7 @@
       ]
     }
   },
+  "scaffolding_header": "Previously generated QA pairs (build upon these, avoid duplication):",
   "starters_label": "Suggested starters",
   "examples_label": "Question examples",
   "output_rules": [

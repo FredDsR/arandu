@@ -284,6 +284,20 @@ class CEPConfig(BaseSettings):
         },
         description="Distribution of questions per Bloom level (must sum to 1.0)",
     )
+    enable_scaffolding_context: bool = Field(
+        default=True,
+        description=(
+            "Pass previously generated QA pairs as context to higher Bloom levels. "
+            "When enabled, levels are processed in Bloom hierarchy order and each "
+            "level receives QA pairs from lower levels in the prompt."
+        ),
+    )
+    max_scaffolding_pairs: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum number of prior QA pairs to include as scaffolding context",
+    )
 
     # Module II - Reasoning settings
     max_hop_count: int = Field(
