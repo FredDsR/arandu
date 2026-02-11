@@ -15,6 +15,9 @@ from collections import Counter
 from gtranscriber.config import TranscriptionQualityConfig, get_transcription_quality_config
 from gtranscriber.schemas import EnrichedRecord, TranscriptionQualityScore, TranscriptionSegment
 
+# Languages that use Latin script
+_LATIN_LANGS = frozenset({"pt", "en", "es", "fr", "de", "it"})
+
 
 class TranscriptionValidator:
     """Validate transcription quality using heuristics.
@@ -97,9 +100,7 @@ class TranscriptionValidator:
             Tuple of (score, issues) where score is 0.0-1.0.
         """
         # For Portuguese/English/Romance languages, expect Latin characters
-        latin_langs = {"pt", "en", "es", "fr", "de", "it"}
-
-        if expected_lang in latin_langs:
+        if expected_lang in _LATIN_LANGS:
             latin_chars = 0
             cjk_chars = 0
             total_alpha = 0
@@ -109,14 +110,11 @@ class TranscriptionValidator:
                     continue
                 total_alpha += 1
                 # Use Unicode script property via character name
-                try:
-                    name = unicodedata.name(c, "")
-                    if "LATIN" in name or "COMBINING" in name:
-                        latin_chars += 1
-                    elif "CJK" in name or "HIRAGANA" in name or "KATAKANA" in name:
-                        cjk_chars += 1
-                except ValueError:
-                    pass
+                name = unicodedata.name(c, "")
+                if "LATIN" in name or "COMBINING" in name:
+                    latin_chars += 1
+                elif "CJK" in name or "HIRAGANA" in name or "KATAKANA" in name:
+                    cjk_chars += 1
 
             if total_alpha == 0:
                 return 0.5, ["no_alphabetic_content"]
@@ -283,6 +281,8 @@ class TranscriptionValidator:
 def validate_enriched_record(
     record: EnrichedRecord,
     config: TranscriptionQualityConfig | None = None,
+    *,
+    validator: TranscriptionValidator | None = None,
 ) -> EnrichedRecord:
     """Validate and mutate record in-place with quality scores.
 
@@ -292,22 +292,40 @@ def validate_enriched_record(
     Args:
         record: EnrichedRecord to validate and update.
         config: Quality validation config. If None, loads from env vars.
+        validator: Optional pre-instantiated validator. If provided, config is ignored.
 
     Returns:
         The same record (mutated in-place) for chaining.
     """
-    if config is None:
-        config = get_transcription_quality_config()
+    if validator is None:
+        if config is None:
+            config = get_transcription_quality_config()
 
-    if not config.enabled:
-        # If validation disabled, mark as valid and skip
-        record.is_valid = True
-        return record
+        if not config.enabled:
+            # If validation disabled, mark as valid and skip
+            record.is_valid = True
+            return record
 
-    validator = TranscriptionValidator(config)
+        validator = TranscriptionValidator(config)
+
     quality_score = validator.validate(record)
 
     record.transcription_quality = quality_score
-    record.is_valid = quality_score.overall_score >= config.quality_threshold
+    record.is_valid = quality_score.overall_score >= validator.config.quality_threshold
 
     return record
+
+
+def get_quality_issues(record: EnrichedRecord) -> list[str] | None:
+    """Get quality issues from a validated record.
+
+    Args:
+        record: EnrichedRecord that has been validated.
+
+    Returns:
+        List of quality issues if validation failed and quality score exists,
+        None otherwise.
+    """
+    if record.is_valid is False and record.transcription_quality:
+        return record.transcription_quality.issues_detected
+    return None

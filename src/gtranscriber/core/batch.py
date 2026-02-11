@@ -29,7 +29,7 @@ from gtranscriber.core.media import (
     requires_audio_extraction,
 )
 from gtranscriber.core.results_manager import ResultsManager
-from gtranscriber.core.transcription_validator import validate_enriched_record
+from gtranscriber.core.transcription_validator import get_quality_issues, validate_enriched_record
 from gtranscriber.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
 
 if TYPE_CHECKING:
@@ -311,12 +311,9 @@ def transcribe_single_file(
 
             # Quality validation (lightweight, CPU-only)
             validate_enriched_record(enriched)
-
-            if enriched.is_valid is False:
-                logger.warning(
-                    f"Quality check failed for {task.name}: "
-                    f"{enriched.transcription_quality.issues_detected}"
-                )
+            issues = get_quality_issues(enriched)
+            if issues:
+                logger.warning(f"Quality check failed for {task.name}: {issues}")
 
             # Save result
             output_filename = f"{task.file_id}_transcription.json"

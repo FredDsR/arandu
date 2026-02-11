@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
+from pydantic import ValidationError
+from rich.table import Table
 
 from gtranscriber import __version__
-from gtranscriber.config import ResultsConfig, TranscriberConfig
+from gtranscriber.config import ResultsConfig, TranscriberConfig, TranscriptionQualityConfig
 from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.hardware import get_device_and_dtype
 from gtranscriber.core.io import (
@@ -24,7 +26,10 @@ from gtranscriber.core.io import (
     get_output_filename,
     save_enriched_record,
 )
-from gtranscriber.core.transcription_validator import validate_enriched_record
+from gtranscriber.core.transcription_validator import (
+    get_quality_issues,
+    validate_enriched_record,
+)
 from gtranscriber.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from gtranscriber.utils.console import console
 from gtranscriber.utils.logger import (
@@ -271,10 +276,9 @@ def transcribe(
 
         # Quality validation (lightweight, CPU-only)
         validate_enriched_record(enriched)
-        if enriched.is_valid is False:
-            print_warning(
-                f"Quality issues detected: {enriched.transcription_quality.issues_detected}"
-            )
+        issues = get_quality_issues(enriched)
+        if issues:
+            print_warning(f"Quality issues detected: {issues}")
 
         # Determine output path
         if output is None:
@@ -442,10 +446,9 @@ def drive_transcribe(
 
             # Quality validation (lightweight, CPU-only)
             validate_enriched_record(enriched)
-            if enriched.is_valid is False:
-                print_warning(
-                    f"Quality issues detected: {enriched.transcription_quality.issues_detected}"
-                )
+            issues = get_quality_issues(enriched)
+            if issues:
+                print_warning(f"Quality issues detected: {issues}")
 
             # Save locally first
             output_filename = get_output_filename(input_record.name)
@@ -1381,7 +1384,6 @@ def validate_transcriptions(
         gtranscriber validate-transcriptions results_tupi/
         gtranscriber validate-transcriptions results/ --threshold 0.6 --report-only
     """
-    from gtranscriber.config import TranscriptionQualityConfig
 
     print_info("Scanning for transcription files...")
 
@@ -1439,7 +1441,7 @@ def validate_transcriptions(
                 if record.is_valid is False:
                     failed_files.append(json_path.name)
 
-            except Exception as e:
+            except (json.JSONDecodeError, ValidationError, OSError) as e:
                 print_error(f"Failed to process {json_path.name}: {e}")
                 failed_files.append(json_path.name)
 
@@ -1447,7 +1449,6 @@ def validate_transcriptions(
 
     # Display summary
     console.print()
-    from rich.table import Table
 
     table = Table(title="Validation Summary", show_header=True, header_style="bold magenta")
     table.add_column("File", style="cyan")
