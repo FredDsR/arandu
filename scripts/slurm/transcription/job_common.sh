@@ -12,7 +12,7 @@
 # Optional environment variables:
 #   GTRANSCRIBER_LANGUAGE - Language code for transcription (default: pt)
 #   GTRANSCRIBER_RESULTS_DIR - Custom results directory (default: $PROJECT_DIR/results)
-#   USE_SCRATCH - Set to "false" to disable $SCRATCH optimization (default: true)
+#   PIPELINE_ID - Pipeline run ID for versioned results layout (default: auto-resolved)
 # =============================================================================
 
 set -euo pipefail
@@ -41,119 +41,6 @@ FINAL_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
 
 USE_CPU="${USE_CPU:-false}"
 USE_ROCM="${USE_ROCM:-false}"
-USE_SCRATCH="${USE_SCRATCH:-true}"
-
-# -----------------------------------------------------------------------------
-# $SCRATCH Setup for Better I/O Performance
-# -----------------------------------------------------------------------------
-# $SCRATCH is a local disk on compute nodes, much faster than NFS-mounted $HOME.
-# We copy necessary files to $SCRATCH at start and copy results back at end.
-# -----------------------------------------------------------------------------
-
-SCRATCH_WORK_DIR=""
-USING_SCRATCH=false
-
-setup_scratch() {
-    if [ "$USE_SCRATCH" != "true" ]; then
-        echo "SCRATCH optimization disabled via USE_SCRATCH=false"
-        return 1
-    fi
-
-    if [ -z "${SCRATCH:-}" ] || [ ! -d "${SCRATCH:-}" ]; then
-        echo "Warning: \$SCRATCH not available, using \$HOME (slower NFS)"
-        return 1
-    fi
-
-    SCRATCH_WORK_DIR="$SCRATCH/gtranscriber_${SLURM_JOB_ID:-$$}"
-    echo "Setting up SCRATCH working directory: $SCRATCH_WORK_DIR"
-
-    # Create directory structure in $SCRATCH
-    mkdir -p "$SCRATCH_WORK_DIR"/{input,results,cache/huggingface,credentials}
-
-    # Copy input catalog
-    if [ -f "$PROJECT_DIR/input/$CATALOG_FILE" ]; then
-        cp "$PROJECT_DIR/input/$CATALOG_FILE" "$SCRATCH_WORK_DIR/input/"
-        echo "  Copied input catalog to SCRATCH"
-    else
-        echo "Error: Catalog file not found: $PROJECT_DIR/input/$CATALOG_FILE"
-        return 1
-    fi
-
-    # Copy .env file
-    if [ -f "$PROJECT_DIR/.env" ]; then
-        cp "$PROJECT_DIR/.env" "$SCRATCH_WORK_DIR/"
-        echo "  Copied .env to SCRATCH"
-    fi
-
-    # Copy credentials
-    if [ -f "$PROJECT_DIR/credentials.json" ]; then
-        cp "$PROJECT_DIR/credentials.json" "$SCRATCH_WORK_DIR/credentials/"
-        echo "  Copied credentials.json to SCRATCH"
-    fi
-    if [ -f "$PROJECT_DIR/token.json" ]; then
-        cp "$PROJECT_DIR/token.json" "$SCRATCH_WORK_DIR/credentials/"
-        echo "  Copied token.json to SCRATCH"
-    fi
-
-    # Copy existing checkpoint if resuming
-    if [ -f "$PROJECT_DIR/results/checkpoint.json" ]; then
-        cp "$PROJECT_DIR/results/checkpoint.json" "$SCRATCH_WORK_DIR/results/"
-        echo "  Copied existing checkpoint to SCRATCH (resuming)"
-    fi
-
-    # Sync HF cache if it exists (models are large, this may take time)
-    if [ -d "$PROJECT_DIR/cache/huggingface" ] && [ "$(ls -A "$PROJECT_DIR/cache/huggingface" 2>/dev/null)" ]; then
-        echo "  Syncing Hugging Face cache to SCRATCH (this may take a while)..."
-        rsync -a --info=progress2 "$PROJECT_DIR/cache/huggingface/" "$SCRATCH_WORK_DIR/cache/huggingface/"
-        echo "  Hugging Face cache synced to SCRATCH"
-    fi
-
-    USING_SCRATCH=true
-    echo "SCRATCH setup complete"
-    return 0
-}
-
-# Cleanup function to copy results back to $HOME
-cleanup_scratch() {
-    if [ "$USING_SCRATCH" = true ] && [ -n "$SCRATCH_WORK_DIR" ] && [ -d "$SCRATCH_WORK_DIR" ]; then
-        echo ""
-        echo "=============================================="
-        echo "Copying results from SCRATCH to final destination..."
-        echo "=============================================="
-
-        # Ensure results directory exists
-        mkdir -p "$FINAL_RESULTS_DIR"
-
-        # Copy results back
-        if [ -d "$SCRATCH_WORK_DIR/results" ] && [ "$(ls -A "$SCRATCH_WORK_DIR/results" 2>/dev/null)" ]; then
-            rsync -av --info=progress2 "$SCRATCH_WORK_DIR/results/" "$FINAL_RESULTS_DIR/"
-            echo "Results copied to: $FINAL_RESULTS_DIR"
-        else
-            echo "No results to copy"
-        fi
-
-        # Copy back updated credentials (token.json may have been refreshed)
-        if [ -f "$SCRATCH_WORK_DIR/credentials/token.json" ]; then
-            echo "Copying back updated token.json..."
-            cp "$SCRATCH_WORK_DIR/credentials/token.json" "$PROJECT_DIR/"
-        fi
-
-        # Optionally sync back the HF cache (new models downloaded during run)
-        if [ -d "$SCRATCH_WORK_DIR/cache/huggingface" ]; then
-            echo "Syncing Hugging Face cache back to HOME..."
-            rsync -a "$SCRATCH_WORK_DIR/cache/huggingface/" "$PROJECT_DIR/cache/huggingface/"
-            echo "Hugging Face cache synced"
-        fi
-
-        # Clean up SCRATCH
-        echo "Cleaning up SCRATCH directory..."
-        rm -rf "$SCRATCH_WORK_DIR"
-        echo "SCRATCH cleanup complete"
-    fi
-}
-
-# Register cleanup trap to ensure results are copied even on failure
-trap cleanup_scratch EXIT
 
 # -----------------------------------------------------------------------------
 # Job Information
@@ -210,28 +97,16 @@ mkdir -p logs
 mkdir -p cache/huggingface
 
 # -----------------------------------------------------------------------------
-# Setup SCRATCH for better I/O performance
+# Setup working directories
 # -----------------------------------------------------------------------------
 echo ""
 echo "Setting up working directories..."
 
-if setup_scratch; then
-    # Use SCRATCH directories for Docker mounts
-    WORK_INPUT_DIR="$SCRATCH_WORK_DIR/input"
-    WORK_RESULTS_DIR="$SCRATCH_WORK_DIR/results"
-    WORK_CREDENTIALS_DIR="$SCRATCH_WORK_DIR/credentials"
-    WORK_HF_CACHE_DIR="$SCRATCH_WORK_DIR/cache/huggingface"
-    echo "Using SCRATCH for I/O (faster local disk)"
-else
-    # Fallback to $HOME directories
-    WORK_INPUT_DIR="$PROJECT_DIR/input"
-    WORK_RESULTS_DIR="$FINAL_RESULTS_DIR"
-    WORK_CREDENTIALS_DIR="$PROJECT_DIR"
-    WORK_HF_CACHE_DIR="$PROJECT_DIR/cache/huggingface"
-    echo "Using HOME for I/O (NFS - slower)"
-    # Ensure results directory exists
-    mkdir -p "$FINAL_RESULTS_DIR"
-fi
+WORK_INPUT_DIR="$PROJECT_DIR/input"
+WORK_RESULTS_DIR="$FINAL_RESULTS_DIR"
+WORK_CREDENTIALS_DIR="$PROJECT_DIR"
+WORK_HF_CACHE_DIR="$PROJECT_DIR/cache/huggingface"
+mkdir -p "$FINAL_RESULTS_DIR"
 
 echo "  Input Dir:       $WORK_INPUT_DIR"
 echo "  Results Dir:     $WORK_RESULTS_DIR"
@@ -243,6 +118,7 @@ echo "  HF Cache Dir:    $WORK_HF_CACHE_DIR"
 # Export both old and new variable names for backward compatibility
 # -----------------------------------------------------------------------------
 export SLURM_JOB_ID
+export PIPELINE_ID="${PIPELINE_ID:-}"
 
 # Export both WORKERS and GTRANSCRIBER_WORKERS
 export WORKERS
@@ -281,16 +157,6 @@ else
     export GTRANSCRIBER_FORCE_CPU=false
     export QUANTIZE_FLAG="--quantize"
     export CPU_FLAG=""
-fi
-
-# -----------------------------------------------------------------------------
-# Change to appropriate working directory for Docker Compose
-# -----------------------------------------------------------------------------
-# If using SCRATCH, run docker compose from SCRATCH directory to pick up .env file
-if [ "$USING_SCRATCH" = true ]; then
-    echo ""
-    echo "Changing to SCRATCH directory for Docker Compose execution..."
-    cd "$SCRATCH_WORK_DIR"
 fi
 
 # -----------------------------------------------------------------------------
@@ -344,7 +210,4 @@ echo "G-Transcriber Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
 echo "Results Dir:   $FINAL_RESULTS_DIR"
-if [ "$USING_SCRATCH" = true ]; then
-    echo "Note:          Results were copied from SCRATCH"
-fi
 echo "=============================================="

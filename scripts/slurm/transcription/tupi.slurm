@@ -19,7 +19,6 @@
 
 # Use the base script with partition-specific settings
 
-export USE_SCRATCH=false
 export WORKERS="${WORKERS:-4}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
 export GTRANSCRIBER_QUANTIZE=false  # RTX 4090 has enough VRAM, no need for quantization

@@ -15,9 +15,9 @@
 # This is a CPU-based job that computes metrics without LLM inference.
 #
 # Required:
-#   - QA dataset in GTRANSCRIBER_QA_DIR
-#   - Transcription results in GTRANSCRIBER_RESULTS_DIR
-#   - (Optional) Knowledge graph in GTRANSCRIBER_KG_DIR
+#   - Pipeline results in GTRANSCRIBER_RESULTS_DIR (versioned layout)
+#   - QA outputs at results/{pipeline_id}/qa/outputs/
+#   - (Optional) KG outputs at results/{pipeline_id}/kg/outputs/
 # =============================================================================
 
 set -euo pipefail
@@ -33,10 +33,9 @@ export GTRANSCRIBER_EVAL_EMBEDDING_MODEL="${EVAL_EMBEDDING_MODEL:-sentence-trans
 
 # Directories
 export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_QA_DIR="${GTRANSCRIBER_QA_DIR:-$PROJECT_DIR/qa_dataset}"
-export GTRANSCRIBER_KG_DIR="${GTRANSCRIBER_KG_DIR:-$PROJECT_DIR/knowledge_graphs}"
 export GTRANSCRIBER_EVAL_DIR="${GTRANSCRIBER_EVAL_DIR:-$PROJECT_DIR/evaluation}"
 export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
+export PIPELINE_ID="${PIPELINE_ID:-}"
 
 # -----------------------------------------------------------------------------
 # Job Information
@@ -53,9 +52,8 @@ echo "Project Dir:   $PROJECT_DIR"
 echo "=============================================="
 echo "Metrics:       $GTRANSCRIBER_EVAL_METRICS"
 echo "Embed Model:   $GTRANSCRIBER_EVAL_EMBEDDING_MODEL"
-echo "QA Dir:        $GTRANSCRIBER_QA_DIR"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
-echo "KG Dir:        $GTRANSCRIBER_KG_DIR"
+echo "Pipeline ID:   ${PIPELINE_ID:-<auto>}"
 echo "Eval Output:   $GTRANSCRIBER_EVAL_DIR"
 echo "=============================================="
 
@@ -64,34 +62,29 @@ echo "=============================================="
 # -----------------------------------------------------------------------------
 cd "$PROJECT_DIR"
 
-# Check QA dataset exists
-if [ ! -d "$GTRANSCRIBER_QA_DIR" ]; then
-    echo "Error: QA dataset directory not found: $GTRANSCRIBER_QA_DIR"
-    echo "Please run QA generation first."
+# Check results directory exists
+if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
+    echo "Error: Results directory not found: $GTRANSCRIBER_RESULTS_DIR"
+    echo "Please run transcription first."
     exit 1
 fi
 
-QA_COUNT=$(find "$GTRANSCRIBER_QA_DIR" -name "qa_*.json" 2>/dev/null | wc -l)
+# Check QA dataset exists inside versioned results layout
+QA_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/qa/outputs/qa_*.json" 2>/dev/null | wc -l)
 if [ "$QA_COUNT" -eq 0 ]; then
-    echo "Error: No QA records found in $GTRANSCRIBER_QA_DIR"
+    echo "Error: No QA records found in $GTRANSCRIBER_RESULTS_DIR/*/qa/outputs/"
+    echo "Please run QA generation first."
     exit 1
 fi
 echo "Found $QA_COUNT QA record files"
 
-# Check transcription results exist
-if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
-    echo "Warning: Results directory not found: $GTRANSCRIBER_RESULTS_DIR"
-    echo "Some metrics may not be available."
-fi
-
-# Check knowledge graph exists (optional)
-KG_PATH="$GTRANSCRIBER_KG_DIR/corpus_graph.graphml"
-if [ -f "$KG_PATH" ]; then
-    echo "Found corpus knowledge graph"
+# Check knowledge graph exists inside versioned results layout (optional)
+KG_PATH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/outputs/corpus_graph.graphml" -print -quit 2>/dev/null)
+if [ -n "$KG_PATH" ]; then
+    echo "Found corpus knowledge graph: $KG_PATH"
 else
-    echo "Warning: Corpus graph not found at $KG_PATH"
+    echo "Warning: Corpus graph not found in $GTRANSCRIBER_RESULTS_DIR/*/kg/outputs/"
     echo "Graph-based metrics will be skipped."
-    KG_PATH=""
 fi
 
 # Create output directory

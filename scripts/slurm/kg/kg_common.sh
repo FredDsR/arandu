@@ -85,6 +85,7 @@ mkdir -p logs
 # Export SLURM_JOB_ID for container naming
 # -----------------------------------------------------------------------------
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+export PIPELINE_ID="${PIPELINE_ID:-}"
 
 # -----------------------------------------------------------------------------
 # Determine Docker profile based on GPU mode
@@ -160,7 +161,8 @@ echo "End Time:      $(date)"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
 
 # Show graph statistics if corpus graph exists
-if [ -f "$GTRANSCRIBER_RESULTS_DIR/latest/kg/outputs/corpus_graph.graphml" ]; then
+CORPUS_GRAPH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/outputs/corpus_graph.graphml" -print -quit 2>/dev/null)
+if [ -n "$CORPUS_GRAPH" ]; then
     echo "Corpus Graph:  corpus_graph.graphml created"
 fi
 

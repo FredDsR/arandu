@@ -94,6 +94,7 @@ mkdir -p logs
 # Export SLURM_JOB_ID for container naming
 # -----------------------------------------------------------------------------
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+export PIPELINE_ID="${PIPELINE_ID:-}"
 
 # -----------------------------------------------------------------------------
 # Determine Docker profile based on GPU mode

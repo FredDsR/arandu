@@ -388,6 +388,7 @@ services:
     command: >
       build-kg
       /app/results
+      --id ${PIPELINE_ID:-}
       --workers ${GTRANSCRIBER_KG_WORKERS:-2}
 
     volumes:
@@ -427,15 +428,12 @@ services:
 
     command: >
       evaluate
-      /app/qa_dataset
       /app/results
-      --kg-path /app/knowledge_graphs/corpus_graph.graphml
+      --id ${PIPELINE_ID:-}
       --output /app/evaluation/report.json
 
     volumes:
-      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:ro
       - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:ro
       - ${GTRANSCRIBER_EVAL_DIR:-./evaluation}:/app/evaluation:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 

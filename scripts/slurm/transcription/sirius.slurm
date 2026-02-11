@@ -19,7 +19,6 @@
 
 # Use ROCm for AMD GPU acceleration
 export USE_ROCM=false
-export USE_SCRATCH=false
 export WORKERS="${WORKERS:-3}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
 
