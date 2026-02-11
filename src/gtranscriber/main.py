@@ -27,6 +27,7 @@ from gtranscriber.core.io import (
     save_enriched_record,
 )
 from gtranscriber.core.transcription_validator import (
+    TranscriptionValidator,
     get_quality_issues,
     validate_enriched_record,
 )
@@ -1402,6 +1403,9 @@ def validate_transcriptions(
         expected_language=expected_language,
     )
 
+    # Create validator once for reuse across all files
+    validator = TranscriptionValidator(quality_config)
+
     # Validate each file
     results = []
     failed_files = []
@@ -1416,8 +1420,8 @@ def validate_transcriptions(
                     data = json.load(f)
                 record = EnrichedRecord(**data)
 
-                # Validate
-                validate_enriched_record(record, quality_config)
+                # Validate (reuse validator instance)
+                validate_enriched_record(record, validator=validator)
 
                 results.append(
                     {
