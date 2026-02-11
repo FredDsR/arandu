@@ -1,5 +1,16 @@
 # Evaluation Guide
 
+> **⚠️ STATUS: PLANNED - NOT YET IMPLEMENTED**
+>
+> Evaluation pipeline for assessing QA and KG quality is planned for a future release. The configuration schemas (`EvaluationConfig`, `EvaluationReport`) exist in `src/gtranscriber/config.py` and `src/gtranscriber/schemas.py`, but there are currently:
+> - **No CLI commands** for evaluation (no `evaluate` command)
+> - **No pipeline modules** implementing the evaluation logic
+> - **No dependencies** added yet (`scikit-learn`, `sentence-transformers`, `nltk`, `sacrebleu` are not in `pyproject.toml`)
+>
+> This documentation describes the **planned functionality** and serves as a specification for future implementation.
+
+---
+
 Evaluate the quality of QA datasets and knowledge graphs using targeted metrics for each pipeline.
 
 ## Overview
