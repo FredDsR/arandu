@@ -4,7 +4,7 @@
 
 This document describes the methodological framework for **G-Transcriber**, a composable pipeline designed to elicit and structure tacit knowledge from ethnographic audio/video interviews with riverine communities affected by critical climate events in southern Brazil.
 
-The methodology integrates four sequential stages: **(1)** automated speech recognition and transcription, **(2)** cognitively-scaffolded question-answer generation grounded in Bloom's Taxonomy, **(3)** knowledge graph construction via entity and relation extraction, and **(4)** multi-dimensional quality evaluation. Each stage is designed as an independent, resumable module that feeds structured output into the next, enabling reproducibility and iterative refinement.
+The methodology integrates four stages: **(1)** automated speech recognition and transcription, **(2)** cognitively-scaffolded question-answer generation grounded in Bloom's Taxonomy, **(3)** knowledge graph construction via entity and relation extraction, and **(4)** evaluation of the knowledge graph using the QA dataset as ground truth. Stages 2 and 3 operate in parallel from the same transcription input, while Stage 4 bridges them by measuring how well the graph captures the knowledge validated by the QA pairs. Each stage is designed as an independent, resumable module, enabling reproducibility and iterative refinement.
 
 ---
 
@@ -13,92 +13,70 @@ The methodology integrates four sequential stages: **(1)** automated speech reco
 The following diagram presents the end-to-end methodology, from raw ethnographic media to structured knowledge representations and evaluation metrics.
 
 ```mermaid
-flowchart TB
-    %% ── Styling ──────────────────────────────────────────────
+flowchart TD
     classDef input fill:#4a6fa5,stroke:#2d4a7a,color:#fff,rx:12,ry:12
-    classDef phase1 fill:#48a9a6,stroke:#2d7a78,color:#fff,rx:8,ry:8
-    classDef phase2 fill:#d4a373,stroke:#a67c52,color:#fff,rx:8,ry:8
-    classDef phase3 fill:#7b68ae,stroke:#5a4d8a,color:#fff,rx:8,ry:8
-    classDef phase4 fill:#c44569,stroke:#943349,color:#fff,rx:8,ry:8
-    classDef output fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:12,ry:12
-    classDef decision fill:#e9c46a,stroke:#c9a227,color:#333,rx:4,ry:4
-    classDef artifact fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
+    classDef p1 fill:#48a9a6,stroke:#2d7a78,color:#fff,rx:8,ry:8
+    classDef p2 fill:#d4a373,stroke:#a67c52,color:#fff,rx:8,ry:8
+    classDef p3 fill:#7b68ae,stroke:#5a4d8a,color:#fff,rx:8,ry:8
+    classDef p4 fill:#c44569,stroke:#943349,color:#fff,rx:8,ry:8
+    classDef out fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:12,ry:12
+    classDef data fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
 
-    %% ── Input ────────────────────────────────────────────────
-    IN["Ethnographic Audio/Video Archive<br/><i>Google Drive Catalog (CSV)</i>"]:::input
+    IN(["Ethnographic Audio/Video Archive<br/>Google Drive Catalog"]):::input
 
-    %% ── Phase 1: Transcription ──────────────────────────────
-    subgraph P1["<b>Phase 1 &mdash; Automated Transcription</b>"]
-        direction TB
-        DL["Download from<br/>Google Drive"]:::phase1
-        FF["Extract Audio<br/><i>FFmpeg / FFprobe</i>"]:::phase1
-        WH["Whisper ASR<br/><i>whisper-large-v3</i>"]:::phase1
-        QV{"Quality<br/>Validation"}:::decision
-        ER["EnrichedRecord<br/><i>JSON</i>"]:::artifact
-        SK["Skipped<br/><i>is_valid = false</i>"]:::artifact
+    IN --> DL
 
+    subgraph P1["Phase 1 — Automated Transcription"]
+        DL["Download from Google Drive"]:::p1
+        FF["Extract Audio · FFmpeg"]:::p1
+        WH["Whisper ASR · whisper-large-v3"]:::p1
+        QV{"Quality Validation<br/>score ≥ 0.5?"}
         DL --> FF --> WH --> QV
-        QV -- "score >= 0.5" --> ER
-        QV -- "score < 0.5" --> SK
     end
 
-    %% ── Phase 2: CEP QA Generation ─────────────────────────
-    subgraph P2["<b>Phase 2 &mdash; Cognitive Elicitation Pipeline (CEP)</b>"]
+    QV -->|pass| ER(["EnrichedRecord · .json"]):::data
+    QV -.->|fail| SK(["Skipped · is_valid = false"]):::data
+
+    ER --> BL
+    ER --> TE
+
+    subgraph P2["Phase 2 — Cognitive Elicitation Pipeline · CEP"]
+        BL["I · Bloom Scaffolding"]:::p2
+        SG["Scaffolded QA Generation"]:::p2
+        RT["II · Reasoning Traces"]:::p2
+        MH["Multi-hop + Tacit Inference"]:::p2
+        JU["III · LLM-as-a-Judge<br/>Faithfulness 40% · Bloom 30% · Informativeness 30%"]:::p2
+        VD{"Weighted Score ≥ 0.6?"}
+        BL --> SG --> RT --> MH --> JU --> VD
+    end
+
+    subgraph P3["Phase 3 — Knowledge Graph Construction"]
+        TE["Triple Extraction · AutoSchemaKG"]:::p3
+        SI["Schema Induction · Conceptualization"]:::p3
+        GM["Graph Merging · Corpus-level"]:::p3
+        TE --> SI --> GM
+    end
+
+    VD -->|valid| QR(["QARecordCEP · .json / .jsonl"]):::data
+    GM --> GR(["GraphML · NetworkX"]):::data
+
+    P2 ~~~ P3
+
+    QR -->|ground truth| P4
+    GR -->|to evaluate| P4
+
+    subgraph P4["Phase 4 — KG Evaluation"]
         direction TB
-        subgraph M1["Module I &mdash; Bloom Scaffolding"]
-            BL["Bloom Level<br/>Distribution"]:::phase2
-            SG["Scaffolded QA<br/>Generation"]:::phase2
-            BL --> SG
-        end
-        subgraph M2["Module II &mdash; Reasoning & Grounding"]
-            RT["Reasoning Trace<br/>Generation"]:::phase2
-            MH["Multi-hop<br/>Detection"]:::phase2
-            TI["Tacit Inference<br/>Extraction"]:::phase2
-            RT --> MH --> TI
-        end
-        subgraph M3["Module III &mdash; LLM-as-a-Judge"]
-            FA["Faithfulness<br/><i>40%</i>"]:::phase2
-            BC["Bloom Calibration<br/><i>30%</i>"]:::phase2
-            IF["Informativeness<br/><i>30%</i>"]:::phase2
-            VD{"Threshold<br/>score >= 0.6"}:::decision
-            FA & BC & IF --> VD
-        end
-        QR["QARecordCEP<br/><i>JSON / JSONL</i>"]:::artifact
-
-        M1 --> M2 --> M3
-        VD -- "valid" --> QR
+        EC["Entity Coverage<br/>Density, Diversity"]:::p4
+        RM["Relation Metrics<br/>Connectivity"]:::p4
+        SQ["Semantic Quality<br/>Coherence"]:::p4
+        KC["Knowledge Coverage<br/>QA vs KG overlap"]:::p4
+        RP(["Evaluation Report"]):::out
+        EC --> RP
+        RM --> RP
+        SQ --> RP
+        KC --> RP
     end
-
-    %% ── Phase 3: Knowledge Graph Construction ───────────────
-    subgraph P3["<b>Phase 3 &mdash; Knowledge Graph Construction</b>"]
-        direction TB
-        TE["Triple Extraction<br/><i>AutoSchemaKG</i>"]:::phase3
-        SI["Schema Induction<br/><i>Conceptualization</i>"]:::phase3
-        GM["Graph Merging<br/><i>Corpus-level</i>"]:::phase3
-        GR["GraphML Output<br/><i>NetworkX</i>"]:::artifact
-
-        TE --> SI --> GM --> GR
-    end
-
-    %% ── Phase 4: Evaluation ─────────────────────────────────
-    subgraph P4["<b>Phase 4 &mdash; Multi-Dimensional Evaluation</b>"]
-        direction TB
-        QM["QA Metrics<br/><i>EM, F1, BLEU</i>"]:::phase4
-        EC["Entity Coverage<br/><i>Density, Diversity</i>"]:::phase4
-        RM["Relation Metrics<br/><i>Connectivity, Degree</i>"]:::phase4
-        SQ["Semantic Quality<br/><i>Coherence, Coverage</i>"]:::phase4
-        RP["EvaluationReport<br/><i>JSON</i>"]:::artifact
-
-        QM & EC & RM & SQ --> RP
-    end
-
-    %% ── Connections ─────────────────────────────────────────
-    IN --> P1
-    ER --> P2
-    ER --> P3
-    QR --> P4
-    GR --> P4
-    RP --> OUT["Structured Knowledge<br/>Representation &<br/>Quality Report"]:::output
 ```
 
 ---
@@ -271,60 +249,65 @@ AutoSchemaKG dynamically induces types from the data, though common types in thi
 
 ---
 
-## 6. Phase 4 -- Multi-Dimensional Evaluation
+## 6. Phase 4 -- Knowledge Graph Evaluation
 
 ### 6.1 Objective
 
-Quantify the quality of knowledge elicitation across complementary dimensions, providing a holistic assessment of how well the pipeline captures and structures the tacit knowledge present in the ethnographic interviews.
+Assess how well the constructed knowledge graph captures the tacit knowledge present in the ethnographic interviews. The **QA dataset from Phase 2 serves as ground truth**: it represents validated, cognitively-scaffolded knowledge that was successfully elicited from the transcriptions. The evaluation measures whether the knowledge graph preserves this knowledge in its entity-relation structure.
 
-### 6.2 Evaluation Dimensions
+### 6.2 Evaluation Strategy
+
+The QA pairs -- already validated for faithfulness, Bloom calibration, and informativeness -- provide a reference benchmark. The evaluation quantifies how much of the knowledge expressed in the QA dataset is structurally represented in the graph, alongside intrinsic graph quality metrics.
 
 ```mermaid
-flowchart TB
-    classDef dim fill:#c44569,stroke:#943349,color:#fff,rx:8,ry:8
+flowchart TD
+    classDef gt fill:#d4a373,stroke:#a67c52,color:#fff,rx:8,ry:8
+    classDef kg fill:#7b68ae,stroke:#5a4d8a,color:#fff,rx:8,ry:8
     classDef metric fill:#f4f1de,stroke:#bbb,color:#333,rx:4,ry:4
     classDef report fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:10,ry:10
 
-    subgraph QA["QA Quality"]
-        EM["Exact Match (EM)"]:::metric
-        F1["Token-level F1"]:::metric
-        BL["BLEU Score"]:::metric
-    end
+    QR["QARecordCEP<br/>Ground Truth"]:::gt
+    GR["Knowledge Graph<br/>GraphML"]:::kg
 
-    subgraph ENT["Entity Coverage"]
-        TD["Total / Unique Entities"]:::metric
-        ED["Entity Density<br/><i>per 100 tokens</i>"]:::metric
-        EV["Entity Diversity<br/><i>unique / total</i>"]:::metric
-    end
+    QR --> KC
+    GR --> KC
+    GR --> EC
+    GR --> RM
+    GR --> SQ
 
-    subgraph REL["Relation Metrics"]
-        RD["Relation Density<br/><i>per entity</i>"]:::metric
-        GC["Graph Connectivity<br/><i>degree, components</i>"]:::metric
-    end
+    KC["Knowledge Coverage<br/>entities and relations<br/>present in QA pairs"]:::metric
+    EC["Entity Coverage<br/>total, unique, density,<br/>diversity"]:::metric
+    RM["Relation Metrics<br/>density, connectivity,<br/>degree distribution"]:::metric
+    SQ["Semantic Quality<br/>coherence, information<br/>density"]:::metric
 
-    subgraph SEM["Semantic Quality"]
-        CO["Coherence Score"]:::metric
-        ID["Information Density"]:::metric
-        KC["Knowledge Coverage<br/><i>entities in QA pairs</i>"]:::metric
-    end
+    KC --> R
+    EC --> R
+    RM --> R
+    SQ --> R
 
-    QA:::dim --> R
-    ENT:::dim --> R
-    REL:::dim --> R
-    SEM:::dim --> R
-
-    R["<b>Overall Score</b><br/><i>0.3 QA + 0.2 Entity +<br/>0.2 Relation + 0.3 Semantic</i>"]:::report
+    R(["Evaluation Report"]):::report
 ```
 
-### 6.3 Overall Score Computation
+### 6.3 Evaluation Dimensions
+
+| Dimension | Inputs | What It Measures |
+|-----------|--------|-----------------|
+| **Knowledge Coverage** | QA dataset + KG | Proportion of entities and relations from QA pairs that appear in the graph |
+| **Entity Coverage** | KG | Total/unique entities, entity density (per 100 tokens), type diversity |
+| **Relation Metrics** | KG | Relation density (per entity), graph connectivity, degree distribution |
+| **Semantic Quality** | KG | Coherence of entity neighborhoods, information density |
+
+Knowledge Coverage is the key metric that bridges the QA and KG pipelines: it answers *"does the graph contain the knowledge that the QA pairs confirmed exists in the interviews?"*
+
+### 6.4 Overall Score Computation
 
 The composite evaluation score is computed as a weighted average:
 
-$$\text{Overall} = 0.3 \cdot F_1 + 0.2 \cdot \text{EntityDiversity} + 0.2 \cdot \min\!\left(\frac{\text{RelationDensity}}{3.0},\ 1.0\right) + 0.3 \cdot \text{Coherence}$$
+$$\text{Overall} = 0.3 \cdot \text{KnowledgeCoverage} + 0.2 \cdot \text{EntityDiversity} + 0.2 \cdot \min\!\left(\frac{\text{RelationDensity}}{3.0},\ 1.0\right) + 0.3 \cdot \text{Coherence}$$
 
-This weighting prioritizes **answer quality** (F1) and **semantic coherence** while incorporating structural metrics from the knowledge graph to ensure the elicitation process captures rich, interconnected knowledge.
+This weighting prioritizes **knowledge coverage** (how well the graph captures QA-validated knowledge) and **semantic coherence**, while incorporating structural graph metrics to ensure the representation is rich and interconnected.
 
-### 6.4 Output
+### 6.5 Output
 
 An **EvaluationReport** (JSON) aggregating all metrics, dimensional scores, and the composite overall score.
 
@@ -422,8 +405,8 @@ flowchart LR
     A -- "Whisper ASR +<br/>Quality Filter" --> B
     B -- "CEP<br/>(Bloom + Reasoning +<br/>Validation)" --> C
     B -- "AutoSchemaKG<br/>(Triples + Schema<br/>Induction)" --> D
-    C --> E
-    D --> E
+    C -- "ground truth" --> E
+    D -- "evaluated" --> E
 ```
 
 ---
@@ -435,7 +418,7 @@ This methodology implements a **four-phase composable pipeline** for tacit knowl
 1. **Phase 1 (Transcription)** converts raw audio/video into quality-validated text using Whisper ASR with automatic failure detection
 2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, enriched with reasoning traces and validated by an LLM-as-a-Judge
 3. **Phase 3 (Knowledge Graph)** extracts entity-relation structures using AutoSchemaKG with dynamic schema induction
-4. **Phase 4 (Evaluation)** quantifies elicitation quality across QA accuracy, entity coverage, graph connectivity, and semantic coherence
+4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, measuring knowledge coverage, entity diversity, graph connectivity, and semantic coherence
 
 Each phase is independently deployable, checkpoint-resumable, and configurable through environment variables. The pipeline is designed for execution on HPC clusters via SLURM, enabling processing of large ethnographic corpora with GPU-accelerated inference. All phases share a consistent batch processing architecture that ensures fault tolerance and reproducibility.
 
