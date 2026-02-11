@@ -163,6 +163,12 @@ fi
 # Build Docker image (if needed)
 # -----------------------------------------------------------------------------
 echo ""
+echo "Pruning Docker build cache, unused images, and volumes to free disk space..."
+docker builder prune -af 2>/dev/null || true
+docker image prune -af 2>/dev/null || true
+docker volume prune -f 2>/dev/null || true
+
+echo ""
 echo "Building Docker image..."
 
 # Use -f flag to specify docker-compose.yml location from PROJECT_DIR

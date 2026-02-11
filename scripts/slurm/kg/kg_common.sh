@@ -109,6 +109,39 @@ echo "Cleaning up any orphan containers from previous runs..."
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
 
 echo ""
+echo "Pruning Docker build cache, unused images, and volumes to free disk space..."
+docker builder prune -af 2>/dev/null || true
+docker image prune -af 2>/dev/null || true
+docker volume prune -f 2>/dev/null || true
+
+echo ""
+echo "Cleaning up unused Ollama models to free disk space..."
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE" 2>/dev/null || true
+OLLAMA_UP=false
+for i in {1..30}; do
+    if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
+        OLLAMA_UP=true
+        break
+    fi
+    echo "  Waiting for Ollama... ($i/30)"
+    sleep 5
+done
+if [ "$OLLAMA_UP" = true ]; then
+    REQUIRED_MODELS=("$GTRANSCRIBER_KG_MODEL_ID")
+    INSTALLED=$(docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list 2>/dev/null | tail -n +2 | awk '{print $1}') || true
+    for model in $INSTALLED; do
+        is_required=false
+        for req in "${REQUIRED_MODELS[@]}"; do
+            [ "$model" = "$req" ] && is_required=true && break
+        done
+        if [ "$is_required" = false ]; then
+            echo "  Removing unused model: $model"
+            docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama rm "$model" 2>/dev/null || true
+        fi
+    done
+fi
+
+echo ""
 echo "Building Docker images..."
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build gtranscriber-kg
 

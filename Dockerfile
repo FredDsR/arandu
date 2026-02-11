@@ -20,14 +20,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # Stage 2: Runtime
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim-bookworm AS runtime
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies (cache mounts reduce peak disk usage during build
+# and speed up rebuilds by reusing downloaded .deb packages)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg
 
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv

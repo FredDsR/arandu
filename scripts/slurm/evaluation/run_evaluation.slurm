@@ -102,6 +102,12 @@ export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 echo ""
+echo "Pruning Docker build cache, unused images, and volumes to free disk space..."
+docker builder prune -af 2>/dev/null || true
+docker image prune -af 2>/dev/null || true
+docker volume prune -f 2>/dev/null || true
+
+echo ""
 echo "Building Docker image..."
 docker compose -f "$COMPOSE_FILE" --profile evaluate build gtranscriber-eval
 
