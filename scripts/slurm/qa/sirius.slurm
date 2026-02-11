@@ -21,7 +21,6 @@
 export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-3}"
 export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}"
 export USE_GPU_OLLAMA=false  # CPU mode - Ollama doesn't support ROCm well
-export GTRANSCRIBER_QA_DIR="${GTRANSCRIBER_QA_DIR:-${HOME}/etno-kgc-preprocessing/qa_dataset_sirius}"
 
 # Source the common QA script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/qa/qa_common.sh"

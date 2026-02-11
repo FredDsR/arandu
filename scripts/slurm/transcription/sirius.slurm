@@ -19,11 +19,8 @@
 
 # Use ROCm for AMD GPU acceleration
 export USE_ROCM=false
-export USE_SCRATCH=false
 export WORKERS="${WORKERS:-3}"
 export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
-export GTRANSCRIBER_RESULTS_DIR="${HOME}/etno-kgc-preprocessing/results_sirius"
-
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

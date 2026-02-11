@@ -105,7 +105,6 @@ class TestQAConfig:
         assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
         assert config.questions_per_document == 10
-        assert config.strategies == ["factual", "conceptual"]
         assert config.temperature == 0.7
         assert config.max_tokens == 2048
         assert config.workers == 2
@@ -153,17 +152,6 @@ class TestQAConfig:
         with pytest.raises(ValidationError) as exc_info:
             QAConfig(temperature=2.1)
         assert "less than or equal to 2" in str(exc_info.value)
-
-    def test_valid_strategies(self) -> None:
-        """Test valid QA generation strategies."""
-        config = QAConfig(strategies=["factual", "conceptual", "temporal", "entity"])
-        assert config.strategies == ["factual", "conceptual", "temporal", "entity"]
-
-    def test_invalid_strategy(self) -> None:
-        """Test validation error for invalid strategy."""
-        with pytest.raises(ValidationError) as exc_info:
-            QAConfig(strategies=["factual", "invalid_strategy"])
-        assert "Invalid QA strategy" in str(exc_info.value)
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test QA config loading from environment variables."""
@@ -283,7 +271,6 @@ class TestCEPConfig:
         """Test default CEP configuration initialization."""
         config = CEPConfig()
 
-        assert config.enable_bloom_scaffolding is True
         assert config.enable_reasoning_traces is True
         assert config.enable_validation is True
         assert config.bloom_levels == ["remember", "understand", "analyze", "evaluate"]

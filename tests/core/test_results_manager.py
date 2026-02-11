@@ -1,4 +1,4 @@
-"""Tests for results versioning manager."""
+"""Tests for results versioning manager (ID-first layout)."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from gtranscriber.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
+    PipelineMetadata,
     PipelineType,
     RunMetadata,
     RunStatus,
@@ -42,7 +43,6 @@ class TestExecutionEnvironment:
 
     def test_detect_local_environment(self, mocker: MockerFixture) -> None:
         """Test detection of local execution environment."""
-        # Clear SLURM environment variables
         mocker.patch.dict(os.environ, {}, clear=True)
 
         env = ExecutionEnvironment.detect()
@@ -78,7 +78,6 @@ class TestHardwareInfo:
 
     def test_capture_cpu_only(self, mocker: MockerFixture) -> None:
         """Test hardware capture on CPU-only system."""
-        # Mock torch module which is imported inside the capture() method
         mock_torch = mocker.MagicMock()
         mock_torch.cuda.is_available.return_value = False
         mock_torch.backends.mps.is_available.return_value = False
@@ -126,7 +125,6 @@ class TestConfigSnapshot:
             model_id: str = "test-model"
             workers: int = 4
 
-        # Set up environment variables
         mocker.patch.dict(
             os.environ,
             {"GTRANSCRIBER_MODEL_ID": "env-model", "OTHER_VAR": "ignored"},
@@ -174,6 +172,23 @@ class TestRunMetadata:
         assert metadata.status == RunStatus.PENDING
         assert metadata.duration_seconds is None
 
+    def test_pipeline_id_field(self) -> None:
+        """Test that pipeline_id field is supported."""
+        metadata = RunMetadata(
+            run_id="test-run",
+            pipeline_id="test-pipeline",
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            execution=ExecutionEnvironment(hostname="test", username="test"),
+            hardware=HardwareInfo(
+                device_type="cpu", cpu_count=1, torch_version="2.0", python_version="3.13"
+            ),
+            config=ConfigSnapshot(config_type="Test", config_values={}),
+            output_directory="/test",
+            gtranscriber_version="0.1.0",
+        )
+
+        assert metadata.pipeline_id == "test-pipeline"
+
     def test_duration_calculation(self) -> None:
         """Test duration_seconds computed field."""
         started = datetime(2026, 2, 4, 14, 30, 0)
@@ -193,7 +208,7 @@ class TestRunMetadata:
             gtranscriber_version="0.1.0",
         )
 
-        assert metadata.duration_seconds == 330.0  # 5 minutes 30 seconds
+        assert metadata.duration_seconds == 330.0
 
     def test_success_rate_calculation(self) -> None:
         """Test success_rate computed field."""
@@ -239,8 +254,40 @@ class TestRunMetadata:
         assert loaded.config.config_values["key"] == "value"
 
 
+class TestPipelineMetadata:
+    """Tests for PipelineMetadata model."""
+
+    def test_creation(self) -> None:
+        """Test PipelineMetadata creation."""
+        meta = PipelineMetadata(
+            pipeline_id="test-id",
+            steps_run=["transcription"],
+        )
+
+        assert meta.pipeline_id == "test-id"
+        assert meta.steps_run == ["transcription"]
+        assert meta.schema_version == "2.0"
+        assert meta.created_at is not None
+
+    def test_save_and_load(self, tmp_path: Path) -> None:
+        """Test saving and loading pipeline metadata."""
+        meta = PipelineMetadata(
+            pipeline_id="test-id",
+            steps_run=["transcription", "qa"],
+        )
+
+        save_path = tmp_path / "pipeline.json"
+        meta.save(save_path)
+
+        assert save_path.exists()
+
+        loaded = PipelineMetadata.load(save_path)
+        assert loaded.pipeline_id == "test-id"
+        assert loaded.steps_run == ["transcription", "qa"]
+
+
 class TestResultsManager:
-    """Tests for ResultsManager class."""
+    """Tests for ResultsManager class (ID-first layout)."""
 
     def test_initialization(self, tmp_path: Path) -> None:
         """Test ResultsManager initialization."""
@@ -256,60 +303,281 @@ class TestResultsManager:
         with pytest.raises(RuntimeError, match=r"create_run.*must be called"):
             _ = manager.run_dir
 
-    def test_create_run_local(
+    def test_create_run_id_first_layout(
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
     ) -> None:
-        """Test creating a run in local environment."""
+        """Test that create_run creates results/{id}/{step}/outputs/ layout."""
         from pydantic import BaseModel
 
         class TestConfig(BaseModel):
             model_id: str = "test"
 
-        # Mock environment as local
         mocker.patch.dict(os.environ, {}, clear=True)
 
         manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
-        config = TestConfig()
-        metadata = manager.create_run(config, input_source="catalog.csv")
+        metadata = manager.create_run(TestConfig(), input_source="catalog.csv")
 
-        # Verify run directory created
-        assert manager.run_dir.exists()
-        assert manager.outputs_dir.exists()
+        # Verify ID-first directory structure
+        pipeline_id = metadata.pipeline_id
+        assert pipeline_id is not None
+        assert (tmp_path / pipeline_id / "transcription").exists()
+        assert (tmp_path / pipeline_id / "transcription" / "outputs").exists()
 
         # Verify metadata
         assert metadata.status == RunStatus.IN_PROGRESS
         assert metadata.execution.is_local is True
-        assert "local" in metadata.run_id
         assert metadata.input_source == "catalog.csv"
 
-        # Verify metadata file saved
-        metadata_path = manager.run_dir / "run_metadata.json"
+        # Verify run_metadata.json saved in step dir
+        metadata_path = tmp_path / pipeline_id / "transcription" / "run_metadata.json"
         assert metadata_path.exists()
 
-    def test_create_run_slurm(
+    def test_create_run_creates_pipeline_json(
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
     ) -> None:
-        """Test creating a run in SLURM environment."""
+        """Test that create_run creates pipeline.json with correct content."""
         from pydantic import BaseModel
 
         class TestConfig(BaseModel):
             model_id: str = "test"
 
-        # Mock SLURM environment
-        slurm_env = {
-            "SLURM_JOB_ID": "12345",
-            "SLURM_JOB_PARTITION": "grace",
-            "SLURMD_NODENAME": "node001",
-        }
-        mocker.patch.dict(os.environ, slurm_env, clear=False)
+        mocker.patch.dict(os.environ, {}, clear=True)
 
         manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
         metadata = manager.create_run(TestConfig())
 
-        # Verify SLURM context in run_id
-        assert "slurm_grace_12345" in metadata.run_id
-        assert metadata.execution.is_slurm is True
-        assert metadata.execution.slurm_partition == "grace"
+        pipeline_json = tmp_path / metadata.pipeline_id / "pipeline.json"
+        assert pipeline_json.exists()
+
+        pipeline_meta = PipelineMetadata.load(pipeline_json)
+        assert pipeline_meta.pipeline_id == metadata.pipeline_id
+        assert "transcription" in pipeline_meta.steps_run
+        assert pipeline_meta.schema_version == "2.0"
+
+    def test_create_run_with_explicit_id(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test that user-provided pipeline_id is used."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION, pipeline_id="my-run")
+        metadata = manager.create_run(TestConfig())
+
+        assert metadata.pipeline_id == "my-run"
+        assert (tmp_path / "my-run" / "transcription" / "outputs").exists()
+
+    def test_overwrite_step(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test that re-running a step with the same ID overwrites the step directory."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        # First run
+        manager1 = ResultsManager(tmp_path, PipelineType.QA, pipeline_id="test-run")
+        manager1.create_run(TestConfig())
+        # Write a marker file
+        (manager1.outputs_dir / "marker.json").write_text("{}")
+
+        # Second run with same ID should overwrite
+        manager2 = ResultsManager(tmp_path, PipelineType.QA, pipeline_id="test-run")
+        manager2.create_run(TestConfig())
+
+        # Marker file should be gone (directory was cleaned)
+        assert not (manager2.outputs_dir / "marker.json").exists()
+        # But outputs dir should still exist
+        assert manager2.outputs_dir.exists()
+
+    def test_complete_run_no_symlinks(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test that completing a run does NOT create latest/ symlinks."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        manager.create_run(TestConfig())
+        manager.update_progress(completed=10, failed=0, total=10)
+        manager.complete_run(success=True)
+
+        # Verify status
+        assert manager.metadata.status == RunStatus.COMPLETED
+        assert manager.metadata.ended_at is not None
+
+        # Verify NO latest/ symlink
+        assert not (tmp_path / "latest").exists()
+
+        # Verify index updated
+        index_path = tmp_path / "index.json"
+        assert index_path.exists()
+        with open(index_path) as f:
+            index_data = json.load(f)
+        assert len(index_data["runs"]) == 1
+        assert index_data["runs"][0]["status"] == "completed"
+        assert index_data["runs"][0]["pipeline_id"] is not None
+
+    def test_complete_run_failure(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test completing a run with failure."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        manager.create_run(TestConfig())
+        manager.complete_run(success=False, error="Out of memory")
+
+        assert manager.metadata.status == RunStatus.FAILED
+        assert manager.metadata.error_message == "Out of memory"
+
+    def test_resolve_outputs_by_id(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test resolving outputs by pipeline ID and step."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION, pipeline_id="test-run")
+        manager.create_run(TestConfig())
+
+        resolved = ResultsManager.resolve_outputs(tmp_path, "test-run", PipelineType.TRANSCRIPTION)
+        assert resolved is not None
+        assert resolved == tmp_path / "test-run" / "transcription" / "outputs"
+
+    def test_resolve_outputs_nonexistent(self, tmp_path: Path) -> None:
+        """Test resolving outputs for nonexistent pipeline ID."""
+        resolved = ResultsManager.resolve_outputs(tmp_path, "nonexistent", PipelineType.QA)
+        assert resolved is None
+
+    def test_resolve_latest_outputs(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test resolving the latest outputs by scanning pipeline dirs."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        metadata = manager.create_run(TestConfig())
+        manager.complete_run(success=True)
+
+        resolved = ResultsManager.resolve_latest_outputs(tmp_path, PipelineType.TRANSCRIPTION)
+        assert resolved is not None
+        assert resolved == tmp_path / metadata.pipeline_id / "transcription" / "outputs"
+
+    def test_get_latest_run(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test getting the latest run for a pipeline."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        original_metadata = manager.create_run(TestConfig())
+        manager.complete_run(success=True)
+
+        latest = ResultsManager.get_latest_run(tmp_path, PipelineType.TRANSCRIPTION)
+
+        assert latest is not None
+        assert latest.run_id == original_metadata.run_id
+
+    def test_get_latest_run_no_runs(self, tmp_path: Path) -> None:
+        """Test getting latest run when no runs exist."""
+        latest = ResultsManager.get_latest_run(tmp_path, PipelineType.TRANSCRIPTION)
+        assert latest is None
+
+    def test_pipeline_steps_tracked(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test that running multiple steps under the same ID updates pipeline.json."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        # Run transcription
+        mgr1 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION, pipeline_id="multi-step")
+        mgr1.create_run(TestConfig())
+        mgr1.complete_run(success=True)
+
+        # Run QA under same pipeline ID
+        mgr2 = ResultsManager(tmp_path, PipelineType.QA, pipeline_id="multi-step")
+        mgr2.create_run(TestConfig())
+        mgr2.complete_run(success=True)
+
+        # pipeline.json should track both steps
+        pipeline_json = tmp_path / "multi-step" / "pipeline.json"
+        pipeline_meta = PipelineMetadata.load(pipeline_json)
+        assert "transcription" in pipeline_meta.steps_run
+        assert "qa" in pipeline_meta.steps_run
+
+    def test_list_runs(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test listing runs."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        # Create two runs
+        manager1 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        manager1.create_run(TestConfig())
+        manager1.complete_run(success=True)
+
+        import time
+
+        time.sleep(0.01)
+
+        manager2 = ResultsManager(tmp_path, PipelineType.QA)
+        manager2.create_run(TestConfig())
+        manager2.complete_run(success=True)
+
+        # List all runs
+        all_runs = ResultsManager.list_runs(tmp_path)
+        assert len(all_runs) == 2
+
+        # List transcription runs only
+        transcription_runs = ResultsManager.list_runs(tmp_path, PipelineType.TRANSCRIPTION)
+        assert len(transcription_runs) == 1
+        assert transcription_runs[0]["pipeline_type"] == "transcription"
+
+    def test_list_runs_empty(self, tmp_path: Path) -> None:
+        """Test listing runs when none exist."""
+        runs = ResultsManager.list_runs(tmp_path)
+        assert runs == []
 
     def test_update_progress(
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
@@ -336,10 +604,34 @@ class TestResultsManager:
         loaded = RunMetadata.load(metadata_path)
         assert loaded.completed_items == 5
 
-    def test_complete_run_success(
+    def test_create_run_slurm(
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
     ) -> None:
-        """Test completing a run successfully."""
+        """Test creating a run in SLURM environment."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        slurm_env = {
+            "SLURM_JOB_ID": "12345",
+            "SLURM_JOB_PARTITION": "grace",
+            "SLURMD_NODENAME": "node001",
+        }
+        mocker.patch.dict(os.environ, slurm_env, clear=False)
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        metadata = manager.create_run(TestConfig())
+
+        # Verify SLURM context in pipeline_id
+        assert "slurm_grace_12345" in metadata.pipeline_id
+        assert metadata.execution.is_slurm is True
+        assert metadata.execution.slurm_partition == "grace"
+
+    def test_get_latest_pipeline_id(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """Test getting the most recent pipeline ID."""
         from pydantic import BaseModel
 
         class TestConfig(BaseModel):
@@ -347,149 +639,124 @@ class TestResultsManager:
 
         mocker.patch.dict(os.environ, {}, clear=True)
 
-        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION, pipeline_id="first-run")
         manager.create_run(TestConfig())
-        manager.update_progress(completed=10, failed=0, total=10)
         manager.complete_run(success=True)
 
-        # Verify status
-        assert manager.metadata.status == RunStatus.COMPLETED
-        assert manager.metadata.ended_at is not None
-        assert manager.metadata.error_message is None
+        latest_id = ResultsManager.get_latest_pipeline_id(tmp_path)
+        assert latest_id == "first-run"
 
-        # Verify symlink created
-        latest_symlink = tmp_path / "latest" / "transcription"
-        assert latest_symlink.is_symlink()
+    def test_get_latest_pipeline_id_empty(self, tmp_path: Path) -> None:
+        """Test getting latest pipeline ID when none exist."""
+        latest_id = ResultsManager.get_latest_pipeline_id(tmp_path)
+        assert latest_id is None
 
-        # Verify index updated
+
+class TestRegisterExternalRun:
+    """Tests for register_external_run()."""
+
+    def test_register_external_run_updates_index(self, tmp_path: Path) -> None:
+        """Test that register_external_run adds entry to index.json."""
+        pipeline_id = "imported-run-001"
+        step_dir = tmp_path / pipeline_id / "transcription"
+        step_dir.mkdir(parents=True)
+        (step_dir / "outputs").mkdir()
+
+        metadata = RunMetadata(
+            run_id=pipeline_id,
+            pipeline_id=pipeline_id,
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ended_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+            status=RunStatus.COMPLETED,
+            execution=ExecutionEnvironment(
+                is_slurm=True, is_local=False, hostname="node", username="user"
+            ),
+            hardware=HardwareInfo(
+                device_type="cuda",
+                cpu_count=1,
+                torch_version="2.0",
+                python_version="3.13",
+            ),
+            config=ConfigSnapshot(config_type="Test", config_values={}),
+            output_directory=str(step_dir),
+            checkpoint_file=str(step_dir / "checkpoint.json"),
+            gtranscriber_version="0.1.0",
+        )
+
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION, pipeline_id=pipeline_id)
+        manager.register_external_run(metadata)
+
+        # Verify index.json was created
         index_path = tmp_path / "index.json"
         assert index_path.exists()
+
         with open(index_path) as f:
             index_data = json.load(f)
+
         assert len(index_data["runs"]) == 1
+        assert index_data["runs"][0]["pipeline_id"] == pipeline_id
         assert index_data["runs"][0]["status"] == "completed"
 
-    def test_complete_run_failure(
-        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
-    ) -> None:
-        """Test completing a run with failure."""
-        from pydantic import BaseModel
-
-        class TestConfig(BaseModel):
-            model_id: str = "test"
-
-        mocker.patch.dict(os.environ, {}, clear=True)
-
-        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
-        manager.create_run(TestConfig())
-        manager.complete_run(success=False, error="Out of memory")
-
-        assert manager.metadata.status == RunStatus.FAILED
-        assert manager.metadata.error_message == "Out of memory"
-
-    def test_get_latest_run(
-        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
-    ) -> None:
-        """Test getting the latest run for a pipeline."""
-        from pydantic import BaseModel
-
-        class TestConfig(BaseModel):
-            model_id: str = "test"
-
-        mocker.patch.dict(os.environ, {}, clear=True)
+    def test_register_external_run_missing_dir_raises(self, tmp_path: Path) -> None:
+        """Test that register_external_run raises ValueError for missing dir."""
+        metadata = RunMetadata(
+            run_id="missing",
+            pipeline_id="missing",
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            status=RunStatus.COMPLETED,
+            execution=ExecutionEnvironment(
+                is_slurm=False, is_local=True, hostname="h", username="u"
+            ),
+            hardware=HardwareInfo(
+                device_type="cpu",
+                cpu_count=1,
+                torch_version="2.0",
+                python_version="3.13",
+            ),
+            config=ConfigSnapshot(config_type="Test", config_values={}),
+            output_directory=str(tmp_path / "nonexistent" / "transcription"),
+            checkpoint_file="checkpoint.json",
+            gtranscriber_version="0.1.0",
+        )
 
         manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
-        original_metadata = manager.create_run(TestConfig())
-        manager.complete_run(success=True)
+        with pytest.raises(ValueError, match="Step directory not found"):
+            manager.register_external_run(metadata)
 
-        # Get latest run
-        latest = ResultsManager.get_latest_run(tmp_path, PipelineType.TRANSCRIPTION)
+    def test_register_sets_run_dir_and_metadata(self, tmp_path: Path) -> None:
+        """Test that register_external_run sets run_dir and metadata properties."""
+        pipeline_id = "ext-run"
+        step_dir = tmp_path / pipeline_id / "transcription"
+        step_dir.mkdir(parents=True)
 
-        assert latest is not None
-        assert latest.run_id == original_metadata.run_id
+        metadata = RunMetadata(
+            run_id=pipeline_id,
+            pipeline_id=pipeline_id,
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            status=RunStatus.COMPLETED,
+            execution=ExecutionEnvironment(
+                is_slurm=False, is_local=True, hostname="h", username="u"
+            ),
+            hardware=HardwareInfo(
+                device_type="cpu",
+                cpu_count=1,
+                torch_version="2.0",
+                python_version="3.13",
+            ),
+            config=ConfigSnapshot(config_type="Test", config_values={}),
+            output_directory=str(step_dir),
+            checkpoint_file=str(step_dir / "checkpoint.json"),
+            gtranscriber_version="0.1.0",
+        )
 
-    def test_get_latest_run_no_runs(self, tmp_path: Path) -> None:
-        """Test getting latest run when no runs exist."""
-        latest = ResultsManager.get_latest_run(tmp_path, PipelineType.TRANSCRIPTION)
-        assert latest is None
+        manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
+        manager.register_external_run(metadata)
 
-    def test_list_runs(
-        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
-    ) -> None:
-        """Test listing runs."""
-        from pydantic import BaseModel
-
-        class TestConfig(BaseModel):
-            model_id: str = "test"
-
-        mocker.patch.dict(os.environ, {}, clear=True)
-
-        # Create two runs
-        manager1 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
-        manager1.create_run(TestConfig())
-        manager1.complete_run(success=True)
-
-        # Add small delay to ensure different timestamps
-        import time
-
-        time.sleep(0.01)
-
-        manager2 = ResultsManager(tmp_path, PipelineType.QA)
-        manager2.create_run(TestConfig())
-        manager2.complete_run(success=True)
-
-        # List all runs
-        all_runs = ResultsManager.list_runs(tmp_path)
-        assert len(all_runs) == 2
-
-        # List transcription runs only
-        transcription_runs = ResultsManager.list_runs(tmp_path, PipelineType.TRANSCRIPTION)
-        assert len(transcription_runs) == 1
-        assert transcription_runs[0]["pipeline_type"] == "transcription"
-
-    def test_list_runs_empty(self, tmp_path: Path) -> None:
-        """Test listing runs when none exist."""
-        runs = ResultsManager.list_runs(tmp_path)
-        assert runs == []
-
-    def test_symlink_update_replaces_existing(
-        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
-    ) -> None:
-        """Test that updating symlink replaces existing one."""
-        from datetime import datetime as dt
-
-        from pydantic import BaseModel
-
-        class TestConfig(BaseModel):
-            model_id: str = "test"
-
-        mocker.patch.dict(os.environ, {}, clear=True)
-
-        # Mock datetime.now to return different timestamps
-        mock_datetime = mocker.patch("gtranscriber.core.results_manager.datetime", wraps=dt)
-        first_time = dt(2026, 2, 4, 14, 30, 0, tzinfo=UTC)
-        second_time = dt(2026, 2, 4, 14, 30, 5, tzinfo=UTC)
-
-        # Create first run with mocked time
-        mock_datetime.now.return_value = first_time
-        manager1 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
-        manager1.create_run(TestConfig())
-        manager1.complete_run(success=True)
-
-        latest_symlink = tmp_path / "latest" / "transcription"
-        first_target = latest_symlink.resolve()
-
-        # Create second run with different mocked time
-        mock_datetime.now.return_value = second_time
-        manager2 = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
-        metadata2 = manager2.create_run(TestConfig())
-        manager2.complete_run(success=True)
-
-        second_target = latest_symlink.resolve()
-
-        # Symlink should point to second run
-        assert first_target != second_target
-        assert metadata2.run_id in str(second_target)
+        assert manager.run_dir == step_dir
+        assert manager.metadata.pipeline_id == pipeline_id
 
 
 class TestPipelineType:

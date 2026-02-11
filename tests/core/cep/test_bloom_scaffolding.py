@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.cep.bloom_scaffolding import BloomScaffoldingGenerator
+from gtranscriber.schemas import QAPairCEP
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -596,3 +598,236 @@ class TestBloomScaffoldingGenerator:
         assert len(pairs) == 1
         assert pairs[0].confidence == 0.5  # Normalized from invalid
         assert pairs[0].bloom_level == "remember"  # Uses method parameter
+
+    def test_generate_without_scaffolding_preserves_config_order(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that disabled scaffolding preserves config order, not hierarchy."""
+        cep_config = CEPConfig(
+            bloom_levels=["evaluate", "remember"],
+            bloom_distribution={"evaluate": 0.5, "remember": 0.5},
+            enable_scaffolding_context=False,
+            language="pt",
+        )
+
+        call_order: list[str] = []
+
+        def track_calls(prompt: str, **kwargs: Any) -> str:
+            match = re.search(r"Nível Cognitivo: (\w+)", prompt)
+            if match:
+                call_order.append(match.group(1).lower())
+            return json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+
+        mock_llm_client.generate.side_effect = track_calls
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        generator.generate("Context.", num_questions=4)
+
+        # Should follow config order (evaluate, remember), not hierarchy
+        assert call_order == ["evaluate", "remember"]
+
+    def test_generate_with_scaffolding_sorts_by_hierarchy(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that enabled scaffolding sorts levels by Bloom hierarchy."""
+        cep_config = CEPConfig(
+            bloom_levels=["evaluate", "remember", "analyze"],
+            bloom_distribution={"evaluate": 0.34, "remember": 0.33, "analyze": 0.33},
+            enable_scaffolding_context=True,
+            language="pt",
+        )
+
+        call_order: list[str] = []
+
+        def track_calls(prompt: str, **kwargs: Any) -> str:
+            match = re.search(r"Nível Cognitivo: (\w+)", prompt)
+            if match:
+                call_order.append(match.group(1).lower())
+            return json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+
+        mock_llm_client.generate.side_effect = track_calls
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        generator.generate("Context.", num_questions=6)
+
+        # Should follow hierarchy: remember → analyze → evaluate
+        assert call_order == ["remember", "analyze", "evaluate"]
+
+    def test_scaffolding_includes_prior_pairs_in_prompt(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that higher-level prompt contains prior Q, A, and [LEVEL] tag."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember", "understand"],
+            bloom_distribution={"remember": 0.5, "understand": 0.5},
+            enable_scaffolding_context=True,
+            language="pt",
+        )
+
+        prompts_captured: list[str] = []
+        call_count = 0
+
+        def capture_prompts(prompt: str, **kwargs: Any) -> str:
+            nonlocal call_count
+            prompts_captured.append(prompt)
+            call_count += 1
+            return json.dumps(
+                [
+                    {
+                        "question": f"Question {call_count}?",
+                        "answer": f"Answer {call_count}.",
+                        "confidence": 0.9,
+                    }
+                ]
+            )
+
+        mock_llm_client.generate.side_effect = capture_prompts
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        generator.generate("Context.", num_questions=4)
+
+        # Second prompt (understand) should contain prior pairs from remember
+        assert len(prompts_captured) == 2
+        assert "[REMEMBER]" in prompts_captured[1]
+        assert "Question 1?" in prompts_captured[1]
+        assert "Answer 1." in prompts_captured[1]
+
+    def test_scaffolding_first_level_has_no_prior_context(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that the first level generates without scaffolding header."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember", "understand"],
+            bloom_distribution={"remember": 0.5, "understand": 0.5},
+            enable_scaffolding_context=True,
+            language="pt",
+        )
+
+        prompts_captured: list[str] = []
+
+        def capture_prompts(prompt: str, **kwargs: Any) -> str:
+            prompts_captured.append(prompt)
+            return json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+
+        mock_llm_client.generate.side_effect = capture_prompts
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        generator.generate("Context.", num_questions=4)
+
+        # First prompt should not contain scaffolding header
+        scaffolding_header = generator._prompts["scaffolding_header"]
+        assert scaffolding_header not in prompts_captured[0]
+
+    def test_format_prior_pairs_empty_list(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that _format_prior_pairs returns empty string for empty input."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        result = generator._format_prior_pairs([])
+        assert result == ""
+
+    def test_format_prior_pairs_includes_bloom_level(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that output contains [REMEMBER], question, and answer."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        pairs = [
+            QAPairCEP(
+                question="Who was affected?",
+                answer="Riverine communities.",
+                context="Context.",
+                question_type="factual",
+                confidence=0.9,
+                bloom_level="remember",
+            ),
+        ]
+
+        result = generator._format_prior_pairs(pairs)
+        assert "[REMEMBER]" in result
+        assert "Who was affected?" in result
+        assert "Riverine communities." in result
+        assert result.startswith("1.")
+
+    def test_format_prior_pairs_respects_max_limit(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that only last N pairs are included when exceeding limit."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember", "understand"],
+            bloom_distribution={"remember": 0.5, "understand": 0.5},
+            max_scaffolding_pairs=3,
+            language="pt",
+        )
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        pairs = [
+            QAPairCEP(
+                question=f"Q{i}?",
+                answer=f"A{i}.",
+                context="Context.",
+                question_type="factual",
+                confidence=0.9,
+                bloom_level="remember",
+            )
+            for i in range(5)
+        ]
+
+        result = generator._format_prior_pairs(pairs)
+
+        # Should only include the last 3 pairs (Q2, Q3, Q4)
+        assert "Q0?" not in result
+        assert "Q1?" not in result
+        assert "Q2?" in result
+        assert "Q3?" in result
+        assert "Q4?" in result

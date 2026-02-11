@@ -59,7 +59,7 @@ known-first-party = ["gtranscriber"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = [
     "--strict-markers",
     "--strict-config",

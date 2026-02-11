@@ -567,6 +567,13 @@ def batch_transcribe(
             "Can be set via GTRANSCRIBER_LANGUAGE env var.",
         ),
     ] = _config.language,
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help="Pipeline ID for grouping related steps. Auto-generated if omitted.",
+        ),
+    ] = None,
 ) -> None:
     """Batch transcribe audio/video files from a catalog.
 
@@ -623,7 +630,7 @@ def batch_transcribe(
     console.print()
 
     try:
-        run_batch_transcription(config)
+        run_batch_transcription(config, pipeline_id=pipeline_id)
         print_success("Batch transcription completed!")
 
     except Exception as e:
@@ -688,212 +695,6 @@ def refresh_auth(
 
     except Exception as e:
         print_error(f"Authentication failed: {e}")
-        raise typer.Exit(code=1) from e
-
-
-@app.command()
-def generate_qa(
-    input_dir: Annotated[
-        Path,
-        typer.Argument(
-            help="Directory containing transcription JSON files.",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-            readable=True,
-        ),
-    ],
-    output_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--output-dir",
-            "-o",
-            help="Output directory for QA dataset JSON files. "
-            "Can be set via GTRANSCRIBER_QA_OUTPUT_DIR env var.",
-        ),
-    ] = None,
-    provider: Annotated[
-        str | None,
-        typer.Option(
-            "--provider",
-            help="LLM provider: openai, ollama, custom. "
-            "Can be set via GTRANSCRIBER_QA_PROVIDER env var.",
-        ),
-    ] = None,
-    model_id: Annotated[
-        str | None,
-        typer.Option(
-            "--model-id",
-            "-m",
-            help="Model ID for QA generation (e.g., llama3.1:8b, gpt-4). "
-            "Can be set via GTRANSCRIBER_QA_MODEL_ID env var.",
-        ),
-    ] = None,
-    workers: Annotated[
-        int | None,
-        typer.Option(
-            "--workers",
-            "-w",
-            help="Number of parallel workers. Can be set via GTRANSCRIBER_QA_WORKERS env var.",
-        ),
-    ] = None,
-    questions: Annotated[
-        int | None,
-        typer.Option(
-            "--questions",
-            help="Number of QA pairs to generate per document (1-50). "
-            "Can be set via GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT env var.",
-        ),
-    ] = None,
-    strategy: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--strategy",
-            help="Question generation strategies (factual, conceptual, temporal, entity). "
-            "Can specify multiple times. "
-            "Can be set via GTRANSCRIBER_QA_STRATEGIES env var.",
-        ),
-    ] = None,
-    temperature: Annotated[
-        float | None,
-        typer.Option(
-            "--temperature",
-            help="LLM temperature for generation (0.0-2.0). "
-            "Can be set via GTRANSCRIBER_QA_TEMPERATURE env var.",
-        ),
-    ] = None,
-    ollama_url: Annotated[
-        str | None,
-        typer.Option(
-            "--ollama-url",
-            help="Ollama API base URL. Can be set via GTRANSCRIBER_QA_OLLAMA_URL env var.",
-        ),
-    ] = None,
-    base_url: Annotated[
-        str | None,
-        typer.Option(
-            "--base-url",
-            help="Custom base URL for OpenAI-compatible endpoints. "
-            "Can be set via GTRANSCRIBER_QA_BASE_URL env var.",
-        ),
-    ] = None,
-    language: Annotated[
-        str | None,
-        typer.Option(
-            "--language",
-            "-l",
-            help="Language for QA prompts: 'en' (English) or 'pt' (Portuguese). "
-            "Can be set via GTRANSCRIBER_QA_LANGUAGE env var.",
-        ),
-    ] = None,
-) -> None:
-    """Generate synthetic QA pairs from transcriptions.
-
-    Processes all transcription JSON files in the input directory and generates
-    question-answer pairs using the specified LLM provider. Supports multiple
-    question generation strategies (factual, conceptual, temporal, entity-focused)
-    to create diverse evaluation datasets.
-
-    Progress is automatically checkpointed, allowing interrupted jobs to resume
-    from the last completed file. QA pairs are saved as JSON files in the output
-    directory.
-
-    Examples:
-        # Generate QA pairs using Ollama
-        gtranscriber generate-qa results/ -o qa_dataset/
-
-        # Use OpenAI with specific model
-        gtranscriber generate-qa results/ --provider openai --model-id gpt-4
-
-        # Generate more pairs with multiple strategies
-        gtranscriber generate-qa results/ --questions 20 \\
-            --strategy factual --strategy conceptual --strategy temporal
-
-        # Use multiple workers for faster processing
-        gtranscriber generate-qa results/ --workers 4
-    """
-    from gtranscriber.config import QAConfig
-    from gtranscriber.core.qa_batch import run_batch_qa_generation
-
-    # Load config first to get defaults from environment variables
-    base_config = QAConfig()
-
-    # Override with CLI args if provided (None means use config default)
-    if provider is not None:
-        base_config.provider = provider
-    if model_id is not None:
-        base_config.model_id = model_id
-    if ollama_url is not None:
-        base_config.ollama_url = ollama_url
-    if base_url is not None:
-        base_config.base_url = base_url
-    if questions is not None:
-        base_config.questions_per_document = questions
-    if strategy is not None:
-        base_config.strategies = strategy
-    if temperature is not None:
-        base_config.temperature = temperature
-    if output_dir is not None:
-        base_config.output_dir = output_dir
-    if workers is not None:
-        base_config.workers = workers
-    if language is not None:
-        base_config.language = language
-
-    # Now use the resolved config
-    qa_config = base_config
-
-    # Validate resolved values
-    if qa_config.workers < 1:
-        print_error("Number of workers must be at least 1")
-        raise typer.Exit(code=1)
-
-    if qa_config.questions_per_document < 1 or qa_config.questions_per_document > 50:
-        print_error("Number of questions must be between 1 and 50")
-        raise typer.Exit(code=1)
-
-    if qa_config.temperature < 0.0 or qa_config.temperature > 2.0:
-        print_error("Temperature must be between 0.0 and 2.0")
-        raise typer.Exit(code=1)
-
-    # Validate strategies
-    valid_strategies = {"factual", "conceptual", "temporal", "entity"}
-    for s in qa_config.strategies:
-        if s not in valid_strategies:
-            print_error(f"Invalid strategy: {s!r}. Must be one of {sorted(valid_strategies)}")
-            raise typer.Exit(code=1)
-
-    # Validate language
-    valid_languages = {"en", "pt"}
-    if qa_config.language not in valid_languages:
-        print_error(
-            f"Invalid language: {qa_config.language!r}. Must be one of {sorted(valid_languages)}"
-        )
-        raise typer.Exit(code=1)
-
-    # Display configuration
-    console.print("\n[bold]QA Generation Configuration[/bold]\n")
-    console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
-    console.print(f"[cyan]Output Directory:[/cyan] {qa_config.output_dir}")
-    console.print(f"[cyan]Provider:[/cyan] {qa_config.provider}")
-    console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
-    console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
-    console.print(f"[cyan]Questions per document:[/cyan] {qa_config.questions_per_document}")
-    console.print(f"[cyan]Strategies:[/cyan] {', '.join(qa_config.strategies)}")
-    console.print(f"[cyan]Language:[/cyan] {qa_config.language}")
-    console.print(f"[cyan]Temperature:[/cyan] {qa_config.temperature}")
-    if qa_config.provider == "ollama":
-        console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
-    if qa_config.base_url:
-        console.print(f"[cyan]Base URL:[/cyan] {qa_config.base_url}")
-    console.print()
-
-    try:
-        run_batch_qa_generation(input_dir, qa_config.output_dir, qa_config, qa_config.workers)
-        print_success("QA generation completed!")
-
-    except Exception as e:
-        print_error(f"QA generation failed: {e}")
         raise typer.Exit(code=1) from e
 
 
@@ -1005,6 +806,13 @@ def generate_cep_qa(
             help="Also export QA pairs to JSONL format for KGQA training.",
         ),
     ] = False,
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help="Pipeline ID. Auto-resolves transcription outputs.",
+        ),
+    ] = None,
 ) -> None:
     """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
 
@@ -1136,6 +944,7 @@ def generate_cep_qa(
             qa_config,
             cep_config,
             qa_config.workers,
+            pipeline_id=pipeline_id,
         )
 
         # Export to JSONL if requested
@@ -1252,8 +1061,8 @@ def list_runs(
 
     # Create table
     table = Table(title="Pipeline Runs")
-    table.add_column("Run ID", style="cyan")
-    table.add_column("Pipeline", style="magenta")
+    table.add_column("Pipeline ID", style="cyan")
+    table.add_column("Step", style="magenta")
     table.add_column("Status", style="bold")
     table.add_column("Started At", style="dim")
     table.add_column("Duration", style="dim")
@@ -1295,7 +1104,7 @@ def list_runs(
                 pass  # Keep original string if not valid ISO format
 
         table.add_row(
-            run.get("run_id", "unknown"),
+            run.get("pipeline_id") or run.get("run_id", "unknown"),
             run.get("pipeline_type", "unknown"),
             status_styled,
             started,
@@ -1372,14 +1181,13 @@ def run_info(
             print_error(f"No runs found for pipeline: {pipeline}")
             raise typer.Exit(code=1)
     else:
-        # Find the specific run
-        pipeline_dir = results_dir / pipeline_type.value / run_id
-        metadata_path = pipeline_dir / "run_metadata.json"
+        # ID-first layout: results/{run_id}/{pipeline_type}/run_metadata.json
+        metadata_path = results_dir / run_id / pipeline_type.value / "run_metadata.json"
 
         if not metadata_path.exists():
-            # Try to find in any pipeline directory
+            # Try to find in any step directory under this pipeline ID
             for p in PipelineType:
-                test_path = results_dir / p.value / run_id / "run_metadata.json"
+                test_path = results_dir / run_id / p.value / "run_metadata.json"
                 if test_path.exists():
                     metadata = RunMetadata.load(test_path)
                     break
@@ -1470,6 +1278,87 @@ def run_info(
 
     console.print(Panel(tree, title="Run Details", border_style="blue"))
     console.print()
+
+
+@app.command()
+def rebuild_index(
+    results_dir: Annotated[
+        Path,
+        typer.Option(
+            "--results-dir",
+            "-r",
+            help="Base results directory. Can be set via GTRANSCRIBER_RESULTS_BASE_DIR env var.",
+        ),
+    ] = _results_config.base_dir,
+) -> None:
+    """Rebuild index.json from existing run directories.
+
+    Scans all pipeline ID directories for run_metadata.json files and rebuilds
+    the global index.json.
+
+    Examples:
+        # Rebuild index in default results directory
+        gtranscriber rebuild-index
+
+        # Rebuild index in custom results directory
+        gtranscriber rebuild-index --results-dir /path/to/results
+    """
+    from gtranscriber.core.results_manager import ResultsManager
+    from gtranscriber.schemas import PipelineType, RunMetadata
+
+    base_dir = results_dir.resolve()
+    if not base_dir.exists():
+        print_error(f"Results directory not found: {base_dir}")
+        raise typer.Exit(code=1)
+
+    # Collect all runs by scanning ID-first layout: results/{pipeline_id}/{step}/
+    all_metadata: list[tuple[PipelineType, RunMetadata, Path]] = []
+
+    for pipeline_dir in sorted(base_dir.iterdir()):
+        if not pipeline_dir.is_dir():
+            continue
+        # Skip non-pipeline directories
+        if not (pipeline_dir / "pipeline.json").exists():
+            continue
+
+        for pipeline in PipelineType:
+            step_dir = pipeline_dir / pipeline.value
+            metadata_path = step_dir / "run_metadata.json"
+            if not metadata_path.exists():
+                continue
+            try:
+                metadata = RunMetadata.load(metadata_path)
+                all_metadata.append((pipeline, metadata, step_dir))
+            except Exception as e:
+                print_warning(f"Skipping {pipeline_dir.name}/{pipeline.value}: {e}")
+
+    if not all_metadata:
+        print_warning("No runs found to rebuild from.")
+        return
+
+    # Delete stale index so we rebuild from scratch
+    index_path = base_dir / "index.json"
+    if index_path.exists():
+        index_path.unlink()
+        print_info("Removed stale index.json")
+
+    # Rebuild index
+    total_runs = 0
+    for pipeline, metadata, step_dir in sorted(all_metadata, key=lambda t: t[1].started_at):
+        manager = ResultsManager(base_dir, pipeline)
+        manager._run_dir = step_dir
+        manager._metadata = metadata
+        manager._update_index()
+        total_runs += 1
+
+    # Summarise per pipeline type
+    from collections import Counter
+
+    step_counts = Counter(p.value for p, _, _ in all_metadata)
+    for step_name, count in step_counts.items():
+        print_info(f"{step_name}: {count} run(s)")
+
+    print_success(f"Rebuilt index.json ({total_runs} runs)")
 
 
 if __name__ == "__main__":

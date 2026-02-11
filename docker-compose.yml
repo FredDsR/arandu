@@ -274,12 +274,11 @@ services:
     command: >
       generate-qa
       /app/results
-      --output-dir /app/qa_dataset
+      --id ${PIPELINE_ID:-}
       --workers ${GTRANSCRIBER_QA_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:rw
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
@@ -334,12 +333,11 @@ services:
     command: >
       generate-cep-qa
       /app/results
-      --output-dir /app/cep_dataset
+      --id ${PIPELINE_ID:-}
       --workers ${GTRANSCRIBER_QA_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_CEP_DIR:-./cep_dataset}:/app/cep_dataset:rw
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
@@ -390,12 +388,11 @@ services:
     command: >
       build-kg
       /app/results
-      --output-dir /app/knowledge_graphs
+      --id ${PIPELINE_ID:-}
       --workers ${GTRANSCRIBER_KG_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:rw
+      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
@@ -431,15 +428,12 @@ services:
 
     command: >
       evaluate
-      /app/qa_dataset
       /app/results
-      --kg-path /app/knowledge_graphs/corpus_graph.graphml
+      --id ${PIPELINE_ID:-}
       --output /app/evaluation/report.json
 
     volumes:
-      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:ro
       - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:ro
       - ${GTRANSCRIBER_EVAL_DIR:-./evaluation}:/app/evaluation:rw
       - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 

@@ -592,392 +592,68 @@ print_error("Processing failed")
 
 ---
 
-## Applying Patterns to Phase 2
+## Applying Patterns to QA Generation
 
-### QA Generation Pipeline
+### CEP QA Generation Pipeline
 
-Following the batch processing pattern, here's how to structure QA generation:
+The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for
+Bloom's Taxonomy-scaffolded question generation. It follows the same batch
+processing patterns as transcription.
 
-#### 1. Configuration (`config.py`)
+#### Key Components
 
-```python
-class QAConfig(BaseSettings):
-    """Already implemented in Phase 1 ✅"""
-    model_config = SettingsConfigDict(env_prefix="GTRANSCRIBER_QA_")
+- **Configuration**: `QAConfig` + `CEPConfig` in `config.py`
+- **Task definition**: `QAGenerationTask` dataclass in `qa_batch.py`
+- **Task loading**: `load_transcription_tasks()` — discovers transcription files and creates tasks
+- **Worker initialization**: `_init_cep_worker()` — creates `CEPQAGenerator` per process
+- **Worker function**: `generate_cep_qa_for_transcription()` — returns `(id, success, message)`
+- **Batch orchestrator**: `run_batch_cep_generation()` — checkpoint + parallel execution
+- **CLI command**: `generate-cep-qa` in `main.py`
 
-    provider: str = "ollama"
-    model_id: str = "llama3.1:8b"
-    ollama_url: str = "http://localhost:11434"
-    base_url: str | None = None
-    questions_per_document: int = 10
-    strategies: list[str] = ["factual", "conceptual"]
-    temperature: float = 0.7
-    output_dir: Path = Path("qa_dataset")
-```
-
-#### 2. Task Definition (`qa_batch.py`)
+#### Architecture
 
 ```python
-from dataclasses import dataclass
-from pathlib import Path
+# CEP QA pipeline follows this structure:
 
-@dataclass
-class QAGenerationTask:
-    """Task for QA generation."""
+1. Config classes (QAConfig + CEPConfig)
+   └─ Environment variables with GTRANSCRIBER_QA_ and GTRANSCRIBER_CEP_ prefixes
 
-    transcription_file: Path
-    gdrive_id: str
-    filename: str
-    output_file: Path
-```
+2. QAGenerationTask dataclass
+   └─ transcription_file, gdrive_id, filename, output_file
 
-#### 3. Worker Function (`qa_batch.py`)
+3. CEP worker initialization (_init_cep_worker)
+   └─ Global CEPQAGenerator, initialized once per process
 
-```python
-# Global QA generator (one per process)
-_worker_qa_generator: QAGenerator | None = None
-
-def _init_qa_worker(
-    provider: str,
-    model_id: str,
-    config: QAConfig,
-) -> None:
-    """Initialize worker with QA generator."""
-    global _worker_qa_generator
-
-    from gtranscriber.core.llm_client import LLMProvider, LLMClient
-    from gtranscriber.core.qa_generator import QAGenerator
-
-    # Create LLM client
-    llm_client = LLMClient(
-        provider=LLMProvider(provider),
-        model_id=model_id,
-        base_url=config.base_url or config.ollama_url,
-    )
-
-    # Create QA generator
-    _worker_qa_generator = QAGenerator(llm_client, config)
-    logger.info(f"QA worker initialized with {provider}/{model_id}")
-
-def generate_qa_for_transcription(
-    task: QAGenerationTask,
-    config: QAConfig,
-) -> tuple[str, bool, str]:
-    """Generate QA pairs for a single transcription (worker function).
-
-    Returns:
-        Tuple of (gdrive_id, success, message).
-    """
-    global _worker_qa_generator
-
-    try:
-        # For sequential, initialize on first use
-        if _worker_qa_generator is None:
-            _init_qa_worker(config.provider, config.model_id, config)
-
-        # Load transcription
-        with open(task.transcription_file) as f:
-            enriched = EnrichedRecord(**json.load(f))
-
-        # Generate QA pairs
-        qa_record = _worker_qa_generator.generate_qa_pairs(enriched)
-
-        # Save result
-        task.output_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(task.output_file, 'w') as f:
-            json.dump(qa_record.model_dump(), f, indent=2)
-
-        logger.info(f"Generated {len(qa_record.qa_pairs)} QA pairs for {task.filename}")
-        return task.gdrive_id, True, "Success"
-
-    except Exception as e:
-        logger.exception(f"QA generation failed: {task.filename}")
-        return task.gdrive_id, False, str(e)
-```
-
-#### 4. Batch Orchestrator (`qa_batch.py`)
-
-```python
-def run_batch_qa_generation(
-    input_dir: Path,
-    output_dir: Path,
-    config: QAConfig,
-    num_workers: int = 2,
-) -> None:
-    """Run batch QA generation with checkpointing.
-
-    Args:
-        input_dir: Directory containing EnrichedRecord JSONs
-        output_dir: Directory for QARecord JSONs
-        config: QA generation configuration
-        num_workers: Number of parallel workers
-    """
-    # 1. Setup
-    output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_file = output_dir / "qa_checkpoint.json"
-    checkpoint = CheckpointManager(checkpoint_file)
-
-    # 2. Load tasks
-    all_tasks = []
-    for json_file in input_dir.glob("*_transcription.json"):
-        with open(json_file) as f:
-            data = json.load(f)
-            gdrive_id = data.get("gdrive_id", "unknown")
-
-            task = QAGenerationTask(
-                transcription_file=json_file,
-                gdrive_id=gdrive_id,
-                filename=data.get("name", json_file.name),
-                output_file=output_dir / f"{gdrive_id}_qa.json",
-            )
-            all_tasks.append(task)
-
-    # 3. Filter completed
-    remaining_tasks = [
-        t for t in all_tasks
-        if not checkpoint.is_completed(t.gdrive_id)
-    ]
-    checkpoint.set_total_files(len(all_tasks))
-
-    logger.info(f"Total: {len(all_tasks)}, Remaining: {len(remaining_tasks)}")
-
-    if not remaining_tasks:
-        logger.info("All files already processed!")
-        return
-
-    # 4. Process
-    num_workers = min(num_workers, len(remaining_tasks))
-
-    if num_workers == 1:
-        # Sequential
-        for task in remaining_tasks:
-            gdrive_id, success, message = generate_qa_for_transcription(task, config)
-            if success:
-                checkpoint.mark_completed(gdrive_id)
-            else:
-                checkpoint.mark_failed(gdrive_id, message)
-    else:
-        # Parallel
-        with ProcessPoolExecutor(
-            max_workers=num_workers,
-            initializer=_init_qa_worker,
-            initargs=(config.provider, config.model_id, config),
-        ) as executor:
-            # Use batched submission pattern
-            batch_size = max(num_workers * 2, 10)
-            task_iter = iter(remaining_tasks)
-            pending = {}
-
-            # Initial batch
-            for _ in range(min(batch_size, len(remaining_tasks))):
-                task = next(task_iter)
-                future = executor.submit(generate_qa_for_transcription, task, config)
-                pending[future] = task
-
-            # Process completions
-            while pending:
-                done = next(as_completed(pending))
-                task = pending.pop(done)
-
-                gdrive_id, success, message = done.result()
-
-                if success:
-                    checkpoint.mark_completed(gdrive_id)
-                    logger.info(f"✓ {task.filename}")
-                else:
-                    checkpoint.mark_failed(gdrive_id, message)
-                    logger.error(f"✗ {task.filename}: {message}")
-
-                # Submit next
-                try:
-                    next_task = next(task_iter)
-                    next_future = executor.submit(
-                        generate_qa_for_transcription, next_task, config
-                    )
-                    pending[next_future] = next_task
-                except StopIteration:
-                    pass
-
-    # 5. Summary
-    completed, total = checkpoint.get_progress()
-    failed = len(checkpoint.state.failed_files)
-    logger.info(f"Completed: {completed}/{total}, Failed: {failed}")
-```
-
-#### 5. CLI Command (`main.py`)
-
-```python
-@app.command()
-def generate_qa(
-    input_dir: Annotated[
-        Path,
-        typer.Argument(
-            help="Directory containing transcription JSON files",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-            readable=True,
-        ),
-    ],
-    output_dir: Annotated[
-        Path,
-        typer.Option(
-            "--output-dir", "-o",
-            help="Output directory for QA datasets",
-        ),
-    ] = Path("qa_dataset"),
-    provider: Annotated[
-        str,
-        typer.Option(
-            "--provider",
-            help="LLM provider: openai, ollama, custom",
-        ),
-    ] = "ollama",
-    model_id: Annotated[
-        str,
-        typer.Option(
-            "--model-id", "-m",
-            help="Model ID for QA generation",
-        ),
-    ] = "llama3.1:8b",
-    workers: Annotated[
-        int,
-        typer.Option(
-            "--workers", "-w",
-            help="Number of parallel workers",
-        ),
-    ] = 2,
-    questions: Annotated[
-        int,
-        typer.Option(
-            "--questions",
-            help="Number of QA pairs per document",
-        ),
-    ] = 10,
-    strategy: Annotated[
-        list[str],
-        typer.Option(
-            "--strategy",
-            help="Question strategies (can specify multiple)",
-        ),
-    ] = ["factual", "conceptual"],
-    temperature: Annotated[
-        float,
-        typer.Option(
-            "--temperature",
-            help="LLM temperature",
-        ),
-    ] = 0.7,
-) -> None:
-    """Generate synthetic QA pairs from transcriptions.
-
-    Processes all transcription JSON files in the input directory and
-    generates question-answer pairs using the specified LLM provider.
-
-    Progress is automatically checkpointed, allowing interrupted jobs
-    to resume from the last completed file.
-    """
-    from gtranscriber.config import QAConfig
-    from gtranscriber.core.qa_batch import run_batch_qa_generation
-
-    # Validate
-    if workers < 1:
-        print_error("Workers must be at least 1")
-        raise typer.Exit(code=1)
-
-    if questions < 1 or questions > 50:
-        print_error("Questions must be between 1 and 50")
-        raise typer.Exit(code=1)
-
-    # Create config
-    qa_config = QAConfig(
-        provider=provider,
-        model_id=model_id,
-        questions_per_document=questions,
-        strategies=strategy,
-        temperature=temperature,
-        output_dir=output_dir,
-    )
-
-    # Display config
-    console.print("\n[bold]QA Generation Configuration[/bold]\n")
-    console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
-    console.print(f"[cyan]Output Directory:[/cyan] {output_dir}")
-    console.print(f"[cyan]Provider:[/cyan] {provider}")
-    console.print(f"[cyan]Model:[/cyan] {model_id}")
-    console.print(f"[cyan]Workers:[/cyan] {workers}")
-    console.print(f"[cyan]Questions per doc:[/cyan] {questions}")
-    console.print(f"[cyan]Strategies:[/cyan] {', '.join(strategy)}")
-    console.print()
-
-    try:
-        run_batch_qa_generation(input_dir, output_dir, qa_config, workers)
-        print_success("QA generation completed!")
-
-    except Exception as e:
-        print_error(f"QA generation failed: {e}")
-        raise typer.Exit(code=1) from e
-```
-
----
-
-## Summary: Phase 2 Implementation Checklist
-
-### Files to Create
-
-- [ ] `src/gtranscriber/core/qa_generator.py` - QA generation logic
-- [ ] `src/gtranscriber/core/qa_batch.py` - Batch orchestrator
-- [ ] Extend `src/gtranscriber/main.py` - Add `generate_qa` command
-
-### Patterns to Follow
-
-- [ ] Use `@dataclass` for task and config objects
-- [ ] Implement global worker initialization pattern
-- [ ] Use `CheckpointManager` for progress tracking
-- [ ] Return `(id, success, message)` from worker functions
-- [ ] Use batched future submission in parallel mode
-- [ ] Clean up resources in `finally` blocks
-- [ ] Use `print_info/success/error` for user output
-- [ ] Use `logger.info/debug/error` for detailed logs
-- [ ] Validate inputs before processing
-- [ ] Display configuration before running
-
-### Architecture Consistency
-
-```python
-# Each pipeline follows this structure:
-
-1. Config class (Pydantic BaseSettings)
-   └─ Environment variables with GTRANSCRIBER_{PIPELINE}_ prefix
-
-2. Task dataclass
-   └─ Simple container for task parameters
-
-3. Worker initialization
-   └─ Global engine/generator, initialized once per process
-
-4. Worker function
-   └─ Signature: (task, config) -> (id, success, message)
+4. Worker function (generate_cep_qa_for_transcription)
+   └─ Signature: (task, qa_config_dict, cep_config_dict) -> (id, success, message)
    └─ Never raises, always returns triple
 
-5. Batch orchestrator
-   └─ Load tasks, filter completed, run with checkpoint
+5. Batch orchestrator (run_batch_cep_generation)
+   └─ Load tasks, filter completed, run with checkpoint + versioned results
 
-6. CLI command
+6. CLI command (generate-cep-qa)
    └─ Validate, create config, display, run, handle errors
 ```
 
 ---
 
-**Next Steps**: Implement Phase 2 following these patterns for consistency and maintainability.
+## Summary: Architecture Patterns
 
-**References**:
-- [Implementation Plan - Phase 2](IMPLEMENTATION_PLAN.md#phase-2-qa-generation-week-2)
-- [Data Schemas](implementation/DATA_SCHEMAS.md)
-- [CLI Reference](implementation/CLI_REFERENCE.md)
+### Patterns to Follow
+
+- Use `@dataclass` for task and config objects
+- Implement global worker initialization pattern
+- Use `CheckpointManager` for progress tracking
+- Return `(id, success, message)` from worker functions
+- Use batched future submission in parallel mode
+- Clean up resources in `finally` blocks
+- Use `print_info/success/error` for user output
+- Use `logger.info/debug/error` for detailed logs
+- Validate inputs before processing
+- Display configuration before running
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-29
-**Status**: ✅ Ready for Phase 2 Implementation
+**Document Version**: 2.0
+**Last Updated**: 2026-02-11
+**Status**: ✅ Reference document for pipeline architecture

@@ -21,7 +21,6 @@
 export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-3}"
 export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}"
 export USE_GPU_OLLAMA=false  # CPU mode - Ollama doesn't support ROCm well
-export GTRANSCRIBER_CEP_DIR="${GTRANSCRIBER_CEP_DIR:-${HOME}/etno-kgc-preprocessing/results_cep_dataset_sirius}"
 
 # Source the common CEP script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/cep/cep_common.sh"

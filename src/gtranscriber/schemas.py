@@ -140,42 +140,6 @@ class QAPair(BaseModel):
         return self
 
 
-class QARecord(BaseModel):
-    """Represents the complete QA dataset for a single transcription document."""
-
-    source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
-    source_filename: str = Field(..., description="Original filename")
-    transcription_text: str = Field(..., description="Full transcription text")
-    qa_pairs: list[QAPair] = Field(..., description="List of generated QA pairs")
-    model_id: str = Field(..., description="LLM model used for generation")
-    provider: Literal["openai", "ollama", "custom"] = Field(..., description="LLM provider used")
-    language: str = Field(
-        default="pt", description="Language used for prompt generation (ISO 639-1)"
-    )
-    generation_timestamp: datetime = Field(
-        default_factory=datetime.now, description="When QA pairs were generated"
-    )
-    total_pairs: int = Field(..., description="Total number of QA pairs generated")
-
-    @model_validator(mode="after")
-    def validate_total_pairs(self) -> Self:
-        """Validate that total_pairs matches actual count."""
-        if self.total_pairs != len(self.qa_pairs):
-            raise ValueError(
-                f"total_pairs ({self.total_pairs}) must equal len(qa_pairs) ({len(self.qa_pairs)})"
-            )
-        return self
-
-    def save(self, path: str | Path) -> None:
-        """Save QA record to JSON file."""
-        Path(path).write_text(self.model_dump_json(indent=2))
-
-    @classmethod
-    def load(cls, path: str | Path) -> QARecord:
-        """Load QA record from JSON file."""
-        return cls.model_validate_json(Path(path).read_text())
-
-
 # =============================================================================
 # CEP (Cognitive Elicitation Pipeline) Schemas
 # =============================================================================
@@ -536,6 +500,42 @@ class PipelineType(str, Enum):
     EVALUATION = "evaluation"
 
 
+class PipelineMetadata(BaseModel):
+    """Metadata for a pipeline run group sharing a single pipeline ID.
+
+    Stored as ``pipeline.json`` at ``results/{pipeline_id}/``.
+    """
+
+    pipeline_id: str = Field(..., description="Unique pipeline identifier")
+    created_at: datetime = Field(
+        default_factory=_utc_now, description="When the pipeline was first created (UTC)"
+    )
+    steps_run: list[str] = Field(
+        default_factory=list, description="Pipeline steps executed (e.g. ['transcription', 'qa'])"
+    )
+    schema_version: str = Field(default="2.0", description="Schema version for compatibility")
+
+    def save(self, path: str | Path) -> None:
+        """Save pipeline metadata to JSON file.
+
+        Args:
+            path: Path to save the metadata file.
+        """
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> PipelineMetadata:
+        """Load pipeline metadata from JSON file.
+
+        Args:
+            path: Path to the metadata file.
+
+        Returns:
+            PipelineMetadata instance.
+        """
+        return cls.model_validate_json(Path(path).read_text())
+
+
 class RunStatus(str, Enum):
     """Enum representing the status of a pipeline run."""
 
@@ -673,6 +673,7 @@ class RunMetadata(BaseModel):
 
     # Identity
     run_id: str = Field(..., description="Unique run identifier (YYYYMMDD_HHMMSS_context)")
+    pipeline_id: str | None = Field(default=None, description="Pipeline ID grouping related steps")
     pipeline_type: PipelineType = Field(..., description="Type of pipeline executed")
 
     # Timing

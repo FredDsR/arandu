@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CEP_PROMPTS_DIR = Path(__file__).parents[4] / "prompts" / "qa" / "cep"
 
+BLOOM_HIERARCHY: list[str] = [
+    "remember",
+    "understand",
+    "apply",
+    "analyze",
+    "evaluate",
+    "create",
+]
+
 
 class BloomScaffoldingGenerator:
     """Generate QA pairs calibrated to Bloom's taxonomy levels.
@@ -78,6 +87,28 @@ class BloomScaffoldingGenerator:
         logger.debug(f"Loaded CEP prompts from {lang_dir}")
         return data
 
+    def _format_prior_pairs(self, pairs: list[QAPairCEP]) -> str:
+        """Format prior QA pairs as scaffolding context for the next level.
+
+        Args:
+            pairs: Previously generated QA pairs.
+
+        Returns:
+            Formatted string of prior pairs, or empty string if none.
+        """
+        if not pairs:
+            return ""
+
+        # Take the last N pairs, biasing toward the immediately prior level
+        max_pairs = self.cep_config.max_scaffolding_pairs
+        selected = pairs[-max_pairs:]
+
+        lines = [
+            f"{i + 1}. [{pair.bloom_level.upper()}] Q: {pair.question} A: {pair.answer}"
+            for i, pair in enumerate(selected)
+        ]
+        return "\n".join(lines)
+
     def generate(
         self,
         context: str,
@@ -97,11 +128,25 @@ class BloomScaffoldingGenerator:
         # Calculate questions per Bloom level based on distribution
         level_counts = self._calculate_level_distribution(num_questions)
 
-        for level, count in level_counts.items():
+        # When scaffolding is enabled, sort levels by Bloom hierarchy
+        if self.cep_config.enable_scaffolding_context:
+            sorted_levels = [
+                (level, level_counts[level]) for level in BLOOM_HIERARCHY if level in level_counts
+            ]
+        else:
+            sorted_levels = list(level_counts.items())
+
+        for level, count in sorted_levels:
             if count == 0:
                 continue
 
-            level_pairs = self._generate_for_level(context, level, count)
+            prior = pairs if self.cep_config.enable_scaffolding_context else []
+            level_pairs = self._generate_for_level(
+                context,
+                level,
+                count,
+                prior_pairs=prior,
+            )
             pairs.extend(level_pairs)
 
             logger.debug(f"Generated {len(level_pairs)} pairs at {level} level")
@@ -146,6 +191,8 @@ class BloomScaffoldingGenerator:
         context: str,
         bloom_level: str,
         num_questions: int,
+        *,
+        prior_pairs: list[QAPairCEP] | None = None,
     ) -> list[QAPairCEP]:
         """Generate QA pairs for a specific Bloom level.
 
@@ -153,11 +200,17 @@ class BloomScaffoldingGenerator:
             context: Source text context.
             bloom_level: Bloom taxonomy level.
             num_questions: Number of questions to generate.
+            prior_pairs: Previously generated QA pairs for scaffolding context.
 
         Returns:
             List of QAPairCEP objects.
         """
-        prompt = self._build_prompt(context, bloom_level, num_questions)
+        prompt = self._build_prompt(
+            context,
+            bloom_level,
+            num_questions,
+            prior_pairs=prior_pairs,
+        )
 
         try:
             response = self.llm_client.generate(
@@ -178,6 +231,8 @@ class BloomScaffoldingGenerator:
         context: str,
         bloom_level: str,
         num_questions: int,
+        *,
+        prior_pairs: list[QAPairCEP] | None = None,
     ) -> str:
         """Build prompt for Bloom-calibrated QA generation.
 
@@ -185,6 +240,7 @@ class BloomScaffoldingGenerator:
             context: Source text context.
             bloom_level: Bloom taxonomy level.
             num_questions: Number of questions to generate.
+            prior_pairs: Previously generated QA pairs for scaffolding context.
 
         Returns:
             Formatted prompt string.
@@ -212,6 +268,14 @@ class BloomScaffoldingGenerator:
             examples_label = self._prompts.get("examples_label", "Question examples")
             examples_section = f"\n{examples_label}:\n" + "\n".join(f"- {ex}" for ex in examples)
 
+        # Build scaffolding section from prior pairs
+        scaffolding_section = ""
+        if prior_pairs:
+            formatted = self._format_prior_pairs(prior_pairs)
+            if formatted:
+                header = self._prompts.get("scaffolding_header", "")
+                scaffolding_section = f"\n{header}\n{formatted}"
+
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
             bloom_level_upper=bloom_level.upper(),
@@ -221,6 +285,7 @@ class BloomScaffoldingGenerator:
             level_instruction=level_instruction,
             starters_section=starters_section,
             examples_section=examples_section,
+            scaffolding_section=scaffolding_section,
             num_questions=num_questions,
             output_rules=output_rules,
         )

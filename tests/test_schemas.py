@@ -17,7 +17,6 @@ from gtranscriber.schemas import (
     InputRecord,
     KGMetadata,
     QAPair,
-    QARecord,
     RelationMetricsResult,
     SemanticQualityResult,
     TranscriptionSegment,
@@ -281,97 +280,6 @@ class TestQAPair:
                 end_time=5.0,
             )
         assert "start_time must be less than end_time" in str(exc_info.value)
-
-
-class TestQARecord:
-    """Tests for QARecord schema."""
-
-    def test_valid_qa_record(self) -> None:
-        """Test valid QA record initialization."""
-        qa_pairs = [
-            QAPair(
-                question="Q1?",
-                answer="A1",
-                context="Context 1",
-                question_type="factual",
-                confidence=0.9,
-            ),
-            QAPair(
-                question="Q2?",
-                answer="A2",
-                context="Context 2",
-                question_type="conceptual",
-                confidence=0.85,
-            ),
-        ]
-
-        record = QARecord(
-            source_gdrive_id="file123",
-            source_filename="test.mp3",
-            transcription_text="Full transcription text",
-            qa_pairs=qa_pairs,
-            model_id="llama3.1:8b",
-            provider="ollama",
-            total_pairs=2,
-        )
-
-        assert record.source_gdrive_id == "file123"
-        assert len(record.qa_pairs) == 2
-        assert record.total_pairs == 2
-
-    def test_total_pairs_mismatch(self) -> None:
-        """Test validation error when total_pairs doesn't match qa_pairs length."""
-        qa_pairs = [
-            QAPair(
-                question="Q1?",
-                answer="A1",
-                context="Context",
-                question_type="factual",
-                confidence=0.9,
-            ),
-        ]
-
-        with pytest.raises(ValidationError) as exc_info:
-            QARecord(
-                source_gdrive_id="file123",
-                source_filename="test.mp3",
-                transcription_text="Full transcription text",
-                qa_pairs=qa_pairs,
-                model_id="llama3.1:8b",
-                provider="ollama",
-                total_pairs=5,
-            )
-        assert "total_pairs (5) must equal len(qa_pairs) (1)" in str(exc_info.value)
-
-    def test_save_and_load(self, tmp_path: Path) -> None:
-        """Test saving and loading QA record."""
-        qa_pairs = [
-            QAPair(
-                question="Q1?",
-                answer="A1",
-                context="Context",
-                question_type="factual",
-                confidence=0.9,
-            ),
-        ]
-
-        record = QARecord(
-            source_gdrive_id="file123",
-            source_filename="test.mp3",
-            transcription_text="Full transcription text",
-            qa_pairs=qa_pairs,
-            model_id="llama3.1:8b",
-            provider="ollama",
-            total_pairs=1,
-        )
-
-        path = tmp_path / "qa_record.json"
-        record.save(path)
-
-        loaded = QARecord.load(path)
-        assert loaded.source_gdrive_id == record.source_gdrive_id
-        assert len(loaded.qa_pairs) == 1
-        assert loaded.qa_pairs[0].question == "Q1?"
 
 
 class TestKGMetadata:

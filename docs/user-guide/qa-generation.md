@@ -1,16 +1,17 @@
 # QA Generation Guide
 
-Generate synthetic question-answer pairs from transcription results using LLM-based extraction.
+Generate cognitively-scaffolded question-answer pairs from transcription results using the CEP (Cognitive Elicitation Pipeline).
 
 ## Overview
 
-The QA generation pipeline creates extractive QA pairs from transcribed text using multiple question generation strategies. Each QA pair includes:
+The CEP QA generation pipeline creates extractive QA pairs from transcribed text using Bloom's Taxonomy cognitive scaffolding with optional LLM-as-a-Judge validation. Each QA pair includes:
 
-- **Question**: Generated question about the content
+- **Question**: Generated question calibrated to a Bloom cognitive level
 - **Answer**: Extractive answer from the source text
 - **Context**: Source text segment
-- **Question Type**: Strategy used (factual, conceptual, temporal, entity)
+- **Bloom Level**: Cognitive level (remember, understand, analyze, evaluate, etc.)
 - **Confidence**: Generation confidence score
+- **Reasoning Trace**: Logical connection chain (for higher-level questions)
 - **Timestamps**: Optional time references from transcription
 
 ## Prerequisites
@@ -24,7 +25,7 @@ The QA generation pipeline creates extractive QA pairs from transcribed text usi
 ### Using Docker Compose
 
 ```bash
-# Start QA generation with Ollama sidecar
+# Start CEP QA generation with Ollama sidecar
 docker compose --profile qa up
 ```
 
@@ -45,17 +46,16 @@ sbatch scripts/slurm/run_qa_generation.slurm
 | `GTRANSCRIBER_QA_OLLAMA_URL` | `http://ollama:11434` | Ollama API URL |
 | `GTRANSCRIBER_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
-| `GTRANSCRIBER_QA_STRATEGIES` | `factual,conceptual` | Question strategies |
 | `GTRANSCRIBER_WORKERS` | `2` | Parallel workers |
 
-### Question Strategies
+### CEP-Specific Settings
 
-| Strategy | Description | Example Questions |
-|----------|-------------|-------------------|
-| `factual` | Who, what, when, where | "What caused the flooding?" |
-| `conceptual` | Why, how explanations | "Why did the community evacuate?" |
-| `temporal` | Time-based questions | "When did the event occur?" |
-| `entity` | Entity-focused questions | "Who was the mayor during the crisis?" |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
+| `GTRANSCRIBER_CEP_BLOOM_LEVELS` | `remember,understand,analyze,evaluate` | Bloom levels to generate |
+| `GTRANSCRIBER_CEP_VALIDATION_THRESHOLD` | `0.6` | Minimum score to pass validation |
+| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `llama3.1:8b` | Model for validation |
 
 ### Example .env Configuration
 
@@ -64,9 +64,12 @@ sbatch scripts/slurm/run_qa_generation.slurm
 GTRANSCRIBER_QA_PROVIDER=ollama
 GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
 GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
-GTRANSCRIBER_QA_STRATEGIES=factual,conceptual,temporal
 GTRANSCRIBER_QA_TEMPERATURE=0.7
 GTRANSCRIBER_WORKERS=4
+
+# CEP Settings
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+GTRANSCRIBER_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
 
 # Directories
 GTRANSCRIBER_RESULTS_DIR=./results
@@ -116,16 +119,16 @@ QA_MODEL=llama3.1:70b WORKERS=8 QUESTIONS_PER_DOCUMENT=20 \
 
 ## Output Format
 
-QA records are saved as JSON files in `qa_dataset/`:
+CEP QA records are saved as JSON files in the versioned results directory:
 
 ```
-qa_dataset/
-├── qa_<gdrive_id_1>.json
-├── qa_<gdrive_id_2>.json
-└── qa_checkpoint.json      # For resumption
+results/<pipeline_id>/cep/outputs/
+├── <gdrive_id_1>_cep_qa.json
+├── <gdrive_id_2>_cep_qa.json
+└── cep_checkpoint.json      # For resumption
 ```
 
-### QARecord Schema
+### QARecordCEP Schema
 
 ```json
 {
@@ -136,9 +139,11 @@ qa_dataset/
     {
       "question": "What caused the flooding in the region?",
       "answer": "Heavy rainfall combined with poor drainage",
-      "context": "The flooding was caused by heavy rainfall combined with poor drainage infrastructure...",
+      "context": "The flooding was caused by heavy rainfall...",
       "question_type": "factual",
       "confidence": 0.92,
+      "bloom_level": "remember",
+      "reasoning_trace": "Direct recall from text",
       "start_time": 45.3,
       "end_time": 52.1
     }
@@ -146,33 +151,41 @@ qa_dataset/
   "model_id": "llama3.1:8b",
   "provider": "ollama",
   "generation_timestamp": "2026-01-26T10:30:00Z",
-  "total_pairs": 12
+  "total_pairs": 12,
+  "bloom_distribution": {
+    "remember": 3,
+    "understand": 4,
+    "analyze": 3,
+    "evaluate": 2
+  },
+  "validated_pairs": 10,
+  "validation_summary": {
+    "avg_faithfulness": 0.85,
+    "avg_bloom_calibration": 0.78,
+    "avg_informativeness": 0.72,
+    "avg_overall_score": 0.79,
+    "validation_pass_rate": 0.83
+  }
 }
 ```
 
 ## Programmatic Usage
 
 ```python
-from gtranscriber.schemas import QARecord, QAPair
+from gtranscriber.schemas import QARecordCEP, QAPairCEP
 
-# Load existing QA record
-record = QARecord.load("qa_dataset/qa_1abc123xyz.json")
+# Load existing CEP QA record
+record = QARecordCEP.load("results/pipeline_id/cep/outputs/1abc123xyz_cep_qa.json")
 
 # Access QA pairs
 for qa in record.qa_pairs:
     print(f"Q: {qa.question}")
     print(f"A: {qa.answer}")
-    print(f"Type: {qa.question_type}, Confidence: {qa.confidence}")
+    print(f"Bloom: {qa.bloom_level}, Confidence: {qa.confidence}")
     print()
 
-# Create new QA pair
-new_qa = QAPair(
-    question="What was the impact?",
-    answer="widespread damage",
-    context="The flooding caused widespread damage to homes.",
-    question_type="factual",
-    confidence=0.85
-)
+# Export to JSONL for KGQA training
+record.to_jsonl("output.jsonl")
 ```
 
 ## Monitoring Progress
@@ -206,7 +219,7 @@ The pipeline automatically checkpoints progress. To resume an interrupted job:
 docker compose --profile qa up
 ```
 
-The checkpoint file (`qa_dataset/qa_checkpoint.json`) tracks:
+The checkpoint file tracks:
 - Completed documents
 - Failed documents (for retry)
 - Processing statistics
@@ -218,19 +231,18 @@ The checkpoint file (`qa_dataset/qa_checkpoint.json`) tracks:
    - Use `llama3.1:70b` for higher quality (slower)
    - Use `llama3.2:3b` for faster processing
 
-2. **Question Strategies**
-   - Start with `factual,conceptual` (default)
-   - Add `temporal` for time-sensitive content
-   - Add `entity` for content with many named entities
-
-3. **Temperature**
+2. **Temperature**
    - Lower (0.3-0.5): More consistent, less creative
    - Default (0.7): Balanced
    - Higher (0.9-1.0): More varied questions
 
-4. **Workers**
+3. **Workers**
    - Match to available CPU cores / 2
    - Reduce if experiencing OOM errors
+
+4. **Validation**
+   - Enable for production datasets (default)
+   - Disable for quick iteration (`GTRANSCRIBER_CEP_ENABLE_VALIDATION=false`)
 
 ## Troubleshooting
 

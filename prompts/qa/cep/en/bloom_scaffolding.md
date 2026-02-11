@@ -9,6 +9,7 @@ Task:
 $level_instruction
 $starters_section
 $examples_section
+$scaffolding_section
 
 Generate exactly $num_questions question-answer pair(s) in JSON format.
 Each pair must follow these rules:

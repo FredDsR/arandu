@@ -2,9 +2,12 @@
 
 Provides separate configuration classes for each pipeline:
 - TranscriberConfig: Transcription pipeline settings
-- QAConfig: QA generation pipeline settings
+- QAConfig: QA/CEP generation pipeline settings
+- CEPConfig: Cognitive Elicitation Pipeline (Bloom scaffolding + validation)
 - KGConfig: Knowledge graph construction pipeline settings
 - EvaluationConfig: Evaluation pipeline settings
+- LLMConfig: Shared LLM/API key settings
+- ResultsConfig: Versioned results management settings
 """
 
 from __future__ import annotations
@@ -177,10 +180,6 @@ class QAConfig(BaseSettings):
         le=50,
         description="Number of QA pairs to generate per document",
     )
-    strategies: list[str] = Field(
-        default=["factual", "conceptual"],
-        description="Question generation strategies: factual, conceptual, temporal, entity",
-    )
     temperature: float = Field(
         default=0.7,
         ge=0.0,
@@ -204,10 +203,6 @@ class QAConfig(BaseSettings):
         default="pt",
         description="Language code for QA generation prompts (ISO 639-1: 'en' or 'pt')",
     )
-    prompt_path: str | None = Field(
-        default=None,
-        description="Path to custom prompt templates JSON. If None, uses built-in prompts.",
-    )
 
     # Workers (shared setting, loaded from GTRANSCRIBER_WORKERS)
     workers: int = Field(
@@ -224,18 +219,6 @@ class QAConfig(BaseSettings):
             raise ValueError(
                 f"Invalid QA language: {v!r}. Must be one of {sorted(valid_languages)}"
             )
-        return v
-
-    @field_validator("strategies")
-    @classmethod
-    def validate_strategies(cls, v: list[str]) -> list[str]:
-        """Validate QA generation strategies."""
-        valid_strategies = {"factual", "conceptual", "temporal", "entity"}
-        for strategy in v:
-            if strategy not in valid_strategies:
-                raise ValueError(
-                    f"Invalid QA strategy: {strategy!r}. Must be one of {sorted(valid_strategies)}"
-                )
         return v
 
 
@@ -256,11 +239,7 @@ class CEPConfig(BaseSettings):
         extra="ignore",
     )
 
-    # Module toggles (progressive adoption)
-    enable_bloom_scaffolding: bool = Field(
-        default=True,
-        description="Enable Bloom taxonomy scaffolding for QA generation",
-    )
+    # Module toggles
     enable_reasoning_traces: bool = Field(
         default=True,
         description="Enable reasoning trace generation for answers",
@@ -283,6 +262,20 @@ class CEPConfig(BaseSettings):
             "evaluate": 0.2,
         },
         description="Distribution of questions per Bloom level (must sum to 1.0)",
+    )
+    enable_scaffolding_context: bool = Field(
+        default=True,
+        description=(
+            "Pass previously generated QA pairs as context to higher Bloom levels. "
+            "When enabled, levels are processed in Bloom hierarchy order and each "
+            "level receives QA pairs from lower levels in the prompt."
+        ),
+    )
+    max_scaffolding_pairs: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum number of prior QA pairs to include as scaffolding context",
     )
 
     # Module II - Reasoning settings
@@ -575,10 +568,6 @@ class ResultsConfig(BaseSettings):
     enable_versioning: bool = Field(
         default=True,
         description="Enable versioned result directories",
-    )
-    keep_latest_symlinks: bool = Field(
-        default=True,
-        description="Maintain 'latest' symlinks to most recent runs",
     )
 
 

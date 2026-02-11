@@ -39,7 +39,6 @@ USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
 
 # Directories
 export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_KG_DIR="${GTRANSCRIBER_KG_DIR:-$PROJECT_DIR/knowledge_graphs}"
 export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
@@ -65,7 +64,6 @@ echo "Output Format: $GTRANSCRIBER_KG_OUTPUT_FORMAT"
 echo "Language:      $GTRANSCRIBER_KG_LANGUAGE"
 echo "Workers:       $GTRANSCRIBER_KG_WORKERS"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
-echo "KG Output:     $GTRANSCRIBER_KG_DIR"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -80,7 +78,6 @@ if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
 fi
 
 # Create output directories
-mkdir -p "$GTRANSCRIBER_KG_DIR"
 mkdir -p "$OLLAMA_MODELS_DIR"
 mkdir -p logs
 
@@ -88,6 +85,7 @@ mkdir -p logs
 # Export SLURM_JOB_ID for container naming
 # -----------------------------------------------------------------------------
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+export PIPELINE_ID="${PIPELINE_ID:-}"
 
 # -----------------------------------------------------------------------------
 # Determine Docker profile based on GPU mode
@@ -160,14 +158,15 @@ echo "=============================================="
 echo "G-Transcriber KG Construction Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "KG Output:     $GTRANSCRIBER_KG_DIR"
+echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
 
 # Show graph statistics if corpus graph exists
-if [ -f "$GTRANSCRIBER_KG_DIR/corpus_graph.graphml" ]; then
+CORPUS_GRAPH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/outputs/corpus_graph.graphml" -print -quit 2>/dev/null)
+if [ -n "$CORPUS_GRAPH" ]; then
     echo "Corpus Graph:  corpus_graph.graphml created"
 fi
 
 # Count individual graphs
-GRAPH_COUNT=$(find "$GTRANSCRIBER_KG_DIR" -name "*.graphml" 2>/dev/null | wc -l)
+GRAPH_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -name "*.graphml" 2>/dev/null | wc -l)
 echo "Total Graphs:  $GRAPH_COUNT files generated"
 echo "=============================================="
