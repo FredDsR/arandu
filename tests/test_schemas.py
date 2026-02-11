@@ -17,6 +17,8 @@ from gtranscriber.schemas import (
     InputRecord,
     KGMetadata,
     QAPair,
+    QAPairCEP,
+    QAPairValidated,
     RelationMetricsResult,
     SemanticQualityResult,
     TranscriptionSegment,
@@ -280,6 +282,79 @@ class TestQAPair:
                 end_time=5.0,
             )
         assert "start_time must be less than end_time" in str(exc_info.value)
+
+
+class TestQAPairCEPGenerationPrompt:
+    """Tests for QAPairCEP.generation_prompt field."""
+
+    def test_defaults_to_none(self) -> None:
+        """Test that generation_prompt defaults to None."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+        )
+        assert pair.generation_prompt is None
+
+    def test_accepts_string(self) -> None:
+        """Test that generation_prompt accepts a string value."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+            generation_prompt="Generate a question about...",
+        )
+        assert pair.generation_prompt == "Generate a question about..."
+
+    def test_inherited_by_qa_pair_validated(self) -> None:
+        """Test that QAPairValidated inherits generation_prompt."""
+        pair = QAPairValidated(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+            generation_prompt="The prompt",
+            validation=None,
+            is_valid=True,
+        )
+        assert pair.generation_prompt == "The prompt"
+
+    def test_included_in_serialization(self) -> None:
+        """Test that generation_prompt is included in JSON serialization."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+            generation_prompt="My prompt",
+        )
+        data = pair.model_dump()
+        assert "generation_prompt" in data
+        assert data["generation_prompt"] == "My prompt"
+
+    def test_none_included_in_serialization(self) -> None:
+        """Test that None generation_prompt is included in JSON serialization."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+        )
+        data = pair.model_dump()
+        assert "generation_prompt" in data
+        assert data["generation_prompt"] is None
 
 
 class TestKGMetadata:

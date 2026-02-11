@@ -142,6 +142,7 @@ class ReasoningEnricher:
                 is_multi_hop=enriched_data.get("is_multi_hop", qa_pair.is_multi_hop),
                 hop_count=enriched_data.get("hop_count") or qa_pair.hop_count,
                 tacit_inference=enriched_data.get("tacit_inference") or qa_pair.tacit_inference,
+                generation_prompt=qa_pair.generation_prompt,
             )
 
         except Exception as e:

@@ -243,6 +243,66 @@ class TestQAValidator:
         assert result.validation is None
         assert result.is_valid is True  # Default to valid when validation fails
 
+    def test_validate_preserves_generation_prompt_success(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that generation_prompt is preserved through validate() success path."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A.",
+            context="Context.",
+            question_type="conceptual",
+            confidence=0.9,
+            bloom_level="analyze",
+            generation_prompt="The original prompt",
+        )
+
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "faithfulness": 0.9,
+                "bloom_calibration": 0.8,
+                "informativeness": 0.7,
+            }
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(pair, "context")
+
+        assert result.generation_prompt == "The original prompt"
+
+    def test_validate_preserves_generation_prompt_error(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that generation_prompt is preserved through validate() error path."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A.",
+            context="Context.",
+            question_type="conceptual",
+            confidence=0.9,
+            bloom_level="analyze",
+            generation_prompt="The original prompt",
+        )
+
+        mock_llm_client.generate.side_effect = Exception("LLM error")
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(pair, "context")
+
+        assert result.generation_prompt == "The original prompt"
+
     def test_validate_clamps_scores(
         self,
         mock_llm_client: Any,

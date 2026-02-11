@@ -360,6 +360,40 @@ class TestReasoningEnricher:
         assert results[0].reasoning_trace == "Trace"
         assert results[1].reasoning_trace is None
 
+    def test_enrich_preserves_generation_prompt(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that generation_prompt is preserved through enrich()."""
+        pair = QAPairCEP(
+            question="Por que?",
+            answer="Porque sim.",
+            context="Contexto.",
+            question_type="conceptual",
+            confidence=0.9,
+            bloom_level="analyze",
+            generation_prompt="Original prompt",
+        )
+
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "reasoning_trace": "A → B",
+                "is_multi_hop": False,
+                "hop_count": None,
+                "tacit_inference": None,
+            }
+        )
+
+        enricher = ReasoningEnricher(
+            llm_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = enricher.enrich(pair, "context")
+
+        assert result.generation_prompt == "Original prompt"
+
     def test_enrich_handles_llm_error(
         self,
         mock_llm_client: Any,

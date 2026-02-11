@@ -420,6 +420,54 @@ class TestCEPQAGenerator:
             assert "context" in data
 
 
+class TestCEPGenerationPromptIntegration:
+    """Tests for generation_prompt propagation through the full CEP pipeline."""
+
+    def test_pipeline_produces_non_none_generation_prompt(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        sample_transcription: EnrichedRecord,
+    ) -> None:
+        """Test that full pipeline produces pairs with non-None generation_prompt."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        result = generator.generate_qa_pairs(sample_transcription)
+
+        assert len(result.qa_pairs) > 0
+        for pair in result.qa_pairs:
+            assert pair.generation_prompt is not None
+            assert len(pair.generation_prompt) > 0
+
+    def test_jsonl_export_includes_generation_prompt(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        sample_transcription: EnrichedRecord,
+    ) -> None:
+        """Test that JSONL export includes generation_prompt field."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        result = generator.generate_qa_pairs(sample_transcription)
+        jsonl = result.to_jsonl()
+
+        lines = [line for line in jsonl.strip().split("\n") if line]
+        for line in lines:
+            data = json.loads(line)
+            assert "generation_prompt" in data
+            assert data["generation_prompt"] is not None
+
+
 class TestQARecordCEP:
     """Tests for QARecordCEP schema."""
 
