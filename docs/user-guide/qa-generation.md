@@ -42,9 +42,9 @@ sbatch scripts/slurm/run_qa_generation.slurm
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GTRANSCRIBER_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_QA_MODEL_ID` | `llama3.1:8b` | Model for QA generation |
-| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://ollama:11434` | Ollama API URL |
-| `GTRANSCRIBER_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
+| `GTRANSCRIBER_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
+| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
+| `GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
 | `GTRANSCRIBER_WORKERS` | `2` | Parallel workers |
 
@@ -55,15 +55,15 @@ sbatch scripts/slurm/run_qa_generation.slurm
 | `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
 | `GTRANSCRIBER_CEP_BLOOM_LEVELS` | `remember,understand,analyze,evaluate` | Bloom levels to generate |
 | `GTRANSCRIBER_CEP_VALIDATION_THRESHOLD` | `0.6` | Minimum score to pass validation |
-| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `llama3.1:8b` | Model for validation |
+| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Model for validation |
 
 ### Example .env Configuration
 
 ```bash
 # QA Generation Settings
 GTRANSCRIBER_QA_PROVIDER=ollama
-GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
-GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
+GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
+GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=15
 GTRANSCRIBER_QA_TEMPERATURE=0.7
 GTRANSCRIBER_WORKERS=4
 
@@ -96,7 +96,7 @@ GTRANSCRIBER_QA_MODEL_ID=qwen2.5:14b docker compose --profile qa up
 
 ```bash
 # Generate 20 QA pairs per document
-GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=20 docker compose --profile qa up
+GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=20 docker compose --profile qa up
 ```
 
 ### Using OpenAI
@@ -144,11 +144,12 @@ results/<pipeline_id>/cep/outputs/
       "confidence": 0.92,
       "bloom_level": "remember",
       "reasoning_trace": "Direct recall from text",
+      "generation_prompt": "Generate a factual question that tests recall...",
       "start_time": 45.3,
       "end_time": 52.1
     }
   ],
-  "model_id": "llama3.1:8b",
+  "model_id": "qwen3:14b",
   "provider": "ollama",
   "generation_timestamp": "2026-01-26T10:30:00Z",
   "total_pairs": 12,
@@ -227,7 +228,7 @@ The checkpoint file tracks:
 ## Best Practices
 
 1. **Model Selection**
-   - Use `llama3.1:8b` for balanced speed/quality
+   - Use `qwen3:14b` for balanced speed/quality
    - Use `llama3.1:70b` for higher quality (slower)
    - Use `llama3.2:3b` for faster processing
 
@@ -269,7 +270,7 @@ docker compose --profile qa exec ollama ollama list
 docker compose --profile qa restart ollama
 
 # Check Ollama health
-docker compose --profile qa exec ollama curl http://localhost:11434/api/tags
+docker compose --profile qa exec ollama curl http://localhost:11434/v1/api/tags
 ```
 
 ---

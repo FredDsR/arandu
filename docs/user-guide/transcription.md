@@ -85,7 +85,7 @@ Use a different Whisper model:
 ```bash
 # Faster turbo model
 gtranscriber batch-transcribe input/catalog.csv \
-  --model-id openai/whisper-large-v3-turbo \
+  --model-id openai/whisper-large-v3 \
   --credentials credentials.json \
   --workers 4
 
@@ -95,6 +95,22 @@ gtranscriber batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --workers 4
 ```
+
+### Pipeline ID Tracking
+
+Use a custom pipeline ID to group related processing steps:
+
+```bash
+gtranscriber batch-transcribe input/catalog.csv \
+  --id etno-project-001 \
+  --credentials credentials.json \
+  --workers 4
+```
+
+The pipeline ID:
+- Creates a versioned results directory (e.g., `results/etno-project-001/transcription_YYYYMMDD_HHMMSS/`)
+- Enables tracking of the entire pipeline run
+- Can be used to link transcription with downstream QA/CEP processing
 
 ### Memory Optimization
 
@@ -199,15 +215,10 @@ Each transcribed file produces a JSON file with this structure:
   "size_bytes": 143657567,
   "duration_milliseconds": 120000,
   "parents": ["1OusxPzsL5cVb06sMnyTqtCwlalvv2HDd"],
-  "webContentLink": "https://drive.google.com/uc?id=...",
+  "web_content_link": "https://drive.google.com/uc?id=...",
   "transcription_text": "Full transcription text here...",
   "detected_language": "pt",
   "language_probability": 0.98,
-  "metadata": {
-    "lang": "pt",
-    "duration_seconds": 120.0,
-    "sample_rate": 16000
-  },
   "model_id": "openai/whisper-large-v3",
   "compute_device": "cuda:0",
   "processing_duration_sec": 45.2,
@@ -219,11 +230,23 @@ Each transcribed file produces a JSON file with this structure:
       "start": 0.0,
       "end": 3.5
     }
-  ]
+  ],
+  "transcription_quality": {
+    "script_match_score": 1.0,
+    "repetition_score": 0.95,
+    "segment_quality_score": 1.0,
+    "content_density_score": 0.85,
+    "overall_score": 0.94,
+    "issues_detected": [],
+    "quality_rationale": "High quality transcription"
+  },
+  "is_valid": true
 }
 ```
 
-**Note**: The `metadata.lang` field is used by AutoSchemaKG for language-specific prompt routing during KG construction. Ensure this field matches the actual language of the transcription.
+**Quality Fields**:
+- `transcription_quality`: Quality scores from heuristic-based validation
+- `is_valid`: Boolean indicating if transcription passes quality threshold
 
 Files are named: `{gdrive_id}_transcription.json`
 
@@ -235,7 +258,7 @@ Files are named: `{gdrive_id}_transcription.json`
 - Each worker loads a full model copy into VRAM
 - Typical VRAM usage per model:
   - whisper-large-v3: ~3-6 GB
-  - whisper-large-v3-turbo: ~2-4 GB  
+  - whisper-large-v3: ~2-4 GB  
   - distil-whisper: ~1-2 GB
 - Example: 24 GB GPU → 4 workers with whisper-large-v3
 
@@ -409,14 +432,14 @@ gtranscriber batch-transcribe input/catalog.csv \
 # Initial run
 gtranscriber batch-transcribe input/catalog.csv \
   --credentials credentials.json \
-  --model-id openai/whisper-large-v3-turbo \
+  --model-id openai/whisper-large-v3 \
   --workers 8 \
   --quantize
 
 # If interrupted, resume:
 gtranscriber batch-transcribe input/catalog.csv \
   --credentials credentials.json \
-  --model-id openai/whisper-large-v3-turbo \
+  --model-id openai/whisper-large-v3 \
   --workers 8 \
   --quantize
 ```
@@ -440,7 +463,7 @@ For the ETno project with Portuguese transcriptions:
 gtranscriber batch-transcribe input/etno_catalog.csv \
   --credentials credentials.json \
   --language pt \
-  --model-id openai/whisper-large-v3-turbo \
+  --model-id openai/whisper-large-v3 \
   --workers 4 \
   --quantize
 
