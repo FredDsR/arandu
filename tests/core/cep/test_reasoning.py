@@ -236,6 +236,32 @@ class TestReasoningEnricher:
         assert result.bloom_level == "create"
         assert result.reasoning_trace == "Problema → Solução criativa"
 
+    def test_enrich_passes_response_format(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair_analyze: QAPairCEP,
+    ) -> None:
+        """Test that enrich passes response_format to LLM client."""
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "reasoning_trace": "A → B",
+                "is_multi_hop": False,
+                "hop_count": None,
+                "tacit_inference": None,
+            }
+        )
+
+        enricher = ReasoningEnricher(
+            llm_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        enricher.enrich(sample_qa_pair_analyze, "context")
+
+        call_kwargs = mock_llm_client.generate.call_args.kwargs
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
     def test_parse_reasoning_response_valid(
         self,
         mock_llm_client: Any,

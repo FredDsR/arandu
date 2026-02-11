@@ -484,6 +484,96 @@ class TestBloomScaffoldingGenerator:
         # Should return empty list when all generations fail
         assert pairs == []
 
+    def test_parse_response_unwraps_dict_envelope(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that dict-wrapped response (JSON mode) is unwrapped correctly."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps(
+            {
+                "qa_pairs": [
+                    {
+                        "question": "Qual é a capital?",
+                        "answer": "Brasília",
+                        "bloom_level": "remember",
+                        "confidence": 0.95,
+                    }
+                ]
+            }
+        )
+
+        context = "A capital do Brasil é Brasília."
+        pairs = generator._parse_response(response, context, "remember")
+
+        assert len(pairs) == 1
+        assert pairs[0].question == "Qual é a capital?"
+
+    def test_parse_response_unwraps_pairs_key(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that 'pairs' key is also unwrapped as fallback."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps(
+            {
+                "pairs": [
+                    {
+                        "question": "O que é?",
+                        "answer": "Uma coisa.",
+                        "confidence": 0.8,
+                    }
+                ]
+            }
+        )
+
+        context = "Context."
+        pairs = generator._parse_response(response, context, "remember")
+
+        assert len(pairs) == 1
+        assert pairs[0].question == "O que é?"
+
+    def test_generate_passes_response_format(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that generate passes response_format to LLM client."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember"],
+            bloom_distribution={"remember": 1.0},
+            language="pt",
+        )
+
+        mock_llm_client.generate.return_value = json.dumps(
+            {"qa_pairs": [{"question": "Q?", "answer": "A.", "confidence": 0.9}]}
+        )
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        generator.generate("Context text.", num_questions=1)
+
+        call_kwargs = mock_llm_client.generate.call_args.kwargs
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
     def test_parse_response_with_non_list_data(
         self,
         mock_llm_client: Any,
