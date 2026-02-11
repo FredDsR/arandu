@@ -17,77 +17,167 @@ This document provides complete specifications for all data schemas used in the 
 
 ### EnrichedRecord
 
-Represents a transcription record from the P1 pipeline. This is the primary input for QA generation and KG construction.
+Represents a transcription record with enrichment metadata. Extends `InputRecord` with transcription results and quality checks.
 
-**Fields**:
+**Fields** (inherits all fields from InputRecord):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `gdrive_id` | `str` | Yes | Google Drive ID of original media file |
-| `filename` | `str` | Yes | Original filename |
+| `name` | `str` | Yes | File name |
+| `mimeType` | `str` | Yes | MIME type of the file |
+| `parents` | `list[str]` | Yes | List of parent folder IDs |
+| `web_content_link` | `str` | Yes | Direct download link |
+| `size_bytes` | `int \| None` | No | File size in bytes |
 | `transcription_text` | `str` | Yes | Full transcription text |
-| `segments` | `list[Segment]` | Yes | Timestamped segments |
 | `detected_language` | `str` | Yes | Detected language code (ISO 639-1, e.g., "pt") |
-| `metadata` | `dict` | Yes | Additional metadata including `lang` field |
-| `created_at` | `datetime` | Yes | When transcription was created |
+| `language_probability` | `float` | Yes | Confidence score for detected language |
+| `model_id` | `str` | Yes | Hugging Face model ID used for transcription |
+| `compute_device` | `str` | Yes | Device used for computation (cpu/cuda/mps) |
+| `processing_duration_sec` | `float` | Yes | Processing time in seconds |
+| `transcription_status` | `str` | Yes | Status of transcription process |
+| `created_at_enrichment` | `datetime` | Yes | Timestamp of enrichment |
+| `segments` | `list[TranscriptionSegment] \| None` | No | Detailed timestamp segments |
+| `transcription_quality` | `TranscriptionQualityScore \| None` | No | Transcription quality check results |
+| `is_valid` | `bool \| None` | No | Whether transcription passes quality check (None = not yet checked) |
 
-**Language Metadata**:
+**Language Routing Note**:
 
-The `metadata.lang` field is **critical** for multilingual KG construction. AutoSchemaKG uses this field to route extraction to the correct language-specific prompts.
+The `detected_language` field provides the language code directly. There is **no** `metadata.lang` field in the actual implementation. The `ensure_language_metadata()` method exists as a placeholder for future metadata handling if needed.
 
 **Example**:
 ```json
 {
   "gdrive_id": "1abc123xyz",
-  "filename": "entrevista_enchente_2023.mp3",
+  "name": "entrevista_enchente_2023.mp3",
+  "mimeType": "audio/mpeg",
+  "parents": ["1parent_folder_id"],
+  "web_content_link": "https://drive.google.com/uc?id=1abc123xyz&export=download",
+  "size_bytes": 15728640,
   "transcription_text": "A enchente foi causada por chuvas intensas...",
+  "detected_language": "pt",
+  "language_probability": 0.98,
+  "model_id": "openai/whisper-large-v3",
+  "compute_device": "cuda",
+  "processing_duration_sec": 45.2,
+  "transcription_status": "success",
+  "created_at_enrichment": "2026-01-14T10:00:00Z",
   "segments": [
     {
+      "text": "A enchente foi causada por chuvas intensas",
       "start": 0.0,
-      "end": 5.2,
-      "text": "A enchente foi causada por chuvas intensas"
+      "end": 5.2
     }
   ],
-  "detected_language": "pt",
-  "metadata": {
-    "lang": "pt",
-    "duration_seconds": 3600,
-    "sample_rate": 16000
+  "transcription_quality": {
+    "script_match_score": 0.95,
+    "repetition_score": 0.92,
+    "segment_quality_score": 0.88,
+    "content_density_score": 0.90,
+    "overall_score": 0.91,
+    "issues_detected": [],
+    "quality_rationale": "High-quality transcription with natural pacing"
   },
-  "created_at": "2026-01-14T10:00:00Z"
+  "is_valid": true
 }
 ```
-
-**Important**: When processing Portuguese transcriptions:
-- `detected_language` should be `"pt"`
-- `metadata.lang` **must** be set to `"pt"` for AutoSchemaKG language routing
-- The transcription pipeline should automatically populate these fields
 
 **Python Implementation**:
 ```python
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-class Segment(BaseModel):
-    """Timestamped transcription segment."""
-    start: float
-    end: float
-    text: str
+class TranscriptionSegment(BaseModel):
+    """Schema for a transcription segment with timestamp information."""
+    text: str = Field(..., description="Transcribed text for this segment")
+    start: float = Field(..., description="Start time in seconds")
+    end: float = Field(..., description="End time in seconds")
 
-class EnrichedRecord(BaseModel):
-    """Transcription record from P1 pipeline."""
-    gdrive_id: str
-    filename: str
-    transcription_text: str
-    segments: list[Segment]
-    detected_language: str = Field(description="ISO 639-1 language code")
-    metadata: dict = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.now)
+class EnrichedRecord(InputRecord):
+    """Schema for output records containing transcription results and metadata."""
+    transcription_text: str = Field(..., description="Full transcription text")
+    detected_language: str = Field(..., description="Detected language code")
+    language_probability: float = Field(..., description="Confidence score for detected language")
+    model_id: str = Field(..., description="Hugging Face model ID used for transcription")
+    compute_device: str = Field(..., description="Device used for computation (cpu/cuda/mps)")
+    processing_duration_sec: float = Field(..., description="Processing time in seconds")
+    transcription_status: str = Field(..., description="Status of transcription process")
+    created_at_enrichment: datetime = Field(
+        default_factory=datetime.now, description="Timestamp of enrichment"
+    )
+    segments: list[TranscriptionSegment] | None = Field(
+        None, description="Detailed timestamp segments"
+    )
+    transcription_quality: TranscriptionQualityScore | None = Field(
+        None, description="Transcription quality check results"
+    )
+    is_valid: bool | None = Field(
+        default=None,
+        description="Whether transcription passes quality check (None = not yet checked)",
+    )
 
     def ensure_language_metadata(self) -> None:
-        """Ensure metadata.lang is set for AutoSchemaKG compatibility."""
-        if "lang" not in self.metadata:
-            self.metadata["lang"] = self.detected_language
+        """Ensure metadata compatibility for AutoSchemaKG language routing.
+        
+        Note: The detected_language field already provides the language code.
+        """
+        pass
+```
+
+---
+
+## Transcription Quality Schemas
+
+### TranscriptionQualityScore
+
+Quality scores for transcription validation using heuristics. Distinct from `ValidationScore` (LLM-as-a-Judge for QA pairs). This evaluates Whisper transcription output quality.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `script_match_score` | `float` | Yes | Text uses expected character set (0.0-1.0, Latin for pt/en) |
+| `repetition_score` | `float` | Yes | Text is free from excessive repetition (0.0-1.0) |
+| `segment_quality_score` | `float` | Yes | Segment timestamps are natural, not suspicious (0.0-1.0) |
+| `content_density_score` | `float` | Yes | Words per minute within reasonable range (0.0-1.0) |
+| `overall_score` | `float` | Yes | Weighted average of all scores (0.0-1.0) |
+| `issues_detected` | `list[str]` | Yes | List of quality issues (default: empty list) |
+| `quality_rationale` | `str \| None` | No | Explanation of quality assessment |
+
+**Example**:
+```json
+{
+  "script_match_score": 0.95,
+  "repetition_score": 0.88,
+  "segment_quality_score": 0.92,
+  "content_density_score": 0.85,
+  "overall_score": 0.90,
+  "issues_detected": ["Minor repetition in segment 3-5"],
+  "quality_rationale": "Good quality transcription with minor repetition issues"
+}
+```
+
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field
+
+class TranscriptionQualityScore(BaseModel):
+    """Quality scores for transcription validation."""
+    script_match_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Text uses expected character set (Latin for pt/en)"
+    )
+    repetition_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Text is free from excessive repetition"
+    )
+    segment_quality_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Segment timestamps are natural, not suspicious"
+    )
+    content_density_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Words per minute within reasonable range"
+    )
+    overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
+    issues_detected: list[str] = Field(default_factory=list, description="List of quality issues")
+    quality_rationale: str | None = Field(None, description="Explanation of quality assessment")
 ```
 
 ---
@@ -98,17 +188,30 @@ The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for cog
 
 ### QAPairCEP
 
-Extends QAPair with Bloom taxonomy levels and reasoning traces for cognitively-calibrated question generation.
+Extends `QAPair` with CEP cognitive elicitation fields. **Inherits from QAPair**, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation.
 
-**Fields** (in addition to QAPair fields):
+**Fields** (in addition to QAPair base fields):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `bloom_level` | `Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]` | Yes | Bloom's taxonomy cognitive level |
-| `reasoning_trace` | `str \| None` | No | Logical connection chain for higher-level questions |
-| `is_multi_hop` | `bool` | No | Whether question requires connecting distant information |
+| `question` | `str` | Yes | The generated question (inherited from QAPair) |
+| `answer` | `str` | Yes | Ground truth answer (extractive from context, inherited) |
+| `context` | `str` | Yes | Source text segment (inherited from QAPair) |
+| `question_type` | `Literal["factual", "conceptual", "temporal", "entity"]` | Yes | Question generation strategy type (inherited) |
+| `confidence` | `float` | Yes | Generation confidence score 0.0-1.0 (inherited) |
+| `start_time` | `float \| None` | No | Segment start time in seconds (inherited) |
+| `end_time` | `float \| None` | No | Segment end time in seconds (inherited) |
+| `bloom_level` | `BloomLevel` | Yes | Bloom's taxonomy cognitive level |
+| `reasoning_trace` | `str \| None` | No | Logical connections between facts leading to the answer |
+| `is_multi_hop` | `bool` | No | Whether answer requires connecting distant text parts (default: False) |
 | `hop_count` | `int \| None` | No | Number of reasoning hops (1-5 when is_multi_hop=True) |
 | `tacit_inference` | `str \| None` | No | Explanation of implicit domain knowledge surfaced |
+| `generation_prompt` | `str \| None` | No | LLM prompt used to generate this QA pair |
+
+**BloomLevel**: `Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]`
+
+**Validators**:
+- `coerce_reasoning_trace`: Automatically converts `list[str]` to joined string with " -> " separator
 
 **Example**:
 ```json
@@ -118,11 +221,14 @@ Extends QAPair with Bloom taxonomy levels and reasoning traces for cognitively-c
   "context": "Se o rio sobe rápido, guardo o barco para evitar perda",
   "question_type": "conceptual",
   "confidence": 0.88,
+  "start_time": 120.5,
+  "end_time": 125.3,
   "bloom_level": "analyze",
-  "reasoning_trace": "Fato: rio sobe → Ação: guardar barco → Razão: evitar perda",
+  "reasoning_trace": "Fato: rio sobe -> Ação: guardar barco -> Razão: evitar perda",
   "is_multi_hop": false,
   "hop_count": null,
-  "tacit_inference": "Subida rápida do rio indica risco iminente de enchente"
+  "tacit_inference": "Subida rápida do rio indica risco iminente de enchente",
+  "generation_prompt": "Generate an analyze-level question about risk management..."
 }
 ```
 
@@ -137,33 +243,48 @@ Extends QAPair with Bloom taxonomy levels and reasoning traces for cognitively-c
 **Python Implementation**:
 ```python
 from typing import Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-class QAPairCEP(BaseModel):
-    """QA pair with Bloom's Taxonomy cognitive scaffolding."""
-    question: str
-    answer: str
-    context: str
-    question_type: Literal["factual", "conceptual", "temporal", "entity"]
-    confidence: float = Field(ge=0.0, le=1.0)
-    bloom_level: Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
-    reasoning_trace: str | None = None
-    is_multi_hop: bool = False
-    hop_count: int | None = Field(default=None, ge=1, le=5)
-    tacit_inference: str | None = None
-    start_time: float | None = None
-    end_time: float | None = None
+BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
-    @field_validator("hop_count", mode="before")
+class QAPairCEP(QAPair):
+    """Extended QA pair with CEP cognitive elicitation fields."""
+    bloom_level: BloomLevel = Field(
+        ..., description="Bloom's taxonomy cognitive level for this question"
+    )
+    reasoning_trace: str | None = Field(
+        None, description="Logical connections between facts leading to the answer"
+    )
+
+    @field_validator("reasoning_trace", mode="before")
     @classmethod
-    def validate_hop_count(cls, v, info):
-        """Validate hop_count is only set when is_multi_hop is True."""
-        is_multi_hop = info.data.get("is_multi_hop", False)
-        if v is not None and not is_multi_hop:
-            return None
-        if is_multi_hop and v is not None and not (1 <= v <= 5):
-            return 2  # Default to 2 hops for multi-hop questions
+    def coerce_reasoning_trace(cls, v: str | list[str] | None) -> str | None:
+        """Coerce reasoning_trace from list to joined string."""
+        if isinstance(v, list):
+            return " -> ".join(str(item) for item in v)
         return v
+
+    is_multi_hop: bool = Field(
+        default=False, description="Whether answer requires connecting distant text parts"
+    )
+    hop_count: int | None = Field(
+        None, ge=1, le=5, description="Number of reasoning hops if multi-hop"
+    )
+    tacit_inference: str | None = Field(
+        None, description="Explanation of implicit/tacit knowledge used in the answer"
+    )
+    generation_prompt: str | None = Field(
+        None, description="LLM prompt used to generate this QA pair"
+    )
+
+    @model_validator(mode="after")
+    def validate_multi_hop(self) -> Self:
+        """Validate hop_count is set when is_multi_hop is True."""
+        if self.is_multi_hop and self.hop_count is None:
+            object.__setattr__(self, "hop_count", 2)
+        if not self.is_multi_hop and self.hop_count is not None:
+            object.__setattr__(self, "hop_count", None)
+        return self
 ```
 
 ### ValidationScore
@@ -241,17 +362,33 @@ Extends QAPairCEP with validation results.
 
 ### QARecordCEP
 
-Complete CEP QA dataset for a single transcription, extending QARecord with cognitive scaffolding metadata.
+Complete CEP QA dataset for a single transcription with cognitive scaffolding metadata and validation summary.
 
-**Fields** (in addition to QARecord fields):
+**Fields**:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `qa_pairs` | `list[QAPairCEP]` | Yes | CEP-enhanced QA pairs |
+| `source_gdrive_id` | `str` | Yes | Google Drive ID of original media file |
+| `source_filename` | `str` | Yes | Original filename |
+| `transcription_text` | `str` | Yes | Full transcription text |
+| `qa_pairs` | `list[QAPairValidated \| QAPairCEP]` | Yes | CEP-enhanced QA pairs (validated or unvalidated) |
+| `model_id` | `str` | Yes | LLM model used for generation |
+| `validator_model_id` | `str \| None` | No | LLM model used for validation (if enabled) |
+| `provider` | `Literal["openai", "ollama", "custom"]` | Yes | LLM provider used |
+| `language` | `str` | Yes | Language for prompts (ISO 639-1, default: "pt") |
+| `generation_timestamp` | `datetime` | Yes | When QA pairs were generated |
+| `total_pairs` | `int` | Yes | Total number of QA pairs generated |
+| `validated_pairs` | `int` | Yes | Number of pairs passing validation (default: 0) |
 | `bloom_distribution` | `dict[str, int]` | Yes | Count of pairs per Bloom level |
-| `validated_pairs` | `int \| None` | No | Number of pairs passing validation |
-| `validation_summary` | `ValidationSummary \| None` | No | Aggregate validation statistics |
-| `cep_version` | `str` | Yes | CEP pipeline version |
+| `validation_summary` | `dict[str, float] \| None` | No | Aggregated validation metrics (NOT a ValidationSummary class) |
+| `validation_rate` | `float` | Computed | Percentage of pairs that passed validation (computed field) |
+| `cep_version` | `str` | Yes | CEP pipeline version (default: "1.0") |
+
+**Important Notes**:
+- `qa_pairs` accepts both `QAPairValidated` and `QAPairCEP` in a union type
+- `QAPairValidated` must be listed first in the union for Pydantic to correctly preserve validation fields
+- `validation_summary` is a plain `dict[str, float]`, **NOT** a ValidationSummary class (this class does not exist)
+- `validation_rate` is a computed property: `validated_pairs / total_pairs`
 
 **Example**:
 ```json
@@ -261,23 +398,25 @@ Complete CEP QA dataset for a single transcription, extending QARecord with cogn
   "transcription_text": "O pescador contou que quando o rio sobe...",
   "qa_pairs": [...],
   "model_id": "llama3.1:8b",
+  "validator_model_id": "gpt-4",
   "provider": "ollama",
+  "language": "pt",
   "generation_timestamp": "2026-02-03T10:30:00Z",
   "total_pairs": 12,
+  "validated_pairs": 10,
   "bloom_distribution": {
     "remember": 3,
     "understand": 4,
     "analyze": 3,
     "evaluate": 2
   },
-  "validated_pairs": 10,
   "validation_summary": {
     "avg_faithfulness": 0.85,
     "avg_bloom_calibration": 0.78,
     "avg_informativeness": 0.72,
-    "avg_overall_score": 0.79,
-    "validation_pass_rate": 0.83
+    "avg_overall_score": 0.79
   },
+  "validation_rate": 0.833,
   "cep_version": "1.0"
 }
 ```
@@ -306,32 +445,58 @@ Each line in the JSONL contains one QA pair with all CEP fields:
 ```python
 from datetime import datetime
 from pathlib import Path
-from pydantic import BaseModel, Field
-
-class ValidationSummary(BaseModel):
-    """Aggregate validation statistics."""
-    avg_faithfulness: float = Field(ge=0.0, le=1.0)
-    avg_bloom_calibration: float = Field(ge=0.0, le=1.0)
-    avg_informativeness: float = Field(ge=0.0, le=1.0)
-    avg_overall: float = Field(ge=0.0, le=1.0)
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 class QARecordCEP(BaseModel):
-    """Complete CEP QA dataset for a single transcription."""
-    source_gdrive_id: str
-    source_filename: str
-    transcription_text: str
-    qa_pairs: list[QAPairCEP]
-    model_id: str
-    provider: str
-    generation_timestamp: datetime = Field(default_factory=datetime.now)
-    total_pairs: int
-    bloom_distribution: dict[str, int]
-    validated_pairs: int | None = None
-    validation_summary: ValidationSummary | None = None
-    cep_version: str = "1.0"
+    """Extended QA dataset record with CEP metadata and validation summary."""
+    source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
+    source_filename: str = Field(..., description="Original filename")
+    transcription_text: str = Field(..., description="Full transcription text")
+    qa_pairs: list[QAPairValidated | QAPairCEP] = Field(
+        ..., description="List of CEP-enhanced QA pairs"
+    )
+    model_id: str = Field(..., description="LLM model used for generation")
+    validator_model_id: str | None = Field(
+        None, description="LLM model used for validation (if enabled)"
+    )
+    provider: Literal["openai", "ollama", "custom"] = Field(..., description="LLM provider used")
+    language: str = Field(default="pt", description="Language for prompts (ISO 639-1)")
+    generation_timestamp: datetime = Field(
+        default_factory=datetime.now, description="When QA pairs were generated"
+    )
+    total_pairs: int = Field(..., description="Total number of QA pairs generated")
+    validated_pairs: int = Field(default=0, description="Number of pairs passing validation")
+    bloom_distribution: dict[str, int] = Field(
+        default_factory=dict, description="Count of QA pairs per Bloom level"
+    )
+    validation_summary: dict[str, float] | None = Field(
+        None, description="Aggregated validation metrics"
+    )
+    cep_version: str = Field(default="1.0", description="CEP pipeline version")
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        """Validate that total_pairs matches actual count."""
+        if self.total_pairs != len(self.qa_pairs):
+            raise ValueError(
+                f"total_pairs ({self.total_pairs}) must equal len(qa_pairs) ({len(self.qa_pairs)})"
+            )
+        return self
+
+    @computed_field
+    @property
+    def validation_rate(self) -> float:
+        """Compute the percentage of pairs that passed validation."""
+        if self.total_pairs == 0:
+            return 0.0
+        return self.validated_pairs / self.total_pairs
+
+    def save(self, path: str | Path) -> None:
+        """Save CEP QA record to JSON file."""
+        Path(path).write_text(self.model_dump_json(indent=2))
 
     def to_jsonl(self, path: str | Path | None = None) -> str | None:
-        """Export QA pairs to JSONL format."""
+        """Export QA pairs to JSONL format for KGQA training compatibility."""
         lines = [pair.model_dump_json() for pair in self.qa_pairs]
         jsonl_content = "\n".join(lines)
 
@@ -342,11 +507,9 @@ class QARecordCEP(BaseModel):
 
         return jsonl_content
 
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.model_dump_json(indent=2))
-
     @classmethod
     def load(cls, path: str | Path) -> "QARecordCEP":
+        """Load CEP QA record from JSON file."""
         return cls.model_validate_json(Path(path).read_text())
 ```
 
@@ -491,6 +654,41 @@ Relations are stored as edge attributes in GraphML:
 ---
 
 ## Evaluation Schemas
+
+### GraphConnectivity
+
+Graph connectivity metrics from NetworkX analysis.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `average_degree` | `float` | Yes | Average node degree (must be >= 0.0) |
+| `connected_components` | `int` | Yes | Number of connected components (must be >= 1) |
+| `largest_component_size` | `int` | Yes | Size of largest component (must be >= 0) |
+| `density` | `float` | Yes | Graph density (0.0-1.0) |
+
+**Example**:
+```json
+{
+  "average_degree": 5.05,
+  "connected_components": 3,
+  "largest_component_size": 1421,
+  "density": 0.0033
+}
+```
+
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field
+
+class GraphConnectivity(BaseModel):
+    """Graph connectivity metrics from NetworkX analysis."""
+    average_degree: float = Field(..., ge=0.0, description="Average node degree")
+    connected_components: int = Field(..., ge=1, description="Number of connected components")
+    largest_component_size: int = Field(..., ge=0, description="Size of largest component")
+    density: float = Field(..., ge=0.0, le=1.0, description="Graph density")
+```
 
 ### EntityCoverageResult
 
@@ -768,6 +966,315 @@ class EvaluationReport(BaseModel):
 
 ---
 
+## Results Versioning Schemas
+
+The following schemas support versioned pipeline runs with comprehensive metadata tracking for reproducibility and provenance.
+
+### PipelineType
+
+Enum representing the different pipeline types.
+
+**Values**:
+- `TRANSCRIPTION` - "transcription"
+- `QA` - "qa"
+- `CEP` - "cep"
+- `KG` - "kg"
+- `EVALUATION` - "evaluation"
+
+**Python Implementation**:
+```python
+from enum import Enum
+
+class PipelineType(str, Enum):
+    """Enum representing the different pipeline types."""
+    TRANSCRIPTION = "transcription"
+    QA = "qa"
+    CEP = "cep"
+    KG = "kg"
+    EVALUATION = "evaluation"
+```
+
+### PipelineMetadata
+
+Metadata for a pipeline run group sharing a single pipeline ID. Stored as `pipeline.json` at `results/{pipeline_id}/`.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pipeline_id` | `str` | Yes | Unique pipeline identifier |
+| `created_at` | `datetime` | Yes | When the pipeline was first created (UTC) |
+| `steps_run` | `list[str]` | Yes | Pipeline steps executed (default: empty list) |
+| `schema_version` | `str` | Yes | Schema version for compatibility (default: "2.0") |
+
+**Example**:
+```json
+{
+  "pipeline_id": "20260214_143022_transcription",
+  "created_at": "2026-02-14T14:30:22Z",
+  "steps_run": ["transcription", "qa"],
+  "schema_version": "2.0"
+}
+```
+
+### RunStatus
+
+Enum representing the status of a pipeline run.
+
+**Values**:
+- `PENDING` - "pending"
+- `IN_PROGRESS` - "in_progress"
+- `COMPLETED` - "completed"
+- `FAILED` - "failed"
+- `CANCELLED` - "cancelled"
+
+**Python Implementation**:
+```python
+from enum import Enum
+
+class RunStatus(str, Enum):
+    """Enum representing the status of a pipeline run."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+```
+
+### ExecutionEnvironment
+
+Captures execution environment information including SLURM detection.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `is_slurm` | `bool` | Yes | Whether running in SLURM environment (default: False) |
+| `is_local` | `bool` | Yes | Whether running locally (default: True) |
+| `slurm_job_id` | `str \| None` | No | SLURM job ID |
+| `slurm_partition` | `str \| None` | No | SLURM partition name |
+| `slurm_node` | `str \| None` | No | SLURM node hostname |
+| `hostname` | `str` | Yes | System hostname |
+| `username` | `str` | Yes | Current username |
+
+**Class Method**: `detect()` - Auto-detects execution environment from environment variables
+
+**Example**:
+```json
+{
+  "is_slurm": true,
+  "is_local": false,
+  "slurm_job_id": "12345",
+  "slurm_partition": "gpu",
+  "slurm_node": "node042",
+  "hostname": "cluster.university.edu",
+  "username": "researcher"
+}
+```
+
+### HardwareInfo
+
+Captures hardware information for reproducibility.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `device_type` | `str` | Yes | Device type: cpu, cuda, mps |
+| `gpu_name` | `str \| None` | No | GPU name if available |
+| `gpu_memory_gb` | `float \| None` | No | GPU memory in GB |
+| `cuda_version` | `str \| None` | No | CUDA version if available |
+| `cpu_count` | `int` | Yes | Number of CPU cores |
+| `torch_version` | `str` | Yes | PyTorch version |
+| `python_version` | `str` | Yes | Python version |
+
+**Class Method**: `capture()` - Auto-captures current hardware information
+
+**Example**:
+```json
+{
+  "device_type": "cuda",
+  "gpu_name": "NVIDIA A100-SXM4-40GB",
+  "gpu_memory_gb": 40.0,
+  "cuda_version": "12.1",
+  "cpu_count": 32,
+  "torch_version": "2.2.0",
+  "python_version": "3.13.1"
+}
+```
+
+### ConfigSnapshot
+
+Captures configuration at the time of run execution.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `config_type` | `str` | Yes | Configuration class name |
+| `config_values` | `dict` | Yes | Configuration values as dictionary |
+| `environment_variables` | `dict[str, str]` | Yes | Relevant environment variables (default: empty dict) |
+
+**Class Method**: `from_config(config, env_prefix="GTRANSCRIBER_")` - Creates snapshot from a Pydantic config object
+
+**Example**:
+```json
+{
+  "config_type": "TranscriptionConfig",
+  "config_values": {
+    "model_id": "openai/whisper-large-v3",
+    "device": "cuda",
+    "batch_size": 16
+  },
+  "environment_variables": {
+    "GTRANSCRIBER_MODEL_ID": "openai/whisper-large-v3",
+    "GTRANSCRIBER_DEVICE": "cuda"
+  }
+}
+```
+
+### RunMetadata
+
+Complete metadata for a pipeline run. Tracks identity, timing, status, execution context, and progress for a versioned pipeline run.
+
+**Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `run_id` | `str` | Yes | Unique run identifier (YYYYMMDD_HHMMSS_context) |
+| `pipeline_id` | `str \| None` | No | Pipeline ID grouping related steps |
+| `pipeline_type` | `PipelineType` | Yes | Type of pipeline executed |
+| `started_at` | `datetime` | Yes | Run start time (UTC) |
+| `ended_at` | `datetime \| None` | No | Run end time (UTC) |
+| `status` | `RunStatus` | Yes | Current run status (default: PENDING) |
+| `error_message` | `str \| None` | No | Error message if failed |
+| `execution` | `ExecutionEnvironment` | Yes | Execution environment details |
+| `hardware` | `HardwareInfo` | Yes | Hardware information |
+| `config` | `ConfigSnapshot` | Yes | Configuration snapshot |
+| `total_items` | `int` | Yes | Total items to process (default: 0) |
+| `completed_items` | `int` | Yes | Successfully completed items (default: 0) |
+| `failed_items` | `int` | Yes | Failed items (default: 0) |
+| `output_directory` | `str` | Yes | Path to run output directory |
+| `checkpoint_file` | `str \| None` | No | Path to checkpoint file |
+| `gtranscriber_version` | `str` | Yes | G-Transcriber version |
+| `schema_version` | `str` | Yes | Schema version for compatibility (default: "1.0") |
+| `input_source` | `str \| None` | No | Input source (catalog, directory) |
+| `duration_seconds` | `float \| None` | Computed | Run duration in seconds (computed field) |
+| `success_rate` | `float \| None` | Computed | Success rate as percentage (computed field) |
+
+**Example**:
+```json
+{
+  "run_id": "20260214_143022_transcription",
+  "pipeline_id": "pipeline_20260214",
+  "pipeline_type": "transcription",
+  "started_at": "2026-02-14T14:30:22Z",
+  "ended_at": "2026-02-14T15:45:10Z",
+  "status": "completed",
+  "error_message": null,
+  "execution": {
+    "is_slurm": true,
+    "is_local": false,
+    "slurm_job_id": "12345",
+    "hostname": "cluster.edu"
+  },
+  "hardware": {
+    "device_type": "cuda",
+    "gpu_name": "NVIDIA A100",
+    "cpu_count": 32
+  },
+  "config": {
+    "config_type": "TranscriptionConfig",
+    "config_values": {...}
+  },
+  "total_items": 100,
+  "completed_items": 98,
+  "failed_items": 2,
+  "output_directory": "results/20260214_143022_transcription",
+  "checkpoint_file": "results/20260214_143022_transcription/checkpoint.json",
+  "gtranscriber_version": "0.1.0",
+  "schema_version": "1.0",
+  "input_source": "catalog",
+  "duration_seconds": 4488.0,
+  "success_rate": 98.0
+}
+```
+
+**Python Implementation**:
+```python
+from datetime import UTC, datetime
+from pathlib import Path
+from pydantic import BaseModel, Field, computed_field
+
+def _utc_now() -> datetime:
+    """Return the current UTC datetime for consistent timestamp capture."""
+    return datetime.now(UTC)
+
+class RunMetadata(BaseModel):
+    """Complete metadata for a pipeline run."""
+    # Identity
+    run_id: str = Field(..., description="Unique run identifier (YYYYMMDD_HHMMSS_context)")
+    pipeline_id: str | None = Field(default=None, description="Pipeline ID grouping related steps")
+    pipeline_type: PipelineType = Field(..., description="Type of pipeline executed")
+
+    # Timing
+    started_at: datetime = Field(default_factory=_utc_now, description="Run start time (UTC)")
+    ended_at: datetime | None = Field(default=None, description="Run end time (UTC)")
+
+    # Status
+    status: RunStatus = Field(default=RunStatus.PENDING, description="Current run status")
+    error_message: str | None = Field(default=None, description="Error message if failed")
+
+    # Context
+    execution: ExecutionEnvironment = Field(..., description="Execution environment details")
+    hardware: HardwareInfo = Field(..., description="Hardware information")
+    config: ConfigSnapshot = Field(..., description="Configuration snapshot")
+
+    # Progress
+    total_items: int = Field(default=0, description="Total items to process")
+    completed_items: int = Field(default=0, description="Successfully completed items")
+    failed_items: int = Field(default=0, description="Failed items")
+
+    # Paths
+    output_directory: str = Field(..., description="Path to run output directory")
+    checkpoint_file: str | None = Field(default=None, description="Path to checkpoint file")
+
+    # Version info
+    gtranscriber_version: str = Field(..., description="G-Transcriber version")
+    schema_version: str = Field(default="1.0", description="Schema version for compatibility")
+
+    # Optional input source
+    input_source: str | None = Field(default=None, description="Input source (catalog, directory)")
+
+    @computed_field
+    @property
+    def duration_seconds(self) -> float | None:
+        """Compute run duration in seconds."""
+        if self.ended_at is None:
+            return None
+        return (self.ended_at - self.started_at).total_seconds()
+
+    @computed_field
+    @property
+    def success_rate(self) -> float | None:
+        """Compute success rate as percentage."""
+        total = self.completed_items + self.failed_items
+        if total == 0:
+            return None
+        return round(self.completed_items / total * 100, 2)
+
+    def save(self, path: str | Path) -> None:
+        """Save run metadata to JSON file."""
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "RunMetadata":
+        """Load run metadata from JSON file."""
+        return cls.model_validate_json(Path(path).read_text())
+```
+
+---
+
 ## Schema Relationships
 
 ```mermaid
@@ -889,5 +1396,6 @@ stats = {
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: 2026-02-03
+**Document Version**: 2.0
+**Last Updated**: 2026-02-14
+**Changes**: Fixed all schema inaccuracies based on actual implementation in schemas.py
