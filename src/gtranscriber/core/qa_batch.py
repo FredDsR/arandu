@@ -11,8 +11,9 @@ import json
 import logging
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime
+
+from pydantic import BaseModel
 
 from gtranscriber.config import CEPConfig, QAConfig, ResultsConfig
 from gtranscriber.core.checkpoint import CheckpointManager
@@ -20,20 +21,24 @@ from gtranscriber.core.llm_client import LLMClient, LLMProvider
 from gtranscriber.core.results_manager import ResultsManager
 from gtranscriber.schemas import EnrichedRecord, PipelineType
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class QAGenerationTask:
+class QAGenerationTask(BaseModel):
     """Task information for QA generation."""
 
     transcription_file: Path
     gdrive_id: str
     filename: str
     output_file: Path
+
+
+class TaskLoadResult(BaseModel):
+    """Result of loading transcription tasks with filtering metadata."""
+
+    tasks: list[QAGenerationTask]
+    total_found: int
+    skipped_invalid: int
 
 
 def _resolve_transcription_dir(
@@ -85,8 +90,11 @@ def load_transcription_tasks(
     output_dir: Path,
     pipeline_id: str | None = None,
     output_suffix: str = "_cep_qa.json",
-) -> list[QAGenerationTask]:
+) -> TaskLoadResult:
     """Load transcription files and create QA generation tasks.
+
+    Transcriptions where ``is_valid`` is explicitly ``False`` are skipped.
+    Transcriptions without the field or with ``is_valid=None`` are included.
 
     Args:
         input_dir: Directory containing EnrichedRecord JSON files, or the
@@ -96,7 +104,8 @@ def load_transcription_tasks(
         output_suffix: Suffix for output filenames (e.g. ``"_cep_qa.json"``).
 
     Returns:
-        List of QAGenerationTask objects.
+        A TaskLoadResult containing the tasks list and filtering metadata
+        (total files found and number skipped as invalid).
     """
     tasks: list[QAGenerationTask] = []
 
@@ -108,12 +117,19 @@ def load_transcription_tasks(
 
     if not transcription_files:
         logger.warning(f"No transcription files found in {effective_input_dir}")
-        return tasks
+        return TaskLoadResult(tasks=tasks, total_found=0, skipped_invalid=0)
 
+    skipped_invalid = 0
     for json_file in transcription_files:
         try:
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
+
+            # Skip transcriptions that failed quality validation
+            if data.get("is_valid") is False:
+                skipped_invalid += 1
+                logger.info(f"Skipping invalid transcription: {json_file.name}")
+                continue
 
             gdrive_id = data.get("gdrive_id", "unknown")
             filename = data.get("name", json_file.name)
@@ -135,9 +151,14 @@ def load_transcription_tasks(
 
     logger.info(
         f"Loaded {len(tasks)} transcription files from {input_dir} "
-        f"({len(transcription_files)} total files found)"
+        f"({len(transcription_files)} total files found, "
+        f"{skipped_invalid} skipped as invalid)"
     )
-    return tasks
+    return TaskLoadResult(
+        tasks=tasks,
+        total_found=len(transcription_files),
+        skipped_invalid=skipped_invalid,
+    )
 
 
 # Global CEP generator instance per worker process
@@ -304,6 +325,10 @@ def run_batch_cep_generation(
 ) -> None:
     """Run batch CEP QA generation with parallel processing and checkpointing.
 
+    Transcriptions that failed quality validation (``is_valid=False``) are
+    automatically filtered out during task loading.  The number of skipped
+    files is reported in both the initial info logs and the final summary.
+
     Args:
         input_dir: Directory containing transcription JSON files.
         output_dir: Directory for CEP QA dataset outputs.
@@ -350,7 +375,9 @@ def run_batch_cep_generation(
     checkpoint = CheckpointManager(effective_checkpoint_file)
 
     # Load tasks
-    all_tasks = load_transcription_tasks(input_dir, effective_output_dir, pipeline_id=pipeline_id)
+    load_result = load_transcription_tasks(input_dir, effective_output_dir, pipeline_id=pipeline_id)
+    all_tasks = load_result.tasks
+    skipped_invalid = load_result.skipped_invalid
 
     if not all_tasks:
         logger.warning("No tasks to process")
@@ -365,6 +392,8 @@ def run_batch_cep_generation(
     checkpoint.set_total_files(len(all_tasks))
 
     logger.info(f"Total files: {len(all_tasks)}")
+    if skipped_invalid > 0:
+        logger.info(f"Skipped invalid transcriptions: {skipped_invalid}")
     logger.info(f"Already completed: {len(all_tasks) - len(remaining_tasks)}")
     logger.info(f"Remaining to process: {len(remaining_tasks)}")
 
@@ -506,6 +535,8 @@ def run_batch_cep_generation(
         logger.info("=" * 60)
         logger.info("Batch CEP QA generation completed!")
         logger.info(f"Total files: {total}")
+        if skipped_invalid > 0:
+            logger.info(f"Skipped invalid transcriptions: {skipped_invalid}")
         logger.info(f"Successfully processed: {completed}")
         logger.info(f"Failed: {failed_count}")
         if total == 0:

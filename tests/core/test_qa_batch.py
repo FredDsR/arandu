@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.qa_batch import (
     QAGenerationTask,
+    TaskLoadResult,
     _init_cep_worker,
     generate_cep_qa_for_transcription,
     load_transcription_tasks,
@@ -100,14 +101,17 @@ class TestLoadTranscriptionTasks:
     """Tests for load_transcription_tasks function."""
 
     def test_empty_directory(self, tmp_path: Path) -> None:
-        """Test that empty directory returns empty list."""
+        """Test that empty directory returns empty result."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
 
-        tasks = load_transcription_tasks(input_dir, output_dir)
+        result = load_transcription_tasks(input_dir, output_dir)
 
-        assert len(tasks) == 0
+        assert isinstance(result, TaskLoadResult)
+        assert len(result.tasks) == 0
+        assert result.total_found == 0
+        assert result.skipped_invalid == 0
 
     def test_valid_transcription_files(self, tmp_path: Path) -> None:
         """Test discovering valid transcription files."""
@@ -139,10 +143,10 @@ class TestLoadTranscriptionTasks:
             )
         )
 
-        tasks = load_transcription_tasks(input_dir, output_dir)
+        result = load_transcription_tasks(input_dir, output_dir)
 
-        assert len(tasks) == 2
-        assert all(isinstance(task, QAGenerationTask) for task in tasks)
+        assert len(result.tasks) == 2
+        assert all(isinstance(task, QAGenerationTask) for task in result.tasks)
 
     def test_mixed_valid_invalid_files(self, tmp_path: Path) -> None:
         """Test that invalid files are skipped with warnings."""
@@ -162,11 +166,11 @@ class TestLoadTranscriptionTasks:
         other = input_dir / "other_file.json"
         other.write_text(json.dumps({"data": "test"}))
 
-        tasks = load_transcription_tasks(input_dir, output_dir)
+        result = load_transcription_tasks(input_dir, output_dir)
 
         # Should only get the valid transcription file
-        assert len(tasks) == 1
-        assert tasks[0].gdrive_id == "id1"
+        assert len(result.tasks) == 1
+        assert result.tasks[0].gdrive_id == "id1"
 
     def test_invalid_json_files(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Test handling of corrupt JSON files."""
@@ -177,9 +181,9 @@ class TestLoadTranscriptionTasks:
         corrupt = input_dir / "corrupt_transcription.json"
         corrupt.write_text("{ corrupt json")
 
-        tasks = load_transcription_tasks(input_dir, output_dir)
+        result = load_transcription_tasks(input_dir, output_dir)
 
-        assert len(tasks) == 0
+        assert len(result.tasks) == 0
         assert "Skipping invalid file" in caplog.text
 
     def test_gdrive_id_extraction(self, tmp_path: Path) -> None:
@@ -198,10 +202,10 @@ class TestLoadTranscriptionTasks:
             )
         )
 
-        tasks = load_transcription_tasks(input_dir, output_dir)
+        result = load_transcription_tasks(input_dir, output_dir)
 
-        assert len(tasks) == 1
-        assert tasks[0].gdrive_id == "extracted_id_123"
+        assert len(result.tasks) == 1
+        assert result.tasks[0].gdrive_id == "extracted_id_123"
 
     def test_output_filename_generation(self, tmp_path: Path) -> None:
         """Test that output filename is {gdrive_id}_cep_qa.json by default."""
@@ -219,10 +223,112 @@ class TestLoadTranscriptionTasks:
             )
         )
 
-        tasks = load_transcription_tasks(input_dir, output_dir)
+        result = load_transcription_tasks(input_dir, output_dir)
 
-        assert len(tasks) == 1
-        assert tasks[0].output_file == output_dir / "myid_cep_qa.json"
+        assert len(result.tasks) == 1
+        assert result.tasks[0].output_file == output_dir / "myid_cep_qa.json"
+
+    def test_skips_invalid_transcriptions(self, tmp_path: Path) -> None:
+        """Test that transcriptions with is_valid=False are skipped."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Valid transcription (is_valid=True)
+        valid_data = create_test_enriched_data(gdrive_id="valid1", name="valid.mp3")
+        valid_data["is_valid"] = True
+        (input_dir / "valid1_transcription.json").write_text(json.dumps(valid_data))
+
+        # Invalid transcription (is_valid=False)
+        invalid_data = create_test_enriched_data(gdrive_id="invalid1", name="invalid.mp3")
+        invalid_data["is_valid"] = False
+        (input_dir / "invalid1_transcription.json").write_text(json.dumps(invalid_data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].gdrive_id == "valid1"
+
+    def test_includes_unchecked_transcriptions(self, tmp_path: Path) -> None:
+        """Test that transcriptions with is_valid=None (unchecked) are included."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Unchecked transcription (is_valid=None)
+        unchecked_data = create_test_enriched_data(gdrive_id="unchecked1", name="unchecked.mp3")
+        unchecked_data["is_valid"] = None
+        (input_dir / "unchecked1_transcription.json").write_text(json.dumps(unchecked_data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].gdrive_id == "unchecked1"
+
+    def test_includes_transcriptions_without_is_valid_field(self, tmp_path: Path) -> None:
+        """Test that transcriptions missing the is_valid field are included."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Transcription without is_valid key at all
+        data = create_test_enriched_data(gdrive_id="no_field", name="old.mp3")
+        data.pop("is_valid", None)
+        (input_dir / "no_field_transcription.json").write_text(json.dumps(data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].gdrive_id == "no_field"
+
+    def test_filters_mixed_validity(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Test filtering with a mix of valid, invalid, and unchecked transcriptions."""
+        caplog.set_level("INFO")
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # is_valid=True
+        d1 = create_test_enriched_data(gdrive_id="ok1", name="ok1.mp3")
+        d1["is_valid"] = True
+        (input_dir / "ok1_transcription.json").write_text(json.dumps(d1))
+
+        # is_valid=False
+        d2 = create_test_enriched_data(gdrive_id="bad1", name="bad1.mp3")
+        d2["is_valid"] = False
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(d2))
+
+        # is_valid=False
+        d3 = create_test_enriched_data(gdrive_id="bad2", name="bad2.mp3")
+        d3["is_valid"] = False
+        (input_dir / "bad2_transcription.json").write_text(json.dumps(d3))
+
+        # is_valid=None (unchecked)
+        d4 = create_test_enriched_data(gdrive_id="unk1", name="unk1.mp3")
+        d4["is_valid"] = None
+        (input_dir / "unk1_transcription.json").write_text(json.dumps(d4))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        task_ids = {t.gdrive_id for t in result.tasks}
+        assert task_ids == {"ok1", "unk1"}
+        assert "2 skipped as invalid" in caplog.text
+
+    def test_skipped_invalid_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that skipped invalid transcriptions are logged."""
+        caplog.set_level("INFO")
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        invalid_data = create_test_enriched_data(gdrive_id="bad1", name="bad.mp3")
+        invalid_data["is_valid"] = False
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(invalid_data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 0
+        assert "Skipping invalid transcription" in caplog.text
 
     def test_output_filename_custom_suffix(self, tmp_path: Path) -> None:
         """Test that output_suffix parameter controls the filename suffix."""
@@ -240,10 +346,36 @@ class TestLoadTranscriptionTasks:
             )
         )
 
-        tasks = load_transcription_tasks(input_dir, output_dir, output_suffix="_custom.json")
+        result = load_transcription_tasks(input_dir, output_dir, output_suffix="_custom.json")
 
-        assert len(tasks) == 1
-        assert tasks[0].output_file == output_dir / "myid_custom.json"
+        assert len(result.tasks) == 1
+        assert result.tasks[0].output_file == output_dir / "myid_custom.json"
+
+    def test_result_metadata_counts(self, tmp_path: Path) -> None:
+        """Test that TaskLoadResult exposes correct total_found and skipped_invalid."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # 2 valid, 1 invalid, 1 corrupt JSON = 4 total files found
+        d1 = create_test_enriched_data(gdrive_id="v1", name="v1.mp3")
+        d1["is_valid"] = True
+        (input_dir / "v1_transcription.json").write_text(json.dumps(d1))
+
+        d2 = create_test_enriched_data(gdrive_id="v2", name="v2.mp3")
+        (input_dir / "v2_transcription.json").write_text(json.dumps(d2))
+
+        d3 = create_test_enriched_data(gdrive_id="bad1", name="bad1.mp3")
+        d3["is_valid"] = False
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(d3))
+
+        (input_dir / "corrupt_transcription.json").write_text("{ bad json")
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert result.total_found == 4
+        assert result.skipped_invalid == 1
+        assert len(result.tasks) == 2
 
 
 class TestInitCEPWorker:
@@ -924,3 +1056,46 @@ class TestRunBatchCEPGeneration:
 
         # Should exit early
         assert "no tasks" in caplog.text.lower()
+
+    def test_run_batch_cep_logs_skipped_invalid(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that the final summary includes skipped invalid count."""
+        caplog.set_level("INFO")
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Valid transcription
+        valid_data = create_test_enriched_data(
+            gdrive_id="ok1", name="ok.mp3", transcription_text="Test text. " * 20
+        )
+        valid_data["is_valid"] = True
+        (input_dir / "ok1_transcription.json").write_text(json.dumps(valid_data))
+
+        # Invalid transcription (should be skipped)
+        bad_data = create_test_enriched_data(gdrive_id="bad1", name="bad.mp3")
+        bad_data["is_valid"] = False
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(bad_data))
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+            questions_per_document=1,
+        )
+        cep_config = CEPConfig(enable_validation=False)
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert "Skipped invalid transcriptions: 1" in caplog.text
