@@ -9,7 +9,7 @@
 #   GTRANSCRIBER_QA_WORKERS - Number of parallel workers
 #
 # Optional environment variables:
-#   GTRANSCRIBER_QA_MODEL_ID - Ollama model to use (default: llama3.1:8b)
+#   GTRANSCRIBER_QA_MODEL_ID - Ollama model to use (default: qwen3:14b)
 #   GTRANSCRIBER_QA_PROVIDER - LLM provider (default: ollama)
 #   GTRANSCRIBER_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
 #   GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT - Questions per document (default: 10)
@@ -25,7 +25,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
 # QA Generation settings (support override from environment)
 export GTRANSCRIBER_QA_PROVIDER="${GTRANSCRIBER_QA_PROVIDER:-ollama}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}"
+export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
 export GTRANSCRIBER_QA_OLLAMA_URL="${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434/v1}"
 export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT="${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}"
 export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-4}"
