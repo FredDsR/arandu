@@ -5,7 +5,7 @@ the OpenAI SDK's base_url parameter.
 """
 
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -106,7 +106,7 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         system_prompt: str | None = None,
-        response_format: dict[str, str] | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
         """Generate text from a prompt.
 

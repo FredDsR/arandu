@@ -547,6 +547,27 @@ class TestBloomScaffoldingGenerator:
         assert len(pairs) == 1
         assert pairs[0].question == "O que é?"
 
+    def test_parse_response_warns_on_unknown_dict_keys(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Test that dict without 'qa_pairs' or 'pairs' logs a warning."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps({"unknown_key": [{"question": "Q?", "answer": "A."}]})
+
+        pairs = generator._parse_response(response, "Context.", "remember")
+
+        assert pairs == []
+        assert "no 'qa_pairs' or 'pairs' key" in caplog.text
+
     def test_generate_passes_response_format(
         self,
         mock_llm_client: Any,

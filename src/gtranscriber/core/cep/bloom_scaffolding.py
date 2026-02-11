@@ -323,7 +323,13 @@ class BloomScaffoldingGenerator:
 
         # Unwrap object envelope (JSON mode returns objects)
         if isinstance(data, dict):
-            data = data.get("qa_pairs", data.get("pairs", []))
+            if "qa_pairs" in data:
+                data = data["qa_pairs"]
+            elif "pairs" in data:
+                data = data["pairs"]
+            else:
+                logger.warning("JSON object has no 'qa_pairs' or 'pairs' key")
+                return []
 
         if not isinstance(data, list):
             logger.warning("Response is not a JSON array")
