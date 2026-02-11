@@ -426,10 +426,10 @@ class TestRunBatchQAGeneration:
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
-        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
         mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
-        self.run_dir = self.results_dir / "qa" / "test_run"
+        self.run_dir = self.results_dir / "test_run" / "qa"
         self.outputs_dir = self.run_dir / "outputs"
         self.versioned_checkpoint = self.run_dir / "qa_checkpoint.json"
 
@@ -469,16 +469,10 @@ class TestRunBatchQAGeneration:
             )
         )
 
-        # Pre-create versioned run dir with checkpoint already completed
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.versioned_checkpoint.write_text(
-            json.dumps(
-                {
-                    "total_files": 1,
-                    "completed_files": ["id1"],
-                    "failed_files": {},
-                }
-            )
+        # Mock checkpoint to report file as already completed
+        mocker.patch(
+            "gtranscriber.core.qa_batch.CheckpointManager.is_completed",
+            return_value=True,
         )
 
         config = QAConfig(provider="ollama", model_id="llama3.1:8b")
@@ -888,7 +882,7 @@ class TestWorkerCountLogging:
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
-        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
         mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
     def test_workers_greater_than_cpu_count_logs_info(
@@ -939,9 +933,9 @@ class TestFinalSummaryPaths:
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
-        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
 
-        self.run_dir = (tmp_path / "results").resolve() / "qa" / "test_run"
+        self.run_dir = (tmp_path / "results").resolve() / "test_run" / "qa"
         self.versioned_checkpoint = self.run_dir / "qa_checkpoint.json"
 
     def test_final_summary_zero_total_files(
@@ -984,7 +978,7 @@ class TestParallelProcessingEdgeCases:
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
-        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
 
     def test_parallel_processing_with_future_exception(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -1346,10 +1340,10 @@ class TestRunBatchCEPGeneration:
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
-        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
         mocker.patch("gtranscriber.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
-        self.run_dir = self.results_dir / "cep" / "test_run"
+        self.run_dir = self.results_dir / "test_run" / "cep"
         self.outputs_dir = self.run_dir / "outputs"
         self.versioned_checkpoint = self.run_dir / "cep_checkpoint.json"
 
@@ -1408,16 +1402,10 @@ class TestRunBatchCEPGeneration:
             )
         )
 
-        # Pre-create versioned run dir with checkpoint already completed
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.versioned_checkpoint.write_text(
-            json.dumps(
-                {
-                    "total_files": 1,
-                    "completed_files": ["cep_id1"],
-                    "failed_files": {},
-                }
-            )
+        # Mock checkpoint to report file as already completed
+        mocker.patch(
+            "gtranscriber.core.qa_batch.CheckpointManager.is_completed",
+            return_value=True,
         )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")

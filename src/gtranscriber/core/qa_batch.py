@@ -136,9 +136,14 @@ def generate_qa_for_transcription(
         return task.gdrive_id, False, str(e)
 
 
-def _resolve_transcription_dir(input_dir: Path) -> Path:
+def _resolve_transcription_dir(
+    input_dir: Path,
+    pipeline_id: str | None = None,
+) -> Path:
     """Resolve the directory containing transcription JSON files.
 
+    If ``pipeline_id`` is given, looks up
+    ``input_dir/{pipeline_id}/transcription/outputs`` directly.
     If ``input_dir`` already contains ``*_transcription.json`` files it is
     returned as-is.  Otherwise, the directory is treated as a versioned
     results base directory and the latest transcription outputs are resolved
@@ -147,10 +152,20 @@ def _resolve_transcription_dir(input_dir: Path) -> Path:
     Args:
         input_dir: Directory provided by the caller (may be the base results
             directory or a direct path to transcription outputs).
+        pipeline_id: Optional pipeline ID for direct resolution.
 
     Returns:
         The directory that contains ``*_transcription.json`` files.
     """
+    # Direct resolution by pipeline_id
+    if pipeline_id is not None:
+        resolved = ResultsManager.resolve_outputs(
+            input_dir, pipeline_id, PipelineType.TRANSCRIPTION
+        )
+        if resolved is not None:
+            logger.info(f"Resolved transcription outputs for pipeline {pipeline_id}: {resolved}")
+            return resolved
+
     # Fast path: input_dir already contains transcription files
     if list(input_dir.glob("*_transcription.json")):
         return input_dir
@@ -165,13 +180,18 @@ def _resolve_transcription_dir(input_dir: Path) -> Path:
     return input_dir
 
 
-def load_transcription_tasks(input_dir: Path, output_dir: Path) -> list[QAGenerationTask]:
+def load_transcription_tasks(
+    input_dir: Path,
+    output_dir: Path,
+    pipeline_id: str | None = None,
+) -> list[QAGenerationTask]:
     """Load transcription files and create QA generation tasks.
 
     Args:
         input_dir: Directory containing EnrichedRecord JSON files, or the
             base versioned results directory.
         output_dir: Directory for QARecord JSON outputs.
+        pipeline_id: Optional pipeline ID for direct transcription resolution.
 
     Returns:
         List of QAGenerationTask objects.
@@ -179,7 +199,7 @@ def load_transcription_tasks(input_dir: Path, output_dir: Path) -> list[QAGenera
     tasks: list[QAGenerationTask] = []
 
     # Resolve versioned directory layout when needed
-    effective_input_dir = _resolve_transcription_dir(input_dir)
+    effective_input_dir = _resolve_transcription_dir(input_dir, pipeline_id=pipeline_id)
 
     # Find all transcription JSON files
     transcription_files = list(effective_input_dir.glob("*_transcription.json"))
@@ -224,6 +244,7 @@ def run_batch_qa_generation(
     output_dir: Path,
     config: QAConfig,
     num_workers: int = 2,
+    pipeline_id: str | None = None,
 ) -> None:
     """Run batch QA generation with parallel processing and checkpointing.
 
@@ -232,6 +253,7 @@ def run_batch_qa_generation(
         output_dir: Directory for QA dataset outputs.
         config: QA generation configuration.
         num_workers: Number of parallel workers.
+        pipeline_id: Optional pipeline ID for the ID-first results layout.
     """
     # Load results configuration
     results_config = ResultsConfig()
@@ -242,7 +264,7 @@ def run_batch_qa_generation(
         results_mgr = ResultsManager(
             results_config.base_dir,
             PipelineType.QA,
-            keep_latest_symlinks=results_config.keep_latest_symlinks,
+            pipeline_id=pipeline_id,
         )
         results_mgr.create_run(
             config,
@@ -264,7 +286,7 @@ def run_batch_qa_generation(
     checkpoint = CheckpointManager(effective_checkpoint_file)
 
     # Load tasks (using effective output dir for task output paths)
-    all_tasks = load_transcription_tasks(input_dir, effective_output_dir)
+    all_tasks = load_transcription_tasks(input_dir, effective_output_dir, pipeline_id=pipeline_id)
 
     if not all_tasks:
         logger.warning("No tasks to process")
@@ -584,6 +606,7 @@ def run_batch_cep_generation(
     qa_config: QAConfig,
     cep_config: CEPConfig,
     num_workers: int = 2,
+    pipeline_id: str | None = None,
 ) -> None:
     """Run batch CEP QA generation with parallel processing and checkpointing.
 
@@ -593,6 +616,7 @@ def run_batch_cep_generation(
         qa_config: QA generation configuration.
         cep_config: CEP configuration.
         num_workers: Number of parallel workers.
+        pipeline_id: Optional pipeline ID for the ID-first results layout.
     """
     # Load results configuration
     results_config = ResultsConfig()
@@ -603,7 +627,7 @@ def run_batch_cep_generation(
         results_mgr = ResultsManager(
             results_config.base_dir,
             PipelineType.CEP,
-            keep_latest_symlinks=results_config.keep_latest_symlinks,
+            pipeline_id=pipeline_id,
         )
         results_mgr.create_run(
             qa_config,
@@ -633,7 +657,7 @@ def run_batch_cep_generation(
 
     # Load tasks (reuse existing function, but change output suffix)
     all_tasks = []
-    effective_input_dir = _resolve_transcription_dir(input_dir)
+    effective_input_dir = _resolve_transcription_dir(input_dir, pipeline_id=pipeline_id)
     transcription_files = list(effective_input_dir.glob("*_transcription.json"))
 
     for json_file in transcription_files:

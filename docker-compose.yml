@@ -273,7 +273,8 @@ services:
 
     command: >
       generate-qa
-      /app/results/latest/transcription/outputs
+      /app/results
+      --id ${PIPELINE_ID:-}
       --workers ${GTRANSCRIBER_QA_WORKERS:-2}
 
     volumes:
@@ -331,7 +332,8 @@ services:
 
     command: >
       generate-cep-qa
-      /app/results/latest/transcription/outputs
+      /app/results
+      --id ${PIPELINE_ID:-}
       --workers ${GTRANSCRIBER_QA_WORKERS:-2}
 
     volumes:
@@ -385,7 +387,7 @@ services:
 
     command: >
       build-kg
-      /app/results/latest/transcription/outputs
+      /app/results
       --workers ${GTRANSCRIBER_KG_WORKERS:-2}
 
     volumes:

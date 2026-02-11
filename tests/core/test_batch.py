@@ -954,14 +954,14 @@ class TestRunBatchTranscription:
         mock_tc = mocker.patch("gtranscriber.core.batch.TranscriberConfig")
         mock_tc.return_value.model_dump.return_value = {"model_id": "test/model"}
 
-        # Fix run ID for predictable paths
-        mocker.patch.object(ResultsManager, "_generate_run_id", return_value="test_run")
+        # Fix pipeline ID for predictable paths
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
 
         # Use ThreadPoolExecutor to avoid slow forkserver process spawning.
         # Tests that explicitly @patch ProcessPoolExecutor will override this.
         mocker.patch("gtranscriber.core.batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
-        self.run_dir = self.results_dir / "transcription" / "test_run"
+        self.run_dir = self.results_dir / "test_run" / "transcription"
         self.outputs_dir = self.run_dir / "outputs"
         self.versioned_checkpoint = self.run_dir / "checkpoint.json"
 
@@ -993,18 +993,18 @@ class TestRunBatchTranscription:
         assert self.outputs_dir.exists()
 
     @patch("gtranscriber.core.batch._worker_engine", None)
+    @patch("gtranscriber.core.batch.CheckpointManager.is_completed", return_value=True)
     @patch("gtranscriber.core.batch.transcribe_single_file")
     @patch("gtranscriber.core.batch.load_catalog")
     def test_run_batch_no_remaining_tasks_exits_early(
         self,
         mock_load_catalog: MagicMock,
         mock_transcribe: MagicMock,
+        _mock_checkpoint: MagicMock,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test early exit when no remaining tasks to process."""
-        import json
-
         from gtranscriber.core.batch import (
             BatchConfig,
             TranscriptionTask,
@@ -1025,18 +1025,6 @@ class TestRunBatchTranscription:
                 duration_ms=60000,
             )
         ]
-
-        # Pre-create versioned run directory with checkpoint already completed
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.versioned_checkpoint.write_text(
-            json.dumps(
-                {
-                    "total_files": 1,
-                    "completed_files": ["file1"],
-                    "failed_files": {},
-                }
-            )
-        )
 
         config = BatchConfig(
             catalog_file=tmp_path / "catalog.csv",

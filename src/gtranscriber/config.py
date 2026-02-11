@@ -590,10 +590,6 @@ class ResultsConfig(BaseSettings):
         default=True,
         description="Enable versioned result directories",
     )
-    keep_latest_symlinks: bool = Field(
-        default=True,
-        description="Maintain 'latest' symlinks to most recent runs",
-    )
 
 
 def get_transcriber_config() -> TranscriberConfig:

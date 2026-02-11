@@ -429,11 +429,15 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
     return tasks
 
 
-def run_batch_transcription(config: BatchConfig) -> None:
+def run_batch_transcription(
+    config: BatchConfig,
+    pipeline_id: str | None = None,
+) -> None:
     """Run batch transcription with parallel processing and checkpointing.
 
     Args:
         config: BatchConfig with all processing parameters.
+        pipeline_id: Optional pipeline ID for the ID-first results layout.
     """
     # Load results configuration
     results_config = ResultsConfig()
@@ -444,7 +448,7 @@ def run_batch_transcription(config: BatchConfig) -> None:
         results_mgr = ResultsManager(
             results_config.base_dir,
             PipelineType.TRANSCRIPTION,
-            keep_latest_symlinks=results_config.keep_latest_symlinks,
+            pipeline_id=pipeline_id,
         )
         effective_transcriber_config = TranscriberConfig(
             model_id=config.model_id,

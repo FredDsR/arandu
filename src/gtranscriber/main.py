@@ -567,6 +567,13 @@ def batch_transcribe(
             "Can be set via GTRANSCRIBER_LANGUAGE env var.",
         ),
     ] = _config.language,
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help="Pipeline ID for grouping related steps. Auto-generated if omitted.",
+        ),
+    ] = None,
 ) -> None:
     """Batch transcribe audio/video files from a catalog.
 
@@ -623,7 +630,7 @@ def batch_transcribe(
     console.print()
 
     try:
-        run_batch_transcription(config)
+        run_batch_transcription(config, pipeline_id=pipeline_id)
         print_success("Batch transcription completed!")
 
     except Exception as e:
@@ -786,6 +793,13 @@ def generate_qa(
             "Can be set via GTRANSCRIBER_QA_LANGUAGE env var.",
         ),
     ] = None,
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help="Pipeline ID. Auto-resolves transcription outputs.",
+        ),
+    ] = None,
 ) -> None:
     """Generate synthetic QA pairs from transcriptions.
 
@@ -889,7 +903,9 @@ def generate_qa(
     console.print()
 
     try:
-        run_batch_qa_generation(input_dir, qa_config.output_dir, qa_config, qa_config.workers)
+        run_batch_qa_generation(
+            input_dir, qa_config.output_dir, qa_config, qa_config.workers, pipeline_id=pipeline_id
+        )
         print_success("QA generation completed!")
 
     except Exception as e:
@@ -1005,6 +1021,13 @@ def generate_cep_qa(
             help="Also export QA pairs to JSONL format for KGQA training.",
         ),
     ] = False,
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help="Pipeline ID. Auto-resolves transcription outputs.",
+        ),
+    ] = None,
 ) -> None:
     """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
 
@@ -1136,6 +1159,7 @@ def generate_cep_qa(
             qa_config,
             cep_config,
             qa_config.workers,
+            pipeline_id=pipeline_id,
         )
 
         # Export to JSONL if requested
@@ -1252,8 +1276,8 @@ def list_runs(
 
     # Create table
     table = Table(title="Pipeline Runs")
-    table.add_column("Run ID", style="cyan")
-    table.add_column("Pipeline", style="magenta")
+    table.add_column("Pipeline ID", style="cyan")
+    table.add_column("Step", style="magenta")
     table.add_column("Status", style="bold")
     table.add_column("Started At", style="dim")
     table.add_column("Duration", style="dim")
@@ -1295,7 +1319,7 @@ def list_runs(
                 pass  # Keep original string if not valid ISO format
 
         table.add_row(
-            run.get("run_id", "unknown"),
+            run.get("pipeline_id") or run.get("run_id", "unknown"),
             run.get("pipeline_type", "unknown"),
             status_styled,
             started,
@@ -1372,14 +1396,13 @@ def run_info(
             print_error(f"No runs found for pipeline: {pipeline}")
             raise typer.Exit(code=1)
     else:
-        # Find the specific run
-        pipeline_dir = results_dir / pipeline_type.value / run_id
-        metadata_path = pipeline_dir / "run_metadata.json"
+        # ID-first layout: results/{run_id}/{pipeline_type}/run_metadata.json
+        metadata_path = results_dir / run_id / pipeline_type.value / "run_metadata.json"
 
         if not metadata_path.exists():
-            # Try to find in any pipeline directory
+            # Try to find in any step directory under this pipeline ID
             for p in PipelineType:
-                test_path = results_dir / p.value / run_id / "run_metadata.json"
+                test_path = results_dir / run_id / p.value / "run_metadata.json"
                 if test_path.exists():
                     metadata = RunMetadata.load(test_path)
                     break
@@ -1483,11 +1506,10 @@ def rebuild_index(
         ),
     ] = _results_config.base_dir,
 ) -> None:
-    """Rebuild latest/ symlinks and index.json from existing run directories.
+    """Rebuild index.json from existing run directories.
 
-    Scans all pipeline directories for run_metadata.json files, rebuilds the
-    global index.json, and points each latest/ symlink to the most recent run
-    per pipeline type.
+    Scans all pipeline ID directories for run_metadata.json files and rebuilds
+    the global index.json.
 
     Examples:
         # Rebuild index in default results directory
@@ -1504,25 +1526,26 @@ def rebuild_index(
         print_error(f"Results directory not found: {base_dir}")
         raise typer.Exit(code=1)
 
-    # Collect all runs by scanning directories
-    all_metadata: dict[PipelineType, list[RunMetadata]] = {}
+    # Collect all runs by scanning ID-first layout: results/{pipeline_id}/{step}/
+    all_metadata: list[tuple[PipelineType, RunMetadata, Path]] = []
 
-    for pipeline in PipelineType:
-        pipeline_dir = base_dir / pipeline.value
+    for pipeline_dir in sorted(base_dir.iterdir()):
         if not pipeline_dir.is_dir():
             continue
+        # Skip non-pipeline directories
+        if not (pipeline_dir / "pipeline.json").exists():
+            continue
 
-        for run_dir in sorted(pipeline_dir.iterdir()):
-            if not run_dir.is_dir():
-                continue
-            metadata_path = run_dir / "run_metadata.json"
+        for pipeline in PipelineType:
+            step_dir = pipeline_dir / pipeline.value
+            metadata_path = step_dir / "run_metadata.json"
             if not metadata_path.exists():
                 continue
             try:
                 metadata = RunMetadata.load(metadata_path)
-                all_metadata.setdefault(pipeline, []).append(metadata)
+                all_metadata.append((pipeline, metadata, step_dir))
             except Exception as e:
-                print_warning(f"Skipping {run_dir.name}: {e}")
+                print_warning(f"Skipping {pipeline_dir.name}/{pipeline.value}: {e}")
 
     if not all_metadata:
         print_warning("No runs found to rebuild from.")
@@ -1534,31 +1557,23 @@ def rebuild_index(
         index_path.unlink()
         print_info("Removed stale index.json")
 
-    # Rebuild index and symlinks per pipeline
+    # Rebuild index
     total_runs = 0
-    for pipeline, runs in all_metadata.items():
-        # Sort by started_at ascending so the last _update_index call wins for ordering
-        runs.sort(key=lambda m: m.started_at)
-
-        for metadata in runs:
-            run_dir = base_dir / pipeline.value / metadata.run_id
-            manager = ResultsManager(base_dir, pipeline)
-            manager._run_dir = run_dir
-            manager._metadata = metadata
-            manager._update_index()
-            total_runs += 1
-
-        # Point latest/ symlink to the most recent run
-        latest = runs[-1]
-        latest_dir = base_dir / pipeline.value / latest.run_id
+    for pipeline, metadata, step_dir in sorted(all_metadata, key=lambda t: t[1].started_at):
         manager = ResultsManager(base_dir, pipeline)
-        manager._run_dir = latest_dir
-        manager._metadata = latest
-        manager._update_latest_symlink()
+        manager._run_dir = step_dir
+        manager._metadata = metadata
+        manager._update_index()
+        total_runs += 1
 
-        print_info(f"{pipeline.value}: {len(runs)} run(s), latest -> {latest.run_id}")
+    # Summarise per pipeline type
+    from collections import Counter
 
-    print_success(f"Rebuilt index.json ({total_runs} runs) and latest/ symlinks")
+    step_counts = Counter(p.value for p, _, _ in all_metadata)
+    for step_name, count in step_counts.items():
+        print_info(f"{step_name}: {count} run(s)")
+
+    print_success(f"Rebuilt index.json ({total_runs} runs)")
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ from gtranscriber.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
+    PipelineMetadata,
     PipelineType,
     RunMetadata,
     RunStatus,
@@ -166,6 +167,7 @@ def build_run_metadata(
 
     return RunMetadata(
         run_id=run_id,
+        pipeline_id=run_id,
         pipeline_type=PipelineType.TRANSCRIPTION,
         started_at=started_at,
         ended_at=ended_at,
@@ -202,11 +204,9 @@ def _find_extracted_root(tmp_path: Path) -> Path:
 
 
 def import_results(zip_path: Path, results_dir: Path) -> None:
-    """Import results from a zip archive into the versioned results structure.
+    """Import results from a zip archive into the ID-first results structure.
 
-    Extracts a zip file containing SLURM transcription results, reconstructs
-    the versioned directory layout, generates run_metadata.json, and updates
-    the latest/ symlink and index.json.
+    Creates ``results/{pipeline_id}/transcription/outputs/`` with pipeline.json.
 
     Args:
         zip_path: Path to the zip archive.
@@ -258,15 +258,15 @@ def import_results(zip_path: Path, results_dir: Path) -> None:
             f"Checkpoint: {completed_count} completed, {failed_count} failed, {total_files} total"
         )
 
-        # 6. Derive run_id
-        run_id = derive_run_id(started_at, partition)
-        print_info(f"Run ID: {run_id}")
+        # 6. Derive pipeline_id (same as run_id)
+        pipeline_id = derive_run_id(started_at, partition)
+        print_info(f"Pipeline ID: {pipeline_id}")
 
-        # 7. Idempotency check
-        pipeline_dir = results_dir.resolve() / PipelineType.TRANSCRIPTION.value
-        run_dir = pipeline_dir / run_id
-        if run_dir.exists():
-            print_warning(f"Run directory already exists: {run_dir}")
+        # 7. Idempotency check (ID-first layout)
+        pipeline_dir = results_dir.resolve() / pipeline_id
+        step_dir = pipeline_dir / PipelineType.TRANSCRIPTION.value
+        if step_dir.exists():
+            print_warning(f"Step directory already exists: {step_dir}")
             print_warning("Skipping import (idempotent).")
             return
 
@@ -282,21 +282,21 @@ def import_results(zip_path: Path, results_dir: Path) -> None:
         model_id, compute_device = extract_hardware_from_transcription(transcription_files[0])
         print_info(f"Model: {model_id}, device: {compute_device}")
 
-        # 10. Create directory structure
-        outputs_dir = run_dir / "outputs"
+        # 10. Create ID-first directory structure
+        outputs_dir = step_dir / "outputs"
         outputs_dir.mkdir(parents=True, exist_ok=True)
 
         # 11. Copy transcription files into outputs/
         for src_file in transcription_files:
             shutil.copy2(src_file, outputs_dir / src_file.name)
 
-        # 12. Copy checkpoint.json into run directory
-        shutil.copy2(checkpoint_path, run_dir / "checkpoint.json")
+        # 12. Copy checkpoint.json into step directory
+        shutil.copy2(checkpoint_path, step_dir / "checkpoint.json")
 
         # 13. Build and save RunMetadata
         metadata = build_run_metadata(
-            run_id=run_id,
-            run_dir=run_dir,
+            run_id=pipeline_id,
+            run_dir=step_dir,
             started_at=started_at,
             ended_at=last_updated,
             partition=partition,
@@ -306,17 +306,21 @@ def import_results(zip_path: Path, results_dir: Path) -> None:
             model_id=model_id,
             compute_device=compute_device,
         )
-        metadata.save(run_dir / "run_metadata.json")
+        metadata.save(step_dir / "run_metadata.json")
 
-        # 14. Update symlink + index via ResultsManager
-        manager = ResultsManager(results_dir, PipelineType.TRANSCRIPTION)
-        manager._run_dir = run_dir
-        manager._metadata = metadata
-        manager._update_latest_symlink()
-        manager._update_index()
+        # 14. Create pipeline.json
+        pipeline_meta = PipelineMetadata(
+            pipeline_id=pipeline_id,
+            created_at=started_at,
+            steps_run=[PipelineType.TRANSCRIPTION.value],
+        )
+        pipeline_meta.save(pipeline_dir / "pipeline.json")
 
-    print_success(f"Imported {len(transcription_files)} files into {run_dir}")
-    print_success(f"Latest symlink updated: {results_dir.resolve() / 'latest' / 'transcription'}")
+        # 15. Register in global index via ResultsManager
+        manager = ResultsManager(results_dir, PipelineType.TRANSCRIPTION, pipeline_id=pipeline_id)
+        manager.register_external_run(metadata)
+
+    print_success(f"Imported {len(transcription_files)} files into {step_dir}")
 
 
 @app.command()

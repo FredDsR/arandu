@@ -1,7 +1,7 @@
 """Results versioning manager for G-Transcriber.
 
-Manages versioned result directories, run metadata, symlinks, and index tracking
-for all pipeline outputs.
+Manages versioned result directories using a pipeline-ID-first layout where all
+steps share one pipeline ID under ``results/{pipeline_id}/{step}/``.
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import fcntl  # Unix-only: this project targets Linux/SLURM environments
 import json
 import logging
-import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +19,7 @@ from gtranscriber.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
+    PipelineMetadata,
     PipelineType,
     RunMetadata,
     RunStatus,
@@ -33,31 +33,40 @@ logger = logging.getLogger(__name__)
 
 
 class ResultsManager:
-    """Manages versioned result directories and run metadata.
+    """Manages versioned result directories using an ID-first layout.
 
-    Creates timestamped run directories with format:
-    results/{pipeline}/{YYYYMMDD}_{HHMMSS}_{ffffff}_{context}/
+    Directory structure::
 
-    Where context is 'slurm_{partition}_{job_id}' for SLURM jobs or 'local' for
-    local execution.
+        results/
+          {pipeline_id}/
+            pipeline.json
+            transcription/
+              run_metadata.json
+              checkpoint.json
+              outputs/*.json
+            qa/
+              run_metadata.json
+              qa_checkpoint.json
+              outputs/*.json
+          index.json
     """
 
     def __init__(
         self,
         base_results_dir: Path,
         pipeline_type: PipelineType,
-        keep_latest_symlinks: bool = True,
+        pipeline_id: str | None = None,
     ) -> None:
         """Initialize ResultsManager.
 
         Args:
             base_results_dir: Base directory for all results (e.g., ./results).
             pipeline_type: Type of pipeline being executed.
-            keep_latest_symlinks: Whether to maintain 'latest' symlinks.
+            pipeline_id: Explicit pipeline ID. Auto-generated if None.
         """
         self.base_dir = Path(base_results_dir).resolve()
         self.pipeline_type = pipeline_type
-        self._keep_latest_symlinks = keep_latest_symlinks
+        self._pipeline_id = pipeline_id
         self._run_dir: Path | None = None
         self._metadata: RunMetadata | None = None
 
@@ -98,8 +107,8 @@ class ResultsManager:
             raise RuntimeError("create_run() must be called before accessing metadata")
         return self._metadata
 
-    def _generate_run_id(self, execution: ExecutionEnvironment) -> str:
-        """Generate a unique run ID based on timestamp and execution context.
+    def _generate_pipeline_id(self, execution: ExecutionEnvironment) -> str:
+        """Generate a unique pipeline ID based on timestamp and execution context.
 
         Format: YYYYMMDD_HHMMSS_ffffff_context
         Where context is 'slurm_{partition}_{job_id}' or 'local'.
@@ -108,7 +117,7 @@ class ResultsManager:
             execution: ExecutionEnvironment with SLURM or local context.
 
         Returns:
-            Unique run ID string.
+            Unique pipeline ID string.
         """
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
 
@@ -119,23 +128,16 @@ class ResultsManager:
 
         return f"{timestamp}_{context}"
 
-    def _get_pipeline_dir(self) -> Path:
-        """Get the directory for the current pipeline type.
-
-        Returns:
-            Path to the pipeline directory.
-        """
-        return self.base_dir / self.pipeline_type.value
-
     def create_run(
         self,
         config: BaseSettings | BaseModel,
         input_source: str | None = None,
         checkpoint_filename: str = "checkpoint.json",
     ) -> RunMetadata:
-        """Create a new versioned run.
+        """Create a new versioned run under the pipeline ID.
 
-        Creates the run directory structure and initializes metadata.
+        Creates ``results/{pipeline_id}/{step}/outputs/`` and writes both
+        ``pipeline.json`` (pipeline-level) and ``run_metadata.json`` (step-level).
 
         Args:
             config: Pipeline configuration to snapshot.
@@ -154,18 +156,39 @@ class ResultsManager:
         # 3. Snapshot config
         config_snapshot = ConfigSnapshot.from_config(config)
 
-        # 4. Generate run_id and create directories
-        run_id = self._generate_run_id(execution)
-        pipeline_dir = self._get_pipeline_dir()
-        self._run_dir = pipeline_dir / run_id
+        # 4. Determine pipeline_id
+        pipeline_id = self._pipeline_id or self._generate_pipeline_id(execution)
+        self._pipeline_id = pipeline_id
 
-        # Create directory structure
+        # 5. Create step directory (overwrite if exists)
+        step = self.pipeline_type.value
+        pipeline_dir = self.base_dir / pipeline_id
+        self._run_dir = pipeline_dir / step
+
+        if self._run_dir.exists():
+            shutil.rmtree(self._run_dir)
+
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
 
-        # 5. Create and save initial metadata
+        # 6. Create/update pipeline.json
+        pipeline_json_path = pipeline_dir / "pipeline.json"
+        if pipeline_json_path.exists():
+            pipeline_meta = PipelineMetadata.load(pipeline_json_path)
+            if step not in pipeline_meta.steps_run:
+                pipeline_meta.steps_run.append(step)
+        else:
+            pipeline_meta = PipelineMetadata(
+                pipeline_id=pipeline_id,
+                steps_run=[step],
+            )
+        pipeline_meta.save(pipeline_json_path)
+
+        # 7. Create and save initial run metadata
+        run_id = pipeline_id  # Use pipeline_id as the run_id for simplicity
         self._metadata = RunMetadata(
             run_id=run_id,
+            pipeline_id=pipeline_id,
             pipeline_type=self.pipeline_type,
             started_at=datetime.now(UTC),
             status=RunStatus.IN_PROGRESS,
@@ -178,11 +201,10 @@ class ResultsManager:
             input_source=input_source,
         )
 
-        # Save initial metadata
         metadata_path = self._run_dir / "run_metadata.json"
         self._metadata.save(metadata_path)
 
-        logger.info(f"Created run: {run_id} at {self._run_dir}")
+        logger.info(f"Created run: {pipeline_id}/{step} at {self._run_dir}")
         return self._metadata
 
     def update_progress(self, completed: int, failed: int, total: int) -> None:
@@ -200,14 +222,13 @@ class ResultsManager:
         self._metadata.failed_items = failed
         self._metadata.total_items = total
 
-        # Save updated metadata
         metadata_path = self.run_dir / "run_metadata.json"
         self._metadata.save(metadata_path)
 
     def complete_run(self, success: bool, error: str | None = None) -> None:
         """Mark the run as completed.
 
-        Updates status, sets end time, updates symlinks, and updates index.
+        Updates status, sets end time, and updates index.
 
         Args:
             success: Whether the run completed successfully.
@@ -216,55 +237,47 @@ class ResultsManager:
         if self._metadata is None:
             raise RuntimeError("create_run() must be called before complete_run()")
 
-        # 1. Set ended_at and status
         self._metadata.ended_at = datetime.now(UTC)
         self._metadata.status = RunStatus.COMPLETED if success else RunStatus.FAILED
         if error:
             self._metadata.error_message = error
 
-        # Save final metadata
         metadata_path = self.run_dir / "run_metadata.json"
         self._metadata.save(metadata_path)
 
-        # 2. Update latest symlink (if configured)
-        if self._keep_latest_symlinks:
-            self._update_latest_symlink()
-
-        # 3. Update index.json
         self._update_index()
 
         logger.info(
-            f"Run {self._metadata.run_id} completed with status: {self._metadata.status.value}"
+            f"Run {self._metadata.run_id}/{self.pipeline_type.value} "
+            f"completed with status: {self._metadata.status.value}"
         )
 
-    def _update_latest_symlink(self) -> None:
-        """Update the 'latest' symlink for the current pipeline type."""
-        latest_dir = self.base_dir / "latest"
-        latest_dir.mkdir(parents=True, exist_ok=True)
+    def register_external_run(self, run_metadata: RunMetadata) -> None:
+        """Register a pre-built external run in the index.
 
-        symlink_path = latest_dir / self.pipeline_type.value
+        Use this when run directories and metadata were constructed externally
+        (e.g., from an imported SLURM result) and only need to be registered
+        in the global index.
 
-        # Calculate relative path to the run directory
-        try:
-            # Get relative path from latest/ to the actual run directory
-            # e.g., from results/latest to results/transcription/20260204_150000_local
-            relative_target = os.path.relpath(self.run_dir, latest_dir)
+        Args:
+            run_metadata: Pre-built RunMetadata instance. Its ``output_directory``
+                must point to an existing step directory.
 
-            # Remove existing symlink or unexpected file/directory
-            if symlink_path.is_symlink():
-                symlink_path.unlink()
-            elif symlink_path.is_dir():
-                logger.warning(f"Removing unexpected directory at symlink path: {symlink_path}")
-                shutil.rmtree(symlink_path)
-            elif symlink_path.exists():
-                symlink_path.unlink()
+        Raises:
+            ValueError: If the step directory does not exist.
+        """
+        step_dir = Path(run_metadata.output_directory)
+        if not step_dir.exists():
+            raise ValueError(f"Step directory not found: {step_dir}")
 
-            # Create new symlink with relative path for portability
-            symlink_path.symlink_to(relative_target)
-            logger.debug(f"Updated latest symlink: {symlink_path} -> {relative_target}")
+        self._run_dir = step_dir
+        self._metadata = run_metadata
+        self._update_index()
 
-        except OSError as e:
-            logger.warning(f"Failed to update latest symlink: {e}")
+        logger.info(
+            f"Registered external run: {run_metadata.pipeline_id}/"
+            f"{run_metadata.pipeline_type.value}"
+        )
 
     def _update_index(self) -> None:
         """Update the global index.json with this run's information.
@@ -276,9 +289,9 @@ class ResultsManager:
 
         index_path = self.base_dir / "index.json"
 
-        # Create run entry for index
         run_entry = {
             "run_id": self._metadata.run_id,
+            "pipeline_id": self._metadata.pipeline_id,
             "pipeline_type": self._metadata.pipeline_type.value,
             "status": self._metadata.status.value,
             "started_at": self._metadata.started_at.isoformat(),
@@ -292,11 +305,8 @@ class ResultsManager:
         }
 
         try:
-            # Ensure parent directory exists
             index_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Use file locking for thread-safe access.
-            # Open with "a+" to create if missing without truncating.
             with open(index_path, "a+", encoding="utf-8") as f:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 try:
@@ -310,21 +320,19 @@ class ResultsManager:
                     else:
                         index_data = {"runs": []}
 
-                    # Remove any existing entry for this run_id and pipeline_type combo
+                    # Remove any existing entry for this pipeline_id + pipeline_type
                     index_data["runs"] = [
                         r
                         for r in index_data["runs"]
                         if not (
-                            r.get("run_id") == self._metadata.run_id
+                            r.get("pipeline_id") == self._metadata.pipeline_id
                             and r.get("pipeline_type") == self._metadata.pipeline_type.value
                         )
                     ]
 
-                    # Add new entry at the beginning
                     index_data["runs"].insert(0, run_entry)
                     index_data["last_updated"] = datetime.now(UTC).isoformat()
 
-                    # Write updated index
                     f.seek(0)
                     f.truncate()
                     json.dump(index_data, f, indent=2)
@@ -341,6 +349,9 @@ class ResultsManager:
     def get_latest_run(cls, base_dir: Path, pipeline: PipelineType) -> RunMetadata | None:
         """Get the metadata for the latest run of a pipeline type.
 
+        Scans ``results/*/`` directories for ``{step}/run_metadata.json`` and
+        returns the most recent by ``started_at``.
+
         Args:
             base_dir: Base results directory.
             pipeline: Pipeline type to look up.
@@ -348,33 +359,51 @@ class ResultsManager:
         Returns:
             RunMetadata for the latest run, or None if no runs exist.
         """
-        latest_symlink = Path(base_dir) / "latest" / pipeline.value
-
-        if latest_symlink.is_symlink():
-            target = latest_symlink.resolve()
-            metadata_path = target / "run_metadata.json"
-            if metadata_path.exists():
-                return RunMetadata.load(metadata_path)
-
-        # Fallback: find the most recent run directory
-        pipeline_dir = Path(base_dir) / pipeline.value
-        if not pipeline_dir.exists():
+        base_path = Path(base_dir)
+        if not base_path.exists():
             return None
 
-        run_dirs = sorted(pipeline_dir.iterdir(), reverse=True)
-        for run_dir in run_dirs:
-            metadata_path = run_dir / "run_metadata.json"
-            if metadata_path.exists():
-                return RunMetadata.load(metadata_path)
+        step = pipeline.value
+        latest_metadata: RunMetadata | None = None
 
+        for pipeline_dir in base_path.iterdir():
+            if not pipeline_dir.is_dir():
+                continue
+            metadata_path = pipeline_dir / step / "run_metadata.json"
+            if metadata_path.exists():
+                try:
+                    metadata = RunMetadata.load(metadata_path)
+                    if latest_metadata is None or metadata.started_at > latest_metadata.started_at:
+                        latest_metadata = metadata
+                except Exception as e:
+                    logger.warning(f"Failed to load metadata from {metadata_path}: {e}")
+
+        return latest_metadata
+
+    @classmethod
+    def resolve_outputs(cls, base_dir: Path, pipeline_id: str, step: PipelineType) -> Path | None:
+        """Resolve the outputs directory for a specific pipeline ID and step.
+
+        Direct lookup at ``results/{pipeline_id}/{step}/outputs/``.
+
+        Args:
+            base_dir: Base results directory.
+            pipeline_id: Pipeline identifier.
+            step: Pipeline type/step to look up.
+
+        Returns:
+            Path to the outputs directory if found, or None.
+        """
+        outputs = Path(base_dir) / pipeline_id / step.value / "outputs"
+        if outputs.is_dir():
+            return outputs
         return None
 
     @classmethod
     def resolve_latest_outputs(cls, base_dir: Path, pipeline: PipelineType) -> Path | None:
         """Resolve the outputs directory for the latest run of a pipeline type.
 
-        Checks the ``latest/`` symlink first, then falls back to scanning run
-        directories in reverse chronological order.
+        Scans all pipeline dirs for the most recent one with that step.
 
         Args:
             base_dir: Base results directory.
@@ -383,24 +412,69 @@ class ResultsManager:
         Returns:
             Path to the outputs directory if found, or None.
         """
-        # Try latest/ symlink first (fast path)
-        latest_symlink = Path(base_dir) / "latest" / pipeline.value
-        if latest_symlink.is_symlink():
-            outputs = latest_symlink.resolve() / "outputs"
-            if outputs.is_dir():
-                return outputs
-
-        # Fallback: find the most recent run directory with outputs
-        pipeline_dir = Path(base_dir) / pipeline.value
-        if not pipeline_dir.exists():
+        base_path = Path(base_dir)
+        if not base_path.exists():
             return None
 
-        for run_dir in sorted(pipeline_dir.iterdir(), reverse=True):
-            outputs = run_dir / "outputs"
-            if outputs.is_dir() and any(outputs.iterdir()):
-                return outputs
+        step = pipeline.value
+        best_outputs: Path | None = None
+        best_time: datetime | None = None
 
-        return None
+        for pipeline_dir in base_path.iterdir():
+            if not pipeline_dir.is_dir():
+                continue
+            step_dir = pipeline_dir / step
+            outputs = step_dir / "outputs"
+            if not outputs.is_dir():
+                continue
+
+            metadata_path = step_dir / "run_metadata.json"
+            if metadata_path.exists():
+                try:
+                    metadata = RunMetadata.load(metadata_path)
+                    if best_time is None or metadata.started_at > best_time:
+                        best_time = metadata.started_at
+                        best_outputs = outputs
+                except Exception:
+                    # If metadata unreadable, still consider the directory
+                    if best_outputs is None:
+                        best_outputs = outputs
+            elif best_outputs is None:
+                best_outputs = outputs
+
+        return best_outputs
+
+    @classmethod
+    def get_latest_pipeline_id(cls, base_dir: Path) -> str | None:
+        """Get the most recent pipeline ID by scanning pipeline.json files.
+
+        Args:
+            base_dir: Base results directory.
+
+        Returns:
+            Pipeline ID string, or None if no pipelines found.
+        """
+        base_path = Path(base_dir)
+        if not base_path.exists():
+            return None
+
+        best_id: str | None = None
+        best_time: datetime | None = None
+
+        for pipeline_dir in base_path.iterdir():
+            if not pipeline_dir.is_dir():
+                continue
+            pipeline_json = pipeline_dir / "pipeline.json"
+            if pipeline_json.exists():
+                try:
+                    meta = PipelineMetadata.load(pipeline_json)
+                    if best_time is None or meta.created_at > best_time:
+                        best_time = meta.created_at
+                        best_id = meta.pipeline_id
+                except Exception as e:
+                    logger.warning(f"Failed to load pipeline.json from {pipeline_dir}: {e}")
+
+        return best_id
 
     @classmethod
     def list_runs(cls, base_dir: Path, pipeline: PipelineType | None = None) -> list[dict]:
@@ -422,7 +496,6 @@ class ResultsManager:
 
                 runs = index_data.get("runs", [])
 
-                # Filter by pipeline type if specified
                 if pipeline is not None:
                     runs = [r for r in runs if r.get("pipeline_type") == pipeline.value]
 
@@ -431,12 +504,13 @@ class ResultsManager:
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Failed to read index.json: {e}")
 
-        # Fallback: scan directories
         return cls._scan_runs(base_dir, pipeline)
 
     @classmethod
     def _scan_runs(cls, base_dir: Path, pipeline: PipelineType | None = None) -> list[dict]:
         """Scan directories to build run list (fallback when index is unavailable).
+
+        Scans ``results/*/{step}/run_metadata.json`` for the ID-first layout.
 
         Args:
             base_dir: Base results directory.
@@ -453,41 +527,40 @@ class ResultsManager:
 
         pipelines = [pipeline] if pipeline else list(PipelineType)
 
-        for p in pipelines:
-            pipeline_dir = base_path / p.value
-            if not pipeline_dir.exists():
+        for pipeline_dir in base_path.iterdir():
+            if not pipeline_dir.is_dir():
+                continue
+            # Skip non-pipeline directories (index.json, etc.)
+            if not (pipeline_dir / "pipeline.json").exists():
                 continue
 
-            for run_dir in pipeline_dir.iterdir():
-                if not run_dir.is_dir():
-                    continue
-                if run_dir.name == "latest":
+            for p in pipelines:
+                metadata_path = pipeline_dir / p.value / "run_metadata.json"
+                if not metadata_path.exists():
                     continue
 
-                metadata_path = run_dir / "run_metadata.json"
-                if metadata_path.exists():
-                    try:
-                        metadata = RunMetadata.load(metadata_path)
-                        runs.append(
-                            {
-                                "run_id": metadata.run_id,
-                                "pipeline_type": metadata.pipeline_type.value,
-                                "status": metadata.status.value,
-                                "started_at": metadata.started_at.isoformat(),
-                                "ended_at": (
-                                    metadata.ended_at.isoformat() if metadata.ended_at else None
-                                ),
-                                "duration_seconds": metadata.duration_seconds,
-                                "total_items": metadata.total_items,
-                                "completed_items": metadata.completed_items,
-                                "failed_items": metadata.failed_items,
-                                "success_rate": metadata.success_rate,
-                                "output_directory": metadata.output_directory,
-                            }
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to load metadata from {run_dir}: {e}")
+                try:
+                    metadata = RunMetadata.load(metadata_path)
+                    runs.append(
+                        {
+                            "run_id": metadata.run_id,
+                            "pipeline_id": metadata.pipeline_id,
+                            "pipeline_type": metadata.pipeline_type.value,
+                            "status": metadata.status.value,
+                            "started_at": metadata.started_at.isoformat(),
+                            "ended_at": (
+                                metadata.ended_at.isoformat() if metadata.ended_at else None
+                            ),
+                            "duration_seconds": metadata.duration_seconds,
+                            "total_items": metadata.total_items,
+                            "completed_items": metadata.completed_items,
+                            "failed_items": metadata.failed_items,
+                            "success_rate": metadata.success_rate,
+                            "output_directory": metadata.output_directory,
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to load metadata from {metadata_path}: {e}")
 
-        # Sort by started_at descending
         runs.sort(key=lambda r: r.get("started_at", ""), reverse=True)
         return runs
