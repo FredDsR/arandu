@@ -63,14 +63,14 @@ The following dependencies are planned for future phases but are **not currently
 
 ### Knowledge Graph Construction (Planned for KG Phase)
 
-| Package | Version | Purpose | Target Module |
+| Package | Version | Purpose | Planned Module |
 |---------|---------|---------|---------|
 | `atlas-rag` | >=0.0.5 | AutoSchemaKG framework | `kg_builder.py` |
 | `networkx` | >=3.1 | Graph data structures and algorithms | `kg_builder.py`, `metrics.py` |
 
 ### Evaluation and Metrics (Planned for Evaluation Phase)
 
-| Package | Version | Purpose | Target Module |
+| Package | Version | Purpose | Planned Module |
 |---------|---------|---------|---------|
 | `scikit-learn` | >=1.3.0 | Machine learning metrics (F1, etc.) | `metrics.py` |
 | `sentence-transformers` | >=2.2.0 | Semantic embeddings | `metrics.py`, `evaluator.py` |
