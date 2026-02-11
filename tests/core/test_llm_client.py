@@ -231,6 +231,48 @@ class TestLLMClient:
         call_args = mock_client.chat.completions.create.call_args
         assert call_args.kwargs["max_tokens"] == 100
 
+    def test_generate_with_response_format(self, mocker: MockerFixture) -> None:
+        """Test that response_format is passed to API when provided."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '{"key": "value"}'
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        client.generate("Test prompt", response_format={"type": "json_object"})
+
+        call_args = mock_client.chat.completions.create.call_args
+        assert call_args.kwargs["response_format"] == {"type": "json_object"}
+
+    def test_generate_without_response_format(self, mocker: MockerFixture) -> None:
+        """Test that response_format is omitted from API when None."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        client.generate("Test prompt")
+
+        call_args = mock_client.chat.completions.create.call_args
+        assert "response_format" not in call_args.kwargs
+
     def test_generate_empty_content(self, mocker: MockerFixture) -> None:
         """Test text generation when response content is None."""
         mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")

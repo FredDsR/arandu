@@ -19,7 +19,7 @@
 
 # Partition-specific settings
 export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-6}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}"
+export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
 export USE_GPU_OLLAMA=true
 
 # Source the common CEP script

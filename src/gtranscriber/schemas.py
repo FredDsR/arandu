@@ -194,6 +194,15 @@ class QAPairCEP(QAPair):
     reasoning_trace: str | None = Field(
         None, description="Logical connections between facts leading to the answer"
     )
+
+    @field_validator("reasoning_trace", mode="before")
+    @classmethod
+    def coerce_reasoning_trace(cls, v: str | list[str] | None) -> str | None:
+        """Coerce reasoning_trace from list to joined string."""
+        if isinstance(v, list):
+            return " -> ".join(str(item) for item in v)
+        return v
+
     is_multi_hop: bool = Field(
         default=False, description="Whether answer requires connecting distant text parts"
     )

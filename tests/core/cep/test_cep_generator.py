@@ -20,7 +20,7 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
     """Create a mock LLM client with required attributes."""
     client = mocker.MagicMock()
     client.provider.value = "ollama"
-    client.model_id = "llama3.1:8b"
+    client.model_id = "qwen3:14b"
     client.generate.return_value = json.dumps(
         [
             {
@@ -39,7 +39,7 @@ def mock_validator_client(mocker: MockerFixture) -> Any:
     """Create a mock validator LLM client with required attributes."""
     client = mocker.MagicMock()
     client.provider.value = "ollama"
-    client.model_id = "llama3.1:8b"
+    client.model_id = "qwen3:14b"
     client.generate.return_value = json.dumps(
         {
             "faithfulness": 0.9,

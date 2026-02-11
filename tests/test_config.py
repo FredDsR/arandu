@@ -101,7 +101,7 @@ class TestQAConfig:
         config = QAConfig()
 
         assert config.provider == "ollama"
-        assert config.model_id == "llama3.1:8b"
+        assert config.model_id == "qwen3:14b"
         assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
         assert config.questions_per_document == 10
@@ -276,7 +276,7 @@ class TestCEPConfig:
         assert config.bloom_levels == ["remember", "understand", "analyze", "evaluate"]
         assert config.max_hop_count == 3
         assert config.validator_provider == "ollama"
-        assert config.validator_model_id == "llama3.1:8b"
+        assert config.validator_model_id == "qwen3:14b"
         assert config.validator_temperature == 0.3
         assert config.validation_threshold == 0.6
         assert config.language == "pt"

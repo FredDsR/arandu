@@ -99,6 +99,7 @@ class QAValidator:
                 prompt=prompt,
                 temperature=self.cep_config.validator_temperature,
                 max_tokens=512,
+                response_format={"type": "json_object"},
             )
 
             scores = self._parse_validation_response(response)

@@ -83,7 +83,7 @@ Settings for synthetic QA dataset generation.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `qa_provider` | `str` | `"ollama"` | LLM provider: "openai", "ollama", "custom" |
-| `qa_model_id` | `str` | `"llama3.1:8b"` | Model ID for QA generation |
+| `qa_model_id` | `str` | `"qwen3:14b"` | Model ID for QA generation |
 | `qa_ollama_url` | `str` | `"http://localhost:11434"` | Ollama API base URL |
 | `openai_api_key` | `str \| None` | `None` | OpenAI API key (from env) |
 | `llm_base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
@@ -107,7 +107,7 @@ qa_provider: str = Field(
     description="LLM provider for QA generation"
 )
 qa_model_id: str = Field(
-    default="llama3.1:8b",
+    default="qwen3:14b",
     description="Model for QA generation"
 )
 questions_per_document: int = Field(
@@ -313,7 +313,7 @@ GTRANSCRIBER_WORKERS=2
 
 # QA Generation
 GTRANSCRIBER_QA_PROVIDER=ollama
-GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
 GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434
 GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
 
@@ -375,7 +375,7 @@ GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
 
 # KG with Ollama (cost-effective)
 GTRANSCRIBER_KG_PROVIDER=ollama
-GTRANSCRIBER_KG_MODEL_ID=llama3.1:70b
+GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
 GTRANSCRIBER_KG_OLLAMA_URL=http://localhost:11434
 
 # Workers
@@ -393,7 +393,7 @@ GTRANSCRIBER_WORKERS=4
 
 # Set configuration via environment
 export GTRANSCRIBER_QA_PROVIDER=ollama
-export GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
+export GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
 export GTRANSCRIBER_WORKERS=8
 export GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=12
 
@@ -416,7 +416,7 @@ services:
   gtranscriber-qa:
     environment:
       - GTRANSCRIBER_QA_PROVIDER=ollama
-      - GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
+      - GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
       - GTRANSCRIBER_QA_OLLAMA_URL=http://host.docker.internal:11434
       - GTRANSCRIBER_WORKERS=4
       - GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
@@ -544,7 +544,7 @@ GTRANSCRIBER_TOKEN=token.json
 
 # QA Generation Settings
 GTRANSCRIBER_QA_PROVIDER=ollama  # openai, ollama, custom
-GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
 GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434
 GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
 

@@ -357,6 +357,75 @@ class TestQAPairCEPGenerationPrompt:
         assert data["generation_prompt"] is None
 
 
+class TestQAPairCEPReasoningTraceCoercion:
+    """Tests for QAPairCEP.reasoning_trace list-to-string coercion."""
+
+    def test_string_passthrough(self) -> None:
+        """Test that a string reasoning_trace passes through unchanged."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="analyze",
+            reasoning_trace="rio sobe -> barco em risco",
+        )
+        assert pair.reasoning_trace == "rio sobe -> barco em risco"
+
+    def test_list_coerced_to_string(self) -> None:
+        """Test that a list reasoning_trace is joined with ' -> '."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="analyze",
+            reasoning_trace=["rio sobe", "barco em risco"],
+        )
+        assert pair.reasoning_trace == "rio sobe -> barco em risco"
+
+    def test_none_accepted(self) -> None:
+        """Test that None reasoning_trace is accepted."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="analyze",
+            reasoning_trace=None,
+        )
+        assert pair.reasoning_trace is None
+
+    def test_empty_list_coerced_to_empty_string(self) -> None:
+        """Test that an empty list reasoning_trace becomes empty string."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="analyze",
+            reasoning_trace=[],
+        )
+        assert pair.reasoning_trace == ""
+
+    def test_single_item_list(self) -> None:
+        """Test that a single-item list is joined correctly."""
+        pair = QAPairCEP(
+            question="Q?",
+            answer="A",
+            context="C",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="analyze",
+            reasoning_trace=["single step"],
+        )
+        assert pair.reasoning_trace == "single step"
+
+
 class TestKGMetadata:
     """Tests for KGMetadata schema."""
 

@@ -161,7 +161,7 @@ class QAConfig(BaseSettings):
         description="LLM provider: openai, ollama, custom",
     )
     model_id: str = Field(
-        default="llama3.1:8b",
+        default="qwen3:14b",
         description="Model ID for QA generation",
     )
     ollama_url: str = Field(
@@ -292,7 +292,7 @@ class CEPConfig(BaseSettings):
         description="LLM provider for validation: openai, ollama, custom",
     )
     validator_model_id: str = Field(
-        default="llama3.1:8b",
+        default="qwen3:14b",
         description="Model ID for LLM-as-a-Judge validation",
     )
     validator_temperature: float = Field(

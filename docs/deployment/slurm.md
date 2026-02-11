@@ -34,7 +34,7 @@ sbatch scripts/slurm/run_qa_generation.slurm
 
 ```bash
 # Override workers and model
-WORKERS=8 QA_MODEL=llama3.1:70b sbatch scripts/slurm/run_qa_generation.slurm
+WORKERS=8 QA_MODEL=qwen3:14b sbatch scripts/slurm/run_qa_generation.slurm
 
 # Override partition
 sbatch --partition=gpu scripts/slurm/run_kg_construction.slurm
@@ -84,7 +84,7 @@ source .venv/bin/activate
 
 # Set environment variables
 export GTRANSCRIBER_QA_PROVIDER=ollama
-export GTRANSCRIBER_QA_MODEL_ID=${QA_MODEL:-llama3.1:8b}
+export GTRANSCRIBER_QA_MODEL_ID=${QA_MODEL:-qwen3:14b}
 export GTRANSCRIBER_WORKERS=${WORKERS:-4}
 
 # Run pipeline
@@ -211,7 +211,7 @@ GTRANSCRIBER_CEP_ENABLE_VALIDATION=false \
 sbatch scripts/slurm/cep/tupi.slurm
 
 # Use custom validator model
-GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.1:70b \
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.3:70b \
 sbatch scripts/slurm/cep/grace.slurm
 
 # Use English prompts
@@ -223,7 +223,7 @@ GTRANSCRIBER_CEP_LANGUAGE=en sbatch scripts/slurm/cep/tupi.slurm
 | Partition | GPUs | Workers | Best For |
 |-----------|------|---------|----------|
 | Grace (L40S) | 1 | 4 | Large models (70B), validation |
-| Tupi (RTX 4090) | 1 | 3 | Standard generation (8B models) |
+| Tupi (RTX 4090) | 1 | 3 | Standard generation (14B models) |
 | Sirius (AMD) | 0 | 2 | CPU-only fallback |
 
 ### Monitor CEP Jobs

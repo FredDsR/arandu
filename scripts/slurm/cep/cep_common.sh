@@ -9,12 +9,12 @@
 #   GTRANSCRIBER_QA_WORKERS - Number of parallel workers
 #
 # Optional environment variables:
-#   GTRANSCRIBER_QA_MODEL_ID - Ollama model to use (default: llama3.1:8b)
+#   GTRANSCRIBER_QA_MODEL_ID - Ollama model to use (default: qwen3:14b)
 #   GTRANSCRIBER_QA_PROVIDER - LLM provider (default: ollama)
 #   GTRANSCRIBER_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
 #   GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT - Questions per document (default: 10)
 #   GTRANSCRIBER_CEP_ENABLE_VALIDATION - Enable LLM-as-a-Judge validation (default: true)
-#   GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID - Validator model (default: llama3.1:8b)
+#   GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID - Validator model (default: qwen3:14b)
 #   GTRANSCRIBER_CEP_LANGUAGE - Language for prompts (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
 # =============================================================================
@@ -28,7 +28,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
 # QA Generation settings (support override from environment)
 export GTRANSCRIBER_QA_PROVIDER="${GTRANSCRIBER_QA_PROVIDER:-ollama}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}"
+export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
 export GTRANSCRIBER_QA_OLLAMA_URL="${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434/v1}"
 export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT="${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}"
 export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-4}"
@@ -36,7 +36,7 @@ export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-4}"
 # CEP-specific settings
 export GTRANSCRIBER_CEP_ENABLE_VALIDATION="${GTRANSCRIBER_CEP_ENABLE_VALIDATION:-true}"
 export GTRANSCRIBER_CEP_VALIDATOR_PROVIDER="${GTRANSCRIBER_CEP_VALIDATOR_PROVIDER:-ollama}"
-export GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID="${GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID:-llama3.1:8b}"
+export GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID="${GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID:-qwen3:14b}"
 export GTRANSCRIBER_CEP_LANGUAGE="${GTRANSCRIBER_CEP_LANGUAGE:-pt}"
 
 # GPU mode for Ollama (partition scripts set this)

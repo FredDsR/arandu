@@ -355,6 +355,31 @@ class TestQAValidator:
         assert all(isinstance(r, QAPairValidated) for r in results)
         assert all(r.is_valid for r in results)
 
+    def test_validate_passes_response_format(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that validate passes response_format to LLM client."""
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "faithfulness": 0.9,
+                "bloom_calibration": 0.8,
+                "informativeness": 0.7,
+            }
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        validator.validate(sample_qa_pair, "context")
+
+        call_kwargs = mock_llm_client.generate.call_args.kwargs
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
 
 class TestValidationScore:
     """Tests for ValidationScore schema."""
