@@ -123,6 +123,7 @@ class QAValidator:
                 is_multi_hop=qa_pair.is_multi_hop,
                 hop_count=qa_pair.hop_count,
                 tacit_inference=qa_pair.tacit_inference,
+                generation_prompt=qa_pair.generation_prompt,
                 validation=scores,
                 is_valid=is_valid,
             )
@@ -143,6 +144,7 @@ class QAValidator:
                 is_multi_hop=qa_pair.is_multi_hop,
                 hop_count=qa_pair.hop_count,
                 tacit_inference=qa_pair.tacit_inference,
+                generation_prompt=qa_pair.generation_prompt,
                 validation=None,
                 is_valid=True,  # Default to valid if validation fails
             )

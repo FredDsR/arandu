@@ -792,6 +792,77 @@ class TestBloomScaffoldingGenerator:
         assert "Riverine communities." in result
         assert result.startswith("1.")
 
+    def test_parse_response_threads_generation_prompt(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that _parse_response threads generation_prompt to pairs."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps([{"question": "Q?", "answer": "A", "confidence": 0.9}])
+
+        pairs = generator._parse_response(
+            response, "Context.", "remember", generation_prompt="The prompt"
+        )
+
+        assert len(pairs) == 1
+        assert pairs[0].generation_prompt == "The prompt"
+
+    def test_parse_response_defaults_generation_prompt_to_none(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that _parse_response defaults generation_prompt to None."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        response = json.dumps([{"question": "Q?", "answer": "A", "confidence": 0.9}])
+
+        pairs = generator._parse_response(response, "Context.", "remember")
+
+        assert len(pairs) == 1
+        assert pairs[0].generation_prompt is None
+
+    def test_generate_sets_generation_prompt(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that generate() produces pairs with non-None generation_prompt."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember"],
+            bloom_distribution={"remember": 1.0},
+            language="pt",
+        )
+
+        mock_llm_client.generate.return_value = json.dumps(
+            [{"question": "Q?", "answer": "A.", "confidence": 0.9}]
+        )
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        pairs = generator.generate("Context text.", num_questions=1)
+
+        assert len(pairs) >= 1
+        for pair in pairs:
+            assert pair.generation_prompt is not None
+            assert len(pair.generation_prompt) > 0
+
     def test_format_prior_pairs_respects_max_limit(
         self,
         mock_llm_client: Any,

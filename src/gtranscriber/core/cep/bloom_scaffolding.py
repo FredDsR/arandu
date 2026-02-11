@@ -219,7 +219,7 @@ class BloomScaffoldingGenerator:
                 max_tokens=self.qa_config.max_tokens,
             )
 
-            pairs = self._parse_response(response, context, bloom_level)
+            pairs = self._parse_response(response, context, bloom_level, generation_prompt=prompt)
             return pairs
 
         except Exception as e:
@@ -295,6 +295,8 @@ class BloomScaffoldingGenerator:
         response: str,
         context: str,
         bloom_level: str,
+        *,
+        generation_prompt: str | None = None,
     ) -> list[QAPairCEP]:
         """Parse LLM response into QAPairCEP objects.
 
@@ -302,6 +304,7 @@ class BloomScaffoldingGenerator:
             response: Raw LLM response text.
             context: Source context for validation.
             bloom_level: Bloom level used for generation.
+            generation_prompt: LLM prompt used to generate the response.
 
         Returns:
             List of QAPairCEP objects.
@@ -374,6 +377,7 @@ class BloomScaffoldingGenerator:
                     is_multi_hop=is_multi_hop,
                     hop_count=hop_count,
                     tacit_inference=tacit_inference,
+                    generation_prompt=generation_prompt,
                 )
                 pairs.append(pair)
             except Exception as e:

@@ -203,6 +203,9 @@ class QAPairCEP(QAPair):
     tacit_inference: str | None = Field(
         None, description="Explanation of implicit/tacit knowledge used in the answer"
     )
+    generation_prompt: str | None = Field(
+        None, description="LLM prompt used to generate this QA pair"
+    )
 
     @model_validator(mode="after")
     def validate_multi_hop(self) -> Self:
