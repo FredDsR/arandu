@@ -64,7 +64,6 @@ def qa_config() -> QAConfig:
 def cep_config() -> CEPConfig:
     """Create a CEP config for testing."""
     return CEPConfig(
-        enable_bloom_scaffolding=True,
         enable_reasoning_traces=True,
         enable_validation=False,
         bloom_levels=["remember", "understand", "analyze", "evaluate"],

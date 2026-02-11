@@ -140,42 +140,6 @@ class QAPair(BaseModel):
         return self
 
 
-class QARecord(BaseModel):
-    """Represents the complete QA dataset for a single transcription document."""
-
-    source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
-    source_filename: str = Field(..., description="Original filename")
-    transcription_text: str = Field(..., description="Full transcription text")
-    qa_pairs: list[QAPair] = Field(..., description="List of generated QA pairs")
-    model_id: str = Field(..., description="LLM model used for generation")
-    provider: Literal["openai", "ollama", "custom"] = Field(..., description="LLM provider used")
-    language: str = Field(
-        default="pt", description="Language used for prompt generation (ISO 639-1)"
-    )
-    generation_timestamp: datetime = Field(
-        default_factory=datetime.now, description="When QA pairs were generated"
-    )
-    total_pairs: int = Field(..., description="Total number of QA pairs generated")
-
-    @model_validator(mode="after")
-    def validate_total_pairs(self) -> Self:
-        """Validate that total_pairs matches actual count."""
-        if self.total_pairs != len(self.qa_pairs):
-            raise ValueError(
-                f"total_pairs ({self.total_pairs}) must equal len(qa_pairs) ({len(self.qa_pairs)})"
-            )
-        return self
-
-    def save(self, path: str | Path) -> None:
-        """Save QA record to JSON file."""
-        Path(path).write_text(self.model_dump_json(indent=2))
-
-    @classmethod
-    def load(cls, path: str | Path) -> QARecord:
-        """Load QA record from JSON file."""
-        return cls.model_validate_json(Path(path).read_text())
-
-
 # =============================================================================
 # CEP (Cognitive Elicitation Pipeline) Schemas
 # =============================================================================

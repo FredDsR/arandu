@@ -46,36 +46,40 @@ gtranscriber batch-transcribe input/catalog.csv --workers 4 --quantize
 
 ---
 
-## Phase 2: QA Generation Pipeline ✅
+## Phase 2: CEP QA Generation Pipeline ✅
 
-**Completed**: 2026-01-29
+**Completed**: 2026-01-29 (basic), 2026-02-11 (CEP-only refactor)
 
 ### What Was Implemented
 
-1. **QA Generator** ([core/qa_generator.py](../../src/gtranscriber/core/qa_generator.py))
-   - Multiple question strategies (factual, conceptual, temporal, entity)
+1. **CEP QA Generator** ([core/cep/](../../src/gtranscriber/core/cep/))
+   - Bloom's Taxonomy cognitive scaffolding (remember, understand, analyze, evaluate)
+   - Configurable Bloom level distribution
+   - Scaffolding context (lower-level QA pairs inform higher levels)
+   - LLM-as-a-Judge validation with faithfulness, Bloom calibration, informativeness scores
+   - Reasoning trace generation for multi-hop questions
    - Context chunking for long transcriptions
-   - Extractive answer validation
-   - JSON response parsing
 
 2. **Batch Orchestrator** ([core/qa_batch.py](../../src/gtranscriber/core/qa_batch.py))
    - Parallel processing with ProcessPoolExecutor
    - Global worker pattern for connection pooling
    - Checkpoint integration
+   - Versioned results layout
 
-3. **CLI Command** (`generate-qa`)
+3. **CLI Command** (`generate-cep-qa`)
    - LLM provider selection (Ollama, OpenAI, custom)
-   - Configurable strategies and workers
+   - Configurable Bloom levels, validation, and workers
    - Progress tracking
 
 4. **Data Schemas**
-   - `QAPair` - Individual question-answer pair
-   - `QARecord` - Complete QA dataset for a document
+   - `QAPairCEP` - Bloom-calibrated question-answer pair
+   - `QARecordCEP` - Complete CEP QA dataset with Bloom distribution and validation summary
+   - JSONL export for KGQA training
 
 ### Usage
 
 ```bash
-gtranscriber generate-qa results/ -o qa_dataset/ --workers 4 --questions 12
+gtranscriber generate-cep-qa results/ -o qa_dataset/ --workers 4 --questions 12
 ```
 
 ### Test Coverage
@@ -83,6 +87,7 @@ gtranscriber generate-qa results/ -o qa_dataset/ --workers 4 --questions 12
 - Unit tests: ~85% coverage
 - Integration tests for LLM client
 - Pydantic validation tests
+- CEP generator and batch processing tests
 
 ---
 

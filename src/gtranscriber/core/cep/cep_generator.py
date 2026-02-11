@@ -69,7 +69,6 @@ class CEPQAGenerator:
 
         logger.info(
             f"CEPQAGenerator initialized - "
-            f"Bloom={cep_config.enable_bloom_scaffolding}, "
             f"ScaffoldingContext={cep_config.enable_scaffolding_context}, "
             f"Reasoning={cep_config.enable_reasoning_traces}, "
             f"Validation={cep_config.enable_validation}"

@@ -92,169 +92,9 @@ class EnrichedRecord(BaseModel):
 
 ---
 
-## QA Generation Schemas
+## QA Generation Schemas (CEP)
 
-### QAPair
-
-Represents a single question-answer pair generated from a transcription.
-
-**Fields**:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `question` | `str` | Yes | The generated question |
-| `answer` | `str` | Yes | The ground truth answer (extractive from context) |
-| `context` | `str` | Yes | Source text segment from which QA was generated |
-| `question_type` | `Literal["factual", "conceptual", "temporal", "entity"]` | Yes | Strategy used for question generation |
-| `confidence` | `float` | Yes | Generation confidence score (0.0-1.0) |
-| `start_time` | `float \| None` | No | Segment start time in seconds (if available) |
-| `end_time` | `float \| None` | No | Segment end time in seconds (if available) |
-
-**Example**:
-```json
-{
-  "question": "What caused the flooding in the region?",
-  "answer": "Heavy rainfall combined with poor drainage infrastructure",
-  "context": "The flooding was caused by heavy rainfall combined with poor drainage infrastructure. Many residents were evacuated.",
-  "question_type": "factual",
-  "confidence": 0.92,
-  "start_time": 45.3,
-  "end_time": 52.1
-}
-```
-
-**Validation Rules**:
-- `confidence` must be between 0.0 and 1.0
-- `answer` must be a substring of or semantically contained in `context`
-- `question_type` must be one of: "factual", "conceptual", "temporal", "entity"
-- If `start_time` is provided, `end_time` must also be provided
-- `start_time` < `end_time` when both are provided
-
-**Python Implementation**:
-```python
-from typing import Literal
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-class QAPair(BaseModel):
-    """Represents a single question-answer pair generated from a transcription."""
-    question: str
-    answer: str
-    context: str
-    question_type: Literal["factual", "conceptual", "temporal", "entity"]
-    confidence: float = Field(ge=0.0, le=1.0)
-    start_time: float | None = None
-    end_time: float | None = None
-
-    @field_validator("answer")
-    @classmethod
-    def answer_must_be_extractive(cls, v: str, info) -> str:
-        """Validate that answer is extractive from context."""
-        context = info.data.get("context", "")
-        if context and v.lower() not in context.lower():
-            raise ValueError("Answer must be extractive from context")
-        return v
-
-    @model_validator(mode="after")
-    def validate_time_range(self) -> "QAPair":
-        """Validate temporal constraints."""
-        if self.start_time is not None and self.end_time is None:
-            raise ValueError("end_time required when start_time is provided")
-        if self.end_time is not None and self.start_time is None:
-            raise ValueError("start_time required when end_time is provided")
-        if self.start_time is not None and self.end_time is not None:
-            if self.start_time >= self.end_time:
-                raise ValueError("start_time must be less than end_time")
-        return self
-```
-
-### QARecord
-
-Represents the complete QA dataset for a single transcription document.
-
-**Fields**:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `source_gdrive_id` | `str` | Yes | Google Drive ID of original media file |
-| `source_filename` | `str` | Yes | Original filename |
-| `transcription_text` | `str` | Yes | Full transcription text |
-| `qa_pairs` | `list[QAPair]` | Yes | List of generated QA pairs |
-| `model_id` | `str` | Yes | LLM model used for generation (e.g., "llama3.1:8b") |
-| `provider` | `Literal["openai", "ollama", "custom"]` | Yes | LLM provider used |
-| `generation_timestamp` | `datetime` | Yes | When QA pairs were generated |
-| `total_pairs` | `int` | Yes | Total number of QA pairs generated |
-
-**Example**:
-```json
-{
-  "source_gdrive_id": "1abc123xyz",
-  "source_filename": "interview_2023_flood.mp3",
-  "transcription_text": "The flooding was caused by heavy rainfall...",
-  "qa_pairs": [
-    {
-      "question": "What caused the flooding?",
-      "answer": "Heavy rainfall combined with poor drainage",
-      "context": "The flooding was caused by heavy rainfall...",
-      "question_type": "factual",
-      "confidence": 0.92,
-      "start_time": 45.3,
-      "end_time": 52.1
-    }
-  ],
-  "model_id": "llama3.1:8b",
-  "provider": "ollama",
-  "generation_timestamp": "2026-01-14T10:30:00Z",
-  "total_pairs": 12
-}
-```
-
-**Validation Rules**:
-- `total_pairs` must equal `len(qa_pairs)`
-- `provider` must be one of: "openai", "ollama", "custom"
-- All `qa_pairs` must pass QAPair validation
-
-**Python Implementation**:
-```python
-from datetime import datetime
-from pathlib import Path
-from typing import Literal
-from pydantic import BaseModel, Field, model_validator
-
-class QARecord(BaseModel):
-    """Represents the complete QA dataset for a single transcription document."""
-    source_gdrive_id: str
-    source_filename: str
-    transcription_text: str
-    qa_pairs: list[QAPair]
-    model_id: str
-    provider: Literal["openai", "ollama", "custom"]
-    generation_timestamp: datetime = Field(default_factory=datetime.now)
-    total_pairs: int
-
-    @model_validator(mode="after")
-    def validate_total_pairs(self) -> "QARecord":
-        """Validate that total_pairs matches actual count."""
-        if self.total_pairs != len(self.qa_pairs):
-            raise ValueError(
-                f"total_pairs ({self.total_pairs}) must equal len(qa_pairs) ({len(self.qa_pairs)})"
-            )
-        return self
-
-    def save(self, path: str | Path) -> None:
-        """Save QA record to JSON file."""
-        Path(path).write_text(self.model_dump_json(indent=2))
-
-    @classmethod
-    def load(cls, path: str | Path) -> "QARecord":
-        """Load QA record from JSON file."""
-        return cls.model_validate_json(Path(path).read_text())
-```
-
----
-
-## CEP QA Generation Schemas
-
-The CEP (Cognitive Elicitation Pipeline) extends the standard QA schemas with cognitive scaffolding based on Bloom's Taxonomy.
+The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for cognitive scaffolding based on Bloom's Taxonomy.
 
 ### QAPairCEP
 
@@ -932,11 +772,7 @@ class EvaluationReport(BaseModel):
 
 ```mermaid
 graph TD
-    A[EnrichedRecord] --> B[QAGenerator]
-    B --> C[QARecord]
-    C --> D[QAPair]
-
-    A --> P[CEPQAGenerator]
+    A[EnrichedRecord] --> P[CEPQAGenerator]
     P --> Q[QARecordCEP]
     Q --> R[QAPairCEP]
     R --> S[ValidationScore]
@@ -948,8 +784,7 @@ graph TD
 
     F --> H[NetworkX Graph]
 
-    C --> I[Evaluator]
-    Q --> I
+    Q --> I[Evaluator]
     H --> I
     A --> I
     I --> J[EvaluationReport]
@@ -959,33 +794,6 @@ graph TD
 ```
 
 ## File Format Examples
-
-### QARecord JSON File
-
-**Filename**: `qa_<gdrive_id>.json`
-
-```json
-{
-  "source_gdrive_id": "1abc123xyz",
-  "source_filename": "interview_2023_flood.mp3",
-  "transcription_text": "Full transcription here...",
-  "qa_pairs": [
-    {
-      "question": "What caused the flooding?",
-      "answer": "Heavy rainfall",
-      "context": "The flooding was caused by heavy rainfall...",
-      "question_type": "factual",
-      "confidence": 0.92,
-      "start_time": 45.3,
-      "end_time": 52.1
-    }
-  ],
-  "model_id": "llama3.1:8b",
-  "provider": "ollama",
-  "generation_timestamp": "2026-01-14T10:30:00Z",
-  "total_pairs": 12
-}
-```
 
 ### Knowledge Graph Files
 
