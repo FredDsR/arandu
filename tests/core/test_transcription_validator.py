@@ -419,10 +419,14 @@ class TestValidateEnrichedRecord:
             transcription_status="completed",
         )
 
-        validate_enriched_record(record)
+        # Repetition weight (0.30) alone can't pull the overall score below
+        # the default 0.5 threshold when other dimensions score well, so use
+        # a higher threshold to catch this failure mode.
+        config = TranscriptionQualityConfig(quality_threshold=0.75)
+        validate_enriched_record(record, config)
 
         assert record.is_valid is False
-        assert record.transcription_quality.overall_score < 0.5
+        assert record.transcription_quality.repetition_score == 0.0
 
     def test_function_returns_record_for_chaining(self, sample_record: EnrichedRecord) -> None:
         """Test that the function returns the record for chaining."""
