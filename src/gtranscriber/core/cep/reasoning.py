@@ -185,6 +185,7 @@ class ReasoningEnricher:
             prompt=prompt,
             temperature=0.3,  # Low for consistent reasoning
             max_tokens=512,
+            response_format={"type": "json_object"},
         )
 
         return self._parse_reasoning_response(response)

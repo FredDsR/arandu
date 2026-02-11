@@ -106,6 +106,7 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         system_prompt: str | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> str:
         """Generate text from a prompt.
 
@@ -115,6 +116,9 @@ class LLMClient:
                 random outputs. Defaults to 0.7.
             max_tokens: Maximum number of tokens to generate. If None, uses model default.
             system_prompt: Optional system prompt to set context.
+            response_format: Optional response format constraint (e.g.,
+                ``{"type": "json_object"}``). When provided, constrains the LLM
+                to produce output matching this format.
 
         Returns:
             The generated text response.
@@ -137,6 +141,9 @@ class LLMClient:
 
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+
+        if response_format is not None:
+            kwargs["response_format"] = response_format
 
         response = self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content or ""

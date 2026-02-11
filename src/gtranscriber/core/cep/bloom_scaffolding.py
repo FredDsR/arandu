@@ -217,6 +217,7 @@ class BloomScaffoldingGenerator:
                 prompt=prompt,
                 temperature=self.qa_config.temperature,
                 max_tokens=self.qa_config.max_tokens,
+                response_format={"type": "json_object"},
             )
 
             pairs = self._parse_response(response, context, bloom_level, generation_prompt=prompt)
@@ -319,6 +320,10 @@ class BloomScaffoldingGenerator:
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse JSON response: {e}")
             return []
+
+        # Unwrap object envelope (JSON mode returns objects)
+        if isinstance(data, dict):
+            data = data.get("qa_pairs", data.get("pairs", []))
 
         if not isinstance(data, list):
             logger.warning("Response is not a JSON array")
