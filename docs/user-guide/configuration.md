@@ -1,14 +1,20 @@
 # Configuration Reference
 
-Complete reference for all configuration settings in the Knowledge Graph Construction Pipeline.
+Complete reference for all configuration settings in the G-Transcriber pipeline.
 
 ## Table of Contents
 
 1. [Configuration System Overview](#configuration-system-overview)
-2. [Existing Configuration](#existing-configuration)
-3. [New Configuration Settings](#new-configuration-settings)
-4. [Environment Variables](#environment-variables)
-5. [Configuration Examples](#configuration-examples)
+2. [TranscriberConfig](#transcriberconfig)
+3. [QAConfig](#qaconfig)
+4. [CEPConfig](#cepconfig)
+5. [KGConfig](#kgconfig)
+6. [EvaluationConfig](#evaluationconfig)
+7. [LLMConfig](#llmconfig)
+8. [ResultsConfig](#resultsconfig)
+9. [TranscriptionQualityConfig](#transcriptionqualityconfig)
+10. [Environment Variables](#environment-variables)
+11. [Configuration Examples](#configuration-examples)
 
 ---
 
@@ -17,156 +23,282 @@ Complete reference for all configuration settings in the Knowledge Graph Constru
 The G-Transcriber project uses **Pydantic Settings** for configuration management with hierarchical loading:
 
 1. **Command-line arguments** (highest priority)
-2. **Environment variables** with `GTRANSCRIBER_` prefix
+2. **Environment variables** with config-specific prefixes
 3. **`.env` file** in project root
 4. **Default values** in `config.py` (lowest priority)
 
 **Configuration File**: `src/gtranscriber/config.py`
 
+**Architecture**: The system uses **8 separate configuration classes**, each with its own environment variable prefix:
+- `TranscriberConfig` - Prefix: `GTRANSCRIBER_`
+- `QAConfig` - Prefix: `GTRANSCRIBER_QA_`
+- `CEPConfig` - Prefix: `GTRANSCRIBER_CEP_`
+- `KGConfig` - Prefix: `GTRANSCRIBER_KG_`
+- `EvaluationConfig` - Prefix: `GTRANSCRIBER_EVAL_`
+- `LLMConfig` - No prefix (uses aliases like `OPENAI_API_KEY`)
+- `ResultsConfig` - Prefix: `GTRANSCRIBER_RESULTS_`
+- `TranscriptionQualityConfig` - Prefix: `GTRANSCRIBER_QUALITY_`
+
 **Usage**:
 ```python
-from gtranscriber.config import TranscriberConfig
+from gtranscriber.config import TranscriberConfig, QAConfig
 
-config = TranscriberConfig()
-print(config.qa_provider)  # Access settings
+transcriber_config = TranscriberConfig()
+qa_config = QAConfig()
+print(transcriber_config.model_id)  # openai/whisper-large-v3
+print(qa_config.provider)  # ollama
 ```
 
 ---
 
-## Existing Configuration
+## TranscriberConfig
 
-These settings were already present in the transcription pipeline:
+Configuration settings for the transcription pipeline.
 
-### Transcription Settings
+**Environment Prefix**: `GTRANSCRIBER_`
+
+### Model Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `model_id` | `str` | `"openai/whisper-large-v3-turbo"` | Whisper model from Hugging Face |
-| `force_cpu` | `bool` | `False` | Force CPU execution (no GPU) |
-| `quantize` | `bool` | `False` | Enable 8-bit quantization |
+| `model_id` | `str` | `"openai/whisper-large-v3"` | Hugging Face model ID for Whisper transcription |
+| `language` | `str \| None` | `None` | Language code (e.g., 'pt'). If None, auto-detect |
+| `return_timestamps` | `bool` | `True` | Return timestamps for transcription segments |
 | `chunk_length_s` | `int` | `30` | Audio chunk length in seconds |
-| `stride_length_s` | `int` | `5` | Stride length for chunks |
-| `batch_size` | `int` | `24` | Batch size for inference |
+| `stride_length_s` | `int` | `5` | Stride length in seconds between chunks |
+
+### Hardware Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `force_cpu` | `bool` | `False` | Force CPU execution instead of GPU |
+| `quantize` | `bool` | `False` | Enable 8-bit quantization to reduce VRAM |
+| `quantize_bits` | `int` | `8` | Number of bits for quantization |
 
 ### Google Drive Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `credentials_file` | `Path` | `Path("credentials.json")` | OAuth2 credentials path |
-| `token_file` | `Path` | `Path("token.json")` | OAuth2 token cache path |
-| `max_retries` | `int` | `3` | Max retries for API calls |
-| `retry_delay` | `float` | `2.0` | Delay between retries (seconds) |
+| `credentials` | `str` | `"credentials.json"` | Path to Google OAuth2 credentials file |
+| `token` | `str` | `"token.json"` | Path to Google OAuth2 token file |
+| `scopes` | `list[str]` | `["https://www.googleapis.com/auth/drive"]` | OAuth2 scopes for Google Drive API |
+
+**Note**: `credentials_file` and `token_file` are backward-compatible property aliases for `credentials` and `token`.
+
+### Batch Processing Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `workers` | `int` | `1` | Number of parallel workers for batch processing |
+| `catalog_file` | `str` | `"catalog.csv"` | Name of the catalog CSV file |
+
+### Path Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `input_dir` | `str` | `"./input"` | Directory containing input files |
+| `results_dir` | `str` | `"./results"` | Directory for transcription results |
+| `credentials_dir` | `str` | `"./"` | Directory containing credentials and token files |
+| `hf_cache_dir` | `str` | `"./cache/huggingface"` | Hugging Face cache directory for model storage |
 
 ### Processing Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `workers` | `int` | `1` | Number of parallel workers |
-| `temp_dir` | `Path` | `Path("/tmp/gtranscriber")` | Temporary file directory |
-
-### Directory Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `input_dir` | `Path` | `Path("input")` | Input directory for catalogs |
-| `results_dir` | `Path` | `Path("results")` | Output directory for results |
-| `cache_dir` | `Path` | `Path(".cache/huggingface")` | HuggingFace cache directory |
-
----
-
-## New Configuration Settings
-
-### QA Generation Settings
-
-Settings for synthetic QA dataset generation.
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `qa_provider` | `str` | `"ollama"` | LLM provider: "openai", "ollama", "custom" |
-| `qa_model_id` | `str` | `"qwen3:14b"` | Model ID for QA generation |
-| `qa_ollama_url` | `str` | `"http://localhost:11434"` | Ollama API base URL |
-| `openai_api_key` | `str \| None` | `None` | OpenAI API key (from env) |
-| `llm_base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
-| `questions_per_document` | `int` | `10` | Number of QA pairs to generate per document |
-| `qa_strategies` | `list[str]` | `["factual", "conceptual"]` | Question generation strategies |
-| `qa_temperature` | `float` | `0.7` | Temperature for LLM generation |
-| `qa_max_tokens` | `int` | `2048` | Max tokens for LLM generation |
-| `qa_output_dir` | `Path` | `Path("qa_dataset")` | Output directory for QA datasets |
-
-**Strategy Options**:
-- `"factual"` - Who, what, when, where questions
-- `"conceptual"` - Why, how questions
-- `"temporal"` - Time-based questions
-- `"entity"` - Entity-focused questions
+| `temp_dir` | `str` | `"/tmp/gtranscriber"` (platform-specific) | Temporary directory for file processing |
+| `max_retries` | `int` | `3` | Maximum number of retry attempts for failed operations |
+| `retry_delay` | `float` | `1.0` | Delay in seconds between retry attempts |
 
 **Example Configuration**:
 ```python
-# In config.py
-qa_provider: str = Field(
-    default="ollama",
-    description="LLM provider for QA generation"
-)
-qa_model_id: str = Field(
-    default="qwen3:14b",
-    description="Model for QA generation"
-)
-questions_per_document: int = Field(
-    default=10,
-    ge=1,
-    le=50,
-    description="QA pairs per document"
+from gtranscriber.config import TranscriberConfig
+
+config = TranscriberConfig()
+# Or with custom settings:
+config = TranscriberConfig(
+    model_id="openai/whisper-large-v3",
+    force_cpu=False,
+    workers=4
 )
 ```
 
-### Knowledge Graph Construction Settings
+---
 
-Settings for KG construction using AutoSchemaKG.
+## QAConfig
+
+Configuration settings for the QA generation pipeline.
+
+**Environment Prefix**: `GTRANSCRIBER_QA_`
+
+### LLM Provider Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `kg_provider` | `str` | `"ollama"` | LLM provider for entity/relation extraction |
-| `kg_model_id` | `str` | `"llama3.1:8b"` | Model ID for KG construction |
-| `kg_ollama_url` | `str` | `"http://localhost:11434"` | Ollama API base URL |
-| `kg_merge_graphs` | `bool` | `True` | Merge individual graphs into corpus-level graph |
-| `kg_output_format` | `str` | `"graphml"` | Export format: "graphml" (default) or "json" |
-| `kg_schema_mode` | `str` | `"dynamic"` | Schema mode: "dynamic" or "predefined" |
-| `kg_temperature` | `float` | `0.5` | Temperature for LLM (lower = more consistent) |
-| `kg_output_dir` | `Path` | `Path("knowledge_graphs")` | Output directory for KGs |
-| `kg_language` | `str` | `"pt"` | Language code for extraction prompts (ISO 639-1) |
-| `kg_prompt_path` | `str` | `"prompts/pt_prompts.json"` | Path to language-specific prompt templates |
+| `provider` | `str` | `"ollama"` | LLM provider: "openai", "ollama", "custom" |
+| `model_id` | `str` | `"qwen3:14b"` | Model ID for QA generation |
+| `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL |
+| `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
 
-**Schema Modes**:
-- `"dynamic"` - AutoSchemaKG infers schema from data (recommended)
-- `"predefined"` - Use fixed schema (requires schema definition)
+### Generation Settings
 
-**Language Support**:
-AutoSchemaKG supports multilingual KG construction. The `kg_language` setting specifies the ISO 639-1 language code (e.g., `"pt"` for Portuguese, `"en"` for English). The `kg_prompt_path` points to a JSON file containing language-specific prompts for triple extraction.
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `questions_per_document` | `int` | `10` | Number of QA pairs to generate per document (min: 1, max: 50) |
+| `temperature` | `float` | `0.7` | Temperature for QA generation LLM (range: 0.0-2.0) |
+| `max_tokens` | `int` | `2048` | Max tokens for QA generation LLM (min: 1) |
 
-Supported languages: `en`, `pt`, `es`, `fr`, `de`, `zh-CN`, `ja`, `ko`, and custom locale codes.
+### Output Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `output_dir` | `Path` | `Path("qa_dataset")` | Output directory for QA datasets |
+
+### Language and Processing
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `language` | `str` | `"pt"` | Language code for QA generation prompts (ISO 639-1: 'en' or 'pt') |
+| `workers` | `int` | `2` | Number of parallel workers for QA generation |
 
 **Example Configuration**:
 ```python
-# In config.py
-kg_provider: str = Field(
-    default="ollama",
-    description="LLM provider for KG construction"
+from gtranscriber.config import QAConfig
+
+config = QAConfig(
+    provider="ollama",
+    model_id="qwen3:14b",
+    questions_per_document=15,
+    language="pt"
 )
-kg_merge_graphs: bool = Field(
-    default=True,
-    description="Merge individual graphs into corpus graph"
+```
+
+---
+
+## CEPConfig
+
+Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding and LLM-as-a-Judge validation.
+
+**Environment Prefix**: `GTRANSCRIBER_CEP_`
+
+### Module Toggles
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enable_reasoning_traces` | `bool` | `True` | Enable reasoning trace generation for answers |
+| `enable_validation` | `bool` | `True` | Enable LLM-as-a-Judge validation (requires additional LLM calls) |
+
+### Module I - Bloom Scaffolding Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `bloom_levels` | `list[str]` | `["remember", "understand", "analyze", "evaluate"]` | Bloom levels for question generation |
+| `bloom_distribution` | `dict[str, float]` | `{"remember": 0.2, "understand": 0.3, "analyze": 0.3, "evaluate": 0.2}` | Distribution per level (must sum to 1.0) |
+| `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
+| `max_scaffolding_pairs` | `int` | `10` | Max prior QA pairs to include as scaffolding context (min: 1, max: 50) |
+
+**Valid Bloom Levels**: `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`
+
+### Module II - Reasoning Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `max_hop_count` | `int` | `3` | Maximum reasoning hops to detect for multi-hop questions (min: 1, max: 5) |
+
+### Module III - LLM-as-a-Judge Validation Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `validator_provider` | `str` | `"ollama"` | LLM provider for validation: "openai", "ollama", "custom" |
+| `validator_model_id` | `str` | `"qwen3:14b"` | Model ID for LLM-as-a-Judge validation |
+| `validator_temperature` | `float` | `0.3` | Temperature for validator (low for consistent evaluation, range: 0.0-1.0) |
+| `validation_threshold` | `float` | `0.6` | Minimum overall score to pass validation (range: 0.0-1.0) |
+
+### Validation Scoring Weights
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `faithfulness_weight` | `float` | `0.4` | Weight for faithfulness score in overall calculation (range: 0.0-1.0) |
+| `bloom_calibration_weight` | `float` | `0.3` | Weight for Bloom calibration score in overall calculation (range: 0.0-1.0) |
+| `informativeness_weight` | `float` | `0.3` | Weight for informativeness score in overall calculation (range: 0.0-1.0) |
+
+> **Note**: The three scoring weights (`faithfulness_weight`, `bloom_calibration_weight`, `informativeness_weight`) must sum to 1.0. A `@model_validator` enforces this constraint.
+
+### Language Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `language` | `str` | `"pt"` | Language for CEP prompts (ISO 639-1: 'pt' or 'en') |
+
+**Example Configuration**:
+```python
+from gtranscriber.config import CEPConfig
+
+config = CEPConfig(
+    bloom_levels=["remember", "understand", "analyze"],
+    bloom_distribution={"remember": 0.3, "understand": 0.4, "analyze": 0.3},
+    enable_scaffolding_context=True,
+    validation_threshold=0.7
 )
-kg_output_format: str = Field(
-    default="graphml",
-    pattern="^(graphml|json)$",
-    description="Graph export format (graphml recommended for NetworkX)"
-)
-kg_language: str = Field(
-    default="pt",
-    description="Language code for extraction prompts (ISO 639-1)"
-)
-kg_prompt_path: str = Field(
-    default="prompts/pt_prompts.json",
-    description="Path to language-specific prompt templates"
+```
+
+---
+
+## KGConfig
+
+Configuration settings for the knowledge graph construction pipeline.
+
+**Environment Prefix**: `GTRANSCRIBER_KG_`
+
+### LLM Provider Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `provider` | `str` | `"ollama"` | LLM provider: "openai", "ollama", "custom" |
+| `model_id` | `str` | `"llama3.1:8b"` | Model ID for KG construction |
+| `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL for KG construction |
+| `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
+
+### Graph Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `merge_graphs` | `bool` | `True` | Merge individual graphs into corpus-level graph |
+| `output_format` | `str` | `"graphml"` | Graph export format: "graphml" (NetworkX-compatible) or "json" |
+| `schema_mode` | `str` | `"dynamic"` | Schema mode: "dynamic" (infer from data) or "predefined" |
+
+**Output Format Validation**: Must match pattern `^(graphml|json)$`  
+**Schema Mode Validation**: Must match pattern `^(dynamic|predefined)$`
+
+### LLM Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `temperature` | `float` | `0.5` | Temperature for KG construction LLM (lower = more consistent, range: 0.0-2.0) |
+
+### Language and Prompts
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `language` | `str` | `"pt"` | Language code for extraction prompts (ISO 639-1) |
+| `prompt_path` | `str` | `"prompts/pt_prompts.json"` | Path to language-specific prompt templates |
+
+### Output Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `output_dir` | `Path` | `Path("knowledge_graphs")` | Output directory for knowledge graphs |
+| `workers` | `int` | `2` | Number of parallel workers for KG construction |
+
+**Example Configuration**:
+```python
+from gtranscriber.config import KGConfig
+
+config = KGConfig(
+    provider="ollama",
+    model_id="llama3.1:8b",
+    merge_graphs=True,
+    output_format="graphml",
+    language="pt"
 )
 ```
 
@@ -174,108 +306,243 @@ kg_prompt_path: str = Field(
 ```json
 {
   "pt": {
-    "system": "Você é um assistente especializado em extração de conhecimento de textos em português...",
-    "triple_extraction": "Extraia triplas de conhecimento (sujeito, predicado, objeto) do texto a seguir. Identifique entidades (pessoas, locais, organizações, eventos, datas) e suas relações..."
+    "system": "Você é um assistente especializado em extração de conhecimento...",
+    "triple_extraction": "Extraia triplas de conhecimento (sujeito, predicado, objeto)..."
   }
 }
 ```
 
-### Transcription Quality Validation Settings
+---
 
-Settings for heuristic quality checks on Whisper transcription output. Uses the `GTRANSCRIBER_QUALITY_` prefix.
+## EvaluationConfig
+
+Configuration settings for the evaluation pipeline.
+
+**Environment Prefix**: `GTRANSCRIBER_EVAL_`
+
+### Metrics Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `metrics` | `list[str]` | `["qa", "entity", "relation", "semantic"]` | Metrics to compute |
+| `embedding_model` | `str` | `"sentence-transformers/all-MiniLM-L6-v2"` | Sentence transformer model for semantic embeddings |
+
+**Valid Metrics**: `qa`, `entity`, `relation`, `semantic`
+- `qa` - QA-based metrics (EM, F1, BLEU)
+- `entity` - Entity coverage metrics
+- `relation` - Relation density metrics
+- `semantic` - Semantic quality metrics
+
+### Output Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `output_dir` | `Path` | `Path("evaluation")` | Output directory for evaluation reports |
+
+### Input Directory Overrides
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `qa_dir` | `Path` | `Path("qa_dataset")` | Directory containing QA dataset |
+| `kg_dir` | `Path` | `Path("knowledge_graphs")` | Directory containing knowledge graphs |
+| `results_dir` | `Path` | `Path("results")` | Directory containing transcription results |
+
+**Example Configuration**:
+```python
+from gtranscriber.config import EvaluationConfig
+
+config = EvaluationConfig(
+    metrics=["qa", "entity", "semantic"],
+    embedding_model="sentence-transformers/all-MiniLM-L6-v2"
+)
+```
+
+---
+
+## LLMConfig
+
+Shared LLM configuration settings for API keys and shared LLM settings across pipelines.
+
+**Environment Prefix**: None (uses field aliases)
+
+### API Keys
+
+| Setting | Type | Default | Alias | Description |
+|---------|------|---------|-------|-------------|
+| `openai_api_key` | `str \| None` | `None` | `OPENAI_API_KEY` | OpenAI API key |
+| `base_url` | `str \| None` | `None` | `GTRANSCRIBER_LLM_BASE_URL` | Custom base URL for OpenAI-compatible endpoints |
+
+**Example Configuration**:
+```python
+from gtranscriber.config import LLMConfig
+
+config = LLMConfig()
+# Loaded from OPENAI_API_KEY and GTRANSCRIBER_LLM_BASE_URL env vars
+```
+
+**Environment Variables**:
+```bash
+export OPENAI_API_KEY=sk-...
+export GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1
+```
+
+---
+
+## ResultsConfig
+
+Configuration for versioned results management.
+
+**Environment Prefix**: `GTRANSCRIBER_RESULTS_`
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `base_dir` | `Path` | `Path("./results")` | Base directory for versioned results |
+| `enable_versioning` | `bool` | `True` | Enable versioned result directories |
+
+**Example Configuration**:
+```python
+from gtranscriber.config import ResultsConfig
+
+config = ResultsConfig(
+    base_dir=Path("/data/results"),
+    enable_versioning=True
+)
+```
+
+---
+
+## TranscriptionQualityConfig
+
+Configuration for transcription quality validation with heuristic quality checks.
+
+**Environment Prefix**: `GTRANSCRIBER_QUALITY_`
+
+### General Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `enabled` | `bool` | `True` | Enable transcription quality validation |
-| `quality_threshold` | `float` | `0.5` | Minimum overall score to mark as valid (0.0-1.0) |
-| `expected_language` | `str` | `"pt"` | Expected language code for script matching |
+| `quality_threshold` | `float` | `0.5` | Minimum quality score to mark transcription as valid (range: 0.0-1.0) |
+| `expected_language` | `str` | `"pt"` | Expected language code (e.g., 'pt', 'en') |
+
+### Scoring Weights
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
 | `script_match_weight` | `float` | `0.35` | Weight for script/charset match check |
 | `repetition_weight` | `float` | `0.30` | Weight for repetition detection |
 | `segment_quality_weight` | `float` | `0.20` | Weight for segment pattern analysis |
 | `content_density_weight` | `float` | `0.15` | Weight for content density check |
-| `max_non_latin_ratio` | `float` | `0.1` | Maximum ratio of non-Latin characters |
-| `max_word_repetition_ratio` | `float` | `0.15` | Maximum ratio of most repeated word |
-| `max_phrase_repetition_count` | `int` | `4` | Maximum repetitions of same phrase |
-| `suspicious_uniform_intervals` | `int` | `5` | Consecutive uniform 1-second intervals to flag |
-| `min_words_per_minute` | `float` | `30.0` | Minimum words per minute |
-| `max_words_per_minute` | `float` | `300.0` | Maximum words per minute |
-| `max_empty_segment_ratio` | `float` | `0.2` | Maximum ratio of empty segments |
-| `uniform_interval_tolerance` | `float` | `0.1` | Tolerance (±seconds) for uniform interval detection |
 
 > **Note**: The four dimension weights must sum to 1.0. A `@model_validator` enforces this constraint at initialization.
 
-**See also**: [Transcription Validation Guide](transcription-validation.md) for full usage details.
-
-### Evaluation Settings
-
-Settings for knowledge elicitation metrics.
+### Validation Thresholds
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `evaluation_metrics` | `list[str]` | `["qa", "entity", "relation", "semantic"]` | Metrics to compute |
-| `embedding_model` | `str` | `"sentence-transformers/all-MiniLM-L6-v2"` | Model for semantic embeddings |
-| `evaluation_output_dir` | `Path` | `Path("evaluation")` | Output directory for reports |
-
-**Metric Options**:
-- `"qa"` - QA-based metrics (EM, F1, BLEU)
-- `"entity"` - Entity coverage metrics
-- `"relation"` - Relation density metrics
-- `"semantic"` - Semantic quality metrics
+| `max_non_latin_ratio` | `float` | `0.1` | Maximum ratio of non-Latin characters for Latin languages |
+| `max_word_repetition_ratio` | `float` | `0.15` | Maximum ratio of most repeated word |
+| `max_phrase_repetition_count` | `int` | `4` | Maximum allowed repetitions of same phrase |
+| `suspicious_uniform_intervals` | `int` | `5` | Number of consecutive uniform 1-second intervals to flag |
+| `min_words_per_minute` | `float` | `30.0` | Minimum words per minute threshold |
+| `max_words_per_minute` | `float` | `300.0` | Maximum words per minute threshold |
+| `max_empty_segment_ratio` | `float` | `0.2` | Maximum ratio of empty segments before flagging |
+| `uniform_interval_tolerance` | `float` | `0.1` | Tolerance (±seconds) for detecting uniform 1-second intervals |
 
 **Example Configuration**:
 ```python
-# In config.py
-evaluation_metrics: list[str] = Field(
-    default=["qa", "entity", "relation", "semantic"],
-    description="Metrics to compute during evaluation"
-)
-embedding_model: str = Field(
-    default="sentence-transformers/all-MiniLM-L6-v2",
-    description="Sentence transformer for embeddings"
+from gtranscriber.config import TranscriptionQualityConfig
+
+config = TranscriptionQualityConfig(
+    enabled=True,
+    quality_threshold=0.6,
+    expected_language="pt"
 )
 ```
 
-### GraphRAG Settings (Future)
-
-Settings for GraphRAG system (P3 Task 5).
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `graphrag_embedding_model` | `str` | `"sentence-transformers/all-MiniLM-L6-v2"` | Embedding model for indexing |
-| `graphrag_chunk_size` | `int` | `512` | Chunk size for text splitting |
-| `graphrag_community_detection` | `str` | `"leiden"` | Algorithm: "leiden" or "louvain" |
-| `graphrag_index_dir` | `Path` | `Path("graphrag_index")` | Index directory |
+**See also**: [Transcription Validation Guide](transcription-validation.md) for full usage details
 
 ---
 
 ## Environment Variables
 
-All configuration settings can be overridden via environment variables with the `GTRANSCRIBER_` prefix.
+Configuration settings are loaded from environment variables with config-specific prefixes.
+
+### Prefix Reference
+
+| Config Class | Prefix | Example |
+|--------------|--------|---------|
+| `TranscriberConfig` | `GTRANSCRIBER_` | `GTRANSCRIBER_MODEL_ID` |
+| `QAConfig` | `GTRANSCRIBER_QA_` | `GTRANSCRIBER_QA_PROVIDER` |
+| `CEPConfig` | `GTRANSCRIBER_CEP_` | `GTRANSCRIBER_CEP_ENABLE_VALIDATION` |
+| `KGConfig` | `GTRANSCRIBER_KG_` | `GTRANSCRIBER_KG_PROVIDER` |
+| `EvaluationConfig` | `GTRANSCRIBER_EVAL_` | `GTRANSCRIBER_EVAL_METRICS` |
+| `LLMConfig` | (No prefix) | `OPENAI_API_KEY`, `GTRANSCRIBER_LLM_BASE_URL` |
+| `ResultsConfig` | `GTRANSCRIBER_RESULTS_` | `GTRANSCRIBER_RESULTS_BASE_DIR` |
+| `TranscriptionQualityConfig` | `GTRANSCRIBER_QUALITY_` | `GTRANSCRIBER_QUALITY_ENABLED` |
 
 ### Format
 
 ```bash
-GTRANSCRIBER_<SETTING_NAME>=<value>
+<PREFIX><SETTING_NAME>=<value>
 ```
 
-**Examples**:
-```bash
-# QA Generation
-export GTRANSCRIBER_QA_PROVIDER=openai
-export GTRANSCRIBER_QA_MODEL_ID=gpt-4
-export GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
+### Examples by Config Class
 
-# KG Construction
+**TranscriberConfig** (`GTRANSCRIBER_`):
+```bash
+export GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
+export GTRANSCRIBER_FORCE_CPU=false
+export GTRANSCRIBER_WORKERS=4
+export GTRANSCRIBER_RETRY_DELAY=1.0
+```
+
+**QAConfig** (`GTRANSCRIBER_QA_`):
+```bash
+export GTRANSCRIBER_QA_PROVIDER=openai
+export GTRANSCRIBER_QA_MODEL_ID=gpt-4o-mini
+export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=15
+export GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434/v1
+export GTRANSCRIBER_QA_LANGUAGE=pt
+```
+
+**CEPConfig** (`GTRANSCRIBER_CEP_`):
+```bash
+export GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+export GTRANSCRIBER_CEP_BLOOM_LEVELS=remember,understand,analyze
+export GTRANSCRIBER_CEP_VALIDATION_THRESHOLD=0.7
+export GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=ollama
+```
+
+**KGConfig** (`GTRANSCRIBER_KG_`):
+```bash
 export GTRANSCRIBER_KG_PROVIDER=openai
 export GTRANSCRIBER_KG_MODEL_ID=gpt-4o
 export GTRANSCRIBER_KG_MERGE_GRAPHS=true
 export GTRANSCRIBER_KG_LANGUAGE=pt
-export GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
+export GTRANSCRIBER_KG_OLLAMA_URL=http://localhost:11434/v1
+```
 
-# Evaluation
-export GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation
+**EvaluationConfig** (`GTRANSCRIBER_EVAL_`):
+```bash
+export GTRANSCRIBER_EVAL_METRICS=qa,entity,relation,semantic
+export GTRANSCRIBER_EVAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+```
 
-# Transcription Quality Validation
+**LLMConfig** (No prefix, uses aliases):
+```bash
+export OPENAI_API_KEY=sk-...
+export GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1
+```
+
+**ResultsConfig** (`GTRANSCRIBER_RESULTS_`):
+```bash
+export GTRANSCRIBER_RESULTS_BASE_DIR=/data/results
+export GTRANSCRIBER_RESULTS_ENABLE_VERSIONING=true
+```
+
+**TranscriptionQualityConfig** (`GTRANSCRIBER_QUALITY_`):
+```bash
 export GTRANSCRIBER_QUALITY_ENABLED=true
 export GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.6
 export GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE=pt
@@ -287,14 +554,14 @@ export GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE=pt
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1  # For custom OpenAI-compatible endpoints
+export GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1
 ```
 
 These can also be set in `.env` file:
 ```bash
 # .env file
 OPENAI_API_KEY=sk-...
-GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1  # For custom endpoints
+GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1
 ```
 
 **Note**: The `.env` file should be added to `.gitignore`.
@@ -307,24 +574,36 @@ GTRANSCRIBER_LLM_BASE_URL=https://my-custom-endpoint/v1  # For custom endpoints
 
 **.env file**:
 ```bash
-# Transcription (existing)
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3-turbo
+# Transcription
+GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
 GTRANSCRIBER_WORKERS=2
+GTRANSCRIBER_RETRY_DELAY=1.0
 
 # QA Generation
 GTRANSCRIBER_QA_PROVIDER=ollama
 GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434
-GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
+GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434/v1
+GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=10
+GTRANSCRIBER_QA_LANGUAGE=pt
+
+# CEP (Cognitive Elicitation Pipeline)
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+GTRANSCRIBER_CEP_VALIDATION_THRESHOLD=0.6
 
 # KG Construction
 GTRANSCRIBER_KG_PROVIDER=ollama
 GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_KG_OLLAMA_URL=http://localhost:11434/v1
 GTRANSCRIBER_KG_MERGE_GRAPHS=true
-GTRANSCRIBER_KG_OUTPUT_FORMAT=json
+GTRANSCRIBER_KG_OUTPUT_FORMAT=graphml
+GTRANSCRIBER_KG_LANGUAGE=pt
 
 # Evaluation
-GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
+GTRANSCRIBER_EVAL_METRICS=qa,entity,relation,semantic
+
+# Transcription Quality Validation
+GTRANSCRIBER_QUALITY_ENABLED=true
+GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.5
 ```
 
 **CLI Usage**:
@@ -346,8 +625,15 @@ OPENAI_API_KEY=sk-your-key-here
 # QA Generation with OpenAI
 GTRANSCRIBER_QA_PROVIDER=openai
 GTRANSCRIBER_QA_MODEL_ID=gpt-4o-mini
-GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=12
+GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
 GTRANSCRIBER_QA_TEMPERATURE=0.7
+GTRANSCRIBER_QA_LANGUAGE=en
+
+# CEP with OpenAI
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=openai
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=gpt-4o-mini
+GTRANSCRIBER_CEP_VALIDATION_THRESHOLD=0.7
 
 # KG Construction with OpenAI
 GTRANSCRIBER_KG_PROVIDER=openai
@@ -355,10 +641,14 @@ GTRANSCRIBER_KG_MODEL_ID=gpt-4o
 GTRANSCRIBER_KG_TEMPERATURE=0.5
 GTRANSCRIBER_KG_MERGE_GRAPHS=true
 
-# Directories
-GTRANSCRIBER_RESULTS_DIR=/data/transcriptions
+# Results versioning
+GTRANSCRIBER_RESULTS_BASE_DIR=/data/transcriptions
+GTRANSCRIBER_RESULTS_ENABLE_VERSIONING=true
+
+# Output directories
 GTRANSCRIBER_QA_OUTPUT_DIR=/data/qa_dataset
 GTRANSCRIBER_KG_OUTPUT_DIR=/data/knowledge_graphs
+GTRANSCRIBER_EVAL_OUTPUT_DIR=/data/evaluation
 ```
 
 ### Example 3: Hybrid Approach (OpenAI + Ollama)
@@ -371,12 +661,12 @@ OPENAI_API_KEY=sk-your-key-here
 # QA with OpenAI (higher quality)
 GTRANSCRIBER_QA_PROVIDER=openai
 GTRANSCRIBER_QA_MODEL_ID=gpt-4o
-GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=15
+GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=15
 
 # KG with Ollama (cost-effective)
 GTRANSCRIBER_KG_PROVIDER=ollama
 GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
-GTRANSCRIBER_KG_OLLAMA_URL=http://localhost:11434
+GTRANSCRIBER_KG_OLLAMA_URL=http://localhost:11434/v1
 
 # Workers
 GTRANSCRIBER_WORKERS=4
@@ -394,11 +684,12 @@ GTRANSCRIBER_WORKERS=4
 # Set configuration via environment
 export GTRANSCRIBER_QA_PROVIDER=ollama
 export GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-export GTRANSCRIBER_WORKERS=8
-export GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=12
+export GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434/v1
+export GTRANSCRIBER_QA_WORKERS=8
+export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
 
 # Use $SCRATCH for I/O
-export GTRANSCRIBER_RESULTS_DIR=$SCRATCH/results
+export GTRANSCRIBER_RESULTS_BASE_DIR=$SCRATCH/results
 export GTRANSCRIBER_QA_OUTPUT_DIR=$SCRATCH/qa_dataset
 
 # Run via Docker
@@ -417,9 +708,9 @@ services:
     environment:
       - GTRANSCRIBER_QA_PROVIDER=ollama
       - GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-      - GTRANSCRIBER_QA_OLLAMA_URL=http://host.docker.internal:11434
-      - GTRANSCRIBER_WORKERS=4
-      - GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
+      - GTRANSCRIBER_QA_OLLAMA_URL=http://host.docker.internal:11434/v1
+      - GTRANSCRIBER_QA_WORKERS=4
+      - GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=10
     volumes:
       - ./results:/app/results:ro
       - ./qa_dataset:/app/qa_dataset:rw
@@ -428,22 +719,49 @@ services:
     environment:
       - GTRANSCRIBER_KG_PROVIDER=ollama
       - GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
+      - GTRANSCRIBER_KG_OLLAMA_URL=http://host.docker.internal:11434/v1
       - GTRANSCRIBER_KG_MERGE_GRAPHS=true
-      - GTRANSCRIBER_WORKERS=2
+      - GTRANSCRIBER_KG_WORKERS=2
     volumes:
       - ./results:/app/results:ro
       - ./knowledge_graphs:/app/knowledge_graphs:rw
+```
+
+### Example 6: CEP with Advanced Bloom Scaffolding
+
+**.env file**:
+```bash
+# CEP Settings
+GTRANSCRIBER_CEP_ENABLE_REASONING_TRACES=true
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+GTRANSCRIBER_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+GTRANSCRIBER_CEP_MAX_SCAFFOLDING_PAIRS=15
+
+# Bloom Levels (custom distribution)
+GTRANSCRIBER_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
+
+# LLM-as-a-Judge Validation
+GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=ollama
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b
+GTRANSCRIBER_CEP_VALIDATOR_TEMPERATURE=0.3
+GTRANSCRIBER_CEP_VALIDATION_THRESHOLD=0.7
+
+# Scoring weights (must sum to 1.0)
+GTRANSCRIBER_CEP_FAITHFULNESS_WEIGHT=0.4
+GTRANSCRIBER_CEP_BLOOM_CALIBRATION_WEIGHT=0.3
+GTRANSCRIBER_CEP_INFORMATIVENESS_WEIGHT=0.3
 ```
 
 ---
 
 ## Configuration Validation
 
-The configuration system includes validation rules:
+The configuration system includes validation rules enforced by Pydantic.
 
 ### Type Validation
 
 ```python
+# From QAConfig
 questions_per_document: int = Field(
     default=10,
     ge=1,        # Must be >= 1
@@ -454,49 +772,74 @@ questions_per_document: int = Field(
 ### Pattern Validation
 
 ```python
-kg_output_format: str = Field(
+# From KGConfig
+output_format: str = Field(
     default="graphml",
     pattern="^(graphml|json)$"  # Must match pattern
 )
 ```
 
-### Custom Validation
+### Custom Field Validation
 
 ```python
-@field_validator("qa_strategies")
-def validate_strategies(cls, v: list[str]) -> list[str]:
-    valid = {"factual", "conceptual", "temporal", "entity"}
-    for strategy in v:
-        if strategy not in valid:
-            raise ValueError(f"Invalid strategy: {strategy}")
+# From CEPConfig
+@field_validator("bloom_levels")
+@classmethod
+def validate_bloom_levels(cls, v: list[str]) -> list[str]:
+    valid_levels = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
+    for level in v:
+        if level not in valid_levels:
+            raise ValueError(f"Invalid Bloom level: {level!r}")
     return v
+```
+
+### Model Validation (Cross-Field)
+
+```python
+# From TranscriptionQualityConfig
+@model_validator(mode="after")
+def validate_scoring_weights(self) -> TranscriptionQualityConfig:
+    total = (
+        self.script_match_weight
+        + self.repetition_weight
+        + self.segment_quality_weight
+        + self.content_density_weight
+    )
+    if not (0.99 <= total <= 1.01):
+        raise ValueError(f"Quality scoring weights must sum to 1.0, got {total:.3f}")
+    return self
 ```
 
 ---
 
 ## Configuration Loading Order
 
-1. **Defaults** in `config.py`:
-   ```python
-   qa_provider: str = Field(default="ollama")
-   ```
+Pydantic Settings loads configuration in the following priority order (highest to lowest):
 
-2. **`.env` file** (if exists):
+1. **Command-line arguments** (highest priority):
    ```bash
-   GTRANSCRIBER_QA_PROVIDER=openai
+   gtranscriber generate-qa results/ --provider ollama --questions 15
    ```
 
-3. **Environment variables**:
+2. **Environment variables**:
    ```bash
    export GTRANSCRIBER_QA_PROVIDER=openai
+   export GTRANSCRIBER_QA_MODEL_ID=gpt-4o-mini
    ```
 
-4. **Command-line arguments** (highest priority):
+3. **`.env` file** in project root:
    ```bash
-   gtranscriber generate-qa ... --provider ollama
+   GTRANSCRIBER_QA_PROVIDER=ollama
+   GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
    ```
 
-**Result**: Command-line arguments override everything else.
+4. **Default values** in `config.py` (lowest priority):
+   ```python
+   provider: str = Field(default="ollama")
+   model_id: str = Field(default="qwen3:14b")
+   ```
+
+**Result**: Command-line arguments override everything else. Environment variables override `.env` file and defaults.
 
 ---
 
@@ -505,22 +848,32 @@ def validate_strategies(cls, v: list[str]) -> list[str]:
 1. **Use `.env` for local development**
    - Easy to manage and version control (with .env.example)
    - Keep `.env` in `.gitignore`
+   - Commit `.env.example` with safe defaults
 
 2. **Use environment variables for production**
    - Better for CI/CD and containerized environments
-   - Secrets management integration
+   - Secrets management integration (e.g., Kubernetes Secrets)
+   - No risk of committing sensitive data
 
 3. **Use command-line arguments for one-off overrides**
    - Quick testing without changing configuration
    - Scripting and automation
+   - Debugging specific settings
 
 4. **Never commit API keys**
    - Always use environment variables or secrets management
    - Add `.env` to `.gitignore`
+   - Use `.env.example` for documentation
 
 5. **Document configuration changes**
    - Update `.env.example` when adding new settings
    - Add comments explaining non-obvious settings
+   - Document valid values and ranges
+
+6. **Validate configuration early**
+   - Let Pydantic validation catch errors at startup
+   - Use type hints and constraints
+   - Write tests for custom validators
 
 ---
 
@@ -533,50 +886,175 @@ def validate_strategies(cls, v: list[str]) -> list[str]:
 # Copy this file to .env and fill in your values
 # ============================================================================
 
-# Transcription Settings
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3-turbo
-GTRANSCRIBER_WORKERS=2
+# ============================================================================
+# TranscriberConfig (GTRANSCRIBER_)
+# ============================================================================
+
+# Model settings
+GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
+GTRANSCRIBER_LANGUAGE=  # Optional: pt, en, etc. (auto-detect if not set)
+GTRANSCRIBER_CHUNK_LENGTH_S=30
+GTRANSCRIBER_STRIDE_LENGTH_S=5
+
+# Hardware settings
+GTRANSCRIBER_FORCE_CPU=false
 GTRANSCRIBER_QUANTIZE=false
 
-# Google Drive Integration
+# Google Drive settings
 GTRANSCRIBER_CREDENTIALS=credentials.json
 GTRANSCRIBER_TOKEN=token.json
 
-# QA Generation Settings
+# Batch processing
+GTRANSCRIBER_WORKERS=2
+
+# Paths
+GTRANSCRIBER_INPUT_DIR=./input
+GTRANSCRIBER_RESULTS_DIR=./results
+GTRANSCRIBER_HF_CACHE_DIR=./cache/huggingface
+
+# Processing
+GTRANSCRIBER_MAX_RETRIES=3
+GTRANSCRIBER_RETRY_DELAY=1.0
+
+# ============================================================================
+# QAConfig (GTRANSCRIBER_QA_)
+# ============================================================================
+
+# LLM Provider
 GTRANSCRIBER_QA_PROVIDER=ollama  # openai, ollama, custom
 GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434
-GTRANSCRIBER_QUESTIONS_PER_DOCUMENT=10
+GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434/v1
+# GTRANSCRIBER_QA_BASE_URL=  # For custom OpenAI-compatible endpoints
 
-# API Keys (required for OpenAI provider)
-# OPENAI_API_KEY=sk-...
-# GTRANSCRIBER_LLM_BASE_URL=http://localhost:11434/v1  # For custom endpoints
+# Generation
+GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=10
+GTRANSCRIBER_QA_TEMPERATURE=0.7
+GTRANSCRIBER_QA_MAX_TOKENS=2048
 
-# KG Construction Settings
-GTRANSCRIBER_KG_PROVIDER=ollama
+# Output
+GTRANSCRIBER_QA_OUTPUT_DIR=qa_dataset
+
+# Language
+GTRANSCRIBER_QA_LANGUAGE=pt  # pt or en
+GTRANSCRIBER_QA_WORKERS=2
+
+# ============================================================================
+# CEPConfig (GTRANSCRIBER_CEP_)
+# ============================================================================
+
+# Module toggles
+GTRANSCRIBER_CEP_ENABLE_REASONING_TRACES=true
+GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+
+# Bloom scaffolding
+GTRANSCRIBER_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
+GTRANSCRIBER_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+GTRANSCRIBER_CEP_MAX_SCAFFOLDING_PAIRS=10
+
+# Reasoning
+GTRANSCRIBER_CEP_MAX_HOP_COUNT=3
+
+# LLM-as-a-Judge validation
+GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=ollama
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b
+GTRANSCRIBER_CEP_VALIDATOR_TEMPERATURE=0.3
+GTRANSCRIBER_CEP_VALIDATION_THRESHOLD=0.6
+
+# Scoring weights (must sum to 1.0)
+GTRANSCRIBER_CEP_FAITHFULNESS_WEIGHT=0.4
+GTRANSCRIBER_CEP_BLOOM_CALIBRATION_WEIGHT=0.3
+GTRANSCRIBER_CEP_INFORMATIVENESS_WEIGHT=0.3
+
+# Language
+GTRANSCRIBER_CEP_LANGUAGE=pt
+
+# ============================================================================
+# KGConfig (GTRANSCRIBER_KG_)
+# ============================================================================
+
+# LLM Provider
+GTRANSCRIBER_KG_PROVIDER=ollama  # openai, ollama, custom
 GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_KG_OLLAMA_URL=http://localhost:11434/v1
+# GTRANSCRIBER_KG_BASE_URL=  # For custom OpenAI-compatible endpoints
+
+# Graph settings
 GTRANSCRIBER_KG_MERGE_GRAPHS=true
-GTRANSCRIBER_KG_OUTPUT_FORMAT=graphml
+GTRANSCRIBER_KG_OUTPUT_FORMAT=graphml  # graphml or json
+GTRANSCRIBER_KG_SCHEMA_MODE=dynamic  # dynamic or predefined
+
+# LLM settings
+GTRANSCRIBER_KG_TEMPERATURE=0.5
+
+# Language and prompts
 GTRANSCRIBER_KG_LANGUAGE=pt
 GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
 
-# Evaluation Settings
-GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
-GTRANSCRIBER_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+# Output
+GTRANSCRIBER_KG_OUTPUT_DIR=knowledge_graphs
+GTRANSCRIBER_KG_WORKERS=2
 
-# Transcription Quality Validation
+# ============================================================================
+# EvaluationConfig (GTRANSCRIBER_EVAL_)
+# ============================================================================
+
+# Metrics
+GTRANSCRIBER_EVAL_METRICS=qa,entity,relation,semantic
+GTRANSCRIBER_EVAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+# Output
+GTRANSCRIBER_EVAL_OUTPUT_DIR=evaluation
+
+# Input directories (optional overrides)
+# GTRANSCRIBER_EVAL_QA_DIR=qa_dataset
+# GTRANSCRIBER_EVAL_KG_DIR=knowledge_graphs
+# GTRANSCRIBER_EVAL_RESULTS_DIR=results
+
+# ============================================================================
+# LLMConfig (No prefix - uses aliases)
+# ============================================================================
+
+# API Keys (SENSITIVE - do not commit)
+# OPENAI_API_KEY=sk-...
+
+# Custom endpoints
+# GTRANSCRIBER_LLM_BASE_URL=http://localhost:11434/v1
+
+# ============================================================================
+# ResultsConfig (GTRANSCRIBER_RESULTS_)
+# ============================================================================
+
+GTRANSCRIBER_RESULTS_BASE_DIR=./results
+GTRANSCRIBER_RESULTS_ENABLE_VERSIONING=true
+
+# ============================================================================
+# TranscriptionQualityConfig (GTRANSCRIBER_QUALITY_)
+# ============================================================================
+
+# General
 GTRANSCRIBER_QUALITY_ENABLED=true
 GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.5
 GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE=pt
 
-# Directories
-GTRANSCRIBER_RESULTS_DIR=results
-GTRANSCRIBER_QA_OUTPUT_DIR=qa_dataset
-GTRANSCRIBER_KG_OUTPUT_DIR=knowledge_graphs
-GTRANSCRIBER_EVALUATION_OUTPUT_DIR=evaluation
+# Scoring weights (must sum to 1.0)
+GTRANSCRIBER_QUALITY_SCRIPT_MATCH_WEIGHT=0.35
+GTRANSCRIBER_QUALITY_REPETITION_WEIGHT=0.30
+GTRANSCRIBER_QUALITY_SEGMENT_QUALITY_WEIGHT=0.20
+GTRANSCRIBER_QUALITY_CONTENT_DENSITY_WEIGHT=0.15
+
+# Thresholds (advanced - usually keep defaults)
+# GTRANSCRIBER_QUALITY_MAX_NON_LATIN_RATIO=0.1
+# GTRANSCRIBER_QUALITY_MAX_WORD_REPETITION_RATIO=0.15
+# GTRANSCRIBER_QUALITY_MAX_PHRASE_REPETITION_COUNT=4
+# GTRANSCRIBER_QUALITY_SUSPICIOUS_UNIFORM_INTERVALS=5
+# GTRANSCRIBER_QUALITY_MIN_WORDS_PER_MINUTE=30.0
+# GTRANSCRIBER_QUALITY_MAX_WORDS_PER_MINUTE=300.0
+# GTRANSCRIBER_QUALITY_MAX_EMPTY_SEGMENT_RATIO=0.2
+# GTRANSCRIBER_QUALITY_UNIFORM_INTERVAL_TOLERANCE=0.1
 ```
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-01-23
+**Document Version**: 2.0  
+**Last Updated**: 2025-01-24  
+**Changes**: Complete rewrite to reflect actual implementation with 8 separate config classes
