@@ -609,10 +609,10 @@ GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.5
 **CLI Usage**:
 ```bash
 # QA generation (uses .env settings)
-gtranscriber generate-qa results/
+gtranscriber generate-cep-qa results/
 
 # Override specific settings
-gtranscriber generate-qa results/ --questions 15 --provider ollama
+gtranscriber generate-cep-qa results/ --questions 15 --provider ollama
 ```
 
 ### Example 2: Production with OpenAI API
@@ -818,7 +818,7 @@ Pydantic Settings loads configuration in the following priority order (highest t
 
 1. **Command-line arguments** (highest priority):
    ```bash
-   gtranscriber generate-qa results/ --provider ollama --questions 15
+   gtranscriber generate-cep-qa results/ --provider ollama --questions 15
    ```
 
 2. **Environment variables**:

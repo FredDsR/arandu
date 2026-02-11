@@ -54,7 +54,7 @@ Edit `.env` to adjust settings:
 
 ```bash
 # Model selection
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3-turbo
+GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
 
 # Number of parallel workers
 WORKERS=4

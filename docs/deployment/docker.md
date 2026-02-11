@@ -93,7 +93,7 @@ Edit `.env` to customize your setup:
 
 ```bash
 # Whisper model (adjust based on your GPU VRAM)
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3-turbo
+GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
 
 # Number of workers (adjust based on GPU VRAM)
 # 24GB VRAM: 4 workers
@@ -176,7 +176,7 @@ WORKERS=2 GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_MODEL_ID` | `openai/whisper-large-v3-turbo` | Whisper model from Hugging Face |
+| `GTRANSCRIBER_MODEL_ID` | `openai/whisper-large-v3` | Whisper model from Hugging Face |
 | `WORKERS` | `4` | Number of parallel transcription workers |
 | `GTRANSCRIBER_QUANTIZE` | `true` | Enable 8-bit quantization (reduces VRAM) |
 | `GTRANSCRIBER_FORCE_CPU` | `false` | Force CPU execution |
@@ -191,7 +191,7 @@ WORKERS=2 GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --
 | Model | VRAM Required | Speed | Accuracy | Best For |
 |-------|---------------|-------|----------|----------|
 | `openai/whisper-large-v3` | ~10GB | Slow | Highest | Final production runs |
-| `openai/whisper-large-v3-turbo` | ~6GB | Medium | High | Good balance |
+| `openai/whisper-large-v3` | ~6GB | Medium | High | Good balance |
 | `distil-whisper/distil-large-v3` | ~3GB | Fast | Good | Quick processing, limited VRAM |
 
 ### Worker Configuration Guide
@@ -383,7 +383,7 @@ shm_size: '32gb'  # Increase from default 16gb
 # Download model before running transcription
 docker compose --profile gpu run --rm gtranscriber python -c "
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-model_id = 'openai/whisper-large-v3-turbo'
+model_id = 'openai/whisper-large-v3'
 AutoProcessor.from_pretrained(model_id)
 AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
 print('Model downloaded successfully')
