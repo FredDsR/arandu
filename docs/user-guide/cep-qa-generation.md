@@ -67,7 +67,7 @@ gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GTRANSCRIBER_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_QA_MODEL_ID` | `llama3.1:8b` | Model for QA generation |
+| `GTRANSCRIBER_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
 | `GTRANSCRIBER_QA_OLLAMA_URL` | `http://ollama:11434/v1` | Ollama API URL |
 | `GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
@@ -79,7 +79,7 @@ gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 |----------|---------|-------------|
 | `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
 | `GTRANSCRIBER_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
-| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `llama3.1:8b` | Validator model |
+| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model |
 | `GTRANSCRIBER_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
 
 ### Bloom Distribution
@@ -104,14 +104,14 @@ gtranscriber generate-cep-qa results/ \
 ```bash
 # QA Generation Settings
 GTRANSCRIBER_QA_PROVIDER=ollama
-GTRANSCRIBER_QA_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
 GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
 GTRANSCRIBER_QA_TEMPERATURE=0.7
 GTRANSCRIBER_QA_WORKERS=4
 
 # CEP-Specific Settings
 GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
-GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.1:8b
+GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b
 GTRANSCRIBER_CEP_LANGUAGE=pt
 
 # Directories
@@ -202,7 +202,7 @@ cep_dataset/
       "tacit_inference": "Subida rápida do rio indica risco iminente de enchente"
     }
   ],
-  "model_id": "llama3.1:8b",
+  "model_id": "qwen3:14b",
   "provider": "ollama",
   "generation_timestamp": "2026-02-03T10:30:00Z",
   "total_pairs": 12,
@@ -380,9 +380,9 @@ The checkpoint file (`cep_dataset/cep_checkpoint.json`) tracks:
 ## Best Practices
 
 ### Model Selection
-- **llama3.1:8b**: Balanced speed/quality for most use cases
-- **llama3.1:70b**: Higher quality for final production runs
-- **qwen2.5:14b**: Good alternative with strong PT-BR support
+- **qwen3:14b**: Default. Best balance of pt-BR support, JSON reliability, and inference speed (24GB GPU)
+- **qwen3:8b**: Lighter alternative (~5GB VRAM) for development or constrained GPUs
+- **llama3.3:70b**: Highest quality for final production runs (48GB+ GPU)
 
 ### Validation Strategy
 1. Keep validation enabled (default) for quality assurance
@@ -417,7 +417,7 @@ docker compose --profile cep exec ollama ollama list
 ### Low Bloom Calibration Scores
 
 - Ensure model has good reasoning capabilities
-- Try larger model: `GTRANSCRIBER_QA_MODEL_ID=llama3.1:70b`
+- Try larger model: `GTRANSCRIBER_QA_MODEL_ID=llama3.3:70b`
 - Lower temperature for more consistent output: `GTRANSCRIBER_QA_TEMPERATURE=0.5`
 
 ### Validation Rejecting Most Pairs
@@ -436,7 +436,7 @@ docker compose --profile cep restart ollama
 docker compose --profile cep exec ollama curl http://localhost:11434/api/tags
 
 # Pull model if missing
-docker compose --profile cep exec ollama ollama pull llama3.1:8b
+docker compose --profile cep exec ollama ollama pull qwen3:14b
 ```
 
 ---

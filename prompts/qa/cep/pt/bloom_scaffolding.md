@@ -15,18 +15,20 @@ Gere exatamente $num_questions par(es) pergunta-resposta no formato JSON.
 Cada par deve seguir estas regras:
 $output_rules
 
-Formato de saída (array JSON):
-[
-  {
-    "question": "A pergunta gerada",
-    "answer": "A resposta baseada no contexto",
-    "bloom_level": "$bloom_level",
-    "confidence": 0.85,
-    "reasoning_trace": "Conexões lógicas (para analyze/evaluate)",
-    "is_multi_hop": false,
-    "hop_count": null,
-    "tacit_inference": "Conhecimento implícito (opcional)"
-  }
-]
+Formato de saída (objeto JSON):
+{
+  "qa_pairs": [
+    {
+      "question": "A pergunta gerada",
+      "answer": "A resposta baseada no contexto",
+      "bloom_level": "$bloom_level",
+      "confidence": 0.85,
+      "reasoning_trace": "Conexões lógicas (para analyze/evaluate)",
+      "is_multi_hop": false,
+      "hop_count": null,
+      "tacit_inference": "Conhecimento implícito (opcional)"
+    }
+  ]
+}
 
-Retorne APENAS o array JSON com os pares de QA, sem texto adicional.
+Retorne APENAS o objeto JSON com a chave "qa_pairs", sem texto adicional.
