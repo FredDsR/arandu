@@ -128,6 +128,7 @@ export OPENAI_API_KEY=sk-...
 | Task | Guide |
 |------|-------|
 | Process multiple files | [Transcription Guide](transcription.md) |
+| Validate transcriptions | [Transcription Validation Guide](transcription-validation.md) |
 | Generate QA pairs | [QA Generation Guide](qa-generation.md) |
 | Build knowledge graphs | [KG Construction Guide](kg-construction.md) |
 | Evaluate quality | [Evaluation Guide](evaluation.md) |
@@ -181,4 +182,4 @@ gtranscriber transcribe audio.mp3 --cpu
 
 ---
 
-**See also**: [Transcription](transcription.md) | [Configuration](configuration.md) | [CLI Reference](cli-reference.md)
+**See also**: [Transcription](transcription.md) | [Transcription Validation](transcription-validation.md) | [Configuration](configuration.md) | [CLI Reference](cli-reference.md)

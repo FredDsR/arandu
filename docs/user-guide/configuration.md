@@ -180,6 +180,32 @@ kg_prompt_path: str = Field(
 }
 ```
 
+### Transcription Quality Validation Settings
+
+Settings for heuristic quality checks on Whisper transcription output. Uses the `GTRANSCRIBER_QUALITY_` prefix.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `bool` | `True` | Enable transcription quality validation |
+| `quality_threshold` | `float` | `0.5` | Minimum overall score to mark as valid (0.0-1.0) |
+| `expected_language` | `str` | `"pt"` | Expected language code for script matching |
+| `script_match_weight` | `float` | `0.35` | Weight for script/charset match check |
+| `repetition_weight` | `float` | `0.30` | Weight for repetition detection |
+| `segment_quality_weight` | `float` | `0.20` | Weight for segment pattern analysis |
+| `content_density_weight` | `float` | `0.15` | Weight for content density check |
+| `max_non_latin_ratio` | `float` | `0.1` | Maximum ratio of non-Latin characters |
+| `max_word_repetition_ratio` | `float` | `0.15` | Maximum ratio of most repeated word |
+| `max_phrase_repetition_count` | `int` | `4` | Maximum repetitions of same phrase |
+| `suspicious_uniform_intervals` | `int` | `5` | Consecutive uniform 1-second intervals to flag |
+| `min_words_per_minute` | `float` | `30.0` | Minimum words per minute |
+| `max_words_per_minute` | `float` | `300.0` | Maximum words per minute |
+| `max_empty_segment_ratio` | `float` | `0.2` | Maximum ratio of empty segments |
+| `uniform_interval_tolerance` | `float` | `0.1` | Tolerance (±seconds) for uniform interval detection |
+
+> **Note**: The four dimension weights must sum to 1.0. A `@model_validator` enforces this constraint at initialization.
+
+**See also**: [Transcription Validation Guide](transcription-validation.md) for full usage details.
+
 ### Evaluation Settings
 
 Settings for knowledge elicitation metrics.
@@ -248,6 +274,11 @@ export GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
 
 # Evaluation
 export GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation
+
+# Transcription Quality Validation
+export GTRANSCRIBER_QUALITY_ENABLED=true
+export GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.6
+export GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE=pt
 ```
 
 ### API Keys
@@ -532,6 +563,11 @@ GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
 # Evaluation Settings
 GTRANSCRIBER_EVALUATION_METRICS=qa,entity,relation,semantic
 GTRANSCRIBER_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+# Transcription Quality Validation
+GTRANSCRIBER_QUALITY_ENABLED=true
+GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.5
+GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE=pt
 
 # Directories
 GTRANSCRIBER_RESULTS_DIR=results

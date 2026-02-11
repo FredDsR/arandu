@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
+from pydantic import ValidationError
+from rich.table import Table
 
 from gtranscriber import __version__
-from gtranscriber.config import ResultsConfig, TranscriberConfig
+from gtranscriber.config import ResultsConfig, TranscriberConfig, TranscriptionQualityConfig
 from gtranscriber.core.engine import WhisperEngine
 from gtranscriber.core.hardware import get_device_and_dtype
 from gtranscriber.core.io import (
@@ -23,6 +25,11 @@ from gtranscriber.core.io import (
     get_mime_type,
     get_output_filename,
     save_enriched_record,
+)
+from gtranscriber.core.transcription_validator import (
+    TranscriptionValidator,
+    get_quality_issues,
+    validate_enriched_record,
 )
 from gtranscriber.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from gtranscriber.utils.console import console
@@ -268,6 +275,12 @@ def transcribe(
             segments=segments,
         )
 
+        # Quality validation (lightweight, CPU-only)
+        validate_enriched_record(enriched)
+        issues = get_quality_issues(enriched)
+        if issues:
+            print_warning(f"Quality issues detected: {issues}")
+
         # Determine output path
         if output is None:
             output = file_path.parent / get_output_filename(file_path.name)
@@ -431,6 +444,12 @@ def drive_transcribe(
                 transcription_status="completed",
                 segments=segments,
             )
+
+            # Quality validation (lightweight, CPU-only)
+            validate_enriched_record(enriched)
+            issues = get_quality_issues(enriched)
+            if issues:
+                print_warning(f"Quality issues detected: {issues}")
 
             # Save locally first
             output_filename = get_output_filename(input_record.name)
@@ -1115,6 +1134,169 @@ def list_runs(
 
     console.print()
     console.print(table)
+    console.print()
+
+
+@app.command()
+def validate_transcriptions(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing transcription JSON files to validate",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Directory to save validated results (if not provided, updates files in-place)",
+        ),
+    ] = None,
+    threshold: Annotated[
+        float,
+        typer.Option(
+            "--threshold",
+            "-t",
+            help="Quality threshold (0.0-1.0) for marking transcriptions as valid",
+            min=0.0,
+            max=1.0,
+        ),
+    ] = 0.5,
+    expected_language: Annotated[
+        str,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Expected language code (e.g., 'pt', 'en')",
+        ),
+    ] = "pt",
+    report_only: Annotated[
+        bool,
+        typer.Option(
+            "--report-only",
+            help="Only display validation report without updating files",
+        ),
+    ] = False,
+) -> None:
+    """Validate existing transcriptions for quality issues.
+
+    Detects Whisper failure modes:
+    - Wrong language/script (Japanese when expecting Portuguese)
+    - Repeated words/phrases
+    - Suspicious segment patterns
+    - Empty or sparse content
+
+    Examples:
+        gtranscriber validate-transcriptions results_tupi/
+        gtranscriber validate-transcriptions results/ --threshold 0.6 --report-only
+    """
+
+    print_info("Scanning for transcription files...")
+
+    # Find all JSON files in input directory
+    json_files = list(input_dir.glob("*_transcription.json"))
+
+    if not json_files:
+        print_error(f"No transcription files found in {input_dir}")
+        raise typer.Exit(code=1)
+
+    print_info(f"Found {len(json_files)} transcription files")
+
+    # Create quality config with user-specified settings
+    quality_config = TranscriptionQualityConfig(
+        quality_threshold=threshold,
+        expected_language=expected_language,
+    )
+
+    # Create validator once for reuse across all files
+    validator = TranscriptionValidator(quality_config)
+
+    # Validate each file
+    results = []
+    failed_files = []
+
+    with create_progress() as progress:
+        task = progress.add_task("Validating...", total=len(json_files))
+
+        for json_path in json_files:
+            try:
+                # Load record
+                with open(json_path) as f:
+                    data = json.load(f)
+                record = EnrichedRecord(**data)
+
+                # Validate (reuse validator instance)
+                validate_enriched_record(record, validator=validator)
+
+                results.append(
+                    {
+                        "file": json_path.name,
+                        "valid": record.is_valid,
+                        "score": record.transcription_quality.overall_score,
+                        "issues": len(record.transcription_quality.issues_detected),
+                    }
+                )
+
+                # Save updated record if not report-only
+                if not report_only:
+                    if output_dir:
+                        output_path = output_dir / json_path.name
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                    else:
+                        output_path = json_path
+
+                    save_enriched_record(record, output_path)
+
+                if record.is_valid is False:
+                    failed_files.append(json_path.name)
+
+            except (json.JSONDecodeError, ValidationError, OSError) as e:
+                print_error(f"Failed to process {json_path.name}: {e}")
+                failed_files.append(json_path.name)
+
+            progress.update(task, advance=1)
+
+    # Display summary
+    console.print()
+
+    table = Table(title="Validation Summary", show_header=True, header_style="bold magenta")
+    table.add_column("File", style="cyan")
+    table.add_column("Valid", justify="center")
+    table.add_column("Score", justify="right")
+    table.add_column("Issues", justify="right")
+
+    for result in results:
+        valid_icon = "[green]✓[/green]" if result["valid"] else "[red]✗[/red]"
+        score_color = "green" if result["score"] >= threshold else "red"
+        table.add_row(
+            result["file"],
+            valid_icon,
+            f"[{score_color}]{result['score']:.2f}[/{score_color}]",
+            str(result["issues"]),
+        )
+
+    console.print(table)
+    console.print()
+
+    # Summary statistics
+    valid_count = sum(1 for r in results if r["valid"])
+    invalid_count = len(results) - valid_count
+
+    console.print(f"[bold]Total files:[/bold] {len(results)}")
+    console.print(f"[green]Valid:[/green] {valid_count}")
+    console.print(f"[red]Invalid:[/red] {invalid_count}")
+
+    if report_only:
+        print_info("Report-only mode: No files were updated")
+    elif output_dir:
+        print_success(f"Updated files saved to {output_dir}")
+    else:
+        print_success("Files updated in-place")
+
     console.print()
 
 
