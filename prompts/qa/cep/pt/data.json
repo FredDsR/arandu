@@ -1,8 +1,8 @@
 {
   "bloom_levels": {
     "remember": {
-      "description": "Recordar fatos e conceitos basicos",
-      "instruction": "Gere perguntas que testem a memoria de fatos especificos mencionados no texto. Foque em perguntas diretas sobre quem, o que, quando e onde.",
+      "description": "Recordar fatos e conceitos básicos",
+      "instruction": "Gere perguntas que testem a memória de fatos específicos mencionados no texto. Foque em perguntas diretas sobre quem, o que, quando e onde.",
       "question_starters": [
         "Quem",
         "O que",
@@ -13,109 +13,109 @@
       ],
       "examples": [
         "Quem [fez algo] mencionado no texto?",
-        "O que [aconteceu] em [momento especifico]?",
+        "O que [aconteceu] em [momento específico]?",
         "Onde [evento] ocorreu?",
-        "Quando [pessoa] realizou [acao]?"
+        "Quando [pessoa] realizou [ação]?"
       ]
     },
     "understand": {
       "description": "Explicar ideias e conceitos",
-      "instruction": "Gere perguntas que testem a compreensao de conceitos e explicacoes. Foque em perguntas que exijam explicacao, interpretacao ou resumo. As perguntas devem ser autonomas: nomeie explicitamente pessoas, locais, tecnicas e eventos. Nao use referencias como 'no texto' ou 'conforme mencionado'.",
+      "instruction": "Gere perguntas que testem a compreensão de conceitos e explicações. Foque em perguntas que exijam explicação, interpretação ou resumo. As perguntas devem ser autônomas: nomeie explicitamente pessoas, locais, técnicas e eventos. Não use referências como 'no texto' ou 'conforme mencionado'.",
       "question_starters": [
         "Por que",
         "Como",
         "Explique",
         "Descreva",
         "O que significa",
-        "Qual a razao"
+        "Qual a razão"
       ],
       "examples": [
-        "Por que [pessoa] fez [acao]?",
-        "Como funciona a tecnica de [nome da tecnica] na [atividade]?",
+        "Por que [pessoa] fez [ação]?",
+        "Como funciona a técnica de [nome da técnica] na [atividade]?",
         "Explique o significado de [termo/conceito].",
         "Descreva o processo de [atividade]."
       ]
     },
     "apply": {
-      "description": "Usar informacao em situacoes novas",
-      "instruction": "Gere perguntas que testem a capacidade de aplicar conhecimento em contextos diferentes. Foque em perguntas sobre como usar ou demonstrar o conhecimento.",
+      "description": "Usar informação em situações novas",
+      "instruction": "Gere perguntas que testem a capacidade de aplicar conhecimento em contextos diferentes. Foque em perguntas sobre como usar ou demonstrar o conhecimento. As perguntas devem ser autônomas: nomeie explicitamente pessoas, locais, técnicas e eventos. Não use referências como 'no texto' ou 'conforme mencionado'.",
       "question_starters": [
         "Como aplicar",
         "Demonstre",
         "De que forma",
-        "Em que situacao",
+        "Em que situação",
         "Como usar"
       ],
       "examples": [
-        "Como aplicar [tecnica] em [situacao diferente]?",
+        "Como aplicar [técnica] em [situação diferente]?",
         "De que forma [conhecimento] pode ser usado em [contexto]?",
-        "Em que situacao [metodo] seria mais util?"
+        "Em que situação [método] seria mais útil?"
       ]
     },
     "analyze": {
-      "description": "Estabelecer conexoes entre ideias",
-      "instruction": "Gere perguntas que exijam analise, comparacao e estabelecimento de conexoes entre diferentes conceitos ou praticas. As perguntas devem ser autonomas e nomear explicitamente todos os elementos comparados.",
+      "description": "Estabelecer conexões entre ideias",
+      "instruction": "Gere perguntas que exijam análise, comparação e estabelecimento de conexões entre diferentes conceitos ou práticas. As perguntas devem ser autônomas e nomear explicitamente todos os elementos comparados.",
       "question_starters": [
-        "Qual a relacao",
+        "Qual a relação",
         "Compare",
         "Quais fatores",
         "Como se relaciona",
-        "Que conexao existe",
+        "Que conexão existe",
         "Analise"
       ],
       "examples": [
-        "Qual a relacao entre [tecnica A] e [tecnica B] na pesca artesanal de [local]?",
-        "Compare a tecnica de [A] com a tecnica de [B] usadas por [comunidade].",
-        "Quais fatores influenciaram [decisao/evento]?",
+        "Qual a relação entre [técnica A] e [técnica B] na pesca artesanal de [local]?",
+        "Compare a técnica de [A] com a técnica de [B] usadas por [comunidade].",
+        "Quais fatores influenciaram [decisão/evento]?",
         "Como [conceito A] se relaciona com [conceito B]?"
       ]
     },
     "evaluate": {
-      "description": "Justificar decisoes e julgamentos",
-      "instruction": "Gere perguntas que exijam julgamento, avaliacao critica e justificativa de decisoes. Foque em perguntas sobre escolhas, riscos e alternativas. As perguntas devem ser autonomas: nomeie explicitamente pessoas, locais, tecnicas e eventos sem referenciar 'o texto' ou 'o contexto'.",
+      "description": "Justificar decisões e julgamentos",
+      "instruction": "Gere perguntas que exijam julgamento, avaliação crítica e justificativa de decisões. Foque em perguntas sobre escolhas, riscos e alternativas. As perguntas devem ser autônomas: nomeie explicitamente pessoas, locais, técnicas e eventos sem referenciar 'o texto' ou 'o contexto'.",
       "question_starters": [
         "Por que escolheu",
         "Avalie",
         "Quais os riscos",
         "O que acontece se",
         "Justifique",
-        "E adequado"
+        "É adequado"
       ],
       "examples": [
-        "Por que [pessoa] escolheu [acao] em vez de [alternativa]?",
-        "Quais sao os riscos de [procedimento]?",
-        "O que acontece se [condicao ideal] falhar?",
-        "Avalie a decisao de [pessoa] ao fazer [acao]."
+        "Por que [pessoa] escolheu [ação] em vez de [alternativa]?",
+        "Quais são os riscos de [procedimento]?",
+        "O que acontece se [condição ideal] falhar?",
+        "Avalie a decisão de [pessoa] ao fazer [ação]."
       ]
     },
     "create": {
       "description": "Produzir trabalho original",
-      "instruction": "Gere perguntas que estimulem a criacao, proposta de solucoes ou elaboracao de novas ideias baseadas no conhecimento sobre o tema. As perguntas devem ser autonomas e identificar claramente o problema ou processo em questao.",
+      "instruction": "Gere perguntas que estimulem a criação, proposta de soluções ou elaboração de novas ideias baseadas no conhecimento sobre o tema. As perguntas devem ser autônomas e identificar claramente o problema ou processo em questão.",
       "question_starters": [
         "Proponha",
         "Elabore",
         "Construa",
         "Desenvolva",
         "Como melhorar",
-        "Que solucao"
+        "Que solução"
       ],
       "examples": [
         "Proponha uma alternativa para [problema descrito].",
-        "Elabore uma solucao para [situacao].",
-        "Como melhorar a tecnica de [nome da tecnica] praticada por [comunidade]?"
+        "Elabore uma solução para [situação].",
+        "Como melhorar a técnica de [nome da técnica] praticada por [comunidade]?"
       ]
     }
   },
-  "scaffolding_header": "Pares QA gerados anteriormente (construa sobre estes, evite duplicacao):",
+  "scaffolding_header": "Pares QA gerados anteriormente (construa sobre estes, evite duplicação):",
   "starters_label": "Iniciadores sugeridos",
   "examples_label": "Exemplos de perguntas",
   "output_rules": [
-    "A resposta DEVE ser fundamentada nas informacoes disponiveis",
+    "A resposta DEVE ser fundamentada nas informações disponíveis",
     "A resposta deve conter entre 5-50 palavras",
-    "A pergunta deve ser clara, especifica e autonoma -- qualquer pessoa deve compreende-la sem ler o texto original",
-    "Inclua uma pontuacao de confianca (0.0-1.0) baseada na clareza da resposta",
-    "Para perguntas de nivel 'analyze' ou 'evaluate', inclua o reasoning_trace",
-    "Indique se a pergunta e multi-hop (requer conectar partes distantes do texto)",
-    "PROIBIDO nas perguntas e respostas: 'no texto', 'o texto', 'mencionado no texto', 'descrito no texto', 'no contexto', 'conforme mencionado', 'de acordo com o texto', 'segundo o texto', 'o entrevistado', 'o autor'. Nomeie entidades, locais, pessoas e tecnicas explicitamente pelo nome"
+    "A pergunta deve ser clara, específica e autônoma -- qualquer pessoa deve compreendê-la sem ler o texto original",
+    "Inclua uma pontuação de confiança (0.0-1.0) baseada na clareza da resposta",
+    "Para perguntas de nível 'analyze' ou 'evaluate', inclua o reasoning_trace",
+    "Indique se a pergunta é multi-hop (requer conectar partes distantes do texto)",
+    "PROIBIDO nas perguntas e respostas: 'no texto', 'o texto', 'mencionado no texto', 'descrito no texto', 'no contexto', 'conforme mencionado', 'de acordo com o texto', 'segundo o texto', 'o entrevistado', 'o autor'. Nomeie entidades, locais, pessoas e técnicas explicitamente pelo nome"
   ]
 }

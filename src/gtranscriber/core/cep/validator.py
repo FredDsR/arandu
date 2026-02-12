@@ -236,7 +236,7 @@ class QAValidator:
                 bloom_calibration=0.5,
                 informativeness=0.5,
                 self_containedness=1.0,
-                overall_score=0.5,
+                overall_score=0.0,  # Recalculated by _calculate_overall_score in validate()
                 judge_rationale=self._prompts.get(
                     "parse_error_message", "Falha ao processar resposta do validador"
                 ),

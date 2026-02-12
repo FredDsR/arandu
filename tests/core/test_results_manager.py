@@ -948,3 +948,24 @@ class TestReplicatePipeline:
 
         step_types = {r["pipeline_type"] for r in clone_entries}
         assert step_types == {"transcription", "cep"}
+
+    def test_replicate_cleans_up_on_partial_failure(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test that target directory is removed when post-copy operations fail."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        # Make PipelineMetadata.load raise after copytree succeeds
+        mocker.patch.object(
+            PipelineMetadata,
+            "load",
+            side_effect=RuntimeError("simulated metadata failure"),
+        )
+
+        with pytest.raises(RuntimeError, match="simulated metadata failure"):
+            ResultsManager.replicate_pipeline(
+                tmp_path, "src-pipe", target_pipeline_id="should-be-cleaned"
+            )
+
+        # Target directory should have been cleaned up
+        assert not (tmp_path / "should-be-cleaned").exists()
