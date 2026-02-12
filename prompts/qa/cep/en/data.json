@@ -20,7 +20,7 @@
     },
     "understand": {
       "description": "Explain ideas and concepts",
-      "instruction": "Generate questions that test comprehension of concepts and explanations. Focus on questions that require explanation, interpretation, or summary.",
+      "instruction": "Generate questions that test comprehension of concepts and explanations. Focus on questions that require explanation, interpretation, or summary. Questions must be self-contained: explicitly name people, places, techniques, and events. Do not use references like 'in the text' or 'as mentioned'.",
       "question_starters": [
         "Why",
         "How",
@@ -31,7 +31,7 @@
       ],
       "examples": [
         "Why did [person] do [action]?",
-        "How does [process/technique] work as described in the text?",
+        "How does the [technique name] technique work in [activity]?",
         "Explain the meaning of [term/concept].",
         "Describe the process of [activity]."
       ]
@@ -54,7 +54,7 @@
     },
     "analyze": {
       "description": "Establish connections between ideas",
-      "instruction": "Generate questions that require analysis, comparison, and establishing connections between different parts of the text or concepts.",
+      "instruction": "Generate questions that require analysis, comparison, and establishing connections between different concepts or practices. Questions must be self-contained and explicitly name all compared elements.",
       "question_starters": [
         "What is the relationship",
         "Compare",
@@ -64,15 +64,15 @@
         "Analyze"
       ],
       "examples": [
-        "What is the relationship between [A] and [B] in the described context?",
-        "Compare [technique A] with [technique B] mentioned in the text.",
+        "What is the relationship between [technique A] and [technique B] in artisanal fishing of [location]?",
+        "Compare the [A] technique with the [B] technique used by [community].",
         "What factors influenced [decision/event]?",
         "How does [concept A] relate to [concept B]?"
       ]
     },
     "evaluate": {
       "description": "Justify decisions and judgments",
-      "instruction": "Generate questions that require judgment, critical evaluation, and justification of decisions. Focus on questions about choices, risks, and alternatives.",
+      "instruction": "Generate questions that require judgment, critical evaluation, and justification of decisions. Focus on questions about choices, risks, and alternatives. Questions must be self-contained: explicitly name people, places, techniques, and events without referencing 'the text' or 'the context'.",
       "question_starters": [
         "Why did they choose",
         "Evaluate",
@@ -90,7 +90,7 @@
     },
     "create": {
       "description": "Produce original work",
-      "instruction": "Generate questions that stimulate creation, proposal of solutions, or elaboration of new ideas based on knowledge from the text.",
+      "instruction": "Generate questions that stimulate creation, proposal of solutions, or elaboration of new ideas based on knowledge about the topic. Questions must be self-contained and clearly identify the problem or process in question.",
       "question_starters": [
         "Propose",
         "Elaborate",
@@ -102,7 +102,7 @@
       "examples": [
         "Propose an alternative for [described problem].",
         "Elaborate a solution for [situation].",
-        "How to improve [process/technique] described in the text?"
+        "How to improve the [technique name] technique practiced by [community]?"
       ]
     }
   },
@@ -110,11 +110,12 @@
   "starters_label": "Suggested starters",
   "examples_label": "Question examples",
   "output_rules": [
-    "The answer MUST be grounded in the provided context",
+    "The answer MUST be grounded in the available information",
     "The answer should contain between 5-50 words",
-    "The question must be clear, specific, and answerable from the context",
+    "The question must be clear, specific, and self-contained -- anyone should understand it without reading the original text",
     "Include a confidence score (0.0-1.0) based on answer clarity",
     "For 'analyze' or 'evaluate' level questions, include the reasoning_trace",
-    "Indicate if the question is multi-hop (requires connecting distant parts of text)"
+    "Indicate if the question is multi-hop (requires connecting distant parts of text)",
+    "FORBIDDEN in questions and answers: 'in the text', 'the text', 'mentioned in the text', 'described in the text', 'in the context', 'as mentioned', 'according to the text', 'the interviewee', 'the author'. Name entities, locations, people, and techniques explicitly by name"
   ]
 }

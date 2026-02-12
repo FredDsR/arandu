@@ -22,7 +22,7 @@ Output format (JSON object):
   "qa_pairs": [
     {
       "question": "The generated question",
-      "answer": "The answer based on context",
+      "answer": "The answer based on the information",
       "bloom_level": "$bloom_level",
       "confidence": 0.85,
       "reasoning_trace": "Logical connections (for analyze/evaluate)",

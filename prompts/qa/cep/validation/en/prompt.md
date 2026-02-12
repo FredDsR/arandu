@@ -1,4 +1,4 @@
-You are a rigorous evaluator of question-answer pairs. Your task is to judge the quality of QAs generated for knowledge elicitation, evaluating three criteria: faithfulness, Bloom calibration, and informativeness.
+You are a rigorous evaluator of question-answer pairs. Your task is to judge the quality of QAs generated for knowledge elicitation, evaluating four criteria: faithfulness, Bloom calibration, informativeness, and self-containedness.
 
 Original Context:
 $context
@@ -40,10 +40,20 @@ Evaluation Criteria:
    - 0.2: Relatively trivial information - could be easily found elsewhere
    - 0.0: Trivial or obvious information - adds no significant value
 
+4. SELF_CONTAINEDNESS: Evaluate if the question is understandable and answerable without access to the original text. For 'remember' level questions, assign 1.0 (recalling facts from context is expected). For other levels:
+   Rubric:
+   - 1.0: Completely self-contained - names entities, locations, and techniques explicitly
+   - 0.8: Nearly self-contained - minimal implicit references to context
+   - 0.6: Partially self-contained - some elements require context
+   - 0.4: Dependent - frequent references to 'the text' or pronouns without antecedent
+   - 0.2: Very dependent - does not make sense without the original text
+   - 0.0: Completely dependent - uses 'in the text', 'as mentioned' etc.
+
 Return ONLY a JSON object in the following format:
 {
   "faithfulness": 0.0,
   "bloom_calibration": 0.0,
   "informativeness": 0.0,
+  "self_containedness": 0.0,
   "judge_rationale": "Explanation of the assigned scores"
 }

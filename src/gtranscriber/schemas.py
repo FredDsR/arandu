@@ -251,6 +251,16 @@ class ValidationScore(BaseModel):
         le=1.0,
         description="Does answer reveal non-obvious/tacit knowledge?",
     )
+    self_containedness: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Is the question self-contained and understandable without "
+            "the original context (1.0) or context-dependent (0.0)? "
+            "Remember-level questions are exempt (auto 1.0)."
+        ),
+    )
     overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
     judge_rationale: str | None = Field(None, description="Judge model's reasoning for the scores")
 

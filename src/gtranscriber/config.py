@@ -308,22 +308,28 @@ class CEPConfig(BaseSettings):
         description="Minimum overall score to pass validation",
     )
     faithfulness_weight: float = Field(
-        default=0.4,
+        default=0.30,
         ge=0.0,
         le=1.0,
         description="Weight for faithfulness score in overall calculation",
     )
     bloom_calibration_weight: float = Field(
-        default=0.3,
+        default=0.25,
         ge=0.0,
         le=1.0,
         description="Weight for Bloom calibration score in overall calculation",
     )
     informativeness_weight: float = Field(
-        default=0.3,
+        default=0.25,
         ge=0.0,
         le=1.0,
         description="Weight for informativeness score in overall calculation",
+    )
+    self_containedness_weight: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+        description="Weight for self-containedness score in overall calculation",
     )
 
     # Language settings
@@ -368,14 +374,18 @@ class CEPConfig(BaseSettings):
     def validate_scoring_weights(self) -> CEPConfig:
         """Validate that scoring weights sum to 1.0."""
         total = (
-            self.faithfulness_weight + self.bloom_calibration_weight + self.informativeness_weight
+            self.faithfulness_weight
+            + self.bloom_calibration_weight
+            + self.informativeness_weight
+            + self.self_containedness_weight
         )
         if not (0.99 <= total <= 1.01):
             raise ValueError(
                 f"Scoring weights must sum to 1.0, got {total:.3f} "
                 f"(faithfulness={self.faithfulness_weight}, "
                 f"bloom_calibration={self.bloom_calibration_weight}, "
-                f"informativeness={self.informativeness_weight})"
+                f"informativeness={self.informativeness_weight}, "
+                f"self_containedness={self.self_containedness_weight})"
             )
         return self
 
