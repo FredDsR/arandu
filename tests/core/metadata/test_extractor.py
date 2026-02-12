@@ -51,9 +51,7 @@ class TestUnderscoreDelimitedFilenames:
         assert meta.recording_date == "15-11-2025"
         assert meta.sequence_number == 8
 
-    def test_researcher_participant_with_honorific(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_researcher_participant_with_honorific(self, extractor: GDriveCatalogExtractor) -> None:
         """Pattern: Glenio_D.Elaine_30-07-2025_BARRA_20.mp4"""
         row = {
             "name": "Glenio_D.Elaine_30-07-2025_BARRA_20.mp4",
@@ -65,9 +63,7 @@ class TestUnderscoreDelimitedFilenames:
         assert meta.recording_date == "30-07-2025"
         assert meta.sequence_number == 20
 
-    def test_combined_researcher_participant(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_combined_researcher_participant(self, extractor: GDriveCatalogExtractor) -> None:
         """Pattern: DaniBorges_D.Maria_30-07-25_03.mp4"""
         row = {
             "name": "DaniBorges_D.Maria_30-07-25_03.mp4",
@@ -83,9 +79,7 @@ class TestUnderscoreDelimitedFilenames:
 class TestDashDelimitedFilenames:
     """Test dash/space-delimited filename patterns."""
 
-    def test_researcher_participant_date_seq(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_researcher_participant_date_seq(self, extractor: GDriveCatalogExtractor) -> None:
         """Pattern: Dani Borges-Pescador Henrique 15-11-25 02.m4a"""
         row = {
             "name": "Dani Borges-Pescador Henrique 15-11-25 02.m4a",
@@ -101,9 +95,7 @@ class TestDashDelimitedFilenames:
         assert meta.recording_date == "15-11-25"
         assert meta.sequence_number == 2
 
-    def test_location_participant_date_parte(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_location_participant_date_parte(self, extractor: GDriveCatalogExtractor) -> None:
         """Pattern: Barra - Célia 20.05 Parte I.mp3"""
         row = {
             "name": "Barra - Célia 20.05 Parte I.mp3",
@@ -118,9 +110,7 @@ class TestDashDelimitedFilenames:
 class TestCameraAndAndroidFilenames:
     """Test camera and Android auto-generated filenames."""
 
-    def test_camera_file_no_name_metadata(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_camera_file_no_name_metadata(self, extractor: GDriveCatalogExtractor) -> None:
         """Camera files like MVI_7765.MOV have no metadata in the name."""
         row = {
             "name": "MVI_7765.MOV",
@@ -138,9 +128,7 @@ class TestCameraAndAndroidFilenames:
         # Should get event context from subfolder
         assert meta.event_context is not None
 
-    def test_android_vid_extracts_date(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_android_vid_extracts_date(self, extractor: GDriveCatalogExtractor) -> None:
         """Android VID_YYYYMMDD files should extract the date."""
         row = {
             "name": "VID_20250718_093806817~3.mp4",
@@ -222,9 +210,7 @@ class TestConfidence:
         meta = extractor.extract(row)
         assert meta.extraction_confidence >= 0.75
 
-    def test_low_confidence_camera_file_no_path(
-        self, extractor: GDriveCatalogExtractor
-    ) -> None:
+    def test_low_confidence_camera_file_no_path(self, extractor: GDriveCatalogExtractor) -> None:
         """Camera file without gdrive_path should have low confidence."""
         row = {"name": "MVI_7765.MOV", "gdrive_path": ""}
         meta = extractor.extract(row)
