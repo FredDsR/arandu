@@ -400,13 +400,13 @@ The following diagram provides a compact view of the data artifacts flowing betw
 flowchart LR
     classDef src fill:#4a6fa5,stroke:#2d4a7a,color:#fff,rx:10,ry:10
     classDef json fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
-    classDef graph fill:#d8b4fe,stroke:#a78bfa,color:#333,rx:6,ry:6
+    classDef kg fill:#d8b4fe,stroke:#a78bfa,color:#333,rx:6,ry:6
     classDef final fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:10,ry:10
 
     A["Audio / Video<br/><i>Google Drive</i>"]:::src
     B["EnrichedRecord<br/><i>.json</i>"]:::json
     C["QARecordCEP<br/><i>.json / .jsonl</i>"]:::json
-    D["Knowledge Graph<br/><i>.graphml</i>"]:::graph
+    D["Knowledge Graph<br/><i>.graphml</i>"]:::kg
     E["EvaluationReport<br/><i>.json</i>"]:::final
 
     A -- "Whisper ASR +<br/>Quality Filter" --> B
