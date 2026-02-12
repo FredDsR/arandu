@@ -112,7 +112,11 @@ class CEPQAGenerator:
                 num_questions += self.qa_config.questions_per_document % len(contexts)
 
             # Module I: Bloom Scaffolding Generation
-            pairs = self._bloom_generator.generate(context, num_questions)
+            pairs = self._bloom_generator.generate(
+                context,
+                num_questions,
+                source_metadata=transcription.source_metadata,
+            )
             logger.debug(f"Chunk {i + 1}: Generated {len(pairs)} pairs")
 
             # Module II: Reasoning Enrichment
@@ -144,6 +148,7 @@ class CEPQAGenerator:
         return QARecordCEP(
             source_gdrive_id=transcription.gdrive_id,
             source_filename=transcription.name,
+            source_metadata=transcription.source_metadata,
             transcription_text=text,
             qa_pairs=all_pairs,
             model_id=self.llm_client.model_id,

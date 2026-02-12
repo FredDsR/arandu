@@ -13,7 +13,7 @@ from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
-from gtranscriber.schemas import QAPairCEP
+from gtranscriber.schemas import QAPairCEP, SourceMetadata
 
 if TYPE_CHECKING:
     from gtranscriber.config import CEPConfig, QAConfig
@@ -113,12 +113,15 @@ class BloomScaffoldingGenerator:
         self,
         context: str,
         num_questions: int,
+        *,
+        source_metadata: SourceMetadata | None = None,
     ) -> list[QAPairCEP]:
         """Generate Bloom-calibrated QA pairs from context.
 
         Args:
             context: Source text context.
             num_questions: Total number of questions to generate.
+            source_metadata: Optional source metadata for prompt enrichment.
 
         Returns:
             List of QAPairCEP with Bloom levels assigned.
@@ -146,6 +149,7 @@ class BloomScaffoldingGenerator:
                 level,
                 count,
                 prior_pairs=prior,
+                source_metadata=source_metadata,
             )
             pairs.extend(level_pairs)
 
@@ -193,6 +197,7 @@ class BloomScaffoldingGenerator:
         num_questions: int,
         *,
         prior_pairs: list[QAPairCEP] | None = None,
+        source_metadata: SourceMetadata | None = None,
     ) -> list[QAPairCEP]:
         """Generate QA pairs for a specific Bloom level.
 
@@ -201,6 +206,7 @@ class BloomScaffoldingGenerator:
             bloom_level: Bloom taxonomy level.
             num_questions: Number of questions to generate.
             prior_pairs: Previously generated QA pairs for scaffolding context.
+            source_metadata: Optional source metadata for prompt enrichment.
 
         Returns:
             List of QAPairCEP objects.
@@ -210,6 +216,7 @@ class BloomScaffoldingGenerator:
             bloom_level,
             num_questions,
             prior_pairs=prior_pairs,
+            source_metadata=source_metadata,
         )
 
         try:
@@ -234,6 +241,7 @@ class BloomScaffoldingGenerator:
         num_questions: int,
         *,
         prior_pairs: list[QAPairCEP] | None = None,
+        source_metadata: SourceMetadata | None = None,
     ) -> str:
         """Build prompt for Bloom-calibrated QA generation.
 
@@ -242,6 +250,7 @@ class BloomScaffoldingGenerator:
             bloom_level: Bloom taxonomy level.
             num_questions: Number of questions to generate.
             prior_pairs: Previously generated QA pairs for scaffolding context.
+            source_metadata: Optional source metadata for prompt enrichment.
 
         Returns:
             Formatted prompt string.
@@ -277,6 +286,11 @@ class BloomScaffoldingGenerator:
                 header = self._prompts.get("scaffolding_header", "")
                 scaffolding_section = f"\n{header}\n{formatted}"
 
+        # Build metadata section (if enabled and available)
+        metadata_section = ""
+        if self.cep_config.enable_source_metadata_context and source_metadata is not None:
+            metadata_section = self._format_metadata_section(source_metadata)
+
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
             bloom_level_upper=bloom_level.upper(),
@@ -287,6 +301,7 @@ class BloomScaffoldingGenerator:
             starters_section=starters_section,
             examples_section=examples_section,
             scaffolding_section=scaffolding_section,
+            metadata_section=metadata_section,
             num_questions=num_questions,
             output_rules=output_rules,
         )
@@ -396,6 +411,44 @@ class BloomScaffoldingGenerator:
                 continue
 
         return pairs
+
+    def _format_metadata_section(self, metadata: SourceMetadata) -> str:
+        """Format source metadata as a prompt section.
+
+        Only includes non-None fields. Language-aware labels based on
+        the configured CEP language.
+
+        Args:
+            metadata: Source metadata to format.
+
+        Returns:
+            Formatted metadata section string, or empty string if no fields.
+        """
+        is_pt = self.cep_config.language == "pt"
+
+        fields: list[tuple[str, str]] = []
+        if metadata.participant_name:
+            label = "Participante" if is_pt else "Participant"
+            fields.append((label, metadata.participant_name))
+        if metadata.researcher_name:
+            label = "Pesquisador(a)" if is_pt else "Researcher"
+            fields.append((label, metadata.researcher_name))
+        if metadata.location:
+            label = "Local" if is_pt else "Location"
+            fields.append((label, metadata.location))
+        if metadata.recording_date:
+            label = "Data" if is_pt else "Date"
+            fields.append((label, metadata.recording_date))
+        if metadata.event_context:
+            label = "Contexto" if is_pt else "Context"
+            fields.append((label, metadata.event_context))
+
+        if not fields:
+            return ""
+
+        header = "Metadados da Entrevista:" if is_pt else "Interview Metadata:"
+        lines = [f"- {label}: {value}" for label, value in fields]
+        return f"\n{header}\n" + "\n".join(lines)
 
     def _bloom_to_question_type(self, bloom_level: str) -> str:
         """Map Bloom level to legacy question_type for compatibility.

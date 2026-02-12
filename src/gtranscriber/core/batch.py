@@ -167,6 +167,7 @@ class TranscriptionTask:
     parents: list[str]
     web_content_link: str
     duration_ms: int | None
+    catalog_row: dict[str, str] | None = None
 
 
 def _ensure_float(value: object, default: float) -> float:
@@ -315,6 +316,12 @@ def transcribe_single_file(
             if issues:
                 logger.warning(f"Quality check failed for {task.name}: {issues}")
 
+            # Metadata extraction (if catalog row available)
+            if task.catalog_row is not None:
+                from gtranscriber.core.metadata.enrichment import enrich_with_source_metadata
+
+                enrich_with_source_metadata(enriched, task.catalog_row)
+
             # Save result
             output_filename = f"{task.file_id}_transcription.json"
             output_path = config.output_dir / output_filename
@@ -422,6 +429,7 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
                         parents=parents if isinstance(parents, list) else [],
                         web_content_link=row.get("web_content_link", ""),
                         duration_ms=duration_ms,
+                        catalog_row=dict(row),
                     )
                 )
 

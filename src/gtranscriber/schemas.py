@@ -95,6 +95,41 @@ class TranscriptionQualityScore(BaseModel):
     quality_rationale: str | None = Field(None, description="Explanation of quality assessment")
 
 
+class SourceMetadata(BaseModel):
+    """Metadata extracted from catalog source information.
+
+    Provides provenance context about the interview: who was recorded,
+    who conducted the recording, where and when it happened, and any
+    sequence information for multi-part recordings.
+    """
+
+    participant_name: str | None = Field(None, description="Name of the interviewee/participant")
+    researcher_name: str | None = Field(None, description="Name of the researcher/interviewer")
+    location: str | None = Field(None, description="Recording location (e.g., 'Barra de Pelotas')")
+    recording_date: str | None = Field(
+        None, description="Recording date extracted from filename (original format preserved)"
+    )
+    sequence_number: int | None = Field(
+        None, ge=1, description="Sequence number for multi-part recordings"
+    )
+    sequence_label: str | None = Field(
+        None, description="Sequence label (e.g., 'Parte I', 'Parte II')"
+    )
+    event_context: str | None = Field(
+        None, description="Event context from folder path (e.g., 'Audiência Câmara de Vereadores')"
+    )
+    source_gdrive_path: str | None = Field(
+        None, description="Original Google Drive path for traceability"
+    )
+    extraction_confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Confidence of metadata extraction (0.0-1.0)"
+    )
+    custom_fields: dict[str, str] = Field(
+        default_factory=dict,
+        description="Extensible key-value metadata for catalog-specific fields",
+    )
+
+
 class EnrichedRecord(InputRecord):
     """Schema for output records containing transcription results and metadata.
 
@@ -121,6 +156,10 @@ class EnrichedRecord(InputRecord):
     is_valid: bool | None = Field(
         default=None,
         description="Whether transcription passes quality check (None = not yet checked)",
+    )
+    source_metadata: SourceMetadata | None = Field(
+        default=None,
+        description="Extracted metadata from source catalog (None = not yet extracted)",
     )
 
     def ensure_language_metadata(self) -> None:
@@ -282,6 +321,9 @@ class QARecordCEP(BaseModel):
 
     source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
     source_filename: str = Field(..., description="Original filename")
+    source_metadata: SourceMetadata | None = Field(
+        default=None, description="Source interview metadata for provenance tracking"
+    )
     transcription_text: str = Field(..., description="Full transcription text")
     # NOTE: QAPairValidated must be listed first in the union. Since it's a subclass
     # of QAPairCEP with optional fields that have defaults, Pydantic will try types

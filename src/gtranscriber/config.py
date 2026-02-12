@@ -332,6 +332,15 @@ class CEPConfig(BaseSettings):
         description="Weight for self-containedness score in overall calculation",
     )
 
+    # Source metadata context
+    enable_source_metadata_context: bool = Field(
+        default=True,
+        description=(
+            "Include extracted source metadata (participant name, location, date) "
+            "in CEP prompt context to improve contextual grounding."
+        ),
+    )
+
     # Language settings
     language: str = Field(
         default="pt",

@@ -1615,5 +1615,103 @@ def rebuild_index(
     print_success(f"Rebuilt index.json ({total_runs} runs)")
 
 
+@app.command()
+def enrich_metadata(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing transcription JSON files.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+        ),
+    ],
+    catalog: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to catalog CSV file.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option(
+            "--pipeline-id",
+            "--id",
+            help="Pipeline ID for versioned results resolution.",
+        ),
+    ] = None,
+) -> None:
+    """Enrich existing transcription JSONs with source metadata.
+
+    Reads the catalog CSV, matches rows to transcription files by gdrive_id,
+    and extracts structured metadata (participant, location, date, etc.)
+    from filenames and folder paths.
+
+    Examples:
+        gtranscriber enrich-metadata results/outputs/ input/catalog.csv
+
+        gtranscriber enrich-metadata results/ input/catalog.csv --id 20250101_120000
+    """
+    import csv
+
+    from gtranscriber.core.metadata import GDriveCatalogExtractor, enrich_with_source_metadata
+    from gtranscriber.core.qa_batch import _resolve_transcription_dir
+
+    setup_logging()
+
+    # Resolve transcription directory
+    try:
+        transcription_dir = _resolve_transcription_dir(input_dir, pipeline_id)
+    except Exception:
+        transcription_dir = input_dir
+
+    transcription_files = list(transcription_dir.glob("*_transcription.json"))
+    if not transcription_files:
+        print_error(f"No transcription files found in {transcription_dir}")
+        raise typer.Exit(code=1)
+
+    print_info(f"Found {len(transcription_files)} transcription file(s)")
+
+    # Build gdrive_id -> row lookup from catalog
+    catalog_lookup: dict[str, dict[str, str]] = {}
+    with open(catalog, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            gdrive_id = row.get("gdrive_id", "")
+            if gdrive_id:
+                catalog_lookup[gdrive_id] = dict(row)
+
+    print_info(f"Loaded {len(catalog_lookup)} catalog entries")
+
+    extractor = GDriveCatalogExtractor()
+    enriched_count = 0
+    skipped_count = 0
+
+    for tf in transcription_files:
+        try:
+            record = EnrichedRecord.model_validate_json(tf.read_text(encoding="utf-8"))
+        except (ValidationError, Exception) as e:
+            print_warning(f"Skipping {tf.name}: {e}")
+            skipped_count += 1
+            continue
+
+        catalog_row = catalog_lookup.get(record.gdrive_id)
+        if catalog_row is None:
+            print_warning(f"No catalog entry for {record.gdrive_id} ({record.name})")
+            skipped_count += 1
+            continue
+
+        enrich_with_source_metadata(record, catalog_row, extractor=extractor)
+        save_enriched_record(record, tf)
+        enriched_count += 1
+
+    print_success(f"Enriched {enriched_count} transcription(s) (skipped {skipped_count})")
+
+
 if __name__ == "__main__":
     app()
