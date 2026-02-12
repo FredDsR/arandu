@@ -6,6 +6,7 @@ Nível Cognitivo: $bloom_level_upper ($level_description)
 
 Contexto:
 $context
+$metadata_section
 
 Tarefa:
 $level_instruction
