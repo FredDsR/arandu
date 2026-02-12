@@ -45,6 +45,7 @@ def mock_validator_client(mocker: MockerFixture) -> Any:
             "faithfulness": 0.9,
             "bloom_calibration": 0.8,
             "informativeness": 0.7,
+            "self_containedness": 0.9,
         }
     )
     return client
@@ -466,6 +467,35 @@ class TestCEPGenerationPromptIntegration:
             data = json.loads(line)
             assert "generation_prompt" in data
             assert data["generation_prompt"] is not None
+
+
+class TestValidationSummary:
+    """Tests for validation summary including self_containedness."""
+
+    def test_validation_summary_includes_self_containedness(
+        self,
+        mock_llm_client: Any,
+        mock_validator_client: Any,
+        qa_config: QAConfig,
+        sample_transcription: EnrichedRecord,
+    ) -> None:
+        """Test that validation summary includes avg_self_containedness."""
+        cep_config = CEPConfig(
+            enable_validation=True,
+            validation_threshold=0.6,
+        )
+
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+            validator_client=mock_validator_client,
+        )
+
+        result = generator.generate_qa_pairs(sample_transcription)
+
+        assert result.validation_summary is not None
+        assert "avg_self_containedness" in result.validation_summary
 
 
 class TestQARecordCEP:

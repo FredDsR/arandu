@@ -332,14 +332,16 @@ class TestCEPConfig:
     def test_valid_scoring_weights(self) -> None:
         """Test valid scoring weights summing to 1.0."""
         config = CEPConfig(
-            faithfulness_weight=0.5,
-            bloom_calibration_weight=0.3,
-            informativeness_weight=0.2,
+            faithfulness_weight=0.30,
+            bloom_calibration_weight=0.25,
+            informativeness_weight=0.25,
+            self_containedness_weight=0.20,
         )
         total = (
             config.faithfulness_weight
             + config.bloom_calibration_weight
             + config.informativeness_weight
+            + config.self_containedness_weight
         )
         assert 0.99 <= total <= 1.01
 
@@ -349,7 +351,8 @@ class TestCEPConfig:
             CEPConfig(
                 faithfulness_weight=0.5,
                 bloom_calibration_weight=0.5,
-                informativeness_weight=0.5,  # Sum = 1.5, invalid
+                informativeness_weight=0.5,
+                self_containedness_weight=0.5,  # Sum = 2.0, invalid
             )
         assert "Scoring weights must sum to 1.0" in str(exc_info.value)
 
