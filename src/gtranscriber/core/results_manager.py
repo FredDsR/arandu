@@ -21,6 +21,7 @@ from gtranscriber.schemas import (
     HardwareInfo,
     PipelineMetadata,
     PipelineType,
+    ReplicationInfo,
     RunMetadata,
     RunStatus,
 )
@@ -564,3 +565,106 @@ class ResultsManager:
 
         runs.sort(key=lambda r: r.get("started_at", ""), reverse=True)
         return runs
+
+    @staticmethod
+    def _generate_new_pipeline_id() -> str:
+        """Generate a unique pipeline ID based on timestamp and execution context.
+
+        Returns:
+            Unique pipeline ID string.
+        """
+        execution = ExecutionEnvironment.detect()
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+
+        if execution.is_slurm and execution.slurm_partition and execution.slurm_job_id:
+            context = f"slurm_{execution.slurm_partition}_{execution.slurm_job_id}"
+        else:
+            context = "local"
+
+        return f"{timestamp}_{context}"
+
+    @classmethod
+    def replicate_pipeline(
+        cls,
+        base_dir: Path,
+        source_pipeline_id: str,
+        target_pipeline_id: str | None = None,
+    ) -> str:
+        """Replicate (clone) a pipeline run to a new ID without re-executing.
+
+        Copies the entire pipeline directory tree and rewrites metadata with the
+        new pipeline ID. Enables experimentation workflows where users clone a
+        completed run and re-run only specific steps.
+
+        Args:
+            base_dir: Base results directory.
+            source_pipeline_id: Pipeline ID to replicate from.
+            target_pipeline_id: New pipeline ID. Auto-generated if None.
+
+        Returns:
+            The new pipeline ID.
+
+        Raises:
+            ValueError: If source pipeline not found or target already exists.
+        """
+        base_dir = Path(base_dir).resolve()
+        source_dir = base_dir / source_pipeline_id
+
+        # 1. Validate source exists
+        source_pipeline_json = source_dir / "pipeline.json"
+        if not source_pipeline_json.exists():
+            raise ValueError(
+                f"Source pipeline not found: {source_pipeline_id} "
+                f"(no pipeline.json at {source_pipeline_json})"
+            )
+
+        # 2. Generate or validate target ID
+        if target_pipeline_id is None:
+            target_pipeline_id = cls._generate_new_pipeline_id()
+
+        target_dir = base_dir / target_pipeline_id
+        if target_dir.exists():
+            raise ValueError(f"Target pipeline already exists: {target_pipeline_id}")
+
+        # 3. Copy directory tree
+        shutil.copytree(source_dir, target_dir)
+
+        # 4. Rewrite pipeline.json
+        pipeline_meta = PipelineMetadata.load(target_dir / "pipeline.json")
+        pipeline_meta = PipelineMetadata(
+            pipeline_id=target_pipeline_id,
+            created_at=datetime.now(UTC),
+            steps_run=pipeline_meta.steps_run,
+            replicated_from=ReplicationInfo(source_pipeline_id=source_pipeline_id),
+        )
+        pipeline_meta.save(target_dir / "pipeline.json")
+
+        # 5. Rewrite each step's run_metadata.json and register in index
+        for step_name in pipeline_meta.steps_run:
+            step_dir = target_dir / step_name
+            metadata_path = step_dir / "run_metadata.json"
+            if not metadata_path.exists():
+                continue
+
+            run_meta = RunMetadata.load(metadata_path)
+
+            # Update identity and paths
+            run_meta.pipeline_id = target_pipeline_id
+            run_meta.run_id = target_pipeline_id
+            run_meta.output_directory = str(step_dir)
+            if run_meta.checkpoint_file is not None:
+                checkpoint_name = Path(run_meta.checkpoint_file).name
+                run_meta.checkpoint_file = str(step_dir / checkpoint_name)
+
+            run_meta.save(metadata_path)
+
+            # Register in index
+            try:
+                pipeline_type = PipelineType(step_name)
+                manager = cls(base_dir, pipeline_type, pipeline_id=target_pipeline_id)
+                manager.register_external_run(run_meta)
+            except ValueError:
+                logger.warning(f"Unknown pipeline type during replication: {step_name}")
+
+        logger.info(f"Replicated pipeline {source_pipeline_id} -> {target_pipeline_id}")
+        return target_pipeline_id
