@@ -777,3 +777,195 @@ class TestRunStatus:
         expected = {"pending", "in_progress", "completed", "failed", "cancelled"}
         actual = {s.value for s in RunStatus}
         assert actual == expected
+
+
+def _make_source_pipeline(
+    base_dir: Path,
+    pipeline_id: str = "source-pipeline",
+    steps: list[str] | None = None,
+) -> Path:
+    """Create a realistic source pipeline directory for replication tests.
+
+    Args:
+        base_dir: Base results directory.
+        pipeline_id: Pipeline ID to use.
+        steps: Pipeline steps to create. Defaults to ["transcription", "cep"].
+
+    Returns:
+        Path to the pipeline directory.
+    """
+    if steps is None:
+        steps = ["transcription", "cep"]
+
+    pipeline_dir = base_dir / pipeline_id
+    pipeline_dir.mkdir(parents=True)
+
+    # Write pipeline.json
+    PipelineMetadata(
+        pipeline_id=pipeline_id,
+        steps_run=steps,
+    ).save(pipeline_dir / "pipeline.json")
+
+    # Write run_metadata.json + dummy outputs for each step
+    for step in steps:
+        step_dir = pipeline_dir / step
+        outputs_dir = step_dir / "outputs"
+        outputs_dir.mkdir(parents=True)
+
+        metadata = RunMetadata(
+            run_id=pipeline_id,
+            pipeline_id=pipeline_id,
+            pipeline_type=PipelineType(step),
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ended_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+            status=RunStatus.COMPLETED,
+            total_items=5,
+            completed_items=5,
+            failed_items=0,
+            execution=ExecutionEnvironment(
+                is_slurm=False, is_local=True, hostname="h", username="u"
+            ),
+            hardware=HardwareInfo(
+                device_type="cpu",
+                cpu_count=4,
+                torch_version="2.0",
+                python_version="3.13",
+            ),
+            config=ConfigSnapshot(config_type="Test", config_values={"key": "val"}),
+            output_directory=str(step_dir),
+            checkpoint_file=str(step_dir / "checkpoint.json"),
+            gtranscriber_version="0.1.0",
+        )
+        metadata.save(step_dir / "run_metadata.json")
+
+        # Dummy output file
+        (outputs_dir / "doc1.json").write_text('{"data": "hello"}')
+
+    return pipeline_dir
+
+
+class TestReplicatePipeline:
+    """Tests for ResultsManager.replicate_pipeline."""
+
+    def test_replicate_pipeline_copies_outputs(self, tmp_path: Path) -> None:
+        """Test full replication copies directory structure and output files."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        new_id = ResultsManager.replicate_pipeline(tmp_path, "src-pipe")
+
+        target_dir = tmp_path / new_id
+        assert target_dir.exists()
+        assert (target_dir / "pipeline.json").exists()
+        assert (target_dir / "transcription" / "outputs" / "doc1.json").exists()
+        assert (target_dir / "cep" / "outputs" / "doc1.json").exists()
+
+    def test_replicate_pipeline_explicit_id(self, tmp_path: Path) -> None:
+        """Test user-provided target ID is used."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        new_id = ResultsManager.replicate_pipeline(
+            tmp_path, "src-pipe", target_pipeline_id="my-clone"
+        )
+
+        assert new_id == "my-clone"
+        assert (tmp_path / "my-clone" / "pipeline.json").exists()
+
+    def test_replicate_pipeline_source_not_found(self, tmp_path: Path) -> None:
+        """Test ValueError when source pipeline does not exist."""
+        with pytest.raises(ValueError, match="Source pipeline not found"):
+            ResultsManager.replicate_pipeline(tmp_path, "nonexistent")
+
+    def test_replicate_pipeline_target_exists(self, tmp_path: Path) -> None:
+        """Test ValueError when target pipeline already exists."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+        (tmp_path / "taken-id").mkdir()
+
+        with pytest.raises(ValueError, match="Target pipeline already exists"):
+            ResultsManager.replicate_pipeline(tmp_path, "src-pipe", target_pipeline_id="taken-id")
+
+    def test_replicate_updates_pipeline_metadata(self, tmp_path: Path) -> None:
+        """Test new pipeline_id, created_at, and replicated_from in pipeline.json."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        new_id = ResultsManager.replicate_pipeline(
+            tmp_path, "src-pipe", target_pipeline_id="clone-1"
+        )
+
+        meta = PipelineMetadata.load(tmp_path / new_id / "pipeline.json")
+        assert meta.pipeline_id == "clone-1"
+        assert meta.replicated_from is not None
+        assert meta.replicated_from.source_pipeline_id == "src-pipe"
+        assert meta.replicated_from.replicated_at is not None
+
+        # created_at should differ from source
+        source_meta = PipelineMetadata.load(tmp_path / "src-pipe" / "pipeline.json")
+        assert meta.created_at >= source_meta.created_at
+
+    def test_replicate_updates_run_metadata(self, tmp_path: Path) -> None:
+        """Test run_metadata.json gets new pipeline_id, run_id, and paths."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        new_id = ResultsManager.replicate_pipeline(
+            tmp_path, "src-pipe", target_pipeline_id="clone-2"
+        )
+
+        for step in ["transcription", "cep"]:
+            run_meta = RunMetadata.load(tmp_path / new_id / step / "run_metadata.json")
+            assert run_meta.pipeline_id == "clone-2"
+            assert run_meta.run_id == "clone-2"
+            assert new_id in run_meta.output_directory
+            if run_meta.checkpoint_file is not None:
+                assert new_id in run_meta.checkpoint_file
+
+    def test_replicate_preserves_run_status(self, tmp_path: Path) -> None:
+        """Test that run status stays COMPLETED after replication."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        new_id = ResultsManager.replicate_pipeline(
+            tmp_path, "src-pipe", target_pipeline_id="clone-3"
+        )
+
+        for step in ["transcription", "cep"]:
+            run_meta = RunMetadata.load(tmp_path / new_id / step / "run_metadata.json")
+            assert run_meta.status == RunStatus.COMPLETED
+
+    def test_replicate_registers_in_index(self, tmp_path: Path) -> None:
+        """Test that replicated steps appear in index.json."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        new_id = ResultsManager.replicate_pipeline(
+            tmp_path, "src-pipe", target_pipeline_id="clone-idx"
+        )
+
+        index_path = tmp_path / "index.json"
+        assert index_path.exists()
+
+        with open(index_path) as f:
+            index_data = json.load(f)
+
+        clone_entries = [r for r in index_data["runs"] if r["pipeline_id"] == new_id]
+        assert len(clone_entries) == 2
+
+        step_types = {r["pipeline_type"] for r in clone_entries}
+        assert step_types == {"transcription", "cep"}
+
+    def test_replicate_cleans_up_on_partial_failure(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test that target directory is removed when post-copy operations fail."""
+        _make_source_pipeline(tmp_path, "src-pipe")
+
+        # Make PipelineMetadata.load raise after copytree succeeds
+        mocker.patch.object(
+            PipelineMetadata,
+            "load",
+            side_effect=RuntimeError("simulated metadata failure"),
+        )
+
+        with pytest.raises(RuntimeError, match="simulated metadata failure"):
+            ResultsManager.replicate_pipeline(
+                tmp_path, "src-pipe", target_pipeline_id="should-be-cleaned"
+            )
+
+        # Target directory should have been cleaned up
+        assert not (tmp_path / "should-be-cleaned").exists()

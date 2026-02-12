@@ -104,6 +104,10 @@ class QAValidator:
 
             scores = self._parse_validation_response(response)
 
+            # Safety net: force self_containedness=1.0 for remember level
+            if qa_pair.bloom_level == "remember":
+                scores.self_containedness = 1.0
+
             # Calculate overall score
             overall = self._calculate_overall_score(scores)
             scores.overall_score = overall
@@ -212,12 +216,14 @@ class QAValidator:
             faithfulness = self._validate_score(data.get("faithfulness", 0.5))
             bloom_calibration = self._validate_score(data.get("bloom_calibration", 0.5))
             informativeness = self._validate_score(data.get("informativeness", 0.5))
+            self_containedness = self._validate_score(data.get("self_containedness", 1.0))
             rationale = data.get("judge_rationale") or data.get("rationale")
 
             return ValidationScore(
                 faithfulness=faithfulness,
                 bloom_calibration=bloom_calibration,
                 informativeness=informativeness,
+                self_containedness=self_containedness,
                 overall_score=0.0,  # Will be calculated
                 judge_rationale=rationale,
             )
@@ -229,7 +235,8 @@ class QAValidator:
                 faithfulness=0.5,
                 bloom_calibration=0.5,
                 informativeness=0.5,
-                overall_score=0.5,
+                self_containedness=1.0,
+                overall_score=0.0,  # Recalculated by _calculate_overall_score in validate()
                 judge_rationale=self._prompts.get(
                     "parse_error_message", "Falha ao processar resposta do validador"
                 ),
@@ -263,4 +270,5 @@ class QAValidator:
             scores.faithfulness * self.cep_config.faithfulness_weight
             + scores.bloom_calibration * self.cep_config.bloom_calibration_weight
             + scores.informativeness * self.cep_config.informativeness_weight
+            + scores.self_containedness * self.cep_config.self_containedness_weight
         )

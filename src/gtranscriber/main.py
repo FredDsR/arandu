@@ -988,6 +988,78 @@ def generate_cep_qa(
 
 
 @app.command()
+def replicate(
+    source_id: Annotated[
+        str,
+        typer.Argument(help="Pipeline ID to replicate from."),
+    ],
+    target_id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help="New pipeline ID. Auto-generated if omitted.",
+        ),
+    ] = None,
+    results_dir: Annotated[
+        Path,
+        typer.Option(
+            "--results-dir",
+            "-r",
+            help="Base results directory. Can be set via GTRANSCRIBER_RESULTS_BASE_DIR env var.",
+        ),
+    ] = _results_config.base_dir,
+) -> None:
+    """Replicate (clone) an existing pipeline run to a new ID.
+
+    Copies the entire pipeline directory tree and rewrites metadata with a new
+    pipeline ID. This enables experimentation workflows: clone a completed run,
+    then re-run only specific steps (e.g., QA with new prompts) on top of the
+    cloned outputs.
+
+    Examples:
+        # Auto-generate new ID
+        gtranscriber replicate 20260204_143052_local
+
+        # Specify target ID
+        gtranscriber replicate 20260204_143052_local --id my-experiment-v2
+    """
+    from rich.panel import Panel
+
+    from gtranscriber.core.results_manager import ResultsManager
+    from gtranscriber.schemas import PipelineMetadata
+
+    try:
+        new_id = ResultsManager.replicate_pipeline(
+            base_dir=results_dir,
+            source_pipeline_id=source_id,
+            target_pipeline_id=target_id,
+        )
+
+        # Load replicated pipeline metadata for summary
+        pipeline_meta = PipelineMetadata.load(results_dir / new_id / "pipeline.json")
+
+        summary_lines = [
+            f"[cyan]New Pipeline ID:[/cyan] {new_id}",
+            f"[cyan]Source Pipeline:[/cyan] {source_id}",
+            f"[cyan]Steps Copied:[/cyan] {', '.join(pipeline_meta.steps_run)}",
+            f"[cyan]Location:[/cyan] {results_dir / new_id}",
+        ]
+
+        console.print()
+        console.print(Panel("\n".join(summary_lines), title="Replication Complete"))
+        console.print()
+
+        print_success(f"Pipeline replicated: {source_id} -> {new_id}")
+
+    except ValueError as e:
+        print_error(str(e))
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        print_error(f"Replication failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
 def info() -> None:
     """Display system information and hardware capabilities."""
     import torch

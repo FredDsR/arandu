@@ -30,9 +30,10 @@ def cep_config() -> CEPConfig:
     return CEPConfig(
         enable_validation=True,
         validation_threshold=0.6,
-        faithfulness_weight=0.4,
-        bloom_calibration_weight=0.3,
-        informativeness_weight=0.3,
+        faithfulness_weight=0.30,
+        bloom_calibration_weight=0.25,
+        informativeness_weight=0.25,
+        self_containedness_weight=0.20,
         language="pt",
     )
 
@@ -109,6 +110,7 @@ class TestQAValidator:
                 "faithfulness": 1.0,
                 "bloom_calibration": 1.0,
                 "informativeness": 1.0,
+                "self_containedness": 1.0,
                 "judge_rationale": "Perfect.",
             }
         )
@@ -120,7 +122,7 @@ class TestQAValidator:
 
         result = validator.validate(sample_qa_pair, "context")
 
-        # Weighted average: 0.4*1.0 + 0.3*1.0 + 0.3*1.0 = 1.0
+        # Weighted average: 0.30*1.0 + 0.25*1.0 + 0.25*1.0 + 0.20*1.0 = 1.0
         assert result.validation.overall_score == 1.0
 
     def test_validate_is_valid_above_threshold(
@@ -135,6 +137,7 @@ class TestQAValidator:
                 "faithfulness": 0.8,
                 "bloom_calibration": 0.7,
                 "informativeness": 0.6,
+                "self_containedness": 0.9,
             }
         )
 
@@ -145,8 +148,9 @@ class TestQAValidator:
 
         result = validator.validate(sample_qa_pair, "context")
 
-        # Overall: 0.4*0.8 + 0.3*0.7 + 0.3*0.6 = 0.32 + 0.21 + 0.18 = 0.71
-        # 0.71 >= 0.6 (threshold)
+        # Overall: 0.30*0.8 + 0.25*0.7 + 0.25*0.6 + 0.20*0.9
+        # = 0.24 + 0.175 + 0.15 + 0.18 = 0.745
+        # 0.745 >= 0.6 (threshold)
         assert result.is_valid is True
 
     def test_validate_is_valid_below_threshold(
@@ -161,6 +165,7 @@ class TestQAValidator:
                 "faithfulness": 0.3,
                 "bloom_calibration": 0.4,
                 "informativeness": 0.2,
+                "self_containedness": 0.1,
             }
         )
 
@@ -171,8 +176,9 @@ class TestQAValidator:
 
         result = validator.validate(sample_qa_pair, "context")
 
-        # Overall: 0.4*0.3 + 0.3*0.4 + 0.3*0.2 = 0.12 + 0.12 + 0.06 = 0.30
-        # 0.30 < 0.6 (threshold)
+        # Overall: 0.30*0.3 + 0.25*0.4 + 0.25*0.2 + 0.20*0.1
+        # = 0.09 + 0.10 + 0.05 + 0.02 = 0.26
+        # 0.26 < 0.6 (threshold)
         assert result.is_valid is False
 
     def test_validate_handles_markdown_response(
@@ -216,12 +222,15 @@ class TestQAValidator:
 
         result = validator.validate(sample_qa_pair, "context")
 
-        # Invalid JSON falls back to default scores of 0.5
+        # Invalid JSON falls back to default scores
         assert result.validation.faithfulness == 0.5
         assert result.validation.bloom_calibration == 0.5
         assert result.validation.informativeness == 0.5
-        # 0.5 overall is below 0.6 threshold
-        assert result.is_valid is False
+        assert result.validation.self_containedness == 1.0
+        # Overall: 0.30*0.5 + 0.25*0.5 + 0.25*0.5 + 0.20*1.0
+        # = 0.15 + 0.125 + 0.125 + 0.20 = 0.60
+        # 0.60 >= 0.6 (threshold) -- edge case, passes
+        assert result.is_valid is True
 
     def test_validate_handles_llm_error(
         self,
@@ -390,6 +399,7 @@ class TestValidationScore:
             faithfulness=0.9,
             bloom_calibration=0.8,
             informativeness=0.7,
+            self_containedness=0.95,
             overall_score=0.8,
             judge_rationale="Good quality.",
         )
@@ -397,7 +407,19 @@ class TestValidationScore:
         assert score.faithfulness == 0.9
         assert score.bloom_calibration == 0.8
         assert score.informativeness == 0.7
+        assert score.self_containedness == 0.95
         assert score.overall_score == 0.8
+
+    def test_self_containedness_defaults_to_one(self) -> None:
+        """Test that self_containedness defaults to 1.0 for backward compat."""
+        score = ValidationScore(
+            faithfulness=0.9,
+            bloom_calibration=0.8,
+            informativeness=0.7,
+            overall_score=0.8,
+        )
+
+        assert score.self_containedness == 1.0
 
     def test_score_boundary_values(self) -> None:
         """Test score boundary values."""
@@ -518,3 +540,118 @@ class TestQAValidatorEdgeCases:
         assert validator._validate_score(0.7) == 0.7
         assert validator._validate_score(1) == 1.0
         assert validator._validate_score(0) == 0.0
+
+
+class TestSelfContainedness:
+    """Tests for self_containedness criterion in validation."""
+
+    def test_validate_parses_self_containedness(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that self_containedness is parsed from LLM response."""
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "faithfulness": 0.9,
+                "bloom_calibration": 0.8,
+                "informativeness": 0.7,
+                "self_containedness": 0.6,
+                "judge_rationale": "Partially self-contained.",
+            }
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "context")
+
+        assert result.validation.self_containedness == 0.6
+
+    def test_validate_defaults_self_containedness_when_missing(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that self_containedness defaults to 1.0 when not in response."""
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "faithfulness": 0.9,
+                "bloom_calibration": 0.8,
+                "informativeness": 0.7,
+            }
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "context")
+
+        assert result.validation.self_containedness == 1.0
+
+    def test_validate_overrides_self_containedness_for_remember(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test that self_containedness is forced to 1.0 for remember level."""
+        remember_pair = QAPairCEP(
+            question="Quem mencionou algo no texto?",
+            answer="O pescador.",
+            context="O pescador mencionou a enchente.",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+        )
+
+        # LLM judge gives low self_containedness (incorrect for remember)
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "faithfulness": 0.9,
+                "bloom_calibration": 0.8,
+                "informativeness": 0.7,
+                "self_containedness": 0.2,
+            }
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(remember_pair, "context")
+
+        # Safety net forces 1.0 for remember level
+        assert result.validation.self_containedness == 1.0
+
+    def test_overall_score_includes_self_containedness(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that overall score calculation includes self_containedness weight."""
+        mock_llm_client.generate.return_value = json.dumps(
+            {
+                "faithfulness": 1.0,
+                "bloom_calibration": 1.0,
+                "informativeness": 1.0,
+                "self_containedness": 0.0,
+            }
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "context")
+
+        # Overall: 0.30*1.0 + 0.25*1.0 + 0.25*1.0 + 0.20*0.0 = 0.80
+        assert abs(result.validation.overall_score - 0.80) < 0.01

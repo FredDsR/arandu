@@ -1,4 +1,4 @@
-Você é um avaliador rigoroso de pares pergunta-resposta. Sua tarefa é julgar a qualidade de QAs gerados para elicitação de conhecimento, avaliando três critérios: fidelidade, calibração de Bloom e informatividade.
+Você é um avaliador rigoroso de pares pergunta-resposta. Sua tarefa é julgar a qualidade de QAs gerados para elicitação de conhecimento, avaliando quatro critérios: fidelidade, calibração de Bloom, informatividade e autonomia.
 
 Contexto Original:
 $context
@@ -40,10 +40,20 @@ Critérios de Avaliação:
    - 0.2: Informação relativamente trivial - poderia ser encontrada facilmente
    - 0.0: Informação trivial ou óbvia - não agrega valor significativo
 
+4. SELF_CONTAINEDNESS (Autonomia): Avalie se a pergunta é compreensível e respondível sem acesso ao texto original. Para perguntas de nível 'remember', atribua 1.0 (recordar fatos do contexto é esperado). Para demais níveis:
+   Rubrica:
+   - 1.0: Completamente autônoma - nomeia entidades, locais e técnicas explicitamente
+   - 0.8: Quase autônoma - mínimas referências implícitas ao contexto
+   - 0.6: Parcialmente autônoma - alguns elementos exigem contexto
+   - 0.4: Dependente - referências frequentes ao 'texto' ou pronomes sem antecedente
+   - 0.2: Muito dependente - não faz sentido sem o texto original
+   - 0.0: Completamente dependente - usa 'no texto', 'conforme mencionado' etc.
+
 Retorne APENAS um objeto JSON no seguinte formato:
 {
   "faithfulness": 0.0,
   "bloom_calibration": 0.0,
   "informativeness": 0.0,
+  "self_containedness": 0.0,
   "judge_rationale": "Explicação das pontuações atribuídas"
 }

@@ -251,6 +251,16 @@ class ValidationScore(BaseModel):
         le=1.0,
         description="Does answer reveal non-obvious/tacit knowledge?",
     )
+    self_containedness: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Is the question self-contained and understandable without "
+            "the original context (1.0) or context-dependent (0.0)? "
+            "Remember-level questions are exempt (auto 1.0)."
+        ),
+    )
     overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
     judge_rationale: str | None = Field(None, description="Judge model's reasoning for the scores")
 
@@ -543,6 +553,19 @@ class PipelineType(str, Enum):
     EVALUATION = "evaluation"
 
 
+class ReplicationInfo(BaseModel):
+    """Provenance info for a replicated pipeline."""
+
+    source_pipeline_id: str = Field(
+        ...,
+        description="Pipeline ID this was replicated from",
+    )
+    replicated_at: datetime = Field(
+        default_factory=_utc_now,
+        description="When the replication occurred (UTC)",
+    )
+
+
 class PipelineMetadata(BaseModel):
     """Metadata for a pipeline run group sharing a single pipeline ID.
 
@@ -557,6 +580,10 @@ class PipelineMetadata(BaseModel):
         default_factory=list, description="Pipeline steps executed (e.g. ['transcription', 'qa'])"
     )
     schema_version: str = Field(default="2.0", description="Schema version for compatibility")
+    replicated_from: ReplicationInfo | None = Field(
+        default=None,
+        description="Provenance info if this pipeline was replicated from another",
+    )
 
     def save(self, path: str | Path) -> None:
         """Save pipeline metadata to JSON file.

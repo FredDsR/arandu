@@ -236,6 +236,8 @@ class CEPQAGenerator:
             "avg_bloom_calibration": sum(p.validation.bloom_calibration for p in validated_pairs)
             / n,
             "avg_informativeness": sum(p.validation.informativeness for p in validated_pairs) / n,
+            "avg_self_containedness": sum(p.validation.self_containedness for p in validated_pairs)
+            / n,
             "avg_overall_score": sum(p.validation.overall_score for p in validated_pairs) / n,
             "validation_pass_rate": sum(1 for p in validated_pairs if p.is_valid) / n,
         }
