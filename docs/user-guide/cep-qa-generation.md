@@ -58,6 +58,9 @@ gtranscriber generate-cep-qa results/ --no-validate --output-dir cep_dataset/
 
 # Export to JSONL format
 gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+
+# With pipeline ID for tracking
+gtranscriber generate-cep-qa results/ --id etno-project-001
 ```
 
 ## Configuration
@@ -81,6 +84,8 @@ gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 | `GTRANSCRIBER_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
 | `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model |
 | `GTRANSCRIBER_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
+| `GTRANSCRIBER_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
+| `GTRANSCRIBER_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
 
 ### Bloom Distribution
 
@@ -199,7 +204,8 @@ cep_dataset/
       "reasoning_trace": "Fato: rio sobe → Ação: guardar barco → Razão: evitar perda",
       "is_multi_hop": false,
       "hop_count": null,
-      "tacit_inference": "Subida rápida do rio indica risco iminente de enchente"
+      "tacit_inference": "Subida rápida do rio indica risco iminente de enchente",
+      "generation_prompt": "Gere uma pergunta de análise que identifique relações de causa e efeito..."
     }
   ],
   "model_id": "qwen3:14b",

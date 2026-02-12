@@ -79,7 +79,7 @@ This shows your hardware configuration (CPU, GPU, memory).
 
 ```bash
 # Use faster turbo model
-gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3-turbo
+gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3
 
 # Use quantization for reduced VRAM
 gtranscriber transcribe audio.mp3 --quantize
@@ -111,7 +111,7 @@ gtranscriber drive-transcribe <file-id> --credentials credentials.json
 curl -fsSL https://ollama.ai/install.sh | sh
 
 # Pull a model
-ollama pull llama3.1:8b
+ollama pull qwen3:14b
 
 # Start Ollama server
 ollama serve

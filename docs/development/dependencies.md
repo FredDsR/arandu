@@ -22,9 +22,10 @@ Dependencies from the original transcription pipeline:
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `accelerate` | >=1.12.0 | Model acceleration and device management |
-| `google-api-python-client` | latest | Google Drive API integration |
-| `google-auth-httplib2` | latest | Google authentication |
-| `google-auth-oauthlib` | latest | OAuth2 flow |
+| `bitsandbytes` | >=0.49.1 | Quantization and memory optimization |
+| `google-api-python-client` | >=2.100.0 | Google Drive API integration |
+| `google-auth-httplib2` | >=0.1.0 | Google authentication |
+| `google-auth-oauthlib` | >=1.0.0 | OAuth2 flow |
 | `pydantic` | >=2.0.0 | Data validation, schemas, and JSON serialization |
 | `pydantic-settings` | >=2.0.0 | Configuration management with env var support |
 | `rich` | >=13.0.0 | Terminal UI and formatting |
@@ -37,8 +38,9 @@ Dependencies from the original transcription pipeline:
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `torch` | >=2.0.0 | PyTorch deep learning framework |
-| `torchaudio` | >=2.0.0 | Audio processing |
+| `torch` | (via uv sources) | PyTorch deep learning framework (CUDA 12.4) |
+| `torchvision` | (via uv sources) | Vision processing utilities |
+| `torchaudio` | (via uv sources) | Audio processing |
 
 ---
 
@@ -53,21 +55,29 @@ Dependencies added for P2 functionality:
 | `openai` | >=1.0.0 | OpenAI API client (also supports Ollama and other OpenAI-compatible endpoints) | `llm_client.py` |
 | `httpx` | >=0.27.0 | HTTP client (used by openai SDK) | `llm_client.py` |
 
-### Knowledge Graph Construction
+---
 
-| Package | Version | Purpose | Used By |
+## Planned Dependencies (Not Yet Added)
+
+The following dependencies are planned for future phases but are **not currently in `pyproject.toml`**:
+
+### Knowledge Graph Construction (Planned for KG Phase)
+
+| Package | Version | Purpose | Planned Module |
 |---------|---------|---------|---------|
 | `atlas-rag` | >=0.0.5 | AutoSchemaKG framework | `kg_builder.py` |
 | `networkx` | >=3.1 | Graph data structures and algorithms | `kg_builder.py`, `metrics.py` |
 
-### Evaluation and Metrics
+### Evaluation and Metrics (Planned for Evaluation Phase)
 
-| Package | Version | Purpose | Used By |
+| Package | Version | Purpose | Planned Module |
 |---------|---------|---------|---------|
 | `scikit-learn` | >=1.3.0 | Machine learning metrics (F1, etc.) | `metrics.py` |
 | `sentence-transformers` | >=2.2.0 | Semantic embeddings | `metrics.py`, `evaluator.py` |
 | `nltk` | >=3.8.0 | NLP utilities (tokenization) | `metrics.py` |
 | `sacrebleu` | >=2.3.0 | BLEU score calculation | `metrics.py` |
+
+> **Note**: These dependencies will be added to `pyproject.toml` when their respective implementation phases begin.
 
 ---
 
@@ -80,79 +90,45 @@ Required for running the application:
 ```toml
 [project]
 dependencies = [
-    # Existing
     "accelerate>=1.12.0",
-    "google-api-python-client",
-    "google-auth-httplib2",
-    "google-auth-oauthlib",
+    "bitsandbytes>=0.49.1",
+    "google-api-python-client>=2.100.0",
+    "google-auth-httplib2>=0.1.0",
+    "google-auth-oauthlib>=1.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "rich>=13.0.0",
     "sentencepiece>=0.2.1",
     "tenacity>=8.0.0",
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
     "transformers>=4.57.3",
     "typer[all]>=0.9.0",
-
-    # New - LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
+    # LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
     "openai>=1.0.0",
     "httpx>=0.27.0",
-
-    # New - KG Construction
-    "atlas-rag>=0.0.5",
-    "networkx>=3.1",
-
-    # New - Evaluation
-    "scikit-learn>=1.3.0",
-    "sentence-transformers>=2.2.0",
-    "nltk>=3.8.0",
-    "sacrebleu>=2.3.0",
 ]
 ```
 
 ### Development Dependencies
 
-Optional dependencies for development:
+Dependencies for code quality and linting:
 
 ```toml
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-mock>=3.10.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-    "pre-commit>=3.0.0",
-]
-```
-
-### Documentation Dependencies
-
-For building documentation:
-
-```toml
-[project.optional-dependencies]
-docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocstrings[python]>=0.24.0",
+    "ruff>=0.8.0",
 ]
 ```
 
 ### Testing Dependencies
 
-For running tests:
+Dependencies for running tests:
 
 ```toml
-[project.optional-dependencies]
+[dependency-groups]
 test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-asyncio>=0.21.0",
-    "responses>=0.23.0",
-    "faker>=20.0.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
 ]
 ```
 
@@ -160,12 +136,22 @@ test = [
 
 ## Installation Instructions
 
+### Build System
+
+This project uses **uv** as the build backend and package manager:
+
+```toml
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+```
+
 ### Basic Installation
 
-Install production dependencies only:
+Install production dependencies:
 
 ```bash
-pip install -e .
+uv sync
 ```
 
 ### Development Installation
@@ -173,33 +159,31 @@ pip install -e .
 Install with development dependencies:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --group dev
+```
+
+### Testing Installation
+
+Install with test dependencies:
+
+```bash
+uv sync --group test
 ```
 
 ### Complete Installation
 
-Install all optional dependencies:
+Install all dependency groups:
 
 ```bash
-pip install -e ".[dev,docs,test]"
+uv sync --all-groups
 ```
 
-### Using uv (Recommended)
+### Alternative: pip Installation
 
-For faster installation:
-
-```bash
-uv pip install -e .
-uv pip install -e ".[dev]"
-```
-
-### Using Poetry (Alternative)
-
-If using Poetry for dependency management:
+If not using uv:
 
 ```bash
-poetry install
-poetry install --with dev,docs,test
+pip install -e .
 ```
 
 ### Docker Installation
@@ -224,49 +208,52 @@ docker compose build
 
 ### PyTorch Version
 
-**CUDA Support**:
-- `torch>=2.0.0+cu124` (CUDA 12.4)
-- `torchaudio>=2.0.0+cu124`
+**CUDA Support** (Configured via `[tool.uv.sources]`):
 
-**ROCm Support** (AMD GPUs):
-- `torch>=2.0.0+rocm5.7`
+The project is configured to use PyTorch with CUDA 12.4 support. This is managed through uv's custom index configuration:
 
-**CPU Only**:
-- `torch>=2.0.0+cpu`
+```toml
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "supplemental"
 
-**Installation**:
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
+```
+
+When running `uv sync`, PyTorch packages are automatically installed from the CUDA 12.4 index.
+
+**Manual Installation** (if not using uv):
+
 ```bash
-# CUDA
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+# CUDA 12.4
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
-# ROCm
+# ROCm (AMD GPUs)
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/rocm5.7
 
-# CPU
+# CPU Only
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ### Transformers Version Constraints
 
-For **NV-embed-v2** support (optional):
-- `transformers>=4.42.4,<=4.47.1`
-
 For **general use**:
 - `transformers>=4.57.3`
 
-### NetworkX Version
+### bitsandbytes Version
 
-Minimum version 3.1 required for:
-- Modern graph algorithms
-- Better performance
-- JSON serialization improvements
+**Purpose**: Quantization and memory optimization for LLMs
 
-### Sentence Transformers Compatibility
+**Minimum version**: >=0.49.1
 
-**Models Tested**:
-- `sentence-transformers/all-MiniLM-L6-v2` (default)
-- `sentence-transformers/all-mpnet-base-v2`
-- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+**Features Used**:
+- 8-bit and 4-bit quantization
+- Memory-efficient model loading
+- CUDA optimization
 
 ---
 
@@ -339,11 +326,17 @@ Minimum version 3.1 required for:
 
 **Documentation**: https://www.python-httpx.org/
 
+---
+
+## Planned Dependency Information
+
+> **Note**: The following packages are not yet installed but are documented for future implementation phases.
+
 ### atlas-rag (>=0.0.5)
 
 **Purpose**: AutoSchemaKG framework for knowledge graph construction
 
-**Features Used**:
+**Features Planned**:
 - Triple extraction
 - Dynamic schema induction
 - Graph construction
@@ -362,7 +355,7 @@ Minimum version 3.1 required for:
 
 **Purpose**: Graph data structures and algorithms
 
-**Features Used**:
+**Features Planned**:
 - Graph creation and manipulation
 - Node and edge attributes
 - Graph algorithms (connectivity, density)
@@ -375,7 +368,7 @@ Minimum version 3.1 required for:
 
 **Purpose**: Machine learning metrics
 
-**Features Used**:
+**Features Planned**:
 - F1 score calculation
 - Precision and recall
 - Token-level comparison
@@ -386,12 +379,12 @@ Minimum version 3.1 required for:
 
 **Purpose**: Semantic embeddings for text
 
-**Features Used**:
+**Features Planned**:
 - Sentence embeddings
 - Semantic similarity
 - Coherence scoring
 
-**Models Used**:
+**Models Planned**:
 - `all-MiniLM-L6-v2` (384 dims, fast)
 - `all-mpnet-base-v2` (768 dims, high quality)
 
@@ -401,7 +394,7 @@ Minimum version 3.1 required for:
 
 **Purpose**: Natural language processing utilities
 
-**Features Used**:
+**Features Planned**:
 - Tokenization
 - Word counting
 - Text preprocessing
@@ -419,7 +412,7 @@ nltk.download('stopwords')
 
 **Purpose**: BLEU score calculation
 
-**Features Used**:
+**Features Planned**:
 - Sentence-level BLEU
 - Corpus-level BLEU
 - Multiple references
@@ -434,30 +427,42 @@ nltk.download('stopwords')
 
 - `openai`
 - `httpx`
-- `networkx`
-- `nltk`
-- `sacrebleu`
-
-### Apache 2.0 Licensed
-
-- `transformers`
-- `sentence-transformers`
-- `scikit-learn`
-- `torch`
-
-### BSD Licensed
-
 - `pydantic`
 - `typer`
 - `rich`
 
-### AutoSchemaKG License
+### Apache 2.0 Licensed
 
-- **License**: MIT
-- **Citation Required**: Yes (if publishing research)
-- **Commercial Use**: Allowed
+- `transformers`
+- `torch`
 
-**Citation**:
+### BSD Licensed
+
+- `accelerate`
+- `sentencepiece`
+
+---
+
+## Planned Dependency Licenses
+
+> **Note**: For dependencies not yet added to the project.
+
+### MIT Licensed (Planned)
+
+- `networkx`
+- `nltk`
+- `sacrebleu`
+- `atlas-rag`
+
+### Apache 2.0 Licensed (Planned)
+
+- `sentence-transformers`
+- `scikit-learn`
+
+### AutoSchemaKG Citation (When Added)
+
+If using `atlas-rag` for published research, citation is required:
+
 ```bibtex
 @article{huang2025autoschemakg,
   title={AutoSchemaKG: Autonomous Knowledge Graph Construction through Dynamic Schema Induction from Web-Scale Corpora},
@@ -471,19 +476,28 @@ nltk.download('stopwords')
 
 ## Dependency Size Information
 
-### Installation Sizes
+### Installation Sizes (Current Dependencies)
 
 | Package | Disk Space |
 |---------|------------|
 | `torch` | ~2.5 GB |
 | `transformers` | ~500 MB |
+| `bitsandbytes` | ~50 MB |
+| `openai` | ~5 MB |
+| `accelerate` | ~30 MB |
+| Other packages | ~100 MB |
+| **Total** | **~3.2 GB** |
+
+### Additional Sizes (Planned Dependencies)
+
+| Package | Disk Space |
+|---------|------------|
 | `sentence-transformers` | ~400 MB |
 | `atlas-rag` | ~50 MB |
-| `openai` | ~5 MB |
 | `networkx` | ~10 MB |
 | `scikit-learn` | ~40 MB |
 | `nltk` | ~20 MB + data |
-| **Total** | **~3.5 GB** |
+| **Total (with planned)** | **~3.7 GB** |
 
 ### Model Sizes (Downloaded at Runtime)
 
@@ -503,45 +517,38 @@ nltk.download('stopwords')
 
 **Solution**:
 ```bash
+# With uv (automatic via uv sources)
+uv sync
+
+# Manual installation
 pip install torch --index-url https://download.pytorch.org/whl/cu124
 ```
 
-**Issue**: `atlas-rag` not found
+**Issue**: `bitsandbytes` installation fails
 
 **Solution**:
 ```bash
-pip install atlas-rag --upgrade
-```
+# Ensure CUDA is available
+nvidia-smi
 
-**Issue**: `sentence-transformers` model download fails
-
-**Solution**:
-```bash
-# Pre-download models
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-```
-
-**Issue**: NLTK data not found
-
-**Solution**:
-```bash
-python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+# Reinstall
+pip install bitsandbytes --upgrade
 ```
 
 ### Dependency Conflicts
-
-**Conflict**: `transformers` version mismatch
-
-**Resolution**:
-```bash
-pip install "transformers>=4.57.3" --upgrade
-```
 
 **Conflict**: `pydantic` v1 vs v2
 
 **Resolution**: Project requires Pydantic v2
 ```bash
 pip install "pydantic>=2.0.0" --upgrade
+```
+
+**Conflict**: `transformers` version mismatch
+
+**Resolution**:
+```bash
+pip install "transformers>=4.57.3" --upgrade
 ```
 
 ---
@@ -551,29 +558,24 @@ pip install "pydantic>=2.0.0" --upgrade
 ### Check for Updates
 
 ```bash
-pip list --outdated
+uv lock --upgrade
 ```
 
-### Update All
+### Update All Dependencies
 
 ```bash
-pip install --upgrade pip
-pip install -e . --upgrade
+uv sync --upgrade
 ```
 
 ### Update Specific Package
 
 ```bash
-pip install --upgrade openai
+uv add openai --upgrade
 ```
 
 ### Lock Dependencies
 
-For reproducible builds:
-
-```bash
-pip freeze > requirements.txt
-```
+For reproducible builds, `uv.lock` is automatically maintained by uv.
 
 ---
 

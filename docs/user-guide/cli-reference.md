@@ -1,14 +1,15 @@
 # CLI Commands Reference
 
-Complete reference for all command-line interface commands in the Knowledge Graph Construction Pipeline.
+Complete reference for all command-line interface commands in G-Transcriber.
 
 ## Table of Contents
 
 1. [Command Overview](#command-overview)
-2. [Existing Commands](#existing-commands)
-3. [New Commands](#new-commands)
-4. [Usage Examples](#usage-examples)
-5. [Common Options](#common-options)
+2. [Transcription Commands](#transcription-commands)
+3. [QA Generation Commands](#qa-generation-commands)
+4. [Utilities Commands](#utilities-commands)
+5. [Usage Examples](#usage-examples)
+6. [Common Patterns](#common-patterns)
 
 ---
 
@@ -19,19 +20,21 @@ The G-Transcriber CLI is built with [Typer](https://typer.tiangolo.com/) and pro
 **Base Command**: `gtranscriber`
 
 **Command Categories**:
-- **Transcription** (existing): `transcribe`, `drive-transcribe`, `batch-transcribe`
-- **QA Generation** (new): `generate-qa`
-- **KG Construction** (new): `build-kg`
-- **Evaluation** (new): `evaluate`
-- **Utilities** (existing): `refresh-auth`, `info`
+- **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
+- **QA Generation**: `generate-cep-qa`
+- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `validate-transcriptions`, `rebuild-index`
+
+**Global Options**:
+- `--help` - Show command help
+- `--version` - Show application version
 
 ---
 
-## Existing Commands
+## Transcription Commands
 
 ### `transcribe`
 
-Transcribe a single local audio/video file.
+Transcribe a local audio or video file.
 
 **Usage**:
 ```bash
@@ -39,45 +42,78 @@ gtranscriber transcribe FILE_PATH [OPTIONS]
 ```
 
 **Arguments**:
-- `FILE_PATH` - Path to audio/video file
+- `FILE_PATH` - Path to the audio/video file to transcribe
 
 **Options**:
-- `--model-id, -m` - Whisper model ID (default: from config)
-- `--quantize` - Enable 8-bit quantization
-- `--cpu` - Force CPU execution
-- `--output, -o` - Output JSON file path
 
-**Example**:
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--model-id` | `-m` | str | `openai/whisper-large-v3` | Hugging Face model ID for transcription |
+| `--output` | `-o` | Path | Auto-generated | Output file path for transcription JSON |
+| `--quantize` | `-q` | flag | `False` | Enable 8-bit quantization to reduce VRAM usage |
+| `--cpu` | | flag | `False` | Force CPU execution (disables CUDA/MPS) |
+| `--language` | `-l` | str | Auto-detect | Language code (e.g., 'pt' for Portuguese) |
+
+**Examples**:
 ```bash
-gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3-turbo
+# Basic transcription
+gtranscriber transcribe audio.mp3
+
+# With custom model
+gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3
+
+# With quantization (reduced VRAM)
+gtranscriber transcribe audio.mp3 --quantize
+
+# Force CPU execution
+gtranscriber transcribe audio.mp3 --cpu
+
+# Specify language
+gtranscriber transcribe audio.mp3 --language pt
+
+# Custom output location
+gtranscriber transcribe audio.mp3 -o results/transcription.json
 ```
+
+---
 
 ### `drive-transcribe`
 
-Transcribe a file from Google Drive.
+Transcribe a file from Google Drive. Downloads the file, transcribes it, and uploads the result to the same Drive folder.
 
 **Usage**:
 ```bash
-gtranscriber drive-transcribe DRIVE_FILE_ID [OPTIONS]
+gtranscriber drive-transcribe FILE_ID [OPTIONS]
 ```
 
 **Arguments**:
-- `DRIVE_FILE_ID` - Google Drive file ID
+- `FILE_ID` - Google Drive file ID to transcribe
 
 **Options**:
-- `--credentials` - Path to credentials.json
-- `--token` - Path to token.json
-- `--model-id, -m` - Whisper model ID
-- `--output, -o` - Output JSON file path
 
-**Example**:
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--model-id` | `-m` | str | `openai/whisper-large-v3` | Hugging Face model ID |
+| `--credentials` | `-c` | Path | `credentials.json` | Path to Google OAuth2 credentials file |
+| `--token` | `-t` | Path | `token.json` | Path to Google OAuth2 token file |
+| `--quantize` | `-q` | flag | `False` | Enable 8-bit quantization |
+| `--cpu` | | flag | `False` | Force CPU execution |
+| `--language` | `-l` | str | Auto-detect | Language code |
+
+**Examples**:
 ```bash
+# Basic usage
 gtranscriber drive-transcribe 1abc123xyz --credentials credentials.json
+
+# With custom model and quantization
+gtranscriber drive-transcribe 1abc123xyz --model-id openai/whisper-large-v3 --quantize
 ```
+
+---
 
 ### `batch-transcribe`
 
-Batch transcribe files from a CSV catalog.
+Batch transcribe audio/video files from a catalog CSV with parallel processing and automatic checkpoint/resume capability.
 
 **Usage**:
 ```bash
@@ -85,138 +121,64 @@ gtranscriber batch-transcribe CATALOG_FILE [OPTIONS]
 ```
 
 **Arguments**:
-- `CATALOG_FILE` - Path to CSV catalog
+- `CATALOG_FILE` - Path to catalog CSV file with Google Drive file metadata
 
-**Options**:
-- `--credentials` - Path to credentials.json
-- `--token` - Path to token.json
-- `--output-dir, -o` - Output directory
-- `--workers, -w` - Number of parallel workers
-- `--model-id, -m` - Whisper model ID
-- `--quantize` - Enable quantization
-- `--cpu` - Force CPU execution
-
-**Example**:
-```bash
-gtranscriber batch-transcribe input/catalog.csv --workers 4 --quantize
-```
-
-### `refresh-auth`
-
-Refresh Google OAuth2 token.
-
-**Usage**:
-```bash
-gtranscriber refresh-auth [OPTIONS]
-```
-
-**Options**:
-- `--credentials` - Path to credentials.json
-- `--token` - Path to token.json
-
-**Example**:
-```bash
-gtranscriber refresh-auth --credentials credentials.json
-```
-
-### `info`
-
-Display system hardware information.
-
-**Usage**:
-```bash
-gtranscriber info
-```
-
-**Output**: CPU, GPU, memory, and device information
-
----
-
-## New Commands
-
-### `generate-qa`
-
-Generate synthetic QA dataset from transcriptions.
-
-**Usage**:
-```bash
-gtranscriber generate-qa INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing transcription JSON files (EnrichedRecord format)
+**Required CSV Columns**:
+- `gdrive_id` - Google Drive file ID
+- `name` - File name
+- `mime_type` - MIME type
+- `size_bytes` - File size in bytes
+- `parents` - Parent folder IDs
+- `web_content_link` - Download link
+- `duration_milliseconds` (optional) - Media duration
 
 **Options**:
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | `qa_dataset` | Output directory for QA dataset |
-| `--provider` | `-p` | str | `ollama` | LLM provider: openai, ollama, custom |
-| `--model-id` | `-m` | str | `llama3.1:8b` | Model ID for generation |
-| `--api-key` | | str | None | API key (overrides env) |
-| `--base-url` | | str | None | Custom base URL for OpenAI-compatible endpoints |
-| `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL (deprecated, use --base-url) |
-| `--workers` | `-w` | int | `2` | Number of parallel workers |
-| `--questions` | `-q` | int | `10` | Questions per document |
-| `--strategy` | | str | `factual` | Question strategy (repeatable) |
-| `--temperature` | | float | `0.7` | Generation temperature |
-| `--checkpoint` | | Path | `qa_checkpoint.json` | Checkpoint file path |
-
-**Question Strategies**:
-- `factual` - Who, what, when, where questions
-- `conceptual` - Why, how questions
-- `temporal` - Time-based questions
-- `entity` - Entity-focused questions
+| `--output-dir` | `-o` | Path | `./results` | Output directory for transcription JSON files |
+| `--model-id` | `-m` | str | `openai/whisper-large-v3` | Hugging Face model ID |
+| `--credentials` | `-c` | Path | `credentials.json` | Path to Google OAuth2 credentials file |
+| `--token` | `-t` | Path | `token.json` | Path to Google OAuth2 token file |
+| `--workers` | `-w` | int | `1` | Number of parallel workers |
+| `--checkpoint` | | Path | `results/checkpoint.json` | Path to checkpoint file |
+| `--quantize` | `-q` | flag | `False` | Enable 8-bit quantization |
+| `--cpu` | | flag | `False` | Force CPU execution |
+| `--language` | `-l` | str | Auto-detect | Language code |
+| `--id` | | str | Auto-generated | Pipeline ID for grouping related steps |
 
 **Examples**:
-
 ```bash
-# Basic usage with Ollama
-gtranscriber generate-qa results/ -o qa_dataset/ --workers 4
+# Basic batch transcription
+gtranscriber batch-transcribe input/catalog.csv --workers 4
 
-# Multiple strategies
-gtranscriber generate-qa results/ \
-    --strategy factual \
-    --strategy conceptual \
-    --strategy temporal \
-    --questions 15
+# With custom output directory
+gtranscriber batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
 
-# With OpenAI
-gtranscriber generate-qa results/ \
-    --provider openai \
-    --model-id gpt-4o-mini \
-    --api-key sk-... \
-    --workers 2
+# With quantization and custom model
+gtranscriber batch-transcribe input/catalog.csv \
+    --model-id openai/whisper-large-v3 \
+    --quantize \
+    --workers 4
 
-# With custom OpenAI-compatible endpoint
-gtranscriber generate-qa results/ \
-    --provider custom \
-    --base-url https://my-vllm-server/v1 \
-    --model-id llama3.1:70b \
-    --questions 12
+# Resume interrupted job (uses checkpoint automatically)
+gtranscriber batch-transcribe input/catalog.csv --workers 4
+
+# With custom pipeline ID
+gtranscriber batch-transcribe input/catalog.csv --id my-project-001
 ```
 
-**Output Structure**:
-```
-qa_dataset/
-├── qa_1abc123xyz.json
-├── qa_2def456uvw.json
-└── qa_checkpoint.json
-```
+---
 
-**Progress Display**:
-- Overall progress bar
-- Current file being processed
-- QA pairs generated per file
-- Estimated time remaining
+## QA Generation Commands
 
-### `build-kg`
+### `generate-cep-qa`
 
-Build knowledge graphs from transcriptions using AutoSchemaKG.
+Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with Bloom-level scaffolding and LLM-as-a-Judge validation.
 
 **Usage**:
 ```bash
-gtranscriber build-kg INPUT_DIR [OPTIONS]
+gtranscriber generate-cep-qa INPUT_DIR [OPTIONS]
 ```
 
 **Arguments**:
@@ -226,136 +188,248 @@ gtranscriber build-kg INPUT_DIR [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | `knowledge_graphs` | Output directory for KGs |
-| `--provider` | `-p` | str | `ollama` | LLM provider: openai, ollama, custom |
-| `--model-id` | `-m` | str | `llama3.1:8b` | Model ID |
-| `--api-key` | | str | None | API key (overrides env) |
-| `--base-url` | | str | None | Custom base URL for OpenAI-compatible endpoints |
-| `--ollama-url` | | str | `http://localhost:11434` | Ollama API URL (deprecated, use --base-url) |
-| `--workers` | `-w` | int | `1` | Parallel workers |
-| `--merge/--no-merge` | | bool | `True` | Merge into corpus graph |
-| `--format` | `-f` | str | `graphml` | Output format: graphml (default), json |
-| `--schema-mode` | | str | `dynamic` | Schema mode: dynamic, predefined |
-| `--language` | `-l` | str | `pt` | Language code for extraction prompts (ISO 639-1) |
-| `--prompt-path` | | Path | `prompts/pt_prompts.json` | Path to language-specific prompt templates |
-| `--checkpoint` | | Path | `kg_checkpoint.json` | Checkpoint file path |
-
-**Language Support**:
-The `--language` option specifies the language of the transcriptions for proper triple extraction. Supported languages include: `en`, `pt`, `es`, `fr`, `de`, `zh-CN`, `ja`, `ko`. The `--prompt-path` option points to a JSON file containing language-specific prompts.
+| `--output-dir` | `-o` | Path | `qa_dataset` | Output directory for CEP QA dataset JSON files |
+| `--provider` | | str | `ollama` | LLM provider: openai, ollama, custom |
+| `--model-id` | `-m` | str | `qwen3:14b` | Model ID for QA generation |
+| `--workers` | `-w` | int | `2` | Number of parallel workers |
+| `--questions` | | int | `10` | Number of QA pairs per document (1-50) |
+| `--temperature` | | float | `0.7` | LLM temperature for generation (0.0-2.0) |
+| `--ollama-url` | | str | `http://localhost:11434/v1` | Ollama API base URL |
+| `--base-url` | | str | `None` | Custom base URL for OpenAI-compatible endpoints |
+| `--language` | `-l` | str | `pt` | Language for prompts: 'pt' or 'en' |
+| `--validate/--no-validate` | | flag | `True` | Enable LLM-as-a-Judge validation |
+| `--validator-model` | | str | `qwen3:14b` | Model ID for validation |
+| `--bloom-dist` | | str | `None` | Bloom level distribution (e.g., 'remember:0.2,understand:0.3') |
+| `--jsonl/--no-jsonl` | | flag | `False` | Export QA pairs to JSONL format for training |
+| `--id` | | str | Auto-resolved | Pipeline ID (auto-resolves transcription outputs) |
 
 **Examples**:
-
 ```bash
-# Basic usage
-gtranscriber build-kg results/ -o knowledge_graphs/
+# Basic usage with Ollama
+gtranscriber generate-cep-qa results/ -o qa_dataset/ --workers 4
 
-# No merge (individual graphs only)
-gtranscriber build-kg results/ --no-merge
+# With custom Bloom distribution
+gtranscriber generate-cep-qa results/ \
+    --bloom-dist "remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2" \
+    --questions 15
 
-# Export as GraphML
-gtranscriber build-kg results/ --format graphml
-
-# With OpenAI and multiple workers
-gtranscriber build-kg results/ \
+# With OpenAI
+gtranscriber generate-cep-qa results/ \
     --provider openai \
-    --model-id gpt-4o \
-    --workers 4 \
-    --merge
+    --model-id gpt-4o-mini \
+    --workers 2
 
-# With predefined schema
-gtranscriber build-kg results/ \
-    --schema-mode predefined \
-    --schema-file schema.json
+# Without validation (faster)
+gtranscriber generate-cep-qa results/ \
+    --no-validate \
+    --workers 4
 
-# Portuguese transcriptions (default)
-gtranscriber build-kg results/ \
-    --language pt \
-    --prompt-path prompts/pt_prompts.json
+# With custom validator model
+gtranscriber generate-cep-qa results/ \
+    --validator-model qwen3:14b \
+    --questions 12
 
-# English transcriptions
-gtranscriber build-kg results/ \
+# Export to JSONL for KGQA training
+gtranscriber generate-cep-qa results/ \
+    --jsonl \
+    --questions 20
+
+# English prompts
+gtranscriber generate-cep-qa results/ \
     --language en \
-    --prompt-path prompts/en_prompts.json
+    --questions 10
+
+# With pipeline ID
+gtranscriber generate-cep-qa results/ --id my-project-001
 ```
 
 **Output Structure**:
 ```
-knowledge_graphs/
-├── corpus_graph.graphml              # Merged graph (NetworkX-compatible)
-├── corpus_graph_metadata.json        # Provenance metadata
-├── individual/                       # Per-document graphs
-│   ├── 1abc123xyz.graphml
-│   └── 2def456uvw.graphml
-└── checkpoints/
-    └── kg_checkpoint.json
+qa_dataset/
+├── cep_qa_1abc123xyz.json
+├── cep_qa_2def456uvw.json
+└── cep_qa_checkpoint.json
 ```
 
-**Progress Display**:
-- Triple extraction progress
-- Schema induction progress
-- Graph construction status
-- Merge operation status
+---
 
-### `evaluate`
+## Utilities Commands
 
-Evaluate knowledge elicitation quality.
+### `refresh-auth`
+
+Fully refresh Google OAuth2 authentication token. Deletes existing token and initiates fresh OAuth2 authorization flow.
 
 **Usage**:
 ```bash
-gtranscriber evaluate QA_DATASET TRANSCRIPTIONS [OPTIONS]
+gtranscriber refresh-auth [OPTIONS]
 ```
-
-**Arguments**:
-- `QA_DATASET` - Path to QA dataset directory
-- `TRANSCRIPTIONS` - Path to transcriptions directory
 
 **Options**:
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--kg-path` | `-k` | Path | None | Path to knowledge graph (GraphML) |
-| `--output` | `-o` | Path | `evaluation_report.json` | Output report path |
-| `--metric` | `-m` | str | `qa` | Metric to compute (repeatable) |
-| `--embedding-model` | | str | From config | Sentence transformer model |
+| `--credentials` | `-c` | Path | `credentials.json` | Path to Google OAuth2 credentials file |
+| `--token` | `-t` | Path | `token.json` | Path to token file to refresh |
 
-**Metric Options**:
-- `qa` - QA-based metrics (EM, F1, BLEU)
-- `entity` - Entity coverage metrics
-- `relation` - Relation density metrics
-- `semantic` - Semantic quality metrics
-
-**Examples**:
-
+**Example**:
 ```bash
-# All metrics
-gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/corpus_graph.graphml \
-    --output evaluation_report.json
+gtranscriber refresh-auth --credentials credentials.json --token token.json
+```
 
-# Specific metrics only
-gtranscriber evaluate qa_dataset/ results/ \
-    --metric qa \
-    --metric entity
+---
 
-# With custom embedding model
-gtranscriber evaluate qa_dataset/ results/ \
-    --embedding-model sentence-transformers/all-mpnet-base-v2
+### `info`
 
-# QA metrics only (no KG required)
-gtranscriber evaluate qa_dataset/ results/ \
-    --metric qa \
-    --output qa_evaluation.json
+Display system information and hardware capabilities.
+
+**Usage**:
+```bash
+gtranscriber info
 ```
 
 **Output**:
-- JSON report with all computed metrics
-- Terminal display of key metrics
-- Recommendations for improvement
+- Application version
+- Device type (CPU/CUDA/MPS)
+- CUDA/MPS availability
+- PyTorch version and configuration
+- GPU memory information (if available)
 
-**Progress Display**:
-- Loading datasets
-- Computing each metric category
-- Final report summary
+**Example**:
+```bash
+gtranscriber info
+```
+
+---
+
+### `list-runs`
+
+List all pipeline runs with status and metadata.
+
+**Usage**:
+```bash
+gtranscriber list-runs [OPTIONS]
+```
+
+**Options**:
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--pipeline` | `-p` | str | All pipelines | Filter by pipeline type: transcription, qa, cep, kg, evaluation |
+| `--results-dir` | `-r` | Path | `./results` | Base results directory |
+
+**Examples**:
+```bash
+# List all runs
+gtranscriber list-runs
+
+# Filter by pipeline type
+gtranscriber list-runs --pipeline transcription
+
+# Custom results directory
+gtranscriber list-runs --results-dir /path/to/results
+```
+
+---
+
+### `run-info`
+
+Display detailed information about a specific run including execution environment, hardware info, configuration, and processing statistics.
+
+**Usage**:
+```bash
+gtranscriber run-info RUN_ID [OPTIONS]
+```
+
+**Arguments**:
+- `RUN_ID` - Run ID to display, or "latest" for the most recent run
+
+**Options**:
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--pipeline` | `-p` | str | `transcription` | Pipeline type (required when using "latest") |
+| `--results-dir` | `-r` | Path | `./results` | Base results directory |
+
+**Examples**:
+```bash
+# Display specific run
+gtranscriber run-info transcription_20260211_143022
+
+# Display latest transcription run
+gtranscriber run-info latest --pipeline transcription
+
+# Display latest CEP run
+gtranscriber run-info latest --pipeline cep
+```
+
+---
+
+### `validate-transcriptions`
+
+Validate existing transcriptions for quality issues (wrong language/script, repeated words, suspicious patterns, empty content).
+
+**Usage**:
+```bash
+gtranscriber validate-transcriptions INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing transcription JSON files to validate
+
+**Options**:
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--output-dir` | `-o` | Path | In-place update | Directory to save validated results |
+| `--threshold` | `-t` | float | `0.5` | Quality threshold (0.0-1.0) for marking as valid |
+| `--language` | `-l` | str | `pt` | Expected language code (e.g., 'pt', 'en') |
+| `--report-only` | | flag | `False` | Only display report without updating files |
+
+**Examples**:
+```bash
+# Validate and update in-place
+gtranscriber validate-transcriptions results/
+
+# Validate with custom threshold
+gtranscriber validate-transcriptions results/ --threshold 0.6
+
+# Validate English transcriptions
+gtranscriber validate-transcriptions results/ --language en
+
+# Report only (no file updates)
+gtranscriber validate-transcriptions results/ --report-only
+
+# Save validated files to new directory
+gtranscriber validate-transcriptions results/ --output-dir validated/
+```
+
+**Quality Checks**:
+- Script match (Latin characters for pt/en)
+- Repetition detection (words and phrases)
+- Segment quality (natural timestamps)
+- Content density (words per minute)
+
+---
+
+### `rebuild-index`
+
+Rebuild index.json from existing run directories by scanning all pipeline ID directories for run_metadata.json files.
+
+**Usage**:
+```bash
+gtranscriber rebuild-index [OPTIONS]
+```
+
+**Options**:
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--results-dir` | `-r` | Path | `./results` | Base results directory |
+
+**Example**:
+```bash
+gtranscriber rebuild-index --results-dir /path/to/results
+```
 
 ---
 
@@ -363,184 +437,127 @@ gtranscriber evaluate qa_dataset/ results/ \
 
 ### End-to-End Pipeline
 
-Complete pipeline from transcriptions to evaluation:
+Complete pipeline from transcription to CEP QA generation:
 
 ```bash
-# Step 1: Generate QA dataset
-gtranscriber generate-qa results/ \
-    -o qa_dataset/ \
-    --provider ollama \
+# Step 1: Batch transcribe files
+gtranscriber batch-transcribe input/catalog.csv \
     --workers 4 \
-    --questions 12
+    --quantize \
+    --id etno-001
 
-# Step 2: Build knowledge graphs (Portuguese transcriptions)
-gtranscriber build-kg results/ \
-    -o knowledge_graphs/ \
-    --provider ollama \
-    --workers 2 \
-    --merge \
-    --language pt
+# Step 2: Validate transcription quality
+gtranscriber validate-transcriptions results/ \
+    --threshold 0.6
 
-# Step 3: Evaluate quality
-gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/corpus_graph.graphml \
-    --output evaluation_report.json
-
-# Step 4: View report
-cat evaluation_report.json | jq .
-```
-
-### Portuguese Corpus Pipeline
-
-Complete pipeline for Portuguese transcriptions (ETno project):
-
-```bash
-# Step 1: Generate QA dataset from Portuguese transcriptions
-gtranscriber generate-qa results/ \
-    -o qa_dataset/ \
-    --provider ollama \
-    --model-id llama3.1:8b \
+# Step 3: Generate CEP QA pairs
+gtranscriber generate-cep-qa results/ \
     --workers 4 \
-    --questions 12
-
-# Step 2: Build knowledge graphs with Portuguese prompts
-gtranscriber build-kg results/ \
-    -o knowledge_graphs/ \
-    --provider ollama \
-    --workers 2 \
-    --merge \
+    --questions 12 \
     --language pt \
-    --prompt-path prompts/pt_prompts.json
+    --id etno-001
 
-# Step 3: Evaluate quality
-gtranscriber evaluate qa_dataset/ results/ \
-    --kg-path knowledge_graphs/corpus_graph.graphml \
-    --output evaluation_report.json
-```
+# Step 4: List all runs
+gtranscriber list-runs
 
-### Quick Testing on Sample Data
-
-Test pipeline on 5 sample files:
-
-```bash
-# Create sample directory
-mkdir -p samples/
-cp results/enriched_*.json samples/ | head -5
-
-# Generate QA (fast)
-gtranscriber generate-qa samples/ \
-    -o qa_test/ \
-    --workers 2 \
-    --questions 5
-
-# Build KG (fast)
-gtranscriber build-kg samples/ \
-    -o kg_test/ \
-    --workers 1
-
-# Evaluate
-gtranscriber evaluate qa_test/ samples/ \
-    --kg-path kg_test/corpus_graph.graphml
+# Step 5: View run details
+gtranscriber run-info latest --pipeline cep
 ```
 
 ### Resume Interrupted Job
 
-Resume from checkpoint after failure:
+All batch commands support automatic checkpointing:
 
 ```bash
-# QA generation resumes automatically
-gtranscriber generate-qa results/ \
-    -o qa_dataset/ \
-    --checkpoint qa_checkpoint.json
+# Start batch transcription
+gtranscriber batch-transcribe input/catalog.csv --workers 4
 
-# KG construction resumes automatically
-gtranscriber build-kg results/ \
-    -o knowledge_graphs/ \
-    --checkpoint kg_checkpoint.json
+# If interrupted, resume automatically
+gtranscriber batch-transcribe input/catalog.csv --workers 4
+# Will skip already processed files
+
+# CEP generation also supports resume
+gtranscriber generate-cep-qa results/ --workers 4
 ```
 
-### Hybrid LLM Approach
+### Custom LLM Configuration
 
-Use different LLMs for different tasks:
+Use different LLM providers and models:
 
 ```bash
-# High-quality QA with OpenAI
-gtranscriber generate-qa results/ \
-    -o qa_dataset/ \
-    --provider openai \
-    --model-id gpt-4o \
-    --questions 15
-
-# Cost-effective KG with Ollama
-gtranscriber build-kg results/ \
-    -o knowledge_graphs/ \
+# With Ollama (default)
+gtranscriber generate-cep-qa results/ \
     --provider ollama \
+    --model-id qwen3:14b \
+    --workers 4
+
+# With OpenAI
+export OPENAI_API_KEY=sk-...
+gtranscriber generate-cep-qa results/ \
+    --provider openai \
+    --model-id gpt-4o-mini \
+    --workers 2
+
+# With custom OpenAI-compatible endpoint
+gtranscriber generate-cep-qa results/ \
+    --provider custom \
+    --base-url https://my-vllm-server/v1 \
     --model-id llama3.1:70b
 ```
 
 ---
 
-## Common Options
-
-### Global Options
-
-Available for all commands:
-
-| Option | Description |
-|--------|-------------|
-| `--help` | Show command help |
-| `--version` | Show version |
-| `--verbose, -v` | Verbose output |
-| `--quiet, -q` | Suppress non-error output |
-
-**Usage**:
-```bash
-gtranscriber --help
-gtranscriber --version
-gtranscriber generate-qa --help
-```
+## Common Patterns
 
 ### Configuration Override
 
-Command-line arguments override configuration:
+Command-line arguments override environment variables:
 
 ```bash
 # Config says ollama, but we override to openai
-gtranscriber generate-qa results/ --provider openai
+export GTRANSCRIBER_QA_PROVIDER=ollama
+gtranscriber generate-cep-qa results/ --provider openai
 ```
 
 ### Environment Variables
 
-Set via environment instead of CLI:
+Set defaults via environment instead of CLI:
 
 ```bash
-export GTRANSCRIBER_QA_PROVIDER=openai
-export GTRANSCRIBER_QA_MODEL_ID=gpt-4o-mini
+# Transcription settings
+export GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
+export GTRANSCRIBER_WORKERS=4
+export GTRANSCRIBER_QUANTIZE=true
 
-# Now uses OpenAI
-gtranscriber generate-qa results/
+# QA settings
+export GTRANSCRIBER_QA_PROVIDER=ollama
+export GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
+export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
 
-# Set Portuguese as default language for KG construction
-export GTRANSCRIBER_KG_LANGUAGE=pt
-export GTRANSCRIBER_KG_PROMPT_PATH=prompts/pt_prompts.json
+# CEP settings
+export GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
+export GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b
 
-# Now uses Portuguese prompts
-gtranscriber build-kg results/
+# Now run with defaults
+gtranscriber batch-transcribe input/catalog.csv
+gtranscriber generate-cep-qa results/
 ```
 
-### Output Formats
+### Pipeline ID Tracking
 
-Commands support different output formats:
+Use consistent pipeline IDs across related steps:
 
 ```bash
-# GraphML output (default, NetworkX-compatible)
-gtranscriber build-kg results/ --format graphml
+# All steps use same pipeline ID
+PIPELINE_ID="etno-project-001"
 
-# JSON output (alternative)
-gtranscriber build-kg results/ --format json
+gtranscriber batch-transcribe input/catalog.csv --id $PIPELINE_ID
+gtranscriber validate-transcriptions results/ 
+gtranscriber generate-cep-qa results/ --id $PIPELINE_ID
 
-# Evaluation report as JSON
-gtranscriber evaluate qa_dataset/ results/ -o report.json
+# View all runs for this pipeline
+gtranscriber list-runs
+gtranscriber run-info $PIPELINE_ID
 ```
 
 ---
@@ -564,30 +581,13 @@ Solution: export OPENAI_API_KEY=sk-...
 **Input Directory Empty**:
 ```bash
 Error: No transcription files found in results/
-Solution: Check directory path and file format
+Solution: Check directory path and ensure files have .json extension
 ```
 
 **Checkpoint Corruption**:
 ```bash
 Error: Checkpoint file corrupted
-Solution: Delete checkpoint.json and restart
-```
-
-### Verbose Mode
-
-Get detailed error information:
-
-```bash
-gtranscriber generate-qa results/ --verbose
-```
-
-### Dry Run Mode (Future)
-
-Preview without execution:
-
-```bash
-gtranscriber generate-qa results/ --dry-run
-# Output: Would process 187 files, generate ~2244 QA pairs
+Solution: Delete checkpoint.json and restart the command
 ```
 
 ---
@@ -596,33 +596,41 @@ gtranscriber generate-qa results/ --dry-run
 
 ### 1. Start Small
 
-Test on sample data before full corpus:
+Test on sample data before processing full corpus:
 
 ```bash
 # Test on 5 files first
 mkdir samples && cp results/*.json samples/ | head -5
-gtranscriber generate-qa samples/ -o qa_test/
+gtranscriber generate-cep-qa samples/ -o qa_test/
 ```
 
 ### 2. Use Checkpoints
 
-Always let checkpoint files persist for resumability:
+Checkpoints enable automatic resume:
 
 ```bash
-# Default checkpoint location
-gtranscriber generate-qa results/ -o qa_dataset/
-# Creates: qa_dataset/qa_checkpoint.json
+# Runs create checkpoints automatically
+gtranscriber batch-transcribe input/catalog.csv --workers 4
+# Creates: results/checkpoint.json
 
 # Resume automatically if interrupted
-gtranscriber generate-qa results/ -o qa_dataset/
+gtranscriber batch-transcribe input/catalog.csv --workers 4
+# Skips already processed files
 ```
 
 ### 3. Monitor Progress
 
-Use verbose mode to monitor processing:
+Use pipeline tracking commands:
 
 ```bash
-gtranscriber build-kg results/ --verbose
+# List all runs
+gtranscriber list-runs
+
+# View latest run details
+gtranscriber run-info latest --pipeline transcription
+
+# Check run statistics
+gtranscriber run-info latest --pipeline cep
 ```
 
 ### 4. Optimize Workers
@@ -630,74 +638,27 @@ gtranscriber build-kg results/ --verbose
 Adjust workers based on available resources:
 
 ```bash
-# CPU-bound (QA/KG): Use available cores
-gtranscriber generate-qa results/ --workers $(nproc)
+# CPU-bound tasks: Use available cores
+gtranscriber generate-cep-qa results/ --workers $(nproc)
 
 # Memory-constrained: Reduce workers
-gtranscriber build-kg results/ --workers 2
+gtranscriber batch-transcribe catalog.csv --workers 2
 ```
 
-### 5. Separate Concerns
+### 5. Validate Quality
 
-Process in stages for better debugging:
+Always validate transcriptions before downstream tasks:
 
 ```bash
-# Stage 1: QA
-gtranscriber generate-qa results/ -o qa_dataset/
+# Validate first
+gtranscriber validate-transcriptions results/ --threshold 0.6
 
-# Stage 2: KG
-gtranscriber build-kg results/ -o knowledge_graphs/
-
-# Stage 3: Evaluation
-gtranscriber evaluate qa_dataset/ results/
+# Then generate QA
+gtranscriber generate-cep-qa results/ --workers 4
 ```
 
 ---
 
-## Shell Completion
-
-Enable shell completion for better UX:
-
-### Bash
-
-```bash
-eval "$(_GTRANSCRIBER_COMPLETE=bash_source gtranscriber)"
-```
-
-### Zsh
-
-```zsh
-eval "$(_GTRANSCRIBER_COMPLETE=zsh_source gtranscriber)"
-```
-
-### Fish
-
-```fish
-eval (env _GTRANSCRIBER_COMPLETE=fish_source gtranscriber)
-```
-
-Add to your shell's RC file for persistence.
-
----
-
-## Command Chaining
-
-Chain commands with shell operators:
-
-```bash
-# Sequential execution
-gtranscriber generate-qa results/ && \
-gtranscriber build-kg results/ && \
-gtranscriber evaluate qa_dataset/ results/
-
-# Parallel execution (independent tasks)
-gtranscriber generate-qa results/ &
-gtranscriber build-kg results/ &
-wait
-gtranscriber evaluate qa_dataset/ results/
-```
-
----
-
-**Document Version**: 1.1
-**Last Updated**: 2026-01-23
+**Document Version**: 2.0  
+**Last Updated**: 2026-02-11  
+**Status**: Aligned with codebase v0.1.0

@@ -88,7 +88,7 @@ export GTRANSCRIBER_QA_MODEL_ID=${QA_MODEL:-qwen3:14b}
 export GTRANSCRIBER_WORKERS=${WORKERS:-4}
 
 # Run pipeline
-gtranscriber generate-qa results/ -o qa_dataset/
+gtranscriber generate-cep-qa results/ -o qa_dataset/
 ```
 
 ## Environment Variables
@@ -133,7 +133,7 @@ singularity build gtranscriber.sif docker://ghcr.io/fredDsR/gtranscriber:latest
 
 # Run
 singularity exec --nv gtranscriber.sif \
-    gtranscriber generate-qa results/ -o qa_dataset/
+    gtranscriber generate-cep-qa results/ -o qa_dataset/
 ```
 
 ## Resource Recommendations

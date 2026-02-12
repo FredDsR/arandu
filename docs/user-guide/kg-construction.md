@@ -1,5 +1,16 @@
 # Knowledge Graph Construction Guide
 
+> **⚠️ STATUS: PLANNED - NOT YET IMPLEMENTED**
+>
+> Knowledge graph construction using AutoSchemaKG is planned for a future release. The configuration schemas (`KGConfig`, `KGMetadata`) exist in `src/gtranscriber/config.py` and `src/gtranscriber/schemas.py`, but there are currently:
+> - **No CLI commands** for KG construction (no `build-kg` command)
+> - **No pipeline modules** implementing the KG construction logic
+> - **No dependencies** added yet (`atlas-rag`, `networkx` are not in `pyproject.toml`)
+>
+> This documentation describes the **planned functionality** and serves as a specification for future implementation.
+
+---
+
 Build knowledge graphs from transcription results using AutoSchemaKG for entity and relation extraction.
 
 ## Overview
