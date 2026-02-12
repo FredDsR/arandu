@@ -45,7 +45,7 @@ flowchart TD
         SG["Scaffolded QA Generation"]:::p2
         RT["II · Reasoning Traces"]:::p2
         MH["Multi-hop + Tacit Inference"]:::p2
-        JU["III · LLM-as-a-Judge<br/>Faithfulness 40% · Bloom 30% · Informativeness 30%"]:::p2
+        JU["III · LLM-as-a-Judge<br/>Faith. 30% · Bloom 25% · Inform. 25% · Self-Cont. 20%"]:::p2
         VD{"Weighted Score ≥ 0.6?"}
         BL --> SG --> RT --> MH --> JU --> VD
     end
@@ -170,7 +170,7 @@ For higher-order cognitive levels, this module enriches QA pairs with:
 
 ### 4.5 Module III -- LLM-as-a-Judge Validation
 
-Each generated QA pair undergoes automated quality validation using a separate LLM invocation acting as an evaluator. Three criteria are assessed with detailed rubrics:
+Each generated QA pair undergoes automated quality validation using a separate LLM invocation acting as an evaluator. Four criteria are assessed with detailed rubrics:
 
 ```mermaid
 flowchart LR
@@ -181,24 +181,31 @@ flowchart LR
     QA["QA Pair<br/>Under Review"] --> F
     QA --> B
     QA --> I
+    QA --> SC
 
-    F["<b>Faithfulness</b><br/><i>Weight: 40%</i><br/>Is the answer grounded<br/>in the source text?"]:::criterion
-    B["<b>Bloom Calibration</b><br/><i>Weight: 30%</i><br/>Does the question match<br/>the declared cognitive level?"]:::criterion
-    I["<b>Informativeness</b><br/><i>Weight: 30%</i><br/>Does the answer reveal<br/>non-obvious knowledge?"]:::criterion
+    F["<b>Faithfulness</b><br/><i>Weight: 30%</i><br/>Is the answer grounded<br/>in the source text?"]:::criterion
+    B["<b>Bloom Calibration</b><br/><i>Weight: 25%</i><br/>Does the question match<br/>the declared cognitive level?"]:::criterion
+    I["<b>Informativeness</b><br/><i>Weight: 25%</i><br/>Does the answer reveal<br/>non-obvious knowledge?"]:::criterion
+    SC["<b>Self-Containedness</b><br/><i>Weight: 20%</i><br/>Is the question understandable<br/>without the original context?"]:::criterion
 
-    F --> WS["Weighted Score<br/><i>0.4F + 0.3B + 0.3I</i>"]:::score
+    F --> WS["Weighted Score<br/><i>0.3F + 0.25B + 0.25I + 0.2SC</i>"]:::score
     B --> WS
     I --> WS
+    SC --> WS
     WS --> G{"score >= 0.6"}:::gate
     G -- "Pass" --> V["Valid QA Pair"]
     G -- "Fail" --> R["Rejected"]
 ```
 
-This approach ensures that the final QA dataset is **faithful** to the source material, **cognitively calibrated** to the intended Bloom level, and **informative** in terms of tacit knowledge content.
+The **self-containedness** criterion ensures that QA pairs are understandable and answerable without access to the original transcription. This is critical because the QA dataset serves as ground truth for evaluating a **GraphRAG system** (Phase 4), where questions must stand alone -- a retrieval-augmented system cannot rely on the user having read the source interview. The criterion uses a 6-level rubric ranging from completely autonomous (1.0) to completely dependent on the original context (0.0). Questions at the **Remember** level are automatically scored 1.0, since recalling facts from a provided context is inherent to the cognitive task.
+
+To promote self-containedness at generation time, the pipeline employs a **prompt-first approach** inspired by the RAGAS framework (Es et al., 2024): generation prompts include negative constraints (an explicit list of forbidden context-dependent phrases such as "in the text", "as mentioned", "the interviewee") alongside positive instructions for naming entities, locations, and techniques explicitly. This strategy avoids the need for a separate post-processing decontextualization step, reducing pipeline complexity and LLM cost while achieving high standalone comprehensibility (Choi et al., 2021; Gunjal & Durrett, 2024).
+
+This approach ensures that the final QA dataset is **faithful** to the source material, **cognitively calibrated** to the intended Bloom level, **informative** in terms of tacit knowledge content, and **self-contained** for downstream GraphRAG evaluation.
 
 ### 4.6 Output
 
-Each transcription yields a **QARecordCEP** (JSON) containing: the complete set of QA pairs with Bloom annotations, reasoning traces, validation scores, Bloom distribution summary, and validation pass rates. An optional **JSONL** export provides a flat format suitable for downstream KGQA model training.
+Each transcription yields a **QARecordCEP** (JSON) containing: the complete set of QA pairs with Bloom annotations, reasoning traces, validation scores (faithfulness, Bloom calibration, informativeness, self-containedness, and overall weighted score), Bloom distribution summary, and validation pass rates. An optional **JSONL** export provides a flat format suitable for downstream KGQA model training.
 
 ---
 
@@ -257,7 +264,7 @@ Assess how well the constructed knowledge graph captures the tacit knowledge pre
 
 ### 6.2 Evaluation Strategy
 
-The QA pairs -- already validated for faithfulness, Bloom calibration, and informativeness -- provide a reference benchmark. The evaluation quantifies how much of the knowledge expressed in the QA dataset is structurally represented in the graph, alongside intrinsic graph quality metrics.
+The QA pairs -- already validated for faithfulness, Bloom calibration, informativeness, and self-containedness -- provide a reference benchmark. The evaluation quantifies how much of the knowledge expressed in the QA dataset is structurally represented in the graph, alongside intrinsic graph quality metrics.
 
 ```mermaid
 flowchart TD
@@ -416,7 +423,7 @@ flowchart LR
 This methodology implements a **four-phase composable pipeline** for tacit knowledge elicitation from ethnographic interviews:
 
 1. **Phase 1 (Transcription)** converts raw audio/video into quality-validated text using Whisper ASR with automatic failure detection
-2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, enriched with reasoning traces and validated by an LLM-as-a-Judge
+2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, enriched with reasoning traces and validated by an LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, and self-containedness for GraphRAG compatibility)
 3. **Phase 3 (Knowledge Graph)** extracts entity-relation structures using AutoSchemaKG with dynamic schema induction
 4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, measuring knowledge coverage, entity diversity, graph connectivity, and semantic coherence
 
@@ -427,6 +434,12 @@ Each phase is independently deployable, checkpoint-resumable, and configurable t
 ### References
 
 - Anderson, L. W., & Krathwohl, D. R. (Eds.). (2001). *A Taxonomy for Learning, Teaching, and Assessing: A Revision of Bloom's Taxonomy of Educational Objectives*. Longman.
+- Choi, E., Palomaki, J., Lamm, M., Kwiatkowski, T., Das, D., & Collins, M. (2021). Decontextualization: Making Sentences Stand-Alone. *Transactions of the Association for Computational Linguistics*, 9, 447--461.
+- Es, S., James, J., Espinosa-Anke, L., & Schockaert, S. (2024). RAGAS: Automated Evaluation of Retrieval Augmented Generation. *Proceedings of EACL 2024 (System Demonstrations)*.
+- Gunjal, A., & Durrett, G. (2024). Molecular Facts: Desiderata for Decontextualization in LLM Fact Verification. *Proceedings of EMNLP 2024*.
 - Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., & Sutskever, I. (2023). Robust Speech Recognition via Large-Scale Weak Supervision. *Proceedings of ICML*.
-- AutoSchemaKG: LLM-driven knowledge graph construction with schema induction.
+- Saad-Falcon, J., Khattab, O., Potts, C., & Zaharia, M. (2023). ARES: An Automated Evaluation Framework for Retrieval-Augmented Generation Systems. *arXiv preprint arXiv:2311.09476*.
+- Wanner, L., et al. (2024). DnDScore: Decontextualization and Decomposition for Factuality Verification. *arXiv preprint*.
 - Zheng, L., Chiang, W.-L., Sheng, Y., et al. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. *Advances in Neural Information Processing Systems*.
+- Zhu, K., et al. (2025). RAGEval: Scenario Specific RAG Evaluation Dataset Generation Framework. *Proceedings of ACL 2025*.
+- AutoSchemaKG: LLM-driven knowledge graph construction with schema induction.
