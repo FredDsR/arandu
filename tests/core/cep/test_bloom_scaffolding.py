@@ -784,7 +784,7 @@ class TestBloomScaffoldingGenerator:
         generator.generate("Context.", num_questions=6)
 
         # With 6 questions and distribution 0.34, 0.33, 0.33:
-        # evaluate=2 (6*0.34=2.04→2), remember=1 (6*0.33=1.98→1), analyze=3 (remaining)
+        # Using int() truncation (floor): evaluate=2, remember=1, analyze=3 (remaining)
         # Should follow hierarchy: remember (1) → analyze (3) → evaluate (2)
         assert call_order == ["remember", "analyze", "analyze", "analyze", "evaluate", "evaluate"]
 

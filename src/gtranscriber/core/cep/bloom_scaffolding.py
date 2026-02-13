@@ -218,7 +218,7 @@ class BloomScaffoldingGenerator:
         all_prior_pairs = prior_pairs if prior_pairs else []
 
         # Generate one pair at a time
-        for i in range(num_questions):
+        for pair_index in range(num_questions):
             # Build scaffolding context from ALL prior pairs (including current level)
             current_prior = all_prior_pairs + pairs
 
@@ -241,7 +241,7 @@ class BloomScaffoldingGenerator:
                     logger.debug(
                         "Thinking captured for %s level pair %d/%d (%d chars)",
                         bloom_level,
-                        i + 1,
+                        pair_index + 1,
                         num_questions,
                         len(result.thinking),
                     )
@@ -259,14 +259,14 @@ class BloomScaffoldingGenerator:
                     pairs.append(pair_list[0])
                     logger.debug(
                         "Generated pair %d/%d at %s level",
-                        i + 1,
+                        pair_index + 1,
                         num_questions,
                         bloom_level,
                     )
                 else:
                     logger.warning(
                         "Failed to parse pair %d/%d for %s level",
-                        i + 1,
+                        pair_index + 1,
                         num_questions,
                         bloom_level,
                     )
@@ -274,7 +274,7 @@ class BloomScaffoldingGenerator:
             except Exception as e:
                 logger.error(
                     "Failed to generate pair %d/%d for %s level: %s",
-                    i + 1,
+                    pair_index + 1,
                     num_questions,
                     bloom_level,
                     e,
