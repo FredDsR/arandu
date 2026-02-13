@@ -95,14 +95,13 @@ class QAValidator:
         try:
             prompt = self._build_validation_prompt(qa_pair, context)
 
-            response = self.validator_client.generate(
+            result = self.validator_client.generate(
                 prompt=prompt,
                 temperature=self.cep_config.validator_temperature,
-                max_tokens=512,
-                response_format={"type": "json_object"},
+                max_tokens=self.cep_config.validator_max_tokens,
             )
 
-            scores = self._parse_validation_response(response)
+            scores = self._parse_validation_response(result.content, thinking=result.thinking)
 
             # Safety net: force self_containedness=1.0 for remember level
             if qa_pair.bloom_level == "remember":
@@ -196,11 +195,17 @@ class QAValidator:
             bloom_level_desc=bloom_level_desc,
         )
 
-    def _parse_validation_response(self, response: str) -> ValidationScore:
+    def _parse_validation_response(
+        self,
+        response: str,
+        *,
+        thinking: str | None = None,
+    ) -> ValidationScore:
         """Parse validation response from LLM judge.
 
         Args:
             response: Raw LLM response.
+            thinking: Optional thinking trace from the judge model.
 
         Returns:
             ValidationScore with parsed scores.
@@ -226,6 +231,7 @@ class QAValidator:
                 self_containedness=self_containedness,
                 overall_score=0.0,  # Will be calculated
                 judge_rationale=rationale,
+                judge_thinking=thinking,
             )
 
         except json.JSONDecodeError as e:
@@ -240,6 +246,7 @@ class QAValidator:
                 judge_rationale=self._prompts.get(
                     "parse_error_message", "Falha ao processar resposta do validador"
                 ),
+                judge_thinking=thinking,
             )
 
     def _validate_score(self, value: Any) -> float:

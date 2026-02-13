@@ -11,6 +11,7 @@ import pytest
 from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.cep.bloom_scaffolding import BloomScaffoldingGenerator
 from gtranscriber.schemas import QAPairCEP
+from gtranscriber.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -125,17 +126,18 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generate calls LLM for each Bloom level."""
         # Setup mock to return valid JSON response
-        mock_response = json.dumps(
-            [
-                {
-                    "question": "O que aconteceu?",
-                    "answer": "Uma resposta.",
-                    "bloom_level": "remember",
-                    "confidence": 0.9,
-                }
-            ]
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                [
+                    {
+                        "question": "O que aconteceu?",
+                        "answer": "Uma resposta.",
+                        "bloom_level": "remember",
+                        "confidence": 0.9,
+                    }
+                ]
+            )
         )
-        mock_llm_client.generate.return_value = mock_response
 
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
@@ -438,15 +440,17 @@ class TestBloomScaffoldingGenerator:
             language="pt",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            [
-                {
-                    "question": "Test?",
-                    "answer": "Answer.",
-                    "bloom_level": "remember",
-                    "confidence": 0.9,
-                }
-            ]
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                [
+                    {
+                        "question": "Test?",
+                        "answer": "Answer.",
+                        "bloom_level": "remember",
+                        "confidence": 0.9,
+                    }
+                ]
+            )
         )
 
         generator = BloomScaffoldingGenerator(
@@ -568,20 +572,22 @@ class TestBloomScaffoldingGenerator:
         assert pairs == []
         assert "no 'qa_pairs' or 'pairs' key" in caplog.text
 
-    def test_generate_passes_response_format(
+    def test_generate_does_not_pass_response_format(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
     ) -> None:
-        """Test that generate passes response_format to LLM client."""
+        """Test that generate does not pass response_format to LLM client."""
         cep_config = CEPConfig(
             bloom_levels=["remember"],
             bloom_distribution={"remember": 1.0},
             language="pt",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            {"qa_pairs": [{"question": "Q?", "answer": "A.", "confidence": 0.9}]}
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {"qa_pairs": [{"question": "Q?", "answer": "A.", "confidence": 0.9}]}
+            )
         )
 
         generator = BloomScaffoldingGenerator(
@@ -593,7 +599,7 @@ class TestBloomScaffoldingGenerator:
         generator.generate("Context text.", num_questions=1)
 
         call_kwargs = mock_llm_client.generate.call_args.kwargs
-        assert call_kwargs["response_format"] == {"type": "json_object"}
+        assert "response_format" not in call_kwargs
 
     def test_parse_response_with_non_list_data(
         self,
@@ -725,11 +731,13 @@ class TestBloomScaffoldingGenerator:
 
         call_order: list[str] = []
 
-        def track_calls(prompt: str, **kwargs: Any) -> str:
+        def track_calls(prompt: str, **kwargs: Any) -> GenerateResult:
             match = re.search(r"Nível Cognitivo: (\w+)", prompt)
             if match:
                 call_order.append(match.group(1).lower())
-            return json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+            return GenerateResult(
+                content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+            )
 
         mock_llm_client.generate.side_effect = track_calls
 
@@ -759,11 +767,13 @@ class TestBloomScaffoldingGenerator:
 
         call_order: list[str] = []
 
-        def track_calls(prompt: str, **kwargs: Any) -> str:
+        def track_calls(prompt: str, **kwargs: Any) -> GenerateResult:
             match = re.search(r"Nível Cognitivo: (\w+)", prompt)
             if match:
                 call_order.append(match.group(1).lower())
-            return json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+            return GenerateResult(
+                content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+            )
 
         mock_llm_client.generate.side_effect = track_calls
 
@@ -794,18 +804,20 @@ class TestBloomScaffoldingGenerator:
         prompts_captured: list[str] = []
         call_count = 0
 
-        def capture_prompts(prompt: str, **kwargs: Any) -> str:
+        def capture_prompts(prompt: str, **kwargs: Any) -> GenerateResult:
             nonlocal call_count
             prompts_captured.append(prompt)
             call_count += 1
-            return json.dumps(
-                [
-                    {
-                        "question": f"Question {call_count}?",
-                        "answer": f"Answer {call_count}.",
-                        "confidence": 0.9,
-                    }
-                ]
+            return GenerateResult(
+                content=json.dumps(
+                    [
+                        {
+                            "question": f"Question {call_count}?",
+                            "answer": f"Answer {call_count}.",
+                            "confidence": 0.9,
+                        }
+                    ]
+                )
             )
 
         mock_llm_client.generate.side_effect = capture_prompts
@@ -839,9 +851,11 @@ class TestBloomScaffoldingGenerator:
 
         prompts_captured: list[str] = []
 
-        def capture_prompts(prompt: str, **kwargs: Any) -> str:
+        def capture_prompts(prompt: str, **kwargs: Any) -> GenerateResult:
             prompts_captured.append(prompt)
-            return json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+            return GenerateResult(
+                content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+            )
 
         mock_llm_client.generate.side_effect = capture_prompts
 
@@ -957,8 +971,8 @@ class TestBloomScaffoldingGenerator:
             language="pt",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            [{"question": "Q?", "answer": "A.", "confidence": 0.9}]
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
         )
 
         generator = BloomScaffoldingGenerator(
@@ -1013,3 +1027,33 @@ class TestBloomScaffoldingGenerator:
         assert "Q2?" in result
         assert "Q3?" in result
         assert "Q4?" in result
+
+    def test_generate_handles_thinking_tags(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+    ) -> None:
+        """Test that pairs are parsed correctly from GenerateResult.content."""
+        cep_config = CEPConfig(
+            bloom_levels=["remember"],
+            bloom_distribution={"remember": 1.0},
+            language="pt",
+        )
+
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {"qa_pairs": [{"question": "Q?", "answer": "A.", "confidence": 0.9}]}
+            ),
+            thinking="internal reasoning about generation",
+        )
+
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        pairs = generator.generate("Context text.", num_questions=1)
+
+        assert len(pairs) == 1
+        assert pairs[0].question == "Q?"

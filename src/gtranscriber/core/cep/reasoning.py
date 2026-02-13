@@ -181,14 +181,18 @@ class ReasoningEnricher:
         """
         prompt = self._build_reasoning_prompt(qa_pair, context)
 
-        response = self.llm_client.generate(
+        result = self.llm_client.generate(
             prompt=prompt,
             temperature=0.3,  # Low for consistent reasoning
-            max_tokens=512,
-            response_format={"type": "json_object"},
+            max_tokens=self.cep_config.reasoning_max_tokens,
         )
 
-        return self._parse_reasoning_response(response)
+        if result.thinking:
+            logger.debug(
+                "Thinking captured for reasoning enrichment (%d chars)", len(result.thinking)
+            )
+
+        return self._parse_reasoning_response(result.content)
 
     def _build_reasoning_prompt(
         self,

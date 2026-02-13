@@ -285,6 +285,16 @@ class CEPConfig(BaseSettings):
         le=5,
         description="Maximum reasoning hops to detect for multi-hop questions",
     )
+    reasoning_max_tokens: int = Field(
+        default=2048,
+        ge=128,
+        le=8192,
+        description=(
+            "Maximum tokens for reasoning enrichment responses. "
+            "Increase for thinking models (Qwen3, DeepSeek-R1) whose <think> "
+            "blocks consume tokens before the JSON output."
+        ),
+    )
 
     # Module III - LLM-as-a-Judge validation settings
     validator_provider: str = Field(
@@ -300,6 +310,16 @@ class CEPConfig(BaseSettings):
         ge=0.0,
         le=1.0,
         description="Temperature for validator (low for consistent evaluation)",
+    )
+    validator_max_tokens: int = Field(
+        default=2048,
+        ge=128,
+        le=8192,
+        description=(
+            "Maximum tokens for validation responses. "
+            "Increase for thinking models (Qwen3, DeepSeek-R1) whose <think> "
+            "blocks consume tokens before the JSON output."
+        ),
     )
     validation_threshold: float = Field(
         default=0.6,

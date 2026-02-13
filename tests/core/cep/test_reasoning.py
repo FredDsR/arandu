@@ -10,6 +10,7 @@ import pytest
 from gtranscriber.config import CEPConfig
 from gtranscriber.core.cep.reasoning import ReasoningEnricher
 from gtranscriber.schemas import QAPairCEP
+from gtranscriber.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -143,13 +144,15 @@ class TestReasoningEnricher:
         sample_qa_pair_analyze: QAPairCEP,
     ) -> None:
         """Test that enrichment calls LLM for analyze level."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "reasoning_trace": "Fato A → Ação B → Resultado C",
-                "is_multi_hop": True,
-                "hop_count": 2,
-                "tacit_inference": "O pescador sabe que enchentes causam prejuízos",
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "Fato A \u2192 A\u00e7\u00e3o B \u2192 Resultado C",
+                    "is_multi_hop": True,
+                    "hop_count": 2,
+                    "tacit_inference": "O pescador sabe que enchentes causam preju\u00edzos",
+                }
+            )
         )
 
         enricher = ReasoningEnricher(
@@ -159,14 +162,14 @@ class TestReasoningEnricher:
 
         result = enricher.enrich(
             sample_qa_pair_analyze,
-            "Se o rio sobe rápido, guardo o barco para evitar perda.",
+            "Se o rio sobe r\u00e1pido, guardo o barco para evitar perda.",
         )
 
         assert mock_llm_client.generate.called
-        assert result.reasoning_trace == "Fato A → Ação B → Resultado C"
+        assert result.reasoning_trace == "Fato A \u2192 A\u00e7\u00e3o B \u2192 Resultado C"
         assert result.is_multi_hop is True
         assert result.hop_count == 2
-        assert result.tacit_inference == "O pescador sabe que enchentes causam prejuízos"
+        assert result.tacit_inference == "O pescador sabe que enchentes causam preju\u00edzos"
 
     def test_enrich_handles_evaluate_level(
         self,
@@ -175,7 +178,7 @@ class TestReasoningEnricher:
     ) -> None:
         """Test that enrichment works for evaluate level."""
         pair = QAPairCEP(
-            question="A decisão foi acertada?",
+            question="A decis\u00e3o foi acertada?",
             answer="Sim, foi prudente.",
             context="Ele decidiu guardar o barco.",
             question_type="conceptual",
@@ -183,13 +186,15 @@ class TestReasoningEnricher:
             bloom_level="evaluate",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "reasoning_trace": "Decisão → Avaliação positiva",
-                "is_multi_hop": False,
-                "hop_count": None,
-                "tacit_inference": "Prudência é valorizada na comunidade",
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "Decis\u00e3o \u2192 Avalia\u00e7\u00e3o positiva",
+                    "is_multi_hop": False,
+                    "hop_count": None,
+                    "tacit_inference": "Prud\u00eancia \u00e9 valorizada na comunidade",
+                }
+            )
         )
 
         enricher = ReasoningEnricher(
@@ -200,7 +205,7 @@ class TestReasoningEnricher:
         result = enricher.enrich(pair, "context")
 
         assert result.bloom_level == "evaluate"
-        assert result.reasoning_trace == "Decisão → Avaliação positiva"
+        assert result.reasoning_trace == "Decis\u00e3o \u2192 Avalia\u00e7\u00e3o positiva"
 
     def test_enrich_handles_create_level(
         self,
@@ -209,21 +214,23 @@ class TestReasoningEnricher:
     ) -> None:
         """Test that enrichment works for create level."""
         pair = QAPairCEP(
-            question="Como melhorar a proteção?",
+            question="Como melhorar a prote\u00e7\u00e3o?",
             answer="Construir um abrigo elevado.",
-            context="Os barcos ficam vulneráveis durante enchentes.",
+            context="Os barcos ficam vulner\u00e1veis durante enchentes.",
             question_type="conceptual",
             confidence=0.8,
             bloom_level="create",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "reasoning_trace": "Problema → Solução criativa",
-                "is_multi_hop": True,
-                "hop_count": 3,
-                "tacit_inference": None,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "Problema \u2192 Solu\u00e7\u00e3o criativa",
+                    "is_multi_hop": True,
+                    "hop_count": 3,
+                    "tacit_inference": None,
+                }
+            )
         )
 
         enricher = ReasoningEnricher(
@@ -234,22 +241,24 @@ class TestReasoningEnricher:
         result = enricher.enrich(pair, "context")
 
         assert result.bloom_level == "create"
-        assert result.reasoning_trace == "Problema → Solução criativa"
+        assert result.reasoning_trace == "Problema \u2192 Solu\u00e7\u00e3o criativa"
 
-    def test_enrich_passes_response_format(
+    def test_enrich_does_not_pass_response_format(
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
         sample_qa_pair_analyze: QAPairCEP,
     ) -> None:
-        """Test that enrich passes response_format to LLM client."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "reasoning_trace": "A → B",
-                "is_multi_hop": False,
-                "hop_count": None,
-                "tacit_inference": None,
-            }
+        """Test that enrich does not pass response_format to LLM client."""
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "A \u2192 B",
+                    "is_multi_hop": False,
+                    "hop_count": None,
+                    "tacit_inference": None,
+                }
+            )
         )
 
         enricher = ReasoningEnricher(
@@ -260,7 +269,35 @@ class TestReasoningEnricher:
         enricher.enrich(sample_qa_pair_analyze, "context")
 
         call_kwargs = mock_llm_client.generate.call_args.kwargs
-        assert call_kwargs["response_format"] == {"type": "json_object"}
+        assert "response_format" not in call_kwargs
+
+    def test_enrich_handles_thinking_tags(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair_analyze: QAPairCEP,
+    ) -> None:
+        """Test that enrichment parses from GenerateResult.content correctly."""
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "A \u2192 B",
+                    "is_multi_hop": False,
+                    "hop_count": None,
+                    "tacit_inference": None,
+                }
+            ),
+            thinking="internal reasoning about enrichment",
+        )
+
+        enricher = ReasoningEnricher(
+            llm_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = enricher.enrich(sample_qa_pair_analyze, "context")
+
+        assert result.reasoning_trace == "A \u2192 B"
 
     def test_parse_reasoning_response_valid(
         self,
@@ -275,7 +312,7 @@ class TestReasoningEnricher:
 
         response = json.dumps(
             {
-                "reasoning_trace": "A + B → C",
+                "reasoning_trace": "A + B \u2192 C",
                 "is_multi_hop": True,
                 "hop_count": 2,
                 "tacit_inference": "Implicit knowledge",
@@ -284,7 +321,7 @@ class TestReasoningEnricher:
 
         result = enricher._parse_reasoning_response(response)
 
-        assert result["reasoning_trace"] == "A + B → C"
+        assert result["reasoning_trace"] == "A + B \u2192 C"
         assert result["is_multi_hop"] is True
         assert result["hop_count"] == 2
         assert result["tacit_inference"] == "Implicit knowledge"
@@ -364,13 +401,15 @@ class TestReasoningEnricher:
         sample_qa_pair_remember: QAPairCEP,
     ) -> None:
         """Test batch enrichment of multiple QA pairs."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "reasoning_trace": "Trace",
-                "is_multi_hop": False,
-                "hop_count": None,
-                "tacit_inference": None,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "Trace",
+                    "is_multi_hop": False,
+                    "hop_count": None,
+                    "tacit_inference": None,
+                }
+            )
         )
 
         enricher = ReasoningEnricher(
@@ -402,13 +441,15 @@ class TestReasoningEnricher:
             generation_prompt="Original prompt",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "reasoning_trace": "A → B",
-                "is_multi_hop": False,
-                "hop_count": None,
-                "tacit_inference": None,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "reasoning_trace": "A \u2192 B",
+                    "is_multi_hop": False,
+                    "hop_count": None,
+                    "tacit_inference": None,
+                }
+            )
         )
 
         enricher = ReasoningEnricher(

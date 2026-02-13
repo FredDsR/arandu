@@ -4,11 +4,18 @@ Supports OpenAI, Ollama, and any OpenAI-compatible provider through
 the OpenAI SDK's base_url parameter.
 """
 
+from __future__ import annotations
+
+import logging
 from enum import Enum
 from typing import Any, ClassVar
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+from gtranscriber.utils.text import GenerateResult, extract_thinking
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(Enum):
@@ -107,7 +114,7 @@ class LLMClient:
         max_tokens: int | None = None,
         system_prompt: str | None = None,
         response_format: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> GenerateResult:
         """Generate text from a prompt.
 
         Args:
@@ -121,7 +128,7 @@ class LLMClient:
                 to produce output matching this format.
 
         Returns:
-            The generated text response.
+            GenerateResult with content and optional thinking trace.
 
         Raises:
             openai.APIError: If the API request fails after retries.
@@ -146,7 +153,55 @@ class LLMClient:
             kwargs["response_format"] = response_format
 
         response = self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
+
+        message = response.choices[0].message
+        raw_content = message.content or ""
+
+        logger.debug(
+            "Raw LLM response (%d chars): %s",
+            len(raw_content),
+            raw_content[:500] if len(raw_content) > 500 else raw_content,
+        )
+
+        # Source 1: API-level thinking from provider-specific fields
+        # OpenAI o-series uses "reasoning_content", Ollama uses "reasoning"
+        api_thinking = None
+        for field in ("reasoning_content", "reasoning"):
+            value = getattr(message, field, None)
+            if isinstance(value, str) and value.strip():
+                api_thinking = value.strip()
+                logger.debug("API-level thinking via '%s' (%d chars)", field, len(api_thinking))
+                break
+
+        # Ollama may also return reasoning in model_extra (non-standard fields)
+        if api_thinking is None:
+            extras = getattr(message, "model_extra", None) or {}
+            for field in ("reasoning_content", "reasoning"):
+                value = extras.get(field)
+                if isinstance(value, str) and value.strip():
+                    api_thinking = value.strip()
+                    logger.debug(
+                        "API-level thinking via model_extra['%s'] (%d chars)",
+                        field,
+                        len(api_thinking),
+                    )
+                    break
+
+        # Source 2: Inline <think> tags (Ollama/Qwen3/DeepSeek fallback)
+        result = extract_thinking(raw_content)
+
+        # Combine: API-level takes precedence, inline supplements
+        thinking = api_thinking or result.thinking
+
+        if thinking:
+            logger.debug("Thinking extracted (%d chars)", len(thinking))
+        elif "<think>" in raw_content:
+            logger.warning(
+                "Raw response contains <think> tag but extraction failed "
+                "(possibly truncated — missing </think> closing tag)"
+            )
+
+        return GenerateResult(content=result.content, thinking=thinking)
 
     def __repr__(self) -> str:
         """Return string representation of the client."""

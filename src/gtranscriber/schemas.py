@@ -302,6 +302,10 @@ class ValidationScore(BaseModel):
     )
     overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
     judge_rationale: str | None = Field(None, description="Judge model's reasoning for the scores")
+    judge_thinking: str | None = Field(
+        None,
+        description="Internal thinking trace from the judge model.",
+    )
 
 
 class QAPairValidated(QAPairCEP):
