@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Context window size for chunking
 MAX_CONTEXT_LENGTH = 4000
-MIN_CONTEXT_LENGTH = 100
+MIN_CONTEXT_LENGTH = 200
 
 
 class CEPQAGenerator:
