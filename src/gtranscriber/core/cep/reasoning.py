@@ -184,7 +184,7 @@ class ReasoningEnricher:
         result = self.llm_client.generate(
             prompt=prompt,
             temperature=0.3,  # Low for consistent reasoning
-            max_tokens=512,
+            max_tokens=self.cep_config.reasoning_max_tokens,
         )
 
         if result.thinking:

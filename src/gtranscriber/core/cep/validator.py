@@ -98,7 +98,7 @@ class QAValidator:
             result = self.validator_client.generate(
                 prompt=prompt,
                 temperature=self.cep_config.validator_temperature,
-                max_tokens=512,
+                max_tokens=self.cep_config.validator_max_tokens,
             )
 
             scores = self._parse_validation_response(result.content, thinking=result.thinking)
