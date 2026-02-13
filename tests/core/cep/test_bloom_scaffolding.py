@@ -124,18 +124,16 @@ class TestBloomScaffoldingGenerator:
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test that generate calls LLM for each Bloom level."""
-        # Setup mock to return valid JSON response
+        """Test that generate calls LLM once per question (one pair per call)."""
+        # Setup mock to return valid JSON response for a single pair
         mock_llm_client.generate.return_value = GenerateResult(
             content=json.dumps(
-                [
-                    {
-                        "question": "O que aconteceu?",
-                        "answer": "Uma resposta.",
-                        "bloom_level": "remember",
-                        "confidence": 0.9,
-                    }
-                ]
+                {
+                    "question": "O que aconteceu?",
+                    "answer": "Uma resposta.",
+                    "bloom_level": "remember",
+                    "confidence": 0.9,
+                }
             )
         )
 
@@ -148,10 +146,10 @@ class TestBloomScaffoldingGenerator:
         context = "Este é um texto de contexto para teste."
         pairs = generator.generate(context, num_questions=4)
 
-        # Should call LLM for each level with non-zero count
+        # With 4 questions distributed across 4 levels (1 each), should call LLM 4 times
         assert mock_llm_client.generate.call_count == 4
-        # Should return pairs from all levels
-        assert len(pairs) >= 1
+        # Should return 4 pairs (one per call)
+        assert len(pairs) == 4
 
     def test_parse_response_valid_json(
         self,
@@ -442,14 +440,12 @@ class TestBloomScaffoldingGenerator:
 
         mock_llm_client.generate.return_value = GenerateResult(
             content=json.dumps(
-                [
-                    {
-                        "question": "Test?",
-                        "answer": "Answer.",
-                        "bloom_level": "remember",
-                        "confidence": 0.9,
-                    }
-                ]
+                {
+                    "question": "Test?",
+                    "answer": "Answer.",
+                    "bloom_level": "remember",
+                    "confidence": 0.9,
+                }
             )
         )
 
@@ -461,9 +457,9 @@ class TestBloomScaffoldingGenerator:
 
         pairs = generator.generate("Context.", num_questions=2)
 
-        # Only 'remember' level should be called, not 'understand'
+        # Only 'remember' level should be called (2 times), not 'understand'
         # (since understand has count=0)
-        assert mock_llm_client.generate.call_count == 1
+        assert mock_llm_client.generate.call_count == 2
         for pair in pairs:
             assert pair.bloom_level == "remember"
 
@@ -556,21 +552,22 @@ class TestBloomScaffoldingGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Test that dict without 'qa_pairs' or 'pairs' logs a warning."""
+        """Test that dict without recognized keys is treated as single pair."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
             cep_config=cep_config,
         )
 
-        response = json.dumps({"unknown_key": [{"question": "Q?", "answer": "A."}]})
+        # Dict with unknown wrapper key should now be treated as single pair
+        response = json.dumps({"question": "Q?", "answer": "A.", "confidence": 0.8})
 
         pairs = generator._parse_response(response, "Context.", "remember")
 
-        assert pairs == []
-        assert "no 'qa_pairs' or 'pairs' key" in caplog.text
+        # Should parse as a single pair
+        assert len(pairs) == 1
+        assert pairs[0].question == "Q?"
 
     def test_generate_does_not_pass_response_format(
         self,
@@ -584,10 +581,9 @@ class TestBloomScaffoldingGenerator:
             language="pt",
         )
 
+        # Return single pair object (new format)
         mock_llm_client.generate.return_value = GenerateResult(
-            content=json.dumps(
-                {"qa_pairs": [{"question": "Q?", "answer": "A.", "confidence": 0.9}]}
-            )
+            content=json.dumps({"question": "Q?", "answer": "A.", "confidence": 0.9})
         )
 
         generator = BloomScaffoldingGenerator(
@@ -607,19 +603,20 @@ class TestBloomScaffoldingGenerator:
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test that non-list JSON response returns empty list."""
+        """Test that single object JSON response is parsed as one pair."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
             cep_config=cep_config,
         )
 
-        # Return a JSON object instead of array
-        response = json.dumps({"question": "Q?", "answer": "A"})
+        # Return a JSON object (single pair) instead of array
+        response = json.dumps({"question": "Q?", "answer": "A", "confidence": 0.9})
         context = "Context."
         pairs = generator._parse_response(response, context, "remember")
 
-        assert pairs == []
+        assert len(pairs) == 1
+        assert pairs[0].question == "Q?"
 
     def test_parse_response_with_non_dict_items(
         self,
@@ -736,7 +733,7 @@ class TestBloomScaffoldingGenerator:
             if match:
                 call_order.append(match.group(1).lower())
             return GenerateResult(
-                content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+                content=json.dumps({"question": "Q?", "answer": "A.", "confidence": 0.9})
             )
 
         mock_llm_client.generate.side_effect = track_calls
@@ -749,8 +746,9 @@ class TestBloomScaffoldingGenerator:
 
         generator.generate("Context.", num_questions=4)
 
+        # With 4 questions: 2 evaluate, 2 remember
         # Should follow config order (evaluate, remember), not hierarchy
-        assert call_order == ["evaluate", "remember"]
+        assert call_order == ["evaluate", "evaluate", "remember", "remember"]
 
     def test_generate_with_scaffolding_sorts_by_hierarchy(
         self,
@@ -772,7 +770,7 @@ class TestBloomScaffoldingGenerator:
             if match:
                 call_order.append(match.group(1).lower())
             return GenerateResult(
-                content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+                content=json.dumps({"question": "Q?", "answer": "A.", "confidence": 0.9})
             )
 
         mock_llm_client.generate.side_effect = track_calls
@@ -785,15 +783,17 @@ class TestBloomScaffoldingGenerator:
 
         generator.generate("Context.", num_questions=6)
 
-        # Should follow hierarchy: remember → analyze → evaluate
-        assert call_order == ["remember", "analyze", "evaluate"]
+        # With 6 questions and distribution 0.34, 0.33, 0.33:
+        # evaluate=2 (6*0.34=2.04→2), remember=1 (6*0.33=1.98→1), analyze=3 (remaining)
+        # Should follow hierarchy: remember (1) → analyze (3) → evaluate (2)
+        assert call_order == ["remember", "analyze", "analyze", "analyze", "evaluate", "evaluate"]
 
     def test_scaffolding_includes_prior_pairs_in_prompt(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
     ) -> None:
-        """Test that higher-level prompt contains prior Q, A, and [LEVEL] tag."""
+        """Test that each prompt includes all prior pairs (within and across levels)."""
         cep_config = CEPConfig(
             bloom_levels=["remember", "understand"],
             bloom_distribution={"remember": 0.5, "understand": 0.5},
@@ -810,13 +810,11 @@ class TestBloomScaffoldingGenerator:
             call_count += 1
             return GenerateResult(
                 content=json.dumps(
-                    [
-                        {
-                            "question": f"Question {call_count}?",
-                            "answer": f"Answer {call_count}.",
-                            "confidence": 0.9,
-                        }
-                    ]
+                    {
+                        "question": f"Question {call_count}?",
+                        "answer": f"Answer {call_count}.",
+                        "confidence": 0.9,
+                    }
                 )
             )
 
@@ -830,18 +828,29 @@ class TestBloomScaffoldingGenerator:
 
         generator.generate("Context.", num_questions=4)
 
-        # Second prompt (understand) should contain prior pairs from remember
-        assert len(prompts_captured) == 2
+        # With 4 questions: 2 remember, 2 understand = 4 LLM calls
+        assert len(prompts_captured) == 4
+
+        # Second remember call should contain first remember pair
         assert "[REMEMBER]" in prompts_captured[1]
         assert "Question 1?" in prompts_captured[1]
-        assert "Answer 1." in prompts_captured[1]
+
+        # First understand call should contain both remember pairs
+        assert "[REMEMBER]" in prompts_captured[2]
+        assert "Question 1?" in prompts_captured[2]
+        assert "Question 2?" in prompts_captured[2]
+
+        # Second understand call should contain all prior pairs
+        assert "Question 1?" in prompts_captured[3]
+        assert "Question 2?" in prompts_captured[3]
+        assert "Question 3?" in prompts_captured[3]
 
     def test_scaffolding_first_level_has_no_prior_context(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
     ) -> None:
-        """Test that the first level generates without scaffolding header."""
+        """Test that the first pair has no scaffolding header."""
         cep_config = CEPConfig(
             bloom_levels=["remember", "understand"],
             bloom_distribution={"remember": 0.5, "understand": 0.5},
@@ -854,7 +863,7 @@ class TestBloomScaffoldingGenerator:
         def capture_prompts(prompt: str, **kwargs: Any) -> GenerateResult:
             prompts_captured.append(prompt)
             return GenerateResult(
-                content=json.dumps([{"question": "Q?", "answer": "A.", "confidence": 0.9}])
+                content=json.dumps({"question": "Q?", "answer": "A.", "confidence": 0.9})
             )
 
         mock_llm_client.generate.side_effect = capture_prompts
@@ -867,7 +876,7 @@ class TestBloomScaffoldingGenerator:
 
         generator.generate("Context.", num_questions=4)
 
-        # First prompt should not contain scaffolding header
+        # First prompt (first remember pair) should not contain scaffolding header
         scaffolding_header = generator._prompts["scaffolding_header"]
         assert scaffolding_header not in prompts_captured[0]
 
