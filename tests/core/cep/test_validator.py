@@ -746,3 +746,247 @@ class TestSelfContainedness:
 
         # Overall: 0.30*1.0 + 0.25*1.0 + 0.25*1.0 + 0.20*0.0 = 0.80
         assert abs(result.validation.overall_score - 0.80) < 0.01
+
+
+class TestQAValidatorComposableMode:
+    """Tests for QAValidator with composable judge pipeline."""
+
+    def test_initialization_composable_mode(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test validator initialization in composable mode."""
+        from gtranscriber.config import JudgeConfig
+
+        judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
+
+        # Mock the judge pipeline initialization
+        mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
+        mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        assert validator.judge_config.use_composable_pipeline is True
+        assert hasattr(validator, "judge_pipeline")
+
+    def test_initialization_legacy_mode(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test validator initialization in legacy mode."""
+        from gtranscriber.config import JudgeConfig
+
+        judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        assert validator.judge_config.use_composable_pipeline is False
+        assert hasattr(validator, "_prompts")
+
+    def test_validate_uses_composable_pipeline(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that validate uses composable pipeline when enabled."""
+        from gtranscriber.config import JudgeConfig
+        from gtranscriber.schemas import ValidationScore
+
+        judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
+
+        # Mock the judge pipeline
+        mock_registry = mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
+        mock_pipeline_class = mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
+
+        # Mock the pipeline evaluate method
+        mock_pipeline = mocker.MagicMock()
+        mock_pipeline.evaluate.return_value = ValidationScore(
+            faithfulness=0.9,
+            bloom_calibration=0.8,
+            informativeness=0.7,
+            self_containedness=0.95,
+            overall_score=0.85,
+            judge_rationale="Good",
+        )
+        mock_pipeline_class.return_value = mock_pipeline
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "Test context")
+
+        # Verify pipeline was called
+        mock_pipeline.evaluate.assert_called_once()
+        assert isinstance(result, QAPairValidated)
+        assert result.validation.overall_score == 0.85
+
+    def test_validate_uses_legacy_mode(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that validate uses legacy mode when composable disabled."""
+        from gtranscriber.config import JudgeConfig
+
+        judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
+
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            )
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "Test context")
+
+        # Should use legacy single-call validation
+        mock_llm_client.generate.assert_called_once()
+        assert isinstance(result, QAPairValidated)
+        assert result.validation.faithfulness == 0.9
+
+    def test_get_bloom_level_desc_with_prompts(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Test _get_bloom_level_desc uses loaded prompts in legacy mode."""
+        from gtranscriber.config import JudgeConfig
+
+        judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        desc = validator._get_bloom_level_desc("remember")
+        # Should get from loaded prompts
+        assert isinstance(desc, str)
+        assert len(desc) > 0
+
+    def test_get_bloom_level_desc_fallback(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test _get_bloom_level_desc uses fallback in composable mode."""
+        from gtranscriber.config import JudgeConfig
+
+        judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
+
+        # Mock to avoid loading actual prompts
+        mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
+        mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        desc = validator._get_bloom_level_desc("analyze")
+        # Should use fallback description
+        assert "relações" in desc or "padrões" in desc
+
+
+class TestCriterionScore:
+    """Tests for CriterionScore schema."""
+
+    def test_valid_criterion_score(self) -> None:
+        """Test valid criterion score initialization."""
+        from gtranscriber.schemas import CriterionScore
+
+        score = CriterionScore(
+            criterion_name="faithfulness",
+            score=0.8,
+            rationale="Answer is well-grounded",
+            thinking="Internal reasoning",
+        )
+
+        assert score.criterion_name == "faithfulness"
+        assert score.score == 0.8
+        assert score.rationale == "Answer is well-grounded"
+        assert score.thinking == "Internal reasoning"
+
+    def test_criterion_score_without_optional_fields(self) -> None:
+        """Test criterion score with minimal fields."""
+        from gtranscriber.schemas import CriterionScore
+
+        score = CriterionScore(
+            criterion_name="informativeness",
+            score=0.6,
+        )
+
+        assert score.criterion_name == "informativeness"
+        assert score.score == 0.6
+        assert score.rationale is None
+        assert score.thinking is None
+
+
+class TestValidationScoreEnhanced:
+    """Tests for enhanced ValidationScore with criterion_scores."""
+
+    def test_validation_score_with_criterion_scores(self) -> None:
+        """Test ValidationScore stores individual criterion scores."""
+        from gtranscriber.schemas import CriterionScore, ValidationScore
+
+        criterion_scores = {
+            "faithfulness": CriterionScore(
+                criterion_name="faithfulness", score=0.9, rationale="Good"
+            ),
+            "bloom_calibration": CriterionScore(
+                criterion_name="bloom_calibration", score=0.8, rationale="OK"
+            ),
+        }
+
+        score = ValidationScore(
+            faithfulness=0.9,
+            bloom_calibration=0.8,
+            informativeness=0.7,
+            overall_score=0.8,
+            criterion_scores=criterion_scores,
+        )
+
+        assert score.criterion_scores is not None
+        assert len(score.criterion_scores) == 2
+        assert "faithfulness" in score.criterion_scores
+        assert score.criterion_scores["faithfulness"].score == 0.9
+
+    def test_validation_score_without_criterion_scores(self) -> None:
+        """Test ValidationScore works without criterion_scores (backward compat)."""
+        score = ValidationScore(
+            faithfulness=0.9,
+            bloom_calibration=0.8,
+            informativeness=0.7,
+            overall_score=0.8,
+        )
+
+        assert score.criterion_scores is None
