@@ -10,6 +10,7 @@ import pytest
 from gtranscriber.config import CEPConfig
 from gtranscriber.core.cep.validator import QAValidator
 from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
+from gtranscriber.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -75,13 +76,15 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that validate returns a QAPairValidated with scores."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-                "judge_rationale": "Good quality pair.",
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                    "judge_rationale": "Good quality pair.",
+                }
+            )
         )
 
         validator = QAValidator(
@@ -105,14 +108,16 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that overall score is calculated correctly."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 1.0,
-                "bloom_calibration": 1.0,
-                "informativeness": 1.0,
-                "self_containedness": 1.0,
-                "judge_rationale": "Perfect.",
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 1.0,
+                    "bloom_calibration": 1.0,
+                    "informativeness": 1.0,
+                    "self_containedness": 1.0,
+                    "judge_rationale": "Perfect.",
+                }
+            )
         )
 
         validator = QAValidator(
@@ -132,13 +137,15 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that is_valid is True when overall score >= threshold."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.8,
-                "bloom_calibration": 0.7,
-                "informativeness": 0.6,
-                "self_containedness": 0.9,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.8,
+                    "bloom_calibration": 0.7,
+                    "informativeness": 0.6,
+                    "self_containedness": 0.9,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -160,13 +167,15 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that is_valid is False when overall score < threshold."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.3,
-                "bloom_calibration": 0.4,
-                "informativeness": 0.2,
-                "self_containedness": 0.1,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.3,
+                    "bloom_calibration": 0.4,
+                    "informativeness": 0.2,
+                    "self_containedness": 0.1,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -188,7 +197,8 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test parsing response wrapped in markdown code block."""
-        mock_llm_client.generate.return_value = """```json
+        mock_llm_client.generate.return_value = GenerateResult(
+            content="""```json
 {
     "faithfulness": 0.9,
     "bloom_calibration": 0.8,
@@ -196,6 +206,7 @@ class TestQAValidator:
     "judge_rationale": "Good."
 }
 ```"""
+        )
 
         validator = QAValidator(
             validator_client=mock_llm_client,
@@ -213,7 +224,7 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that invalid JSON returns pair with default scores."""
-        mock_llm_client.generate.return_value = "not valid json {"
+        mock_llm_client.generate.return_value = GenerateResult(content="not valid json {")
 
         validator = QAValidator(
             validator_client=mock_llm_client,
@@ -268,12 +279,14 @@ class TestQAValidator:
             generation_prompt="The original prompt",
         )
 
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -319,12 +332,14 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that scores outside [0, 1] are clamped."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 1.5,
-                "bloom_calibration": -0.5,
-                "informativeness": 0.7,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 1.5,
+                    "bloom_calibration": -0.5,
+                    "informativeness": 0.7,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -344,12 +359,14 @@ class TestQAValidator:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test batch validation of multiple QA pairs."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -364,19 +381,21 @@ class TestQAValidator:
         assert all(isinstance(r, QAPairValidated) for r in results)
         assert all(r.is_valid for r in results)
 
-    def test_validate_passes_response_format(
+    def test_validate_does_not_pass_response_format(
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
-        """Test that validate passes response_format to LLM client."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-            }
+        """Test that validate does not pass response_format to LLM client."""
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -387,7 +406,60 @@ class TestQAValidator:
         validator.validate(sample_qa_pair, "context")
 
         call_kwargs = mock_llm_client.generate.call_args.kwargs
-        assert call_kwargs["response_format"] == {"type": "json_object"}
+        assert "response_format" not in call_kwargs
+
+    def test_validate_stores_judge_thinking(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that judge thinking is stored in ValidationScore."""
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            ),
+            thinking="internal reasoning about this pair",
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "context")
+
+        assert result.validation.judge_thinking == "internal reasoning about this pair"
+
+    def test_validate_no_thinking(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        sample_qa_pair: QAPairCEP,
+    ) -> None:
+        """Test that judge_thinking is None when model has no thinking."""
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            ),
+        )
+
+        validator = QAValidator(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+        )
+
+        result = validator.validate(sample_qa_pair, "context")
+
+        assert result.validation.judge_thinking is None
 
 
 class TestValidationScore:
@@ -432,6 +504,17 @@ class TestValidationScore:
 
         assert score.faithfulness == 0.0
         assert score.bloom_calibration == 1.0
+
+    def test_judge_thinking_defaults_to_none(self) -> None:
+        """Test that judge_thinking defaults to None."""
+        score = ValidationScore(
+            faithfulness=0.9,
+            bloom_calibration=0.8,
+            informativeness=0.7,
+            overall_score=0.8,
+        )
+
+        assert score.judge_thinking is None
 
 
 class TestQAPairValidated:
@@ -552,14 +635,16 @@ class TestSelfContainedness:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that self_containedness is parsed from LLM response."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-                "self_containedness": 0.6,
-                "judge_rationale": "Partially self-contained.",
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                    "self_containedness": 0.6,
+                    "judge_rationale": "Partially self-contained.",
+                }
+            )
         )
 
         validator = QAValidator(
@@ -578,12 +663,14 @@ class TestSelfContainedness:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that self_containedness defaults to 1.0 when not in response."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -611,13 +698,15 @@ class TestSelfContainedness:
         )
 
         # LLM judge gives low self_containedness (incorrect for remember)
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 0.9,
-                "bloom_calibration": 0.8,
-                "informativeness": 0.7,
-                "self_containedness": 0.2,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 0.9,
+                    "bloom_calibration": 0.8,
+                    "informativeness": 0.7,
+                    "self_containedness": 0.2,
+                }
+            )
         )
 
         validator = QAValidator(
@@ -637,13 +726,15 @@ class TestSelfContainedness:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that overall score calculation includes self_containedness weight."""
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "faithfulness": 1.0,
-                "bloom_calibration": 1.0,
-                "informativeness": 1.0,
-                "self_containedness": 0.0,
-            }
+        mock_llm_client.generate.return_value = GenerateResult(
+            content=json.dumps(
+                {
+                    "faithfulness": 1.0,
+                    "bloom_calibration": 1.0,
+                    "informativeness": 1.0,
+                    "self_containedness": 0.0,
+                }
+            )
         )
 
         validator = QAValidator(

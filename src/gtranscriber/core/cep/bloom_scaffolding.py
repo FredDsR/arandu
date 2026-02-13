@@ -220,14 +220,20 @@ class BloomScaffoldingGenerator:
         )
 
         try:
-            response = self.llm_client.generate(
+            result = self.llm_client.generate(
                 prompt=prompt,
                 temperature=self.qa_config.temperature,
                 max_tokens=self.qa_config.max_tokens,
-                response_format={"type": "json_object"},
             )
 
-            pairs = self._parse_response(response, context, bloom_level, generation_prompt=prompt)
+            if result.thinking:
+                logger.debug(
+                    "Thinking captured for %s level (%d chars)", bloom_level, len(result.thinking)
+                )
+
+            pairs = self._parse_response(
+                result.content, context, bloom_level, generation_prompt=prompt
+            )
             return pairs
 
         except Exception as e:

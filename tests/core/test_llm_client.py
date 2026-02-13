@@ -15,6 +15,7 @@ from gtranscriber.core.llm_client import (
     LLMProvider,
     create_llm_client,
 )
+from gtranscriber.utils.text import GenerateResult
 
 
 class TestLLMClient:
@@ -135,6 +136,7 @@ class TestLLMClient:
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "Paris is the capital of France."
+        mock_response.choices[0].message.reasoning_content = None
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
 
@@ -143,9 +145,11 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("What is the capital of France?")
+        result = client.generate("What is the capital of France?")
 
-        assert response == "Paris is the capital of France."
+        assert isinstance(result, GenerateResult)
+        assert result.content == "Paris is the capital of France."
+        assert result.thinking is None
         mock_client.chat.completions.create.assert_called_once()
 
         # Verify the call arguments
@@ -172,12 +176,12 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate(
+        result = client.generate(
             "What is the capital of France?",
             system_prompt="You are a geography expert.",
         )
 
-        assert response == "Test response"
+        assert result.content == "Test response"
 
         # Verify the call arguments include system prompt
         call_args = mock_client.chat.completions.create.call_args
@@ -281,6 +285,7 @@ class TestLLMClient:
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = None
+        mock_response.choices[0].message.reasoning_content = None
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
 
@@ -289,9 +294,10 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("Test prompt")
+        result = client.generate("Test prompt")
 
-        assert response == ""
+        assert result.content == ""
+        assert result.thinking is None
 
     def test_generate_retry_on_failure(self, mocker: MockerFixture) -> None:
         """Test that generate retries on failure (tenacity decorator)."""
@@ -318,11 +324,77 @@ class TestLLMClient:
             model_id="llama3.1:8b",
         )
 
-        response = client.generate("Test prompt")
+        result = client.generate("Test prompt")
 
         # Should succeed after retries
-        assert response == "Success"
+        assert result.content == "Success"
         assert mock_client.chat.completions.create.call_count == 3
+
+    def test_generate_extracts_thinking(self, mocker: MockerFixture) -> None:
+        """Test that generate extracts thinking from <think> tags."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '<think>reasoning</think>{"key": 1}'
+        mock_response.choices[0].message.reasoning_content = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking == "reasoning"
+        assert result.content == '{"key": 1}'
+
+    def test_generate_no_thinking(self, mocker: MockerFixture) -> None:
+        """Test that generate returns thinking=None for non-thinking models."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Plain text response"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking is None
+        assert result.content == "Plain text response"
+
+    def test_generate_empty_response_with_thinking(self, mocker: MockerFixture) -> None:
+        """Test that generate handles None content with thinking extraction."""
+        mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = None
+        mock_response.choices[0].message.reasoning_content = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.content == ""
+        assert result.thinking is None
 
     def test_repr(self, mocker: MockerFixture) -> None:
         """Test string representation of LLMClient."""

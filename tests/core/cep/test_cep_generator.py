@@ -10,6 +10,7 @@ import pytest
 from gtranscriber.config import CEPConfig, QAConfig
 from gtranscriber.core.cep.cep_generator import CEPQAGenerator
 from gtranscriber.schemas import EnrichedRecord, QARecordCEP
+from gtranscriber.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -21,15 +22,17 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
     client = mocker.MagicMock()
     client.provider.value = "ollama"
     client.model_id = "qwen3:14b"
-    client.generate.return_value = json.dumps(
-        [
-            {
-                "question": "O que aconteceu?",
-                "answer": "Uma resposta.",
-                "bloom_level": "remember",
-                "confidence": 0.9,
-            }
-        ]
+    client.generate.return_value = GenerateResult(
+        content=json.dumps(
+            [
+                {
+                    "question": "O que aconteceu?",
+                    "answer": "Uma resposta.",
+                    "bloom_level": "remember",
+                    "confidence": 0.9,
+                }
+            ]
+        ),
     )
     return client
 
@@ -40,13 +43,15 @@ def mock_validator_client(mocker: MockerFixture) -> Any:
     client = mocker.MagicMock()
     client.provider.value = "ollama"
     client.model_id = "qwen3:14b"
-    client.generate.return_value = json.dumps(
-        {
-            "faithfulness": 0.9,
-            "bloom_calibration": 0.8,
-            "informativeness": 0.7,
-            "self_containedness": 0.9,
-        }
+    client.generate.return_value = GenerateResult(
+        content=json.dumps(
+            {
+                "faithfulness": 0.9,
+                "bloom_calibration": 0.8,
+                "informativeness": 0.7,
+                "self_containedness": 0.9,
+            }
+        ),
     )
     return client
 
