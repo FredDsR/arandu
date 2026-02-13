@@ -14,24 +14,20 @@ $starters_section
 $examples_section
 $scaffolding_section
 
-Generate exactly $num_questions question-answer pair(s) in JSON format.
-Each pair must follow these rules:
+Generate exactly 1 question-answer pair in JSON format.
+The pair must follow these rules:
 $output_rules
 
 Output format (JSON object):
 {
-  "qa_pairs": [
-    {
-      "question": "The generated question",
-      "answer": "The answer based on the information",
-      "bloom_level": "$bloom_level",
-      "confidence": 0.85,
-      "reasoning_trace": "Logical connections (for analyze/evaluate)",
-      "is_multi_hop": false,
-      "hop_count": null,
-      "tacit_inference": "Implicit knowledge (optional)"
-    }
-  ]
+  "question": "The generated question",
+  "answer": "The answer based on the information",
+  "bloom_level": "$bloom_level",
+  "confidence": 0.85,
+  "reasoning_trace": "Logical connections (for analyze/evaluate)",
+  "is_multi_hop": false,
+  "hop_count": null,
+  "tacit_inference": "Implicit knowledge (optional)"
 }
 
-Return ONLY the JSON object with the "qa_pairs" key, no additional text.
+Return ONLY the JSON object, no additional text.

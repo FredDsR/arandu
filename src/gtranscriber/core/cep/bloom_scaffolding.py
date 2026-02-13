@@ -201,6 +201,9 @@ class BloomScaffoldingGenerator:
     ) -> list[QAPairCEP]:
         """Generate QA pairs for a specific Bloom level.
 
+        Generates one QA pair per LLM call to ensure consistent quality and
+        clean attribution of model thinking traces to individual pairs.
+
         Args:
             context: Source text context.
             bloom_level: Bloom taxonomy level.
@@ -211,34 +214,74 @@ class BloomScaffoldingGenerator:
         Returns:
             List of QAPairCEP objects.
         """
-        prompt = self._build_prompt(
-            context,
-            bloom_level,
-            num_questions,
-            prior_pairs=prior_pairs,
-            source_metadata=source_metadata,
-        )
+        pairs: list[QAPairCEP] = []
+        all_prior_pairs = prior_pairs if prior_pairs else []
 
-        try:
-            result = self.llm_client.generate(
-                prompt=prompt,
-                temperature=self.qa_config.temperature,
-                max_tokens=self.qa_config.max_tokens,
+        # Generate one pair at a time
+        for i in range(num_questions):
+            # Build scaffolding context from ALL prior pairs (including current level)
+            current_prior = all_prior_pairs + pairs
+
+            prompt = self._build_prompt(
+                context,
+                bloom_level,
+                num_questions=1,  # Always request 1 pair
+                prior_pairs=current_prior,
+                source_metadata=source_metadata,
             )
 
-            if result.thinking:
-                logger.debug(
-                    "Thinking captured for %s level (%d chars)", bloom_level, len(result.thinking)
+            try:
+                result = self.llm_client.generate(
+                    prompt=prompt,
+                    temperature=self.qa_config.temperature,
+                    max_tokens=self.qa_config.max_tokens,
                 )
 
-            pairs = self._parse_response(
-                result.content, context, bloom_level, generation_prompt=prompt
-            )
-            return pairs
+                if result.thinking:
+                    logger.debug(
+                        "Thinking captured for %s level pair %d/%d (%d chars)",
+                        bloom_level,
+                        i + 1,
+                        num_questions,
+                        len(result.thinking),
+                    )
 
-        except Exception as e:
-            logger.error(f"Failed to generate QA pairs for {bloom_level} level: {e}")
-            return []
+                pair_list = self._parse_response(
+                    result.content,
+                    context,
+                    bloom_level,
+                    generation_prompt=prompt,
+                    generation_thinking=result.thinking,
+                )
+
+                # Should get exactly 1 pair, but handle edge cases
+                if pair_list:
+                    pairs.append(pair_list[0])
+                    logger.debug(
+                        "Generated pair %d/%d at %s level",
+                        i + 1,
+                        num_questions,
+                        bloom_level,
+                    )
+                else:
+                    logger.warning(
+                        "Failed to parse pair %d/%d for %s level",
+                        i + 1,
+                        num_questions,
+                        bloom_level,
+                    )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to generate pair %d/%d for %s level: %s",
+                    i + 1,
+                    num_questions,
+                    bloom_level,
+                    e,
+                )
+                continue
+
+        return pairs
 
     def _build_prompt(
         self,
@@ -308,7 +351,6 @@ class BloomScaffoldingGenerator:
             examples_section=examples_section,
             scaffolding_section=scaffolding_section,
             metadata_section=metadata_section,
-            num_questions=num_questions,
             output_rules=output_rules,
         )
 
@@ -319,17 +361,21 @@ class BloomScaffoldingGenerator:
         bloom_level: str,
         *,
         generation_prompt: str | None = None,
+        generation_thinking: str | None = None,
     ) -> list[QAPairCEP]:
         """Parse LLM response into QAPairCEP objects.
+
+        Handles both single-pair JSON objects and legacy array format.
 
         Args:
             response: Raw LLM response text.
             context: Source context for validation.
             bloom_level: Bloom level used for generation.
             generation_prompt: LLM prompt used to generate the response.
+            generation_thinking: Model thinking trace for this pair.
 
         Returns:
-            List of QAPairCEP objects.
+            List of QAPairCEP objects (typically containing one pair).
         """
         # Extract JSON from response (handle markdown code blocks)
         response = response.strip()
@@ -342,23 +388,37 @@ class BloomScaffoldingGenerator:
             logger.warning(f"Failed to parse JSON response: {e}")
             return []
 
-        # Unwrap object envelope (JSON mode returns objects)
-        if isinstance(data, dict):
-            if "qa_pairs" in data:
-                data = data["qa_pairs"]
-            elif "pairs" in data:
-                data = data["pairs"]
-            else:
-                logger.warning("JSON object has no 'qa_pairs' or 'pairs' key")
-                return []
+        # Handle both single object and array formats
+        items: list[dict] = []
 
-        if not isinstance(data, list):
-            logger.warning("Response is not a JSON array")
+        if isinstance(data, dict):
+            # Check if it's a wrapper object with "qa_pairs" or "pairs" key
+            if "qa_pairs" in data:
+                qa_pairs = data["qa_pairs"]
+                if isinstance(qa_pairs, list):
+                    items = qa_pairs
+                else:
+                    logger.warning("'qa_pairs' value is not a list")
+                    return []
+            elif "pairs" in data:
+                pairs = data["pairs"]
+                if isinstance(pairs, list):
+                    items = pairs
+                else:
+                    logger.warning("'pairs' value is not a list")
+                    return []
+            else:
+                # Assume it's a single QA pair object
+                items = [data]
+        elif isinstance(data, list):
+            items = data
+        else:
+            logger.warning("Response is neither a JSON object nor array")
             return []
 
         pairs: list[QAPairCEP] = []
 
-        for item in data:
+        for item in items:
             if not isinstance(item, dict):
                 continue
 
@@ -410,6 +470,7 @@ class BloomScaffoldingGenerator:
                     hop_count=hop_count,
                     tacit_inference=tacit_inference,
                     generation_prompt=generation_prompt,
+                    generation_thinking=generation_thinking,
                 )
                 pairs.append(pair)
             except Exception as e:

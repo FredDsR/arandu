@@ -254,6 +254,9 @@ class QAPairCEP(QAPair):
     generation_prompt: str | None = Field(
         None, description="LLM prompt used to generate this QA pair"
     )
+    generation_thinking: str | None = Field(
+        None, description="Model thinking/reasoning trace for this specific QA pair"
+    )
 
     @model_validator(mode="after")
     def validate_multi_hop(self) -> Self:
