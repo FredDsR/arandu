@@ -149,10 +149,9 @@ class QAValidator:
             if qa_pair.bloom_level == "remember":
                 scores.self_containedness = 1.0
 
-            # Calculate overall score (may be already calculated by pipeline)
-            if scores.overall_score == 0.0 or not self.judge_config.use_composable_pipeline:
-                overall = self._calculate_overall_score(scores)
-                scores.overall_score = overall
+            # Recalculate overall score for legacy mode (composable pipeline handles it)
+            if not self.judge_config.use_composable_pipeline:
+                scores.overall_score = self._calculate_overall_score(scores)
 
             # Determine if valid based on threshold
             is_valid = scores.overall_score >= self.cep_config.validation_threshold

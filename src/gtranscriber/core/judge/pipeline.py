@@ -7,7 +7,7 @@ and aggregates results into an overall score.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from gtranscriber.schemas import CriterionScore, ValidationScore
 
@@ -53,8 +53,7 @@ class JudgePipeline:
         self._validate_weights()
 
         logger.info(
-            f"JudgePipeline initialized with {len(criteria)} criteria: "
-            f"{[c.name for c in criteria]}"
+            f"JudgePipeline initialized with {len(criteria)} criteria: {[c.name for c in criteria]}"
         )
 
     def _validate_weights(self) -> None:
@@ -80,16 +79,14 @@ class JudgePipeline:
         # Check weights sum to 1.0 (allow small floating point errors)
         total = sum(self.weights.values())
         if not (0.99 <= total <= 1.01):
-            raise ValueError(
-                f"Weights must sum to 1.0, got {total:.3f}: {self.weights}"
-            )
+            raise ValueError(f"Weights must sum to 1.0, got {total:.3f}: {self.weights}")
 
     def evaluate(
         self,
         context: str,
         question: str,
         answer: str,
-        **extra_params: dict[str, dict],
+        **extra_params: Any,
     ) -> ValidationScore:
         """Evaluate content against all criteria.
 
@@ -147,8 +144,7 @@ class JudgePipeline:
             Weighted overall score in [0.0, 1.0].
         """
         overall = sum(
-            criterion_scores[name].score * weight
-            for name, weight in self.weights.items()
+            criterion_scores[name].score * weight for name, weight in self.weights.items()
         )
         return max(0.0, min(1.0, overall))  # Clamp to valid range
 
