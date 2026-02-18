@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 _THINK_PATTERN = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+_CODEBLOCK_PATTERN = re.compile(r"```(?:json)?\n?", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -55,3 +57,52 @@ def extract_thinking(response: str) -> GenerateResult:
         content=content,
         thinking=thinking if thinking else None,
     )
+
+
+def validate_score(value: Any, default: float = 0.5) -> float:
+    """Validate and clamp a score to [0.0, 1.0].
+
+    Args:
+        value: Raw score value from LLM response.
+        default: Fallback score when value cannot be converted to float.
+
+    Returns:
+        Float score clamped to [0.0, 1.0].
+
+    Examples:
+        >>> validate_score(0.8)
+        0.8
+        >>> validate_score(1.5)
+        1.0
+        >>> validate_score("not_a_number")
+        0.5
+    """
+    try:
+        score = float(value)
+        return max(0.0, min(1.0, score))
+    except (ValueError, TypeError):
+        return default
+
+
+def strip_markdown_codeblock(text: str) -> str:
+    """Remove markdown code block wrappers from text.
+
+    Strips leading/trailing whitespace and removes ````json`/```` fences
+    commonly added by LLMs around JSON responses.
+
+    Args:
+        text: Raw text potentially wrapped in markdown code blocks.
+
+    Returns:
+        Text with code block markers removed.
+
+    Examples:
+        >>> strip_markdown_codeblock('```json\\n{"key": 1}\\n```')
+        '{"key": 1}'
+        >>> strip_markdown_codeblock('{"key": 1}')
+        '{"key": 1}'
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        text = _CODEBLOCK_PATTERN.sub("", text)
+    return text

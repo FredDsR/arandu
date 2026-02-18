@@ -266,10 +266,30 @@ class QAPairCEP(QAPair):
         return self
 
 
+class CriterionScore(BaseModel):
+    """Score for a single evaluation criterion.
+
+    Returned by individual JudgeCriterion evaluations in the composable
+    judge pipeline. Each criterion is evaluated independently to avoid
+    reasoning overlap (G-Eval approach).
+    """
+
+    criterion_name: str = Field(..., description="Name of the criterion (e.g., 'faithfulness')")
+    score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Score for this criterion in [0.0, 1.0]",
+    )
+    rationale: str | None = Field(None, description="Judge's reasoning for this criterion score")
+    thinking: str | None = Field(None, description="Internal thinking trace for this criterion")
+
+
 class ValidationScore(BaseModel):
     """LLM-as-a-Judge validation scores for a QA pair.
 
     Evaluates faithfulness (grounding), Bloom calibration, and informativeness.
+    Enhanced to support composable judge pipeline with per-criterion scores.
     """
 
     faithfulness: float = Field(
@@ -305,6 +325,13 @@ class ValidationScore(BaseModel):
     judge_thinking: str | None = Field(
         None,
         description="Internal thinking trace from the judge model.",
+    )
+    criterion_scores: dict[str, CriterionScore] | None = Field(
+        None,
+        description=(
+            "Individual criterion scores from composable judge pipeline. "
+            "Available when using new judge framework."
+        ),
     )
 
 

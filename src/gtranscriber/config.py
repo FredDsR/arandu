@@ -419,6 +419,64 @@ class CEPConfig(BaseSettings):
         return self
 
 
+class JudgeConfig(BaseSettings):
+    """Configuration settings for the composable judge pipeline.
+
+    Settings are loaded from environment variables with the GTRANSCRIBER_JUDGE_ prefix.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="GTRANSCRIBER_JUDGE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Enable composable judge pipeline
+    use_composable_pipeline: bool = Field(
+        default=True,
+        description=(
+            "Use composable G-Eval-style judge pipeline (one criterion per LLM call). "
+            "When False, falls back to legacy single-call validation."
+        ),
+    )
+
+    # Language for criterion prompts
+    language: str = Field(
+        default="pt",
+        description="Language for judge criterion prompts (ISO 639-1: 'pt' or 'en')",
+    )
+
+    # LLM settings for judge (can differ from generator)
+    temperature: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Temperature for judge LLM (low for consistent evaluation)",
+    )
+    max_tokens: int = Field(
+        default=2048,
+        ge=128,
+        le=8192,
+        description=(
+            "Maximum tokens for judge responses. "
+            "Increase for thinking models whose <think> blocks consume tokens."
+        ),
+    )
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        """Validate language code for judge prompts."""
+        valid_languages = {"en", "pt"}
+        if v not in valid_languages:
+            raise ValueError(
+                f"Invalid judge language: {v!r}. Must be one of {sorted(valid_languages)}"
+            )
+        return v
+
+
 class KGConfig(BaseSettings):
     """Configuration settings for the knowledge graph construction pipeline.
 
@@ -700,6 +758,11 @@ def get_qa_config() -> QAConfig:
 def get_cep_config() -> CEPConfig:
     """Get CEP (Cognitive Elicitation Pipeline) configuration."""
     return CEPConfig()
+
+
+def get_judge_config() -> JudgeConfig:
+    """Get judge pipeline configuration."""
+    return JudgeConfig()
 
 
 def get_kg_config() -> KGConfig:
