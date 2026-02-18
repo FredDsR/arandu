@@ -184,8 +184,10 @@ class QAPair(BaseModel):
     The answer must be extractive from the context (contained within it).
     """
 
-    question: str = Field(..., description="The generated question")
-    answer: str = Field(..., description="Ground truth answer (extractive from context)")
+    question: str = Field(..., min_length=1, description="The generated question")
+    answer: str = Field(
+        ..., min_length=1, description="Ground truth answer (extractive from context)"
+    )
     context: str = Field(..., description="Source text segment from which QA was generated")
     question_type: Literal["factual", "conceptual", "temporal", "entity"] = Field(
         ..., description="Question generation strategy type"
@@ -253,6 +255,9 @@ class QAPairCEP(QAPair):
     )
     generation_prompt: str | None = Field(
         None, description="LLM prompt used to generate this QA pair"
+    )
+    generation_thinking: str | None = Field(
+        None, description="Model thinking/reasoning trace for this specific QA pair"
     )
 
     @model_validator(mode="after")
