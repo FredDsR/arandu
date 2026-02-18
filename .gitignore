@@ -208,3 +208,4 @@ logs/
 # Hugging Face cache
 cache/
 coverage.json
+test_report_manual.py
