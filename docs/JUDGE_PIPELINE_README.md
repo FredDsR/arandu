@@ -234,10 +234,15 @@ Comprehensive test coverage:
 
 Run tests: `uv run pytest tests/core/judge/`
 
-## Code Review & Security
+## Code Quality Checks
 
-- ✅ **Code Review**: No issues found
-- ✅ **Security Scan**: No vulnerabilities detected
+```bash
+# Lint and format
+uv run ruff check --fix src/gtranscriber/core/judge/ && uv run ruff format src/gtranscriber/core/judge/
+
+# Run tests
+uv run pytest tests/core/judge/ tests/core/cep/test_validator.py -v
+```
 
 ## Documentation
 
@@ -273,24 +278,13 @@ pipeline = JudgePipeline(criteria, your_weights)
 score = pipeline.evaluate(...)
 ```
 
-## Future Enhancements
-
-- [ ] Parallel criterion evaluation (performance optimization)
-- [ ] Criterion result caching (avoid re-evaluation)
-- [ ] Web UI for criterion management
-- [ ] A/B testing framework for prompts
-- [ ] Additional criterion sets (KG, transcription quality)
-
 ## References
 
 - [G-Eval: NLG Evaluation using GPT-4 with Better Human Alignment](https://arxiv.org/abs/2303.16634)
 - [deepeval G-Eval metric](https://docs.confident-ai.com/docs/metrics-llm-evals)
-- Issue #35: feat(cep): composable G-Eval-style LLM-as-a-Judge validation pipeline
+- Issue #30: feat(cep): composable G-Eval-style LLM-as-a-Judge validation pipeline
 
 ## Credits
 
 Implemented by @copilot with guidance from @FredDsR.
 
----
-
-**Status**: ✅ Ready for merge and production use

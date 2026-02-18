@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from gtranscriber.core.judge.criterion import FileCriterion, JudgeCriterion
 
@@ -32,15 +32,13 @@ class JudgeRegistry:
     """
 
     # Predefined criterion sets for different pipeline steps
-    CRITERION_SETS = {
+    CRITERION_SETS: ClassVar[dict[str, list[str]]] = {
         "cep_validation": [
             "faithfulness",
             "bloom_calibration",
             "informativeness",
             "self_containedness",
         ],
-        # Future: Add other pipeline criterion sets
-        # "kg_validation": ["factual_accuracy", "completeness"],
     }
 
     def __init__(
