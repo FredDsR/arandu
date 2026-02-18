@@ -1713,5 +1713,130 @@ def enrich_metadata(
     print_success(f"Enriched {enriched_count} transcription(s) (skipped {skipped_count})")
 
 
+@app.command()
+def report(
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            "--id",
+            help="Generate report for specific pipeline run. If not provided, generates for all runs.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output path for HTML report.",
+        ),
+    ] = Path("report.html"),
+    all_runs: Annotated[
+        bool,
+        typer.Option(
+            "--all-runs",
+            help="Generate report for all runs (default if no --run-id).",
+        ),
+    ] = False,
+    export_figures: Annotated[
+        Path | None,
+        typer.Option(
+            "--export-figures",
+            help="Directory to export static figures (PNG, SVG, or PDF).",
+        ),
+    ] = None,
+    figure_format: Annotated[
+        str,
+        typer.Option(
+            "--figure-format",
+            help="Output format for static figures: png, svg, or pdf.",
+        ),
+    ] = "png",
+    results_dir: Annotated[
+        Path,
+        typer.Option(
+            "--results-dir",
+            help="Path to results directory (defaults to configured results_dir).",
+        ),
+    ] = Path(_results_config.results_dir),
+) -> None:
+    """Generate visualization reports and metrics for pipeline results.
+
+    Creates interactive HTML reports with embedded Plotly charts and/or
+    publication-quality static figures (PNG, SVG, PDF) for academic papers.
+
+    The report discovers results by scanning the filesystem directly,
+    without relying on index.json which can become stale.
+
+    Examples:
+        # Generate HTML report for all runs
+        gtranscriber report
+
+        # Generate report for specific run
+        gtranscriber report --run-id 20250101_120000
+
+        # Export static figures only
+        gtranscriber report --export-figures ./figures/ --figure-format png
+
+        # Generate both HTML and figures
+        gtranscriber report --output report.html --export-figures ./figures/
+    """
+    from gtranscriber.core.report import ResultsCollector
+    from gtranscriber.core.report.figures import export_all_figures
+    from gtranscriber.core.report.generator import generate_html_report
+
+    setup_logging()
+
+    # Validate figure format
+    if figure_format not in ["png", "svg", "pdf"]:
+        print_error(f"Invalid figure format: {figure_format}. Must be png, svg, or pdf.")
+        raise typer.Exit(code=1)
+
+    # Initialize collector
+    collector = ResultsCollector(results_dir)
+
+    # Load reports
+    if run_id:
+        print_info(f"Loading run: {run_id}")
+        try:
+            reports = [collector.load_run(run_id)]
+        except FileNotFoundError:
+            print_error(f"Run not found: {run_id}")
+            raise typer.Exit(code=1)
+    else:
+        print_info("Discovering all pipeline runs...")
+        reports = collector.load_all_runs()
+
+    if not reports:
+        print_error("No pipeline runs found.")
+        raise typer.Exit(code=1)
+
+    print_info(f"Loaded {len(reports)} pipeline run(s)")
+
+    # Generate HTML report
+    if not export_figures or output != Path("report.html"):
+        print_info(f"Generating HTML report: {output}")
+        try:
+            generate_html_report(reports, output)
+            print_success(f"HTML report saved to: {output}")
+        except Exception as e:
+            print_error(f"Failed to generate HTML report: {e}")
+            logger.exception("HTML report generation failed")
+            raise typer.Exit(code=1)
+
+    # Export static figures
+    if export_figures:
+        print_info(f"Exporting static figures to: {export_figures} (format: {figure_format})")
+        try:
+            generated_files = export_all_figures(reports, export_figures, format=figure_format)
+            print_success(f"Exported {len(generated_files)} figure(s):")
+            for fig_path in generated_files:
+                print_info(f"  - {fig_path.name}")
+        except Exception as e:
+            print_error(f"Failed to export figures: {e}")
+            logger.exception("Figure export failed")
+            raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()

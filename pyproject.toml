@@ -79,6 +79,14 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
+[project.optional-dependencies]
+report = [
+    "plotly>=6.0.0",
+    "jinja2>=3.1.0",
+    "matplotlib>=3.9.0",
+    "seaborn>=0.13.0",
+]
+
 [dependency-groups]
 dev = [
     "ruff>=0.8.0",
