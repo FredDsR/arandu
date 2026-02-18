@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -13,6 +12,8 @@ from gtranscriber.schemas import CriterionScore
 from gtranscriber.utils.text import GenerateResult
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pytest_mock import MockerFixture
 
 
@@ -39,10 +40,7 @@ def prompts_dir(tmp_path: Path) -> Path:
     # Create prompt template file
     prompt_file = faithfulness_dir / "prompt.md"
     prompt_file.write_text(
-        "Context: $context\n"
-        "Question: $question\n"
-        "Answer: $answer\n"
-        "Rubric: $rubric\n"
+        "Context: $context\nQuestion: $question\nAnswer: $answer\nRubric: $rubric\n"
     )
 
     return base_dir
@@ -277,10 +275,7 @@ class TestFileCriterion:
         criterion_dir.mkdir(parents=True)
         (criterion_dir / "rubric.md").write_text("Rubric")
         (criterion_dir / "prompt.md").write_text(
-            "Context: $context\n"
-            "Question: $question\n"
-            "Answer: $answer\n"
-            "Extra: $extra_param\n"
+            "Context: $context\nQuestion: $question\nAnswer: $answer\nExtra: $extra_param\n"
         )
 
         mock_llm_client.generate.return_value = GenerateResult(

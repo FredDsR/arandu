@@ -860,7 +860,7 @@ class TestQAValidatorComposableMode:
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock the judge pipeline
-        mock_registry = mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
+        mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
         mock_pipeline_class = mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
 
         # Mock the pipeline evaluate method

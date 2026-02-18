@@ -69,7 +69,7 @@ class TestJudgePipeline:
             "informativeness": 0.1,  # Sum = 0.9, not 1.0
         }
 
-        with pytest.raises(ValueError, match="Weights must sum to 1.0"):
+        with pytest.raises(ValueError, match=r"Weights must sum to 1\.0"):
             JudgePipeline(criteria=mock_criteria, weights=weights)
 
     def test_initialization_validates_missing_criterion_weight(
