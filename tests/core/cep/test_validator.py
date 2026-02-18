@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import CEPConfig
+from gtranscriber.config import CEPConfig, JudgeConfig
 from gtranscriber.core.cep.validator import QAValidator
 from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
 from gtranscriber.utils.text import GenerateResult
@@ -40,6 +40,12 @@ def cep_config() -> CEPConfig:
 
 
 @pytest.fixture
+def legacy_judge_config() -> JudgeConfig:
+    """Create a JudgeConfig that forces legacy (single-call) validation."""
+    return JudgeConfig(use_composable_pipeline=False, language="pt")
+
+
+@pytest.fixture
 def sample_qa_pair() -> QAPairCEP:
     """Create a sample QA pair for validation."""
     return QAPairCEP(
@@ -59,11 +65,13 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
     ) -> None:
         """Test validator initialization."""
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         assert validator.validator_client == mock_llm_client
@@ -73,6 +81,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that validate returns a QAPairValidated with scores."""
@@ -90,6 +99,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -105,6 +115,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that overall score is calculated correctly."""
@@ -123,6 +134,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -134,6 +146,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that is_valid is True when overall score >= threshold."""
@@ -151,6 +164,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -164,6 +178,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that is_valid is False when overall score < threshold."""
@@ -181,6 +196,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -194,6 +210,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test parsing response wrapped in markdown code block."""
@@ -211,6 +228,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -221,6 +239,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that invalid JSON returns pair with default scores."""
@@ -229,6 +248,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -247,6 +267,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that LLM errors result in unvalidated pair."""
@@ -255,6 +276,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -267,6 +289,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
     ) -> None:
         """Test that generation_prompt is preserved through validate() success path."""
         pair = QAPairCEP(
@@ -292,6 +315,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(pair, "context")
@@ -302,6 +326,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
     ) -> None:
         """Test that generation_prompt is preserved through validate() error path."""
         pair = QAPairCEP(
@@ -319,6 +344,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(pair, "context")
@@ -329,6 +355,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that scores outside [0, 1] are clamped."""
@@ -345,6 +372,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -356,6 +384,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test batch validation of multiple QA pairs."""
@@ -372,6 +401,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         pairs = [sample_qa_pair, sample_qa_pair]
@@ -385,6 +415,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that validate does not pass response_format to LLM client."""
@@ -401,6 +432,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         validator.validate(sample_qa_pair, "context")
@@ -412,6 +444,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that judge thinking is stored in ValidationScore."""
@@ -429,6 +462,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -439,6 +473,7 @@ class TestQAValidator:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that judge_thinking is None when model has no thinking."""
@@ -455,6 +490,7 @@ class TestQAValidator:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -577,10 +613,13 @@ class TestQAValidatorEdgeCases:
         # Mock the file existence check to return False
         mocker.patch("pathlib.Path.exists", return_value=False)
 
+        judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
+
         with pytest.raises(FileNotFoundError, match="Validation data file not found"):
             QAValidator(
                 validator_client=mock_llm_client,
                 cep_config=cep_config,
+                judge_config=judge_config,
             )
 
     def test_load_prompts_template_not_found(
@@ -596,21 +635,26 @@ class TestQAValidatorEdgeCases:
 
         mocker.patch("pathlib.Path.exists", side_effect=[True, False])
 
+        judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
+
         with pytest.raises(FileNotFoundError, match="Validation template not found"):
             QAValidator(
                 validator_client=mock_llm_client,
                 cep_config=cep_config,
+                judge_config=judge_config,
             )
 
     def test_validate_score_with_invalid_types(
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
     ) -> None:
         """Test _validate_score handles various invalid input types."""
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         # Test various invalid types
@@ -632,6 +676,7 @@ class TestSelfContainedness:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that self_containedness is parsed from LLM response."""
@@ -650,6 +695,7 @@ class TestSelfContainedness:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -660,6 +706,7 @@ class TestSelfContainedness:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that self_containedness defaults to 1.0 when not in response."""
@@ -676,6 +723,7 @@ class TestSelfContainedness:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
@@ -686,6 +734,7 @@ class TestSelfContainedness:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
     ) -> None:
         """Test that self_containedness is forced to 1.0 for remember level."""
         remember_pair = QAPairCEP(
@@ -712,6 +761,7 @@ class TestSelfContainedness:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(remember_pair, "context")
@@ -723,6 +773,7 @@ class TestSelfContainedness:
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
+        legacy_judge_config: JudgeConfig,
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that overall score calculation includes self_containedness weight."""
@@ -740,6 +791,7 @@ class TestSelfContainedness:
         validator = QAValidator(
             validator_client=mock_llm_client,
             cep_config=cep_config,
+            judge_config=legacy_judge_config,
         )
 
         result = validator.validate(sample_qa_pair, "context")
