@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .style import BLOOM_COLORS, CATEGORICAL_COLORS, get_bloom_color, get_color_palette
+from .style import CATEGORICAL_COLORS, get_bloom_color
 
 if TYPE_CHECKING:
     from .collector import RunReport
@@ -264,7 +264,7 @@ def create_transcription_quality_chart(reports: list[RunReport]) -> go.Figure:
         "content_density_score",
     ]
 
-    for (row, col), score_type in zip(positions, score_types):
+    for (row, col), score_type in zip(positions, score_types, strict=False):
         if quality_scores[score_type]:
             fig.add_trace(
                 go.Histogram(
@@ -282,7 +282,6 @@ def create_transcription_quality_chart(reports: list[RunReport]) -> go.Figure:
     valid_count = sum(1 for r in reports for rec in r.transcription_records if rec.is_valid)
     total_count = sum(len(r.transcription_records) for r in reports)
     if total_count > 0:
-        validity_rate = (valid_count / total_count) * 100
         fig.add_trace(
             go.Bar(
                 x=["Valid", "Invalid"],

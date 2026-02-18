@@ -6,16 +6,17 @@ exported to PNG, SVG, and PDF formats.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-from typing import TYPE_CHECKING
 
 from .style import BLOOM_COLORS, CATEGORICAL_COLORS, get_matplotlib_style
 
 if TYPE_CHECKING:
     from pathlib import Path
+
     from .collector import RunReport
 
 # Set Agg backend for headless environments
@@ -139,7 +140,7 @@ def create_validation_scores_figure(
     )
 
     # Color boxes
-    for patch, color in zip(bp["boxes"], CATEGORICAL_COLORS):
+    for patch, color in zip(bp["boxes"], CATEGORICAL_COLORS, strict=False):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
@@ -233,7 +234,7 @@ def create_transcription_quality_figure(
     fig.suptitle("Transcription Quality Metrics", fontsize=14, fontweight="bold")
 
     for ax, (name, scores), color in zip(
-        axes.flat, quality_scores.items(), CATEGORICAL_COLORS
+        axes.flat, quality_scores.items(), CATEGORICAL_COLORS, strict=False
     ):
         if scores:
             ax.hist(scores, bins=20, color=color, alpha=0.7, edgecolor="black")

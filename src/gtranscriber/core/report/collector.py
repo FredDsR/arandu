@@ -6,7 +6,6 @@ without relying on index.json which can become stale.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,9 +22,7 @@ class RunReport(BaseModel):
     """
 
     pipeline_id: str = Field(..., description="Pipeline ID for this run")
-    pipeline: PipelineMetadata | None = Field(
-        default=None, description="Pipeline-level metadata"
-    )
+    pipeline: PipelineMetadata | None = Field(default=None, description="Pipeline-level metadata")
     transcription_metadata: RunMetadata | None = Field(
         default=None, description="Transcription step metadata"
     )
@@ -61,9 +58,7 @@ class ResultsCollector:
             return []
 
         return [
-            d.name
-            for d in self.results_dir.iterdir()
-            if d.is_dir() and not d.name.startswith(".")
+            d.name for d in self.results_dir.iterdir() if d.is_dir() and not d.name.startswith(".")
         ]
 
     def load_run(self, pipeline_id: str) -> RunReport:

@@ -5,7 +5,6 @@ Assembles self-contained HTML reports with interactive visualizations.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jinja2 import Template
@@ -13,6 +12,8 @@ from jinja2 import Template
 from . import charts
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from .collector import RunReport
 
 
@@ -123,7 +124,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>📊 G-Transcriber Pipeline Report</h1>
-    
+
     <div class="summary-stats">
         <div class="stat-card">
             <h3>Total Runs</h3>
@@ -264,9 +265,7 @@ def generate_html_report(reports: list[RunReport], output_path: Path) -> None:
     # Calculate summary statistics
     total_runs = len(reports)
     total_transcriptions = sum(len(r.transcription_records) for r in reports)
-    total_qa_pairs = sum(
-        sum(len(cep.qa_pairs) for cep in r.cep_records) for r in reports
-    )
+    total_qa_pairs = sum(sum(len(cep.qa_pairs) for cep in r.cep_records) for r in reports)
 
     success_rates = []
     for report in reports:
