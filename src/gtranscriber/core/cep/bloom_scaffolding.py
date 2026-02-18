@@ -13,6 +13,9 @@ from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
 from gtranscriber.schemas import QAPairCEP, SourceMetadata
 
 if TYPE_CHECKING:
@@ -31,6 +34,10 @@ BLOOM_HIERARCHY: list[str] = [
     "evaluate",
     "create",
 ]
+
+
+class LLMResponseError(Exception):
+    """Recoverable LLM response error (JSON parse, format, or validation failure)."""
 
 
 class BloomScaffoldingGenerator:
@@ -217,60 +224,39 @@ class BloomScaffoldingGenerator:
         pairs: list[QAPairCEP] = []
         all_prior_pairs = prior_pairs if prior_pairs else []
 
-        # Generate one pair at a time
         for pair_index in range(num_questions):
-            # Build scaffolding context from ALL prior pairs (including current level)
+            # Build scaffolding context from prior pairs (including current level);
+            # downstream formatting may truncate to max_scaffolding_pairs.
             current_prior = all_prior_pairs + pairs
 
             prompt = self._build_prompt(
                 context,
                 bloom_level,
-                num_questions=1,  # Always request 1 pair
                 prior_pairs=current_prior,
                 source_metadata=source_metadata,
             )
 
             try:
-                result = self.llm_client.generate(
+                pair = self._generate_single_pair(
                     prompt=prompt,
-                    temperature=self.qa_config.temperature,
-                    max_tokens=self.qa_config.max_tokens,
+                    context=context,
+                    bloom_level=bloom_level,
                 )
-
-                if result.thinking:
-                    logger.debug(
-                        "Thinking captured for %s level pair %d/%d (%d chars)",
-                        bloom_level,
-                        pair_index + 1,
-                        num_questions,
-                        len(result.thinking),
-                    )
-
-                pair_list = self._parse_response(
-                    result.content,
-                    context,
+                pairs.append(pair)
+                logger.debug(
+                    "Generated pair %d/%d at %s level",
+                    pair_index + 1,
+                    num_questions,
                     bloom_level,
-                    generation_prompt=prompt,
-                    generation_thinking=result.thinking,
                 )
-
-                # Should get exactly 1 pair, but handle edge cases
-                if pair_list:
-                    pairs.append(pair_list[0])
-                    logger.debug(
-                        "Generated pair %d/%d at %s level",
-                        pair_index + 1,
-                        num_questions,
-                        bloom_level,
-                    )
-                else:
-                    logger.warning(
-                        "Failed to parse pair %d/%d for %s level",
-                        pair_index + 1,
-                        num_questions,
-                        bloom_level,
-                    )
-
+            except LLMResponseError:
+                logger.warning(
+                    "Retries exhausted for pair %d/%d at %s level; skipping",
+                    pair_index + 1,
+                    num_questions,
+                    bloom_level,
+                )
+                continue
             except Exception as e:
                 logger.error(
                     "Failed to generate pair %d/%d for %s level: %s",
@@ -281,13 +267,69 @@ class BloomScaffoldingGenerator:
                 )
                 continue
 
+        if len(pairs) < num_questions:
+            logger.warning(
+                "Generated %d/%d pairs for %s level (some failed)",
+                len(pairs),
+                num_questions,
+                bloom_level,
+            )
+
         return pairs
+
+    @retry(
+        retry=retry_if_exception_type(LLMResponseError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def _generate_single_pair(
+        self,
+        prompt: str,
+        context: str,
+        bloom_level: str,
+    ) -> QAPairCEP:
+        """Generate and validate a single QA pair via LLM call.
+
+        Retries up to 3 times on recoverable LLM response errors (JSON parse
+        failures, unexpected formats, validation errors).
+
+        Args:
+            prompt: Formatted prompt string.
+            context: Source text context.
+            bloom_level: Bloom taxonomy level.
+
+        Returns:
+            Validated QAPairCEP object.
+
+        Raises:
+            LLMResponseError: If response cannot be parsed/validated after retries.
+        """
+        result = self.llm_client.generate(
+            prompt=prompt,
+            temperature=self.qa_config.temperature,
+            max_tokens=self.qa_config.max_tokens,
+        )
+
+        if result.thinking:
+            logger.debug(
+                "Thinking captured for %s level (%d chars)",
+                bloom_level,
+                len(result.thinking),
+            )
+
+        return self._parse_response(
+            result.content,
+            context,
+            bloom_level,
+            generation_prompt=prompt,
+            generation_thinking=result.thinking,
+        )
 
     def _build_prompt(
         self,
         context: str,
         bloom_level: str,
-        num_questions: int,
         *,
         prior_pairs: list[QAPairCEP] | None = None,
         source_metadata: SourceMetadata | None = None,
@@ -297,7 +339,6 @@ class BloomScaffoldingGenerator:
         Args:
             context: Source text context.
             bloom_level: Bloom taxonomy level.
-            num_questions: Number of questions to generate.
             prior_pairs: Previously generated QA pairs for scaffolding context.
             source_metadata: Optional source metadata for prompt enrichment.
 
@@ -362,22 +403,24 @@ class BloomScaffoldingGenerator:
         *,
         generation_prompt: str | None = None,
         generation_thinking: str | None = None,
-    ) -> list[QAPairCEP]:
-        """Parse LLM response into QAPairCEP objects.
+    ) -> QAPairCEP:
+        """Parse LLM response into a single QAPairCEP.
 
-        Handles both single-pair JSON objects and legacy array format.
+        Expects a flat JSON object. Pydantic validates all fields.
 
         Args:
             response: Raw LLM response text.
-            context: Source context for validation.
+            context: Source context for enrichment.
             bloom_level: Bloom level used for generation.
             generation_prompt: LLM prompt used to generate the response.
             generation_thinking: Model thinking trace for this pair.
 
         Returns:
-            List of QAPairCEP objects (typically containing one pair).
+            Validated QAPairCEP object.
+
+        Raises:
+            LLMResponseError: If JSON parsing or model validation fails.
         """
-        # Extract JSON from response (handle markdown code blocks)
         response = response.strip()
         if response.startswith("```"):
             response = re.sub(r"```(?:json)?\n?", "", response)
@@ -385,99 +428,24 @@ class BloomScaffoldingGenerator:
         try:
             data = json.loads(response)
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse JSON response: {e}")
-            return []
+            raise LLMResponseError(f"Invalid JSON: {e}") from e
 
-        # Handle both single object and array formats
-        items: list[dict] = []
+        if not isinstance(data, dict):
+            raise LLMResponseError(f"Expected JSON object, got {type(data).__name__}")
 
-        if isinstance(data, dict):
-            # Check if it's a wrapper object with "qa_pairs" or "pairs" key
-            if "qa_pairs" in data:
-                qa_pairs = data["qa_pairs"]
-                if isinstance(qa_pairs, list):
-                    items = qa_pairs
-                else:
-                    logger.warning("'qa_pairs' value is not a list")
-                    return []
-            elif "pairs" in data:
-                pairs = data["pairs"]
-                if isinstance(pairs, list):
-                    items = pairs
-                else:
-                    logger.warning("'pairs' value is not a list")
-                    return []
-            else:
-                # Assume it's a single QA pair object
-                items = [data]
-        elif isinstance(data, list):
-            items = data
-        else:
-            logger.warning("Response is neither a JSON object nor array")
-            return []
+        question_type = self._bloom_to_question_type(bloom_level)
 
-        pairs: list[QAPairCEP] = []
-
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-
-            question = item.get("question", "").strip()
-            answer = item.get("answer", "").strip()
-            confidence = item.get("confidence", 0.5)
-
-            # Validate required fields
-            if not question or not answer:
-                logger.debug("Skipping pair with missing question or answer")
-                continue
-
-            # Validate confidence range
-            try:
-                confidence = float(confidence)
-                if not 0.0 <= confidence <= 1.0:
-                    confidence = 0.5
-            except (ValueError, TypeError):
-                confidence = 0.5
-
-            # Get optional CEP fields
-            reasoning_trace = item.get("reasoning_trace")
-            is_multi_hop = item.get("is_multi_hop", False)
-            hop_count = item.get("hop_count")
-            tacit_inference = item.get("tacit_inference")
-
-            # Validate hop_count
-            if hop_count is not None:
-                try:
-                    hop_count = int(hop_count)
-                    if not 1 <= hop_count <= 5:
-                        hop_count = None
-                except (ValueError, TypeError):
-                    hop_count = None
-
-            # Determine question_type based on bloom_level for backward compatibility
-            question_type = self._bloom_to_question_type(bloom_level)
-
-            try:
-                pair = QAPairCEP(
-                    question=question,
-                    answer=answer,
-                    context=context,
-                    question_type=question_type,
-                    confidence=confidence,
-                    bloom_level=bloom_level,  # type: ignore[arg-type]
-                    reasoning_trace=reasoning_trace,
-                    is_multi_hop=is_multi_hop,
-                    hop_count=hop_count,
-                    tacit_inference=tacit_inference,
-                    generation_prompt=generation_prompt,
-                    generation_thinking=generation_thinking,
-                )
-                pairs.append(pair)
-            except Exception as e:
-                logger.warning(f"Failed to create QAPairCEP: {e}")
-                continue
-
-        return pairs
+        try:
+            return QAPairCEP(
+                **data,
+                context=context,
+                question_type=question_type,
+                bloom_level=bloom_level,
+                generation_prompt=generation_prompt,
+                generation_thinking=generation_thinking,
+            )
+        except (ValidationError, TypeError) as e:
+            raise LLMResponseError(f"Validation failed: {e}") from e
 
     def _format_metadata_section(self, metadata: SourceMetadata) -> str:
         """Format source metadata as a prompt section.

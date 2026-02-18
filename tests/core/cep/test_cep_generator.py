@@ -24,14 +24,11 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
     client.model_id = "qwen3:14b"
     client.generate.return_value = GenerateResult(
         content=json.dumps(
-            [
-                {
-                    "question": "O que aconteceu?",
-                    "answer": "Uma resposta.",
-                    "bloom_level": "remember",
-                    "confidence": 0.9,
-                }
-            ]
+            {
+                "question": "O que aconteceu?",
+                "answer": "Uma resposta.",
+                "confidence": 0.9,
+            }
         ),
     )
     return client

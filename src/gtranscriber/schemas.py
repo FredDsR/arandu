@@ -184,8 +184,10 @@ class QAPair(BaseModel):
     The answer must be extractive from the context (contained within it).
     """
 
-    question: str = Field(..., description="The generated question")
-    answer: str = Field(..., description="Ground truth answer (extractive from context)")
+    question: str = Field(..., min_length=1, description="The generated question")
+    answer: str = Field(
+        ..., min_length=1, description="Ground truth answer (extractive from context)"
+    )
     context: str = Field(..., description="Source text segment from which QA was generated")
     question_type: Literal["factual", "conceptual", "temporal", "entity"] = Field(
         ..., description="Question generation strategy type"
