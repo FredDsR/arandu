@@ -8,14 +8,15 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any, Protocol
 
 from gtranscriber.schemas import CriterionScore
+from gtranscriber.utils.text import strip_markdown_codeblock, validate_score
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from gtranscriber.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -209,10 +210,7 @@ class FileCriterion:
         Returns:
             CriterionScore with parsed values.
         """
-        response = response.strip()
-        # Strip markdown code blocks if present
-        if response.startswith("```"):
-            response = re.sub(r"```(?:json)?\n?", "", response)
+        response = strip_markdown_codeblock(response)
 
         try:
             data = json.loads(response)
@@ -244,8 +242,4 @@ class FileCriterion:
         Returns:
             Validated float score in [0.0, 1.0].
         """
-        try:
-            score = float(value)
-            return max(0.0, min(1.0, score))
-        except (ValueError, TypeError):
-            return 0.5
+        return validate_score(value)

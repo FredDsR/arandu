@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
@@ -19,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from gtranscriber.config import get_judge_config
 from gtranscriber.core.judge import JudgePipeline, JudgeRegistry
 from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
+from gtranscriber.utils.text import strip_markdown_codeblock, validate_score
 
 if TYPE_CHECKING:
     from gtranscriber.config import CEPConfig, JudgeConfig
@@ -258,27 +258,30 @@ class QAValidator:
     def _get_bloom_level_desc(self, bloom_level: str) -> str:
         """Get Bloom level description.
 
+        Loads from prompts (legacy mode) or from the validation data file
+        (composable mode), with caching on first access.
+
         Args:
             bloom_level: Bloom level name.
 
         Returns:
             Human-readable description.
         """
-        # Try to get from loaded prompts if in legacy mode
+        # Legacy mode: use already-loaded prompts
         if hasattr(self, "_prompts"):
             bloom_levels = self._prompts.get("bloom_levels", {})
             return bloom_levels.get(bloom_level, bloom_level)
 
-        # Fallback descriptions for composable mode
-        descriptions = {
-            "remember": "Requer apenas recordar fatos explícitos do texto",
-            "understand": "Requer explicar, interpretar ou resumir conceitos",
-            "apply": "Requer usar conhecimento em situação nova ou diferente",
-            "analyze": "Requer identificar relações, padrões ou conexões entre ideias",
-            "evaluate": "Requer fazer julgamentos, avaliar decisões ou justificar escolhas",
-            "create": "Requer propor soluções, elaborar ideias ou criar algo novo",
-        }
-        return descriptions.get(bloom_level, bloom_level)
+        # Composable mode: load from data file and cache
+        if not hasattr(self, "_bloom_level_cache"):
+            lang = self.judge_config.language
+            data_file = DEFAULT_VALIDATION_PROMPTS_DIR / lang / "data.json"
+            if data_file.exists():
+                with open(data_file, encoding="utf-8") as f:
+                    self._bloom_level_cache = json.load(f).get("bloom_levels", {})
+            else:
+                self._bloom_level_cache = {}
+        return self._bloom_level_cache.get(bloom_level, bloom_level)
 
     def validate_batch(
         self,
@@ -337,9 +340,7 @@ class QAValidator:
         Returns:
             ValidationScore with parsed scores.
         """
-        response = response.strip()
-        if response.startswith("```"):
-            response = re.sub(r"```(?:json)?\n?", "", response)
+        response = strip_markdown_codeblock(response)
 
         try:
             data = json.loads(response)
@@ -385,11 +386,7 @@ class QAValidator:
         Returns:
             Validated float score.
         """
-        try:
-            score = float(value)
-            return max(0.0, min(1.0, score))
-        except (ValueError, TypeError):
-            return 0.5
+        return validate_score(value)
 
     def _calculate_overall_score(self, scores: ValidationScore) -> float:
         """Calculate weighted overall score.
