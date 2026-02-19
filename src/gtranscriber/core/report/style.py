@@ -1,7 +1,7 @@
 """Shared style configuration for consistent visualization across all figures.
 
 Provides colorblind-friendly palettes, publication-quality defaults,
-and theme settings for both Plotly and Matplotlib/Seaborn.
+and theme settings for Plotly charts.
 """
 
 from __future__ import annotations
@@ -39,21 +39,12 @@ BLOOM_COLORS = {
     "evaluate": WONG_PALETTE["red"],
 }
 
-# Publication-quality matplotlib settings
-MATPLOTLIB_CONFIG = {
-    "figure.dpi": 300,
-    "savefig.dpi": 300,
-    "savefig.bbox": "tight",
-    "savefig.pad_inches": 0.1,
-    "font.size": 10,
-    "axes.labelsize": 11,
-    "axes.titlesize": 12,
-    "xtick.labelsize": 9,
-    "ytick.labelsize": 9,
-    "legend.fontsize": 9,
-    "figure.titlesize": 13,
-    "font.family": "sans-serif",
-    "font.sans-serif": ["DejaVu Sans", "Arial", "Helvetica", "sans-serif"],
+# Semantic color mapping for validation criteria (consistent across all charts)
+CRITERION_COLORS = {
+    "faithfulness": WONG_PALETTE["blue"],
+    "bloom_calibration": WONG_PALETTE["orange"],
+    "informativeness": WONG_PALETTE["green"],
+    "self_containedness": WONG_PALETTE["red"],
 }
 
 # Plotly template settings
@@ -68,15 +59,6 @@ PLOTLY_TEMPLATE = {
         "paper_bgcolor": "white",
     }
 }
-
-
-def get_matplotlib_style() -> dict:
-    """Get matplotlib style configuration for publication-quality figures.
-
-    Returns:
-        Dictionary of matplotlib rcParams settings.
-    """
-    return MATPLOTLIB_CONFIG.copy()
 
 
 def get_plotly_template() -> dict:
@@ -113,3 +95,15 @@ def get_bloom_color(level: str) -> str:
         Hex color code.
     """
     return BLOOM_COLORS.get(level.lower(), WONG_PALETTE["grey"])
+
+
+def get_criterion_color(criterion: str) -> str:
+    """Get the semantic color for a validation criterion.
+
+    Args:
+        criterion: Criterion name (faithfulness, bloom_calibration, etc.).
+
+    Returns:
+        Hex color code.
+    """
+    return CRITERION_COLORS.get(criterion, WONG_PALETTE["grey"])

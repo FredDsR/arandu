@@ -1720,7 +1720,7 @@ def report(
         typer.Option(
             "--run-id",
             "--id",
-            help="Generate report for specific pipeline run. If not provided, generates for all runs.",
+            help="Generate report for a specific pipeline run.",
         ),
     ] = None,
     output: Annotated[
@@ -1738,20 +1738,13 @@ def report(
             help="Generate report for all runs (default if no --run-id).",
         ),
     ] = False,
-    export_figures: Annotated[
-        Path | None,
+    no_png: Annotated[
+        bool,
         typer.Option(
-            "--export-figures",
-            help="Directory to export static figures (PNG, SVG, or PDF).",
+            "--no-png",
+            help="Skip automatic PNG export of charts.",
         ),
-    ] = None,
-    figure_format: Annotated[
-        str,
-        typer.Option(
-            "--figure-format",
-            help="Output format for static figures: png, svg, or pdf.",
-        ),
-    ] = "png",
+    ] = False,
     results_dir: Annotated[
         Path,
         typer.Option(
@@ -1760,37 +1753,34 @@ def report(
         ),
     ] = _results_config.base_dir,
 ) -> None:
-    """Generate visualization reports and metrics for pipeline results.
+    """Generate interactive HTML dashboard and PNG charts for pipeline results.
 
-    Creates interactive HTML reports with embedded Plotly charts and/or
-    publication-quality static figures (PNG, SVG, PDF) for academic papers.
+    Creates a self-contained HTML report with client-side filtering,
+    tabbed navigation, and interactive Plotly charts. By default, also
+    exports publication-quality PNG files via kaleido.
 
     The report discovers results by scanning the filesystem directly,
     without relying on index.json which can become stale.
 
     Examples:
-        # Generate HTML report for all runs
+        # Generate HTML report + PNGs for all runs
         gtranscriber report
 
         # Generate report for specific run
         gtranscriber report --run-id 20250101_120000
 
-        # Export static figures only
-        gtranscriber report --export-figures ./figures/ --figure-format png
+        # Generate HTML only (skip PNG export)
+        gtranscriber report --no-png
 
-        # Generate both HTML and figures
-        gtranscriber report --output report.html --export-figures ./figures/
+        # Custom output path
+        gtranscriber report --output ./reports/dashboard.html
     """
     from gtranscriber.core.report import ResultsCollector
-    from gtranscriber.core.report.figures import export_all_figures
+    from gtranscriber.core.report.dataset import build_dataset
+    from gtranscriber.core.report.exporter import export_charts_as_png
     from gtranscriber.core.report.generator import generate_html_report
 
     setup_logging()
-
-    # Validate figure format
-    if figure_format not in ["png", "svg", "pdf"]:
-        print_error(f"Invalid figure format: {figure_format}. Must be png, svg, or pdf.")
-        raise typer.Exit(code=1)
 
     # Initialize collector
     collector = ResultsCollector(results_dir)
@@ -1802,7 +1792,7 @@ def report(
             reports = [collector.load_run(run_id)]
         except FileNotFoundError:
             print_error(f"Run not found: {run_id}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
     else:
         print_info("Discovering all pipeline runs...")
         reports = collector.load_all_runs()
@@ -1814,28 +1804,28 @@ def report(
     print_info(f"Loaded {len(reports)} pipeline run(s)")
 
     # Generate HTML report
-    if not export_figures or output != Path("report.html"):
-        print_info(f"Generating HTML report: {output}")
-        try:
-            generate_html_report(reports, output)
-            print_success(f"HTML report saved to: {output}")
-        except Exception as e:
-            print_error(f"Failed to generate HTML report: {e}")
-            logger.exception("HTML report generation failed")
-            raise typer.Exit(code=1)
+    print_info(f"Generating HTML report: {output}")
+    try:
+        generate_html_report(reports, output)
+        print_success(f"HTML report saved to: {output}")
+    except Exception as e:
+        print_error(f"Failed to generate HTML report: {e}")
+        logger.exception("HTML report generation failed")
+        raise typer.Exit(code=1) from e
 
-    # Export static figures
-    if export_figures:
-        print_info(f"Exporting static figures to: {export_figures} (format: {figure_format})")
+    # Export PNG charts (unless --no-png)
+    if not no_png:
+        figures_dir = output.parent / "figures"
+        print_info(f"Exporting PNG charts to: {figures_dir}")
         try:
-            generated_files = export_all_figures(reports, export_figures, format=figure_format)
-            print_success(f"Exported {len(generated_files)} figure(s):")
+            dataset = build_dataset(reports)
+            generated_files = export_charts_as_png(dataset, figures_dir)
+            print_success(f"Exported {len(generated_files)} chart(s):")
             for fig_path in generated_files:
                 print_info(f"  - {fig_path.name}")
         except Exception as e:
-            print_error(f"Failed to export figures: {e}")
-            logger.exception("Figure export failed")
-            raise typer.Exit(code=1)
+            print_error(f"Failed to export PNG charts: {e}")
+            logger.exception("PNG export failed")
 
 
 if __name__ == "__main__":

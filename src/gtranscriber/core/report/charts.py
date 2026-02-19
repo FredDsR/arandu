@@ -1,26 +1,34 @@
-"""Interactive Plotly chart builders for HTML reports.
+"""Interactive Plotly chart builders for HTML reports and PNG export.
 
-Creates responsive, interactive visualizations for embedding in HTML reports.
+All chart functions accept flat row lists from ReportDataset instead of
+nested RunReport objects, enabling both server-side rendering (PNG export)
+and client-side JS mirroring.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TYPE_CHECKING
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .style import CATEGORICAL_COLORS, get_bloom_color
+from .style import CATEGORICAL_COLORS, get_bloom_color, get_criterion_color
 
 if TYPE_CHECKING:
-    from .collector import RunReport
+    from .dataset import QAPairRow, RunSummaryRow, TranscriptionRow
 
 
-def create_pipeline_overview_chart(reports: list[RunReport]) -> go.Figure:
-    """Create a bar chart showing success rates across pipeline runs.
+# ---------------------------------------------------------------------------
+# Refactored existing charts
+# ---------------------------------------------------------------------------
+
+
+def create_pipeline_overview_chart(runs: list[RunSummaryRow]) -> go.Figure:
+    """Create a bar chart showing success rates and durations across pipeline runs.
 
     Args:
-        reports: List of RunReport objects to visualize.
+        runs: List of RunSummaryRow objects to visualize.
 
     Returns:
         Plotly Figure object.
@@ -29,14 +37,11 @@ def create_pipeline_overview_chart(reports: list[RunReport]) -> go.Figure:
     success_rates = []
     durations = []
 
-    for report in reports:
-        if report.transcription_metadata or report.cep_metadata:
-            # Prefer CEP metadata if available, otherwise use transcription
-            metadata = report.cep_metadata or report.transcription_metadata
-            if metadata and metadata.success_rate is not None:
-                pipeline_ids.append(report.pipeline_id)
-                success_rates.append(metadata.success_rate)
-                durations.append(metadata.duration_seconds or 0)
+    for run in runs:
+        if run.success_rate is not None:
+            pipeline_ids.append(run.pipeline_id)
+            success_rates.append(run.success_rate)
+            durations.append(run.duration_seconds or 0)
 
     fig = make_subplots(
         rows=1,
@@ -44,7 +49,6 @@ def create_pipeline_overview_chart(reports: list[RunReport]) -> go.Figure:
         subplot_titles=("Success Rate by Run", "Processing Duration (seconds)"),
     )
 
-    # Success rate bar chart
     fig.add_trace(
         go.Bar(
             x=pipeline_ids,
@@ -56,7 +60,6 @@ def create_pipeline_overview_chart(reports: list[RunReport]) -> go.Figure:
         col=1,
     )
 
-    # Duration bar chart
     fig.add_trace(
         go.Bar(
             x=pipeline_ids,
@@ -77,52 +80,44 @@ def create_pipeline_overview_chart(reports: list[RunReport]) -> go.Figure:
         height=400,
         showlegend=False,
         template="plotly_white",
-        title_text="Pipeline Overview Dashboard",
+        title_text="Pipeline Run Success Rate & Processing Duration",
     )
 
     return fig
 
 
-def create_bloom_distribution_chart(reports: list[RunReport]) -> go.Figure:
-    """Create a stacked bar chart showing Bloom's taxonomy distribution.
+def create_bloom_distribution_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create a stacked bar chart showing Bloom's taxonomy distribution by run.
 
     Args:
-        reports: List of RunReport objects to visualize.
+        qa_pairs: List of QAPairRow objects to visualize.
 
     Returns:
         Plotly Figure object.
     """
-    pipeline_ids = []
-    bloom_data = {"remember": [], "understand": [], "analyze": [], "evaluate": []}
+    bloom_levels = ["remember", "understand", "analyze", "evaluate"]
+    by_run: dict[str, dict[str, int]] = defaultdict(lambda: dict.fromkeys(bloom_levels, 0))
 
-    for report in reports:
-        if report.cep_records:
-            pipeline_ids.append(report.pipeline_id)
-            # Aggregate bloom distribution across all CEP records
-            total_bloom = {"remember": 0, "understand": 0, "analyze": 0, "evaluate": 0}
-            for cep_record in report.cep_records:
-                for level, count in cep_record.bloom_distribution.items():
-                    if level in total_bloom:
-                        total_bloom[level] += count
+    for qa in qa_pairs:
+        if qa.bloom_level and qa.bloom_level in bloom_levels:
+            by_run[qa.pipeline_id][qa.bloom_level] += 1
 
-            for level in bloom_data:
-                bloom_data[level].append(total_bloom[level])
-
+    pipeline_ids = sorted(by_run.keys())
     fig = go.Figure()
 
-    for level in ["remember", "understand", "analyze", "evaluate"]:
+    for level in bloom_levels:
         fig.add_trace(
             go.Bar(
                 name=level.capitalize(),
                 x=pipeline_ids,
-                y=bloom_data[level],
+                y=[by_run[pid][level] for pid in pipeline_ids],
                 marker_color=get_bloom_color(level),
             )
         )
 
     fig.update_layout(
         barmode="stack",
-        title="Bloom's Taxonomy Distribution by Run",
+        title="Bloom's Taxonomy Level Distribution per Pipeline Run",
         xaxis_title="Pipeline ID",
         yaxis_title="Number of QA Pairs",
         template="plotly_white",
@@ -132,43 +127,37 @@ def create_bloom_distribution_chart(reports: list[RunReport]) -> go.Figure:
     return fig
 
 
-def create_validation_scores_boxplot(reports: list[RunReport]) -> go.Figure:
-    """Create box plots showing validation score distributions.
+def create_validation_scores_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create violin plots showing validation score distributions.
+
+    Uses violin plots instead of box plots to reveal bimodal distributions
+    that are common in validation scores.
 
     Args:
-        reports: List of RunReport objects to visualize.
+        qa_pairs: List of QAPairRow objects to visualize.
 
     Returns:
         Plotly Figure object.
     """
     criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
-    criterion_data = {c: [] for c in criteria}
-
-    for report in reports:
-        for cep_record in report.cep_records:
-            for qa_pair in cep_record.qa_pairs:
-                # Check if this is a validated pair
-                if hasattr(qa_pair, "validation") and qa_pair.validation:
-                    for criterion in criteria:
-                        score = getattr(qa_pair.validation, criterion, None)
-                        if score is not None:
-                            criterion_data[criterion].append(score)
-
     fig = go.Figure()
 
-    for i, criterion in enumerate(criteria):
-        if criterion_data[criterion]:
+    for criterion in criteria:
+        scores = [getattr(qa, criterion) for qa in qa_pairs if getattr(qa, criterion) is not None]
+        if scores:
             fig.add_trace(
-                go.Box(
-                    y=criterion_data[criterion],
+                go.Violin(
+                    y=scores,
                     name=criterion.replace("_", " ").title(),
-                    marker_color=CATEGORICAL_COLORS[i],
+                    marker_color=get_criterion_color(criterion),
+                    box_visible=True,
+                    meanline_visible=True,
                 )
             )
 
     fig.update_layout(
-        title="Validation Score Distributions by Criterion",
-        yaxis_title="Score",
+        title="LLM-as-a-Judge Validation Score Distributions",
+        yaxis_title="Score (0-1)",
         template="plotly_white",
         height=450,
     )
@@ -176,28 +165,21 @@ def create_validation_scores_boxplot(reports: list[RunReport]) -> go.Figure:
     return fig
 
 
-def create_confidence_distribution_chart(reports: list[RunReport]) -> go.Figure:
+def create_confidence_distribution_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
     """Create a histogram showing confidence score distribution.
 
     Args:
-        reports: List of RunReport objects to visualize.
+        qa_pairs: List of QAPairRow objects to visualize.
 
     Returns:
         Plotly Figure object.
     """
-    confidence_scores = []
-
-    for report in reports:
-        for cep_record in report.cep_records:
-            for qa_pair in cep_record.qa_pairs:
-                if hasattr(qa_pair, "confidence_score") and qa_pair.confidence_score:
-                    confidence_scores.append(qa_pair.confidence_score)
+    scores = [qa.confidence for qa in qa_pairs if qa.confidence is not None]
 
     fig = go.Figure()
-
     fig.add_trace(
         go.Histogram(
-            x=confidence_scores,
+            x=scores,
             nbinsx=30,
             marker_color=CATEGORICAL_COLORS[0],
             name="Confidence Score",
@@ -205,8 +187,8 @@ def create_confidence_distribution_chart(reports: list[RunReport]) -> go.Figure:
     )
 
     fig.update_layout(
-        title="QA Pair Confidence Score Distribution",
-        xaxis_title="Confidence Score",
+        title="Generation Confidence Score Distribution",
+        xaxis_title="Confidence (0-1)",
         yaxis_title="Frequency",
         template="plotly_white",
         height=400,
@@ -215,77 +197,53 @@ def create_confidence_distribution_chart(reports: list[RunReport]) -> go.Figure:
     return fig
 
 
-def create_transcription_quality_chart(reports: list[RunReport]) -> go.Figure:
+def create_transcription_quality_chart(transcriptions: list[TranscriptionRow]) -> go.Figure:
     """Create histograms showing transcription quality score distributions.
 
     Args:
-        reports: List of RunReport objects to visualize.
+        transcriptions: List of TranscriptionRow objects to visualize.
 
     Returns:
         Plotly Figure object.
     """
-    quality_scores = {
-        "overall_score": [],
-        "script_match_score": [],
-        "repetition_score": [],
-        "segment_quality_score": [],
-        "content_density_score": [],
-    }
-
-    for report in reports:
-        for record in report.transcription_records:
-            if record.transcription_quality:
-                quality = record.transcription_quality
-                quality_scores["overall_score"].append(quality.overall_score)
-                quality_scores["script_match_score"].append(quality.script_match_score)
-                quality_scores["repetition_score"].append(quality.repetition_score)
-                quality_scores["segment_quality_score"].append(quality.segment_quality_score)
-                quality_scores["content_density_score"].append(quality.content_density_score)
+    score_fields = [
+        ("overall_quality", "Overall Score"),
+        ("script_match", "Script Match"),
+        ("repetition", "Repetition"),
+        ("segment_quality", "Segment Quality"),
+        ("content_density", "Content Density"),
+    ]
 
     fig = make_subplots(
         rows=2,
         cols=3,
-        subplot_titles=(
-            "Overall Score",
-            "Script Match",
-            "Repetition",
-            "Segment Quality",
-            "Content Density",
-            "Validity Rate",
-        ),
+        subplot_titles=[label for _, label in score_fields] + ["Validity Rate"],
     )
 
     positions = [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2)]
-    score_types = [
-        "overall_score",
-        "script_match_score",
-        "repetition_score",
-        "segment_quality_score",
-        "content_density_score",
-    ]
 
-    for (row, col), score_type in zip(positions, score_types, strict=False):
-        if quality_scores[score_type]:
+    for (row, col), (field, _label) in zip(positions, score_fields, strict=False):
+        scores = [getattr(t, field) for t in transcriptions if getattr(t, field) is not None]
+        if scores:
             fig.add_trace(
                 go.Histogram(
-                    x=quality_scores[score_type],
+                    x=scores,
                     nbinsx=20,
                     marker_color=CATEGORICAL_COLORS[positions.index((row, col))],
-                    name=score_type.replace("_", " ").title(),
                     showlegend=False,
                 ),
                 row=row,
                 col=col,
             )
 
-    # Add validity rate
-    valid_count = sum(1 for r in reports for rec in r.transcription_records if rec.is_valid)
-    total_count = sum(len(r.transcription_records) for r in reports)
-    if total_count > 0:
+    # Validity rate bar chart
+    valid = sum(1 for t in transcriptions if t.is_valid is True)
+    invalid = sum(1 for t in transcriptions if t.is_valid is False)
+    if valid + invalid > 0:
         fig.add_trace(
             go.Bar(
                 x=["Valid", "Invalid"],
-                y=[valid_count, total_count - valid_count],
+                y=[valid, invalid],
                 marker_color=[CATEGORICAL_COLORS[2], CATEGORICAL_COLORS[3]],
                 showlegend=False,
             ),
@@ -297,47 +255,616 @@ def create_transcription_quality_chart(reports: list[RunReport]) -> go.Figure:
         height=600,
         showlegend=False,
         template="plotly_white",
-        title_text="Transcription Quality Metrics",
+        title_text="ASR Transcription Quality Score Distributions",
     )
 
     return fig
 
 
-def create_multihop_ratio_chart(reports: list[RunReport]) -> go.Figure:
-    """Create a pie chart showing multi-hop vs single-hop question ratio.
+def create_multihop_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create a horizontal bar chart showing multi-hop vs single-hop question counts.
+
+    Uses horizontal bars instead of pie chart for more accurate visual comparison
+    (Cleveland & McGill 1984).
 
     Args:
-        reports: List of RunReport objects to visualize.
+        qa_pairs: List of QAPairRow objects to visualize.
 
     Returns:
         Plotly Figure object.
     """
-    multihop_count = 0
-    single_hop_count = 0
+    multihop = sum(1 for qa in qa_pairs if qa.is_multi_hop)
+    single = sum(1 for qa in qa_pairs if not qa.is_multi_hop)
 
-    for report in reports:
-        for cep_record in report.cep_records:
-            for qa_pair in cep_record.qa_pairs:
-                if hasattr(qa_pair, "is_multi_hop") and qa_pair.is_multi_hop is not None:
-                    if qa_pair.is_multi_hop:
-                        multihop_count += 1
-                    else:
-                        single_hop_count += 1
-
-    fig = go.Figure(
-        data=[
-            go.Pie(
-                labels=["Multi-hop", "Single-hop"],
-                values=[multihop_count, single_hop_count],
-                marker_colors=[CATEGORICAL_COLORS[0], CATEGORICAL_COLORS[1]],
-            )
-        ]
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            y=["Multi-hop", "Single-hop"],
+            x=[multihop, single],
+            orientation="h",
+            marker_color=[CATEGORICAL_COLORS[0], CATEGORICAL_COLORS[1]],
+            text=[multihop, single],
+            textposition="auto",
+        )
     )
 
     fig.update_layout(
-        title="Multi-hop vs Single-hop Questions",
+        title="Reasoning Complexity: Multi-hop vs Single-hop",
+        xaxis_title="Number of QA Pairs",
+        template="plotly_white",
+        height=300,
+    )
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# New charts
+# ---------------------------------------------------------------------------
+
+
+def create_correlation_heatmap(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create a Pearson correlation matrix across validation criteria and confidence.
+
+    Annotated with r-values. Diverging blue-white-red color scale.
+
+    Args:
+        qa_pairs: List of QAPairRow objects to visualize.
+
+    Returns:
+        Plotly Figure object.
+    """
+    fields = [
+        "faithfulness",
+        "bloom_calibration",
+        "informativeness",
+        "self_containedness",
+        "confidence",
+    ]
+    labels = [f.replace("_", " ").title() for f in fields]
+
+    # Collect rows where all values are present
+    data: list[list[float]] = []
+    for qa in qa_pairs:
+        vals = [getattr(qa, f) for f in fields]
+        if all(v is not None for v in vals):
+            data.append(vals)
+
+    n = len(fields)
+    corr = [[0.0] * n for _ in range(n)]
+
+    if len(data) >= 3:
+        # Compute Pearson correlation
+        columns = list(zip(*data, strict=True))
+        for i in range(n):
+            for j in range(n):
+                corr[i][j] = _pearson_r(columns[i], columns[j])
+    else:
+        for i in range(n):
+            corr[i][i] = 1.0
+
+    # Build annotation text
+    text = [[f"{corr[i][j]:.2f}" for j in range(n)] for i in range(n)]
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=corr,
+            x=labels,
+            y=labels,
+            text=text,
+            texttemplate="%{text}",
+            colorscale="RdBu_r",
+            zmin=-1,
+            zmax=1,
+            colorbar={"title": "r"},
+        )
+    )
+
+    fig.update_layout(
+        title="Pearson Correlation: Validation Criteria & Confidence",
+        template="plotly_white",
+        height=500,
+        width=600,
+    )
+
+    return fig
+
+
+def create_quality_radar_chart(
+    qa_pairs: list[QAPairRow],
+    transcriptions: list[TranscriptionRow],
+    pipeline_ids: list[str],
+) -> go.Figure:
+    """Create a radar chart comparing mean quality metrics across runs.
+
+    One trace per run. Axes: mean of each validation criterion + mean
+    transcription quality.
+
+    Args:
+        qa_pairs: List of QAPairRow objects.
+        transcriptions: List of TranscriptionRow objects.
+        pipeline_ids: List of pipeline IDs to include.
+
+    Returns:
+        Plotly Figure object.
+    """
+    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
+    theta = [c.replace("_", " ").title() for c in criteria] + ["Transcription Quality"]
+
+    fig = go.Figure()
+
+    for i, pid in enumerate(pipeline_ids):
+        run_qa = [qa for qa in qa_pairs if qa.pipeline_id == pid]
+        run_trans = [t for t in transcriptions if t.pipeline_id == pid]
+
+        values = []
+        for criterion in criteria:
+            scores = [getattr(qa, criterion) for qa in run_qa if getattr(qa, criterion) is not None]
+            values.append(sum(scores) / len(scores) if scores else 0.0)
+
+        # Mean transcription quality
+        tq_scores = [t.overall_quality for t in run_trans if t.overall_quality is not None]
+        values.append(sum(tq_scores) / len(tq_scores) if tq_scores else 0.0)
+
+        fig.add_trace(
+            go.Scatterpolar(
+                r=[*values, values[0]],  # close the polygon
+                theta=[*theta, theta[0]],
+                fill="toself",
+                name=pid,
+                marker_color=CATEGORICAL_COLORS[i % len(CATEGORICAL_COLORS)],
+            )
+        )
+
+    fig.update_layout(
+        polar={"radialaxis": {"visible": True, "range": [0, 1]}},
+        title="Mean Quality Profile per Pipeline Run",
+        template="plotly_white",
+        height=500,
+    )
+
+    return fig
+
+
+def create_parallel_coordinates_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create a parallel coordinates chart for QA pair validation dimensions.
+
+    Dimensions: confidence, faithfulness, bloom_calibration, informativeness,
+    self_containedness. Color by bloom level.
+
+    Args:
+        qa_pairs: List of QAPairRow objects to visualize.
+
+    Returns:
+        Plotly Figure object.
+    """
+    fields = [
+        "confidence",
+        "faithfulness",
+        "bloom_calibration",
+        "informativeness",
+        "self_containedness",
+    ]
+    bloom_order = ["remember", "understand", "analyze", "evaluate"]
+
+    # Filter to rows with all values present
+    rows = []
+    for qa in qa_pairs:
+        vals = {f: getattr(qa, f) for f in fields}
+        if all(v is not None for v in vals.values()) and qa.bloom_level in bloom_order:
+            vals["bloom_idx"] = bloom_order.index(qa.bloom_level)
+            rows.append(vals)
+
+    if not rows:
+        return _empty_figure("Parallel Coordinates: Validation Dimensions")
+
+    dimensions = [
+        {"label": f.replace("_", " ").title(), "values": [r[f] for r in rows], "range": [0, 1]}
+        for f in fields
+    ]
+
+    fig = go.Figure(
+        data=go.Parcoords(
+            line={
+                "color": [r["bloom_idx"] for r in rows],
+                "colorscale": [[i / 3, get_bloom_color(b)] for i, b in enumerate(bloom_order)],
+                "showscale": True,
+                "cmin": 0,
+                "cmax": 3,
+                "colorbar": {
+                    "title": "Bloom Level",
+                    "tickvals": [0, 1, 2, 3],
+                    "ticktext": [b.capitalize() for b in bloom_order],
+                },
+            },
+            dimensions=dimensions,
+        )
+    )
+
+    fig.update_layout(
+        title="Multi-dimensional QA Quality Profile (colored by Bloom level)",
+        template="plotly_white",
+        height=500,
+    )
+
+    return fig
+
+
+def create_run_timeline_chart(runs: list[RunSummaryRow]) -> go.Figure:
+    """Create a timeline chart showing run progression over time.
+
+    X: created_at, Y: success_rate. Markers sized by total_items.
+
+    Args:
+        runs: List of RunSummaryRow objects to visualize.
+
+    Returns:
+        Plotly Figure object.
+    """
+    dated_runs = [r for r in runs if r.created_at and r.success_rate is not None]
+    dated_runs.sort(key=lambda r: r.created_at or "")
+
+    fig = go.Figure()
+
+    if dated_runs:
+        fig.add_trace(
+            go.Scatter(
+                x=[r.created_at for r in dated_runs],
+                y=[r.success_rate for r in dated_runs],
+                mode="lines+markers",
+                marker={
+                    "size": [max(8, min(30, (r.total_items or 1) * 2)) for r in dated_runs],
+                    "color": CATEGORICAL_COLORS[0],
+                },
+                text=[r.pipeline_id for r in dated_runs],
+                hovertemplate=(
+                    "<b>%{text}</b><br>Success Rate: %{y:.1f}%<br>Date: %{x}<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        title="Pipeline Run Timeline (marker size = item count)",
+        xaxis_title="Date",
+        yaxis_title="Success Rate (%)",
+        yaxis_range=[0, 100],
         template="plotly_white",
         height=400,
     )
 
+    return fig
+
+
+def create_participant_breakdown_chart(
+    qa_pairs: list[QAPairRow],
+    transcriptions: list[TranscriptionRow],
+) -> go.Figure:
+    """Create a grouped bar chart showing document and QA pair counts by participant.
+
+    Args:
+        qa_pairs: List of QAPairRow objects.
+        transcriptions: List of TranscriptionRow objects.
+
+    Returns:
+        Plotly Figure object.
+    """
+    doc_counts: dict[str, int] = defaultdict(int)
+    qa_counts: dict[str, int] = defaultdict(int)
+
+    for t in transcriptions:
+        name = t.participant_name or "Unknown"
+        doc_counts[name] += 1
+
+    for qa in qa_pairs:
+        name = qa.participant_name or "Unknown"
+        qa_counts[name] += 1
+
+    participants = sorted(set(doc_counts) | set(qa_counts))
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            name="Documents",
+            x=participants,
+            y=[doc_counts.get(p, 0) for p in participants],
+            marker_color=CATEGORICAL_COLORS[0],
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="QA Pairs",
+            x=participants,
+            y=[qa_counts.get(p, 0) for p in participants],
+            marker_color=CATEGORICAL_COLORS[1],
+        )
+    )
+
+    fig.update_layout(
+        barmode="group",
+        title="Documents & QA Pairs per Participant",
+        xaxis_title="Participant",
+        yaxis_title="Count",
+        template="plotly_white",
+        height=450,
+    )
+
+    return fig
+
+
+def create_location_treemap(transcriptions: list[TranscriptionRow]) -> go.Figure:
+    """Create a treemap showing location > participant > document count hierarchy.
+
+    Args:
+        transcriptions: List of TranscriptionRow objects.
+
+    Returns:
+        Plotly Figure object.
+    """
+    labels = ["All"]
+    parents = [""]
+    values = [0]
+
+    # Build hierarchy: location > participant
+    loc_part: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for t in transcriptions:
+        loc = t.location or "Unknown"
+        part = t.participant_name or "Unknown"
+        loc_part[loc][part] += 1
+
+    for loc, parts in sorted(loc_part.items()):
+        labels.append(loc)
+        parents.append("All")
+        values.append(0)
+
+        for part, count in sorted(parts.items()):
+            label = f"{part} ({loc})"
+            labels.append(label)
+            parents.append(loc)
+            values.append(count)
+
+    fig = go.Figure(
+        go.Treemap(
+            labels=labels,
+            parents=parents,
+            values=values,
+            branchvalues="total",
+            marker_colorscale="Blues",
+        )
+    )
+
+    fig.update_layout(
+        title="Source Hierarchy: Location > Participant > Document Count",
+        template="plotly_white",
+        height=500,
+    )
+
+    return fig
+
+
+def create_bloom_validation_heatmap(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create a heatmap of mean validation scores by Bloom level and criterion.
+
+    Rows: Bloom levels, Cols: validation criteria. Cells annotated with mean +/- std.
+
+    Args:
+        qa_pairs: List of QAPairRow objects to visualize.
+
+    Returns:
+        Plotly Figure object.
+    """
+    bloom_levels = ["remember", "understand", "analyze", "evaluate"]
+    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
+    criteria_labels = [c.replace("_", " ").title() for c in criteria]
+
+    # Collect scores by bloom level and criterion
+    data: dict[str, dict[str, list[float]]] = {b: {c: [] for c in criteria} for b in bloom_levels}
+
+    for qa in qa_pairs:
+        if qa.bloom_level in bloom_levels:
+            for criterion in criteria:
+                score = getattr(qa, criterion)
+                if score is not None:
+                    data[qa.bloom_level][criterion].append(score)
+
+    # Compute means and build annotation text
+    z = []
+    text = []
+    for level in bloom_levels:
+        row_z = []
+        row_text = []
+        for criterion in criteria:
+            scores = data[level][criterion]
+            if scores:
+                mean = sum(scores) / len(scores)
+                std = (sum((s - mean) ** 2 for s in scores) / len(scores)) ** 0.5
+                row_z.append(mean)
+                row_text.append(f"{mean:.2f}\n+/-{std:.2f}")
+            else:
+                row_z.append(0.0)
+                row_text.append("N/A")
+        z.append(row_z)
+        text.append(row_text)
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z,
+            x=criteria_labels,
+            y=[b.capitalize() for b in bloom_levels],
+            text=text,
+            texttemplate="%{text}",
+            colorscale="YlOrRd",
+            zmin=0,
+            zmax=1,
+            colorbar={"title": "Mean Score"},
+        )
+    )
+
+    fig.update_layout(
+        title="Mean Validation Score by Bloom Level and Criterion",
+        template="plotly_white",
+        height=400,
+    )
+
+    return fig
+
+
+def create_cross_run_comparison(qa_pairs: list[QAPairRow], run_a: str, run_b: str) -> go.Figure:
+    """Create a 2x2 subplot comparing validation criteria between two runs.
+
+    Each subplot shows overlapping violin plots for one criterion.
+
+    Args:
+        qa_pairs: List of QAPairRow objects.
+        run_a: First pipeline ID to compare.
+        run_b: Second pipeline ID to compare.
+
+    Returns:
+        Plotly Figure object.
+    """
+    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
+    fig = make_subplots(
+        rows=2, cols=2, subplot_titles=[c.replace("_", " ").title() for c in criteria]
+    )
+
+    pairs_a = [qa for qa in qa_pairs if qa.pipeline_id == run_a]
+    pairs_b = [qa for qa in qa_pairs if qa.pipeline_id == run_b]
+
+    positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
+
+    for (row, col), criterion in zip(positions, criteria, strict=False):
+        scores_a = [getattr(qa, criterion) for qa in pairs_a if getattr(qa, criterion) is not None]
+        scores_b = [getattr(qa, criterion) for qa in pairs_b if getattr(qa, criterion) is not None]
+
+        if scores_a:
+            fig.add_trace(
+                go.Violin(
+                    y=scores_a,
+                    name=run_a,
+                    marker_color=CATEGORICAL_COLORS[0],
+                    legendgroup=run_a,
+                    showlegend=(row == 1 and col == 1),
+                    box_visible=True,
+                    meanline_visible=True,
+                ),
+                row=row,
+                col=col,
+            )
+
+        if scores_b:
+            fig.add_trace(
+                go.Violin(
+                    y=scores_b,
+                    name=run_b,
+                    marker_color=CATEGORICAL_COLORS[1],
+                    legendgroup=run_b,
+                    showlegend=(row == 1 and col == 1),
+                    box_visible=True,
+                    meanline_visible=True,
+                ),
+                row=row,
+                col=col,
+            )
+
+    fig.update_layout(
+        title=f"Cross-Run Comparison: {run_a} vs {run_b}",
+        template="plotly_white",
+        height=600,
+        violinmode="overlay",
+    )
+
+    return fig
+
+
+def create_location_quality_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
+    """Create violin plots of validation scores grouped by location.
+
+    Args:
+        qa_pairs: List of QAPairRow objects to visualize.
+
+    Returns:
+        Plotly Figure object.
+    """
+    # Use overall_score grouped by location
+    by_location: dict[str, list[float]] = defaultdict(list)
+    for qa in qa_pairs:
+        if qa.overall_score is not None:
+            loc = qa.location or "Unknown"
+            by_location[loc].append(qa.overall_score)
+
+    fig = go.Figure()
+
+    for i, (location, scores) in enumerate(sorted(by_location.items())):
+        fig.add_trace(
+            go.Violin(
+                y=scores,
+                name=location,
+                marker_color=CATEGORICAL_COLORS[i % len(CATEGORICAL_COLORS)],
+                box_visible=True,
+                meanline_visible=True,
+            )
+        )
+
+    fig.update_layout(
+        title="Overall Validation Score Distribution by Recording Location",
+        yaxis_title="Overall Score (0-1)",
+        template="plotly_white",
+        height=450,
+    )
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _pearson_r(x: tuple[float, ...], y: tuple[float, ...]) -> float:
+    """Compute Pearson correlation coefficient between two sequences.
+
+    Args:
+        x: First sequence of values.
+        y: Second sequence of values.
+
+    Returns:
+        Pearson r value, or 0.0 if computation fails.
+    """
+    n = len(x)
+    if n < 2:
+        return 0.0
+    mean_x = sum(x) / n
+    mean_y = sum(y) / n
+    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y, strict=True))
+    den_x = sum((xi - mean_x) ** 2 for xi in x) ** 0.5
+    den_y = sum((yi - mean_y) ** 2 for yi in y) ** 0.5
+    if den_x == 0 or den_y == 0:
+        return 0.0
+    return num / (den_x * den_y)
+
+
+def _empty_figure(title: str) -> go.Figure:
+    """Create an empty figure with a title for when there is no data.
+
+    Args:
+        title: Figure title.
+
+    Returns:
+        Empty Plotly Figure.
+    """
+    fig = go.Figure()
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        annotations=[
+            {
+                "text": "No data available",
+                "xref": "paper",
+                "yref": "paper",
+                "x": 0.5,
+                "y": 0.5,
+                "showarrow": False,
+                "font": {"size": 16, "color": "#949494"},
+            }
+        ],
+    )
     return fig
