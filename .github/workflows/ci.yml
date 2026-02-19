@@ -26,8 +26,8 @@ jobs:
       
       - name: Install dependencies
         run: |
-          uv sync --all-groups
-      
+          uv sync --all-groups --extra report
+
       - name: Run Ruff linter
         run: |
           uv run ruff check src/ tests/
@@ -57,8 +57,8 @@ jobs:
       
       - name: Install dependencies
         run: |
-          uv sync --all-groups
-      
+          uv sync --all-groups --extra report
+
       - name: Run pytest with coverage
         run: |
           uv run pytest --cov=gtranscriber --cov-report=term-missing --cov-report=json --cov-fail-under=75
