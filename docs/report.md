@@ -1,11 +1,11 @@
 # Results Visualization & Metrics Reporting
 
-This module provides comprehensive visualization and reporting capabilities for G-Transcriber pipeline results.
+This module provides interactive visualization and reporting capabilities for G-Transcriber pipeline results.
 
 ## Features
 
-- **Interactive HTML Reports**: Self-contained reports with embedded Plotly charts
-- **Publication-Quality Figures**: Export static images (PNG, SVG, PDF) for papers and presentations
+- **Interactive HTML Dashboard**: Self-contained report with embedded Plotly charts, client-side filtering, and tabbed navigation
+- **Publication-Quality PNG Export**: Automatic PNG export via Plotly + kaleido
 - **Filesystem-Based Discovery**: Discovers results by scanning the filesystem directly (no dependency on index.json)
 - **Headless Compatibility**: Works on HPC/SLURM environments without display servers
 - **Colorblind-Friendly**: Uses Wong (2011) palette for accessibility
@@ -21,68 +21,30 @@ uv sync --group report
 Or with pip:
 
 ```bash
-pip install plotly jinja2 matplotlib seaborn scipy
+pip install plotly jinja2 kaleido
 ```
 
 ## Quick Start
 
-### Generate HTML Report
+### Generate HTML Report + PNG Charts
 
 ```bash
-# Generate report for all pipeline runs
+# Generate report for all pipeline runs (HTML + PNGs)
 gtranscriber report
 
-# Generate report for specific run
-gtranscriber report --run-id 20250101_120000 --output my_report.html
+# Generate report for a specific run
+gtranscriber report --run-id 20250101_120000
+
+# Custom output path
+gtranscriber report --output ./reports/dashboard.html
 ```
 
-### Export Static Figures
+### Skip PNG Export
 
 ```bash
-# Export figures as PNG
-gtranscriber report --export-figures ./figures/ --figure-format png
-
-# Export as SVG for publications
-gtranscriber report --export-figures ./figures/ --figure-format svg
-
-# Export as PDF for LaTeX documents
-gtranscriber report --export-figures ./figures/ --figure-format pdf
+# Generate HTML only (no PNG files)
+gtranscriber report --no-png
 ```
-
-### Combined Usage
-
-```bash
-# Generate both HTML and figures
-gtranscriber report --output report.html --export-figures ./figures/
-```
-
-## Report Sections
-
-### 1. Pipeline Overview Dashboard
-- Run summary table (run_id, pipeline_type, status, duration, success_rate)
-- Success rate comparison across runs (bar chart)
-- Processing timeline (duration per run)
-
-### 2. CEP QA Validation Metrics
-- **Bloom's Taxonomy Distribution**: Stacked bar chart showing QA pairs per cognitive level
-- **Validation Score Distributions**: Box plots for faithfulness, bloom_calibration, informativeness, self_containedness
-- **Confidence Score Distribution**: Histogram with KDE overlay
-- **Multi-hop Ratio**: Pie chart showing single-hop vs multi-hop questions
-
-### 3. Transcription Quality
-- Distribution plots for quality sub-scores
-- Overall score histogram
-- Validity rate visualization
-
-### 4. Source Metadata Summary
-- Document count by participant and location
-- Recording date timeline
-- Processing coverage
-
-### 5. Hardware & Execution Context
-- Device type breakdown (CPU/CUDA/MPS)
-- GPU model comparison
-- SLURM vs local execution stats
 
 ## CLI Options
 
@@ -90,14 +52,49 @@ gtranscriber report --output report.html --export-figures ./figures/
 gtranscriber report [OPTIONS]
 
 Options:
-  --run-id TEXT              Generate report for specific pipeline run
-  --output PATH              Output path for HTML report [default: report.html]
-  --all-runs                 Generate report for all runs (default behavior)
-  --export-figures PATH      Directory to export static figures
-  --figure-format TEXT       Output format: png, svg, or pdf [default: png]
-  --results-dir PATH         Path to results directory [default: from config]
-  --help                     Show this message and exit
+  --run-id, --id TEXT      Generate report for a specific pipeline run
+  --output, -o PATH        Output path for HTML report [default: report.html]
+  --all-runs               Generate report for all runs (default if no --run-id)
+  --no-png                 Skip automatic PNG export of charts
+  --results-dir PATH       Path to results directory [default: from config]
+  --help                   Show this message and exit
 ```
+
+## Report Sections
+
+### 1. Overview
+
+- Run summary table (pipeline ID, steps run, status, duration, success rate, item count)
+- Success rate and duration bar charts
+- Run timeline (creation date vs. success rate, marker size = item count)
+
+### 2. QA Analysis
+
+- **Bloom Taxonomy Distribution**: Stacked bar chart per run
+- **Validation Score Distributions**: Violin plots for faithfulness, bloom calibration, informativeness, self-containedness
+- **Bloom Level x Criterion Heatmap**: Mean ± std per combination
+- **Confidence Score Distribution**: Histogram of LLM generation confidence
+- **Multi-hop vs Single-hop**: Horizontal bar chart
+- **Correlation Matrix**: Pearson r between validation criteria and confidence
+- **Parallel Coordinates**: Multi-dimensional quality profile colored by Bloom level
+
+### 3. Transcriptions
+
+- Quality score histograms (overall, script match, repetition, segment quality, content density)
+- Validity rate bar chart
+- Quality radar chart comparing mean scores across runs
+
+### 4. Source Data
+
+- Location > Participant treemap
+- Participant breakdown (documents vs QA pairs)
+- Validation scores by location (violin plots)
+- Document-level detail table with expandable QA pairs
+
+### 5. Cross-Run Comparison
+
+- Side-by-side violin plots for each validation criterion
+- Radar chart comparing mean quality profiles
 
 ## Architecture
 
@@ -107,16 +104,16 @@ Options:
 src/gtranscriber/core/report/
 ├── __init__.py           # Public API
 ├── collector.py          # Results discovery and aggregation
-├── charts.py             # Plotly chart builders for HTML
-├── figures.py            # Matplotlib/Seaborn builders for static export
-├── generator.py          # HTML report assembly
-└── style.py              # Shared theme and color palettes
+├── charts.py             # Plotly chart builders
+├── dataset.py            # Flat data models and dataset builder
+├── exporter.py           # PNG export via kaleido
+├── generator.py          # HTML report assembly (Jinja2)
+├── style.py              # Shared theme and color palettes
+└── templates/
+    ├── report.html.j2    # Main HTML template
+    ├── _styles.css        # Dashboard CSS
+    └── _filter_engine.js  # Client-side filtering and chart rendering
 ```
-
-### Data Models
-
-- **ResultsCollector**: Discovers and loads pipeline results from filesystem
-- **RunReport**: Aggregates pipeline metadata and outputs for a single run
 
 ### Key Classes
 
@@ -131,51 +128,56 @@ report = collector.load_run("run_001")     # Load specific run
 reports = collector.load_all_runs()        # Load all runs
 ```
 
-#### Report Generation
+#### Dataset Building and Report Generation
 
 ```python
-from gtranscriber.core.report.generator import generate_html_report
-from gtranscriber.core.report.figures import export_all_figures
 from pathlib import Path
+from gtranscriber.core.report import build_dataset, generate_html_report
+from gtranscriber.core.report.exporter import export_charts_as_png
 
 # Generate HTML report
 generate_html_report(reports, Path("report.html"))
 
-# Export static figures
-export_all_figures(reports, Path("figures/"), format="png")
+# Build dataset and export PNGs
+dataset = build_dataset(reports)
+export_charts_as_png(dataset, Path("figures/"))
 ```
 
-## Figure Naming Convention
+## PNG Export Naming Convention
 
-| Figure File | Description |
-|-------------|-------------|
-| `bloom_distribution.{ext}` | Stacked bar chart of QA pairs per Bloom level |
-| `validation_scores_boxplot.{ext}` | Box plots of validation criteria |
-| `confidence_distribution.{ext}` | Histogram of QA confidence scores |
-| `transcription_quality.{ext}` | Multi-panel histogram of quality sub-scores |
-| `multihop_ratio.{ext}` | Pie chart of multi-hop vs single-hop questions |
-| `run_comparison.{ext}` | Bar chart comparing success rates across runs |
+| File | Description |
+|------|-------------|
+| `pipeline_overview.png` | Success rate and duration bar charts |
+| `bloom_distribution.png` | Stacked bar chart of QA pairs per Bloom level |
+| `validation_scores.png` | Violin plots of validation criteria |
+| `confidence_distribution.png` | Histogram of QA confidence scores |
+| `transcription_quality.png` | Multi-panel histogram of quality sub-scores |
+| `multihop.png` | Multi-hop vs single-hop bar chart |
+| `correlation_heatmap.png` | Pearson correlation matrix |
+| `quality_radar.png` | Mean quality profile radar chart |
+| `parallel_coordinates.png` | Multi-dimensional QA quality profile |
+| `run_timeline.png` | Run progression over time |
+| `participant_breakdown.png` | Documents and QA pairs per participant |
+| `location_treemap.png` | Location > participant hierarchy |
+| `bloom_validation_heatmap.png` | Mean score by Bloom level and criterion |
+| `location_quality.png` | Validation scores by recording location |
 
 ## Customization
 
-### Custom Color Palette
+### Color Palette
 
 ```python
-from gtranscriber.core.report.style import WONG_PALETTE, CATEGORICAL_COLORS
+from gtranscriber.core.report.style import (
+    WONG_PALETTE,
+    CATEGORICAL_COLORS,
+    get_color_palette,
+    get_bloom_color,
+    get_criterion_color,
+)
 
 # Access color codes
 blue = WONG_PALETTE["blue"]
-colors = CATEGORICAL_COLORS[:5]  # First 5 colors
-```
-
-### Matplotlib Style
-
-```python
-from gtranscriber.core.report.style import get_matplotlib_style
-import matplotlib.pyplot as plt
-
-style = get_matplotlib_style()
-plt.rcParams.update(style)
+colors = get_color_palette(5)  # First 5 colorblind-friendly colors
 ```
 
 ## Development
@@ -195,21 +197,13 @@ ruff format src/gtranscriber/core/report/
 
 ## Troubleshooting
 
-### Display Backend Error
-
-If you encounter "no display name and no $DISPLAY environment variable" errors:
-
-```bash
-# The module automatically uses Agg backend for headless environments
-# If issues persist, explicitly set before importing:
-export MPLBACKEND=Agg
-```
-
 ### Missing Dependency
 
 ```bash
 # Install report dependencies
-pip install plotly jinja2 matplotlib seaborn scipy
+uv sync --group report
+# Or manually:
+pip install plotly jinja2 kaleido
 ```
 
 ### No Results Found
@@ -228,17 +222,8 @@ results/
       outputs/*_cep_qa.json
 ```
 
-## Future Enhancements (Phase 2)
-
-- Interactive dashboard with `--serve` flag (Streamlit/Dash/Panel)
-- Document-level drill-down with QA pair inspection
-- Cross-run filtering and comparison
-- Real-time monitoring of in-progress runs
-- CSV export of filtered data
-
 ## References
 
 - [Plotly Documentation](https://plotly.com/python/)
-- [Matplotlib Documentation](https://matplotlib.org/)
-- [Seaborn Documentation](https://seaborn.pydata.org/)
+- [Jinja2 Documentation](https://jinja.palletsprojects.com/)
 - Wong, B. (2011). Points of view: Color blindness. *Nature Methods*, 8(6), 441.

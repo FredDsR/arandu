@@ -6,7 +6,7 @@ JSON serialization and client-side JavaScript consumption.
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, computed_field
@@ -132,8 +132,6 @@ def build_dataset(reports: list[RunReport]) -> ReportDataset:
     Returns:
         ReportDataset containing all flattened data.
     """
-    from datetime import datetime
-
     qa_rows: list[QAPairRow] = []
     transcription_rows: list[TranscriptionRow] = []
     run_rows: list[RunSummaryRow] = []

@@ -6,6 +6,7 @@ without relying on index.json which can become stale.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,8 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from gtranscriber.schemas import EnrichedRecord, PipelineMetadata, QARecordCEP, RunMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class RunReport(BaseModel):
@@ -102,8 +105,11 @@ class ResultsCollector:
                         record = EnrichedRecord.model_validate_json(output_file.read_text())
                         report.transcription_records.append(record)
                     except Exception:
-                        # Skip invalid files
-                        pass
+                        logger.debug(
+                            "Skipping invalid transcription file: %s",
+                            output_file,
+                            exc_info=True,
+                        )
 
         # Load CEP step
         cep_dir = pipeline_dir / "cep"
@@ -121,8 +127,11 @@ class ResultsCollector:
                         record = QARecordCEP.load(output_file)
                         report.cep_records.append(record)
                     except Exception:
-                        # Skip invalid files
-                        pass
+                        logger.debug(
+                            "Skipping invalid CEP file: %s",
+                            output_file,
+                            exc_info=True,
+                        )
 
         return report
 
@@ -140,7 +149,6 @@ class ResultsCollector:
                 report = self.load_run(run_id)
                 reports.append(report)
             except Exception:
-                # Skip runs that fail to load
-                pass
+                logger.warning("Failed to load run: %s", run_id, exc_info=True)
 
         return reports

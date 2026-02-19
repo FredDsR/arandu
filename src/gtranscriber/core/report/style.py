@@ -106,4 +106,4 @@ def get_criterion_color(criterion: str) -> str:
     Returns:
         Hex color code.
     """
-    return CRITERION_COLORS.get(criterion, WONG_PALETTE["grey"])
+    return CRITERION_COLORS.get(criterion.lower(), WONG_PALETTE["grey"])

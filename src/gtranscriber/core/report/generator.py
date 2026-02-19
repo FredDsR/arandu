@@ -6,7 +6,8 @@ client-side filtering and chart rendering.
 
 from __future__ import annotations
 
-from datetime import UTC
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,8 @@ from .dataset import build_dataset
 
 if TYPE_CHECKING:
     from .collector import RunReport
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -35,8 +38,6 @@ def generate_html_report(
         output_path: Path to save the HTML file.
         self_contained: If True, embed Plotly.js inline for offline use.
     """
-    from datetime import datetime
-
     dataset = build_dataset(reports)
     dataset_json = dataset.model_dump_json()
 
@@ -47,7 +48,7 @@ def generate_html_report(
 
             plotly_js = plotly.offline.get_plotlyjs()
         except Exception:
-            pass
+            logger.debug("Could not embed Plotly.js inline, falling back to CDN")
 
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),

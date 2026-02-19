@@ -94,4 +94,8 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         except Exception:
             logger.warning("Failed to export chart: %s", name, exc_info=True)
 
+    failed_count = len(chart_specs) - len(generated)
+    if failed_count:
+        logger.info("Chart export: %d succeeded, %d failed", len(generated), failed_count)
+
     return generated
