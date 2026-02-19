@@ -12,10 +12,10 @@ This module provides interactive visualization and reporting capabilities for G-
 
 ## Installation
 
-Install the optional `report` dependency group:
+Install the optional `report` extras:
 
 ```bash
-uv sync --group report
+uv sync --extra report
 ```
 
 Or with pip:
@@ -54,7 +54,6 @@ gtranscriber report [OPTIONS]
 Options:
   --run-id, --id TEXT      Generate report for a specific pipeline run
   --output, -o PATH        Output path for HTML report [default: report.html]
-  --all-runs               Generate report for all runs (default if no --run-id)
   --no-png                 Skip automatic PNG export of charts
   --results-dir PATH       Path to results directory [default: from config]
   --help                   Show this message and exit
@@ -201,7 +200,7 @@ ruff format src/gtranscriber/core/report/
 
 ```bash
 # Install report dependencies
-uv sync --group report
+uv sync --extra report
 # Or manually:
 pip install plotly jinja2 kaleido
 ```

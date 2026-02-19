@@ -1731,13 +1731,6 @@ def report(
             help="Output path for HTML report.",
         ),
     ] = Path("report.html"),
-    all_runs: Annotated[
-        bool,
-        typer.Option(
-            "--all-runs",
-            help="Generate report for all runs (default if no --run-id).",
-        ),
-    ] = False,
     no_png: Annotated[
         bool,
         typer.Option(
@@ -1826,6 +1819,7 @@ def report(
         except Exception as e:
             print_error(f"Failed to export PNG charts: {e}")
             logger.exception("PNG export failed")
+            raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":

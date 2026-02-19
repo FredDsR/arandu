@@ -39,7 +39,7 @@ def generate_html_report(
         self_contained: If True, embed Plotly.js inline for offline use.
     """
     dataset = build_dataset(reports)
-    dataset_json = dataset.model_dump_json()
+    dataset_dict = dataset.model_dump(mode="json")
 
     plotly_js = None
     if self_contained:
@@ -52,12 +52,12 @@ def generate_html_report(
 
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),
-        autoescape=False,
+        autoescape=True,
     )
     template = env.get_template("report.html.j2")
 
     html_content = template.render(
-        dataset_json=dataset_json,
+        dataset_json=dataset_dict,
         plotly_js=plotly_js,
         timestamp=datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
     )

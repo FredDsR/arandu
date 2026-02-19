@@ -345,7 +345,7 @@
     </footer>
 
     <!-- Embedded Dataset -->
-    <script>window.__REPORT_DATA__ = {{ dataset_json | safe }};</script>
+    <script>window.__REPORT_DATA__ = {{ dataset_json | tojson }};</script>
 
     <!-- Filter Engine + Chart Builders -->
     <script>
