@@ -1758,7 +1758,7 @@ def report(
             "--results-dir",
             help="Path to results directory (defaults to configured results_dir).",
         ),
-    ] = Path(_results_config.results_dir),
+    ] = _results_config.base_dir,
 ) -> None:
     """Generate visualization reports and metrics for pipeline results.
 
