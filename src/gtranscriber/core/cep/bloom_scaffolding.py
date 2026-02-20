@@ -14,7 +14,13 @@ from string import Template
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from gtranscriber.schemas import QAPairCEP, SourceMetadata
 
@@ -255,6 +261,7 @@ class BloomScaffoldingGenerator:
                     pair_index + 1,
                     num_questions,
                     bloom_level,
+                    exc_info=True,
                 )
                 continue
             except Exception as e:
@@ -282,6 +289,7 @@ class BloomScaffoldingGenerator:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
     )
     def _generate_single_pair(
         self,
@@ -424,6 +432,13 @@ class BloomScaffoldingGenerator:
         response = response.strip()
         if response.startswith("```"):
             response = re.sub(r"```(?:json)?\n?", "", response)
+
+        logger.debug(
+            "LLM response for %s level (%d chars): %.500s",
+            bloom_level,
+            len(response),
+            response,
+        )
 
         try:
             data = json.loads(response)
