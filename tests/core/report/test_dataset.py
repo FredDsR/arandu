@@ -1,0 +1,329 @@
+"""Tests for report dataset building."""
+
+from __future__ import annotations
+
+from gtranscriber.core.report.collector import RunReport
+from gtranscriber.core.report.dataset import (
+    QAPairRow,
+    ReportDataset,
+    RunSummaryRow,
+    TranscriptionRow,
+    build_dataset,
+)
+from gtranscriber.schemas import (
+    EnrichedRecord,
+    PipelineMetadata,
+    QAPairValidated,
+    QARecordCEP,
+    SourceMetadata,
+    TranscriptionQualityScore,
+    ValidationScore,
+)
+
+
+def _make_enriched_record(
+    name: str = "test.mp3",
+    participant: str | None = "Maria",
+    location: str | None = "Barra de Pelotas",
+    is_valid: bool | None = True,
+    overall_score: float = 0.85,
+) -> EnrichedRecord:
+    """Create a sample EnrichedRecord for testing."""
+    source = None
+    if participant or location:
+        source = SourceMetadata(
+            participant_name=participant,
+            location=location,
+            recording_date="2024-05-15",
+        )
+    quality = TranscriptionQualityScore(
+        script_match_score=0.9,
+        repetition_score=0.8,
+        segment_quality_score=0.85,
+        content_density_score=0.7,
+        overall_score=overall_score,
+    )
+    return EnrichedRecord(
+        gdrive_id="gdrive_123",
+        name=name,
+        mimeType="audio/mpeg",
+        parents=["parent_folder"],
+        webContentLink="https://drive.google.com/test",
+        transcription_text="Test transcription text.",
+        detected_language="pt",
+        language_probability=0.95,
+        model_id="openai/whisper-large-v3",
+        compute_device="cuda",
+        processing_duration_sec=15.0,
+        transcription_status="completed",
+        is_valid=is_valid,
+        source_metadata=source,
+        transcription_quality=quality,
+    )
+
+
+def _make_cep_record(
+    source_filename: str = "test.mp3",
+    participant: str | None = "Maria",
+    location: str | None = "Barra de Pelotas",
+    num_pairs: int = 2,
+) -> QARecordCEP:
+    """Create a sample QARecordCEP for testing."""
+    source = None
+    if participant or location:
+        source = SourceMetadata(
+            participant_name=participant,
+            location=location,
+            recording_date="2024-05-15",
+        )
+
+    qa_pairs = []
+    for i in range(num_pairs):
+        validation = ValidationScore(
+            faithfulness=0.9 - i * 0.1,
+            bloom_calibration=0.85,
+            informativeness=0.75,
+            self_containedness=0.95,
+            overall_score=0.86,
+        )
+        pair = QAPairValidated(
+            question=f"Question {i}?",
+            answer=f"Answer {i}.",
+            context="Some context text.",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="analyze",
+            is_multi_hop=i == 0,
+            hop_count=2 if i == 0 else None,
+            validation=validation,
+            is_valid=True,
+        )
+        qa_pairs.append(pair)
+
+    return QARecordCEP(
+        source_gdrive_id="gdrive_123",
+        source_filename=source_filename,
+        source_metadata=source,
+        transcription_text="Test transcription text.",
+        qa_pairs=qa_pairs,
+        model_id="gpt-4o",
+        validator_model_id="gpt-4o-mini",
+        provider="openai",
+        total_pairs=num_pairs,
+        validated_pairs=num_pairs,
+        bloom_distribution={"analyze": num_pairs},
+    )
+
+
+def _make_run_report(
+    pipeline_id: str = "run_001",
+    with_transcriptions: bool = True,
+    with_cep: bool = True,
+) -> RunReport:
+    """Create a sample RunReport for testing."""
+    pipeline = PipelineMetadata(
+        pipeline_id=pipeline_id,
+        steps_run=["transcription", "cep"],
+    )
+
+    records = []
+    if with_transcriptions:
+        records = [_make_enriched_record()]
+
+    cep_records = []
+    if with_cep:
+        cep_records = [_make_cep_record()]
+
+    return RunReport(
+        pipeline_id=pipeline_id,
+        pipeline=pipeline,
+        transcription_records=records,
+        cep_records=cep_records,
+    )
+
+
+class TestBuildDataset:
+    """Tests for build_dataset function."""
+
+    def test_build_with_single_run(self) -> None:
+        """Test building dataset from a single run."""
+        report = _make_run_report()
+        dataset = build_dataset([report])
+
+        assert len(dataset.runs) == 1
+        assert len(dataset.transcriptions) == 1
+        assert len(dataset.qa_pairs) == 2
+        assert dataset.runs[0].pipeline_id == "run_001"
+
+    def test_build_with_multiple_runs(self) -> None:
+        """Test building dataset from multiple runs."""
+        reports = [_make_run_report("run_001"), _make_run_report("run_002")]
+        dataset = build_dataset(reports)
+
+        assert len(dataset.runs) == 2
+        assert len(dataset.transcriptions) == 2
+        assert len(dataset.qa_pairs) == 4
+
+    def test_build_with_empty_reports(self) -> None:
+        """Test building dataset with no reports."""
+        dataset = build_dataset([])
+
+        assert len(dataset.runs) == 0
+        assert len(dataset.transcriptions) == 0
+        assert len(dataset.qa_pairs) == 0
+        assert dataset.generated_at != ""
+
+    def test_qa_pair_flattening(self) -> None:
+        """Test that QA pair fields are correctly flattened."""
+        report = _make_run_report()
+        dataset = build_dataset([report])
+
+        qa = dataset.qa_pairs[0]
+        assert qa.pipeline_id == "run_001"
+        assert qa.source_filename == "test.mp3"
+        assert qa.participant_name == "Maria"
+        assert qa.location == "Barra de Pelotas"
+        assert qa.bloom_level == "analyze"
+        assert qa.is_multi_hop is True
+        assert qa.hop_count == 2
+        assert qa.confidence == 0.9
+        assert qa.faithfulness == 0.9
+        assert qa.bloom_calibration == 0.85
+        assert qa.informativeness == 0.75
+        assert qa.self_containedness == 0.95
+        assert qa.overall_score == 0.86
+        assert qa.model_id == "gpt-4o"
+        assert qa.validator_model_id == "gpt-4o-mini"
+        assert qa.provider == "openai"
+        assert qa.is_valid is True
+
+    def test_transcription_flattening(self) -> None:
+        """Test that transcription fields are correctly flattened."""
+        report = _make_run_report()
+        dataset = build_dataset([report])
+
+        trans = dataset.transcriptions[0]
+        assert trans.pipeline_id == "run_001"
+        assert trans.source_filename == "test.mp3"
+        assert trans.participant_name == "Maria"
+        assert trans.location == "Barra de Pelotas"
+        assert trans.is_valid is True
+        assert trans.overall_quality == 0.85
+        assert trans.script_match == 0.9
+        assert trans.repetition == 0.8
+        assert trans.segment_quality == 0.85
+        assert trans.content_density == 0.7
+        assert trans.processing_duration_sec == 15.0
+        assert trans.model_id == "openai/whisper-large-v3"
+        assert trans.detected_language == "pt"
+
+    def test_run_summary_computation(self) -> None:
+        """Test run summary row creation."""
+        report = _make_run_report()
+        dataset = build_dataset([report])
+
+        run = dataset.runs[0]
+        assert run.pipeline_id == "run_001"
+        assert run.steps_run == ["transcription", "cep"]
+        assert run.status == "unknown"  # no metadata in this fixture
+
+    def test_missing_source_metadata(self) -> None:
+        """Test flattening with missing source metadata."""
+        record = _make_enriched_record(participant=None, location=None)
+        report = RunReport(
+            pipeline_id="run_no_meta",
+            transcription_records=[record],
+        )
+        dataset = build_dataset([report])
+
+        trans = dataset.transcriptions[0]
+        assert trans.participant_name is None
+        assert trans.location is None
+
+    def test_missing_validation_scores(self) -> None:
+        """Test flattening QA pairs without validation."""
+        from gtranscriber.schemas import QAPairCEP
+
+        qa_pair = QAPairCEP(
+            question="Test?",
+            answer="Answer.",
+            context="Context.",
+            question_type="factual",
+            confidence=0.8,
+            bloom_level="remember",
+        )
+        cep_record = QARecordCEP(
+            source_gdrive_id="gdrive_123",
+            source_filename="test.mp3",
+            transcription_text="Test.",
+            qa_pairs=[qa_pair],
+            model_id="gpt-4o",
+            provider="openai",
+            total_pairs=1,
+            bloom_distribution={"remember": 1},
+        )
+        report = RunReport(
+            pipeline_id="run_no_val",
+            cep_records=[cep_record],
+        )
+        dataset = build_dataset([report])
+
+        qa = dataset.qa_pairs[0]
+        assert qa.faithfulness is None
+        assert qa.bloom_calibration is None
+        assert qa.overall_score is None
+
+
+class TestReportDataset:
+    """Tests for ReportDataset computed fields."""
+
+    def test_pipeline_ids(self) -> None:
+        """Test unique pipeline ID extraction."""
+        dataset = ReportDataset(
+            runs=[
+                RunSummaryRow(pipeline_id="run_b"),
+                RunSummaryRow(pipeline_id="run_a"),
+            ]
+        )
+        assert dataset.pipeline_ids == ["run_a", "run_b"]
+
+    def test_locations(self) -> None:
+        """Test unique location extraction."""
+        dataset = ReportDataset(
+            transcriptions=[
+                TranscriptionRow(pipeline_id="r1", source_filename="a.mp3", location="Pelotas"),
+                TranscriptionRow(pipeline_id="r1", source_filename="b.mp3", location="Pelotas"),
+                TranscriptionRow(pipeline_id="r1", source_filename="c.mp3", location="Cangucu"),
+            ]
+        )
+        assert dataset.locations == ["Cangucu", "Pelotas"]
+
+    def test_participants(self) -> None:
+        """Test unique participant extraction."""
+        dataset = ReportDataset(
+            qa_pairs=[
+                QAPairRow(pipeline_id="r1", source_filename="a.mp3", participant_name="Maria"),
+                QAPairRow(pipeline_id="r1", source_filename="b.mp3", participant_name="Joao"),
+                QAPairRow(pipeline_id="r1", source_filename="c.mp3", participant_name="Maria"),
+            ]
+        )
+        assert dataset.participants == ["Joao", "Maria"]
+
+    def test_bloom_levels(self) -> None:
+        """Test unique Bloom level extraction."""
+        dataset = ReportDataset(
+            qa_pairs=[
+                QAPairRow(pipeline_id="r1", source_filename="a.mp3", bloom_level="analyze"),
+                QAPairRow(pipeline_id="r1", source_filename="b.mp3", bloom_level="remember"),
+                QAPairRow(pipeline_id="r1", source_filename="c.mp3", bloom_level="analyze"),
+            ]
+        )
+        assert dataset.bloom_levels == ["analyze", "remember"]
+
+    def test_empty_dataset(self) -> None:
+        """Test computed fields on empty dataset."""
+        dataset = ReportDataset()
+        assert dataset.pipeline_ids == []
+        assert dataset.locations == []
+        assert dataset.participants == []
+        assert dataset.bloom_levels == []
