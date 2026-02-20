@@ -451,13 +451,16 @@ class BloomScaffoldingGenerator:
         question_type = self._bloom_to_question_type(bloom_level)
 
         try:
+            # Merge: explicit values override any LLM-echoed duplicates
             return QAPairCEP(
-                **data,
-                context=context,
-                question_type=question_type,
-                bloom_level=bloom_level,
-                generation_prompt=generation_prompt,
-                generation_thinking=generation_thinking,
+                **{
+                    **data,
+                    "context": context,
+                    "question_type": question_type,
+                    "bloom_level": bloom_level,
+                    "generation_prompt": generation_prompt,
+                    "generation_thinking": generation_thinking,
+                },
             )
         except (ValidationError, TypeError) as e:
             raise LLMResponseError(f"Validation failed: {e}") from e
