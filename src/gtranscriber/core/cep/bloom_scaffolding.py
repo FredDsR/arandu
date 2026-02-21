@@ -14,7 +14,13 @@ from string import Template
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from gtranscriber.schemas import QAPairCEP, SourceMetadata
 
@@ -255,6 +261,7 @@ class BloomScaffoldingGenerator:
                     pair_index + 1,
                     num_questions,
                     bloom_level,
+                    exc_info=True,
                 )
                 continue
             except Exception as e:
@@ -282,6 +289,7 @@ class BloomScaffoldingGenerator:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
     )
     def _generate_single_pair(
         self,
@@ -425,6 +433,13 @@ class BloomScaffoldingGenerator:
         if response.startswith("```"):
             response = re.sub(r"```(?:json)?\n?", "", response)
 
+        logger.debug(
+            "LLM response for %s level (%d chars): %.500s",
+            bloom_level,
+            len(response),
+            response,
+        )
+
         try:
             data = json.loads(response)
         except json.JSONDecodeError as e:
@@ -433,16 +448,23 @@ class BloomScaffoldingGenerator:
         if not isinstance(data, dict):
             raise LLMResponseError(f"Expected JSON object, got {type(data).__name__}")
 
+        # Coerce hop_count=0 to None so Pydantic's ge=1 constraint isn't violated
+        if not data.get("hop_count"):
+            data.pop("hop_count", None)
+
         question_type = self._bloom_to_question_type(bloom_level)
 
         try:
+            # Merge: explicit values override any LLM-echoed duplicates
             return QAPairCEP(
-                **data,
-                context=context,
-                question_type=question_type,
-                bloom_level=bloom_level,
-                generation_prompt=generation_prompt,
-                generation_thinking=generation_thinking,
+                **{
+                    **data,
+                    "context": context,
+                    "question_type": question_type,
+                    "bloom_level": bloom_level,
+                    "generation_prompt": generation_prompt,
+                    "generation_thinking": generation_thinking,
+                },
             )
         except (ValidationError, TypeError) as e:
             raise LLMResponseError(f"Validation failed: {e}") from e

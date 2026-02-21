@@ -175,7 +175,7 @@ class QAValidator:
             )
 
         except Exception as e:
-            logger.warning(f"Validation failed for QA pair: {e}")
+            logger.warning(f"Validation failed for QA pair: {e}", exc_info=True)
             # Return unvalidated pair
             return QAPairValidated(
                 question=qa_pair.question,
@@ -341,6 +341,12 @@ class QAValidator:
             ValidationScore with parsed scores.
         """
         response = strip_markdown_codeblock(response)
+
+        logger.debug(
+            "Validation LLM response (%d chars): %.500s",
+            len(response),
+            response,
+        )
 
         try:
             data = json.loads(response)

@@ -146,7 +146,7 @@ class ReasoningEnricher:
             )
 
         except Exception as e:
-            logger.warning(f"Failed to enrich QA pair: {e}")
+            logger.warning(f"Failed to enrich QA pair: {e}", exc_info=True)
             return qa_pair
 
     def enrich_batch(
@@ -228,6 +228,12 @@ class ReasoningEnricher:
         response = response.strip()
         if response.startswith("```"):
             response = re.sub(r"```(?:json)?\n?", "", response)
+
+        logger.debug(
+            "Reasoning LLM response (%d chars): %.500s",
+            len(response),
+            response,
+        )
 
         try:
             data = json.loads(response)
