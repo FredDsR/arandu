@@ -147,6 +147,16 @@ flowchart LR
 
 Higher-order levels (Analyze, Evaluate, Create) are especially relevant for surfacing **tacit knowledge** -- the implicit, experience-based understanding that domain experts possess but rarely articulate explicitly. By forcing the LLM to generate questions at these levels, the pipeline extracts reasoning patterns, causal chains, and practical know-how that would remain invisible through simple factual recall.
 
+#### Level Selection Rationale
+
+The pipeline uses four of the six Bloom levels: **Remember**, **Understand**, **Analyze**, and **Evaluate**. The **Apply** and **Create** levels are deliberately excluded:
+
+- **Apply** presupposes procedural knowledge that can be transferred to novel contexts. In ethnographic interviews with riverine communities, knowledge is highly situated and context-dependent -- interviewees describe *why* they act in certain ways, not generalizable procedures to replicate elsewhere. The Understand level already covers process comprehension, while Analyze captures the causal reasoning behind actions, making Apply redundant in this domain.
+
+- **Create** requires generating original ideas or artifacts that do not yet exist. This conflicts with the pipeline's **faithfulness constraint**: the LLM-as-a-Judge validation (Module III) assigns 30% weight to faithfulness, requiring answers to be grounded in the source transcription. Questions at the Create level would inevitably produce speculative answers unmoored from the text, either being rejected by the validator or inflating faithfulness scores artificially. Furthermore, since the QA dataset serves as ground truth for **GraphRAG evaluation** (Phase 4), Create-level questions would introduce false negatives -- the knowledge graph cannot represent knowledge that the interviewee never articulated, polluting coverage and coherence metrics with unanswerable queries.
+
+The four selected levels form a coherent spectrum for tacit knowledge elicitation: Remember establishes *what* happened, Understand captures *how* processes work, Analyze reveals *why* things are connected, and Evaluate surfaces *when and whether* expert judgment applies.
+
 ### 4.3 Module I -- Bloom Scaffolding
 
 Questions are generated according to a configurable **Bloom level distribution**:
