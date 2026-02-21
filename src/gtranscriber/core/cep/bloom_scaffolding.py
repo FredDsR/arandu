@@ -448,6 +448,10 @@ class BloomScaffoldingGenerator:
         if not isinstance(data, dict):
             raise LLMResponseError(f"Expected JSON object, got {type(data).__name__}")
 
+        # Coerce hop_count=0 to None so Pydantic's ge=1 constraint isn't violated
+        if not data.get("hop_count"):
+            data.pop("hop_count", None)
+
         question_type = self._bloom_to_question_type(bloom_level)
 
         try:
