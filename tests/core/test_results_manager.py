@@ -371,10 +371,10 @@ class TestResultsManager:
         assert metadata.pipeline_id == "my-run"
         assert (tmp_path / "my-run" / "transcription" / "outputs").exists()
 
-    def test_overwrite_step(
+    def test_resume_preserves_existing_files(
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
     ) -> None:
-        """Test that re-running a step with the same ID overwrites the step directory."""
+        """Test that re-running a step with the same ID preserves existing files."""
         from pydantic import BaseModel
 
         class TestConfig(BaseModel):
@@ -382,20 +382,26 @@ class TestResultsManager:
 
         mocker.patch.dict(os.environ, {}, clear=True)
 
-        # First run
+        # First run — create outputs and a checkpoint file
         manager1 = ResultsManager(tmp_path, PipelineType.QA, pipeline_id="test-run")
         manager1.create_run(TestConfig())
-        # Write a marker file
-        (manager1.outputs_dir / "marker.json").write_text("{}")
+        (manager1.outputs_dir / "output_001.json").write_text('{"done": true}')
+        (manager1.run_dir / "checkpoint.json").write_text('{"last_index": 5}')
 
-        # Second run with same ID should overwrite
+        # Second run with same ID (simulating job resumption)
         manager2 = ResultsManager(tmp_path, PipelineType.QA, pipeline_id="test-run")
         manager2.create_run(TestConfig())
 
-        # Marker file should be gone (directory was cleaned)
-        assert not (manager2.outputs_dir / "marker.json").exists()
-        # But outputs dir should still exist
-        assert manager2.outputs_dir.exists()
+        # Existing output and checkpoint files survive
+        assert (manager2.outputs_dir / "output_001.json").exists()
+        assert (manager2.run_dir / "checkpoint.json").exists()
+        assert json.loads((manager2.run_dir / "checkpoint.json").read_text()) == {"last_index": 5}
+
+        # run_metadata.json is still refreshed
+        metadata_path = manager2.run_dir / "run_metadata.json"
+        assert metadata_path.exists()
+        loaded = RunMetadata.load(metadata_path)
+        assert loaded.status == RunStatus.IN_PROGRESS
 
     def test_complete_run_no_symlinks(
         self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock

@@ -162,13 +162,10 @@ class ResultsManager:
         pipeline_id = self._pipeline_id or self._generate_pipeline_id(execution)
         self._pipeline_id = pipeline_id
 
-        # 5. Create step directory (overwrite if exists)
+        # 5. Create step directory (preserve existing files for resumption)
         step = self.pipeline_type.value
         pipeline_dir = self.base_dir / pipeline_id
         self._run_dir = pipeline_dir / step
-
-        if self._run_dir.exists():
-            shutil.rmtree(self._run_dir)
 
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
