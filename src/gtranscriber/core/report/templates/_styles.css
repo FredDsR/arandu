@@ -609,6 +609,45 @@ footer {
     font-size: 12px;
 }
 
+/* --------------- Issues List (expanded transcription row) --------------- */
+
+.issues-list {
+    list-style-type: disc;
+    margin-left: 20px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.issues-list li {
+    color: var(--danger);
+    margin-bottom: 4px;
+}
+
+.no-issues {
+    color: var(--success);
+    font-style: italic;
+}
+
+/* --------------- Issues Count Badge --------------- */
+
+.issues-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.issues-badge.has-issues {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.issues-badge.no-issues {
+    background: #d4edda;
+    color: #155724;
+}
+
 /* --------------- Responsive --------------- */
 
 @media (max-width: 768px) {
