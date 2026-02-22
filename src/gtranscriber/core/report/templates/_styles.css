@@ -627,6 +627,11 @@ footer {
 
 /* --------------- QA Detail Panel (expanded rows) --------------- */
 
+.expand-hint {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
 .detail-panel {
     padding: 16px;
     background: #f8f9fb;
@@ -706,6 +711,11 @@ footer {
     font-size: 14px;
     font-weight: 600;
     color: var(--danger);
+}
+
+.show-more-container {
+    text-align: center;
+    padding: 12px;
 }
 
 /* --------------- Bloom Badges --------------- */
