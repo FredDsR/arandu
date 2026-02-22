@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-if TYPE_CHECKING:
-    from gtranscriber.schemas import EnrichedRecord, PipelineMetadata, QARecordCEP, RunMetadata
+from gtranscriber.schemas import (
+    ConfigSnapshot,
+    EnrichedRecord,
+    PipelineMetadata,
+    QARecordCEP,
+    RunMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +80,6 @@ class ResultsCollector:
         Raises:
             FileNotFoundError: If the pipeline directory doesn't exist.
         """
-        from gtranscriber.schemas import EnrichedRecord, PipelineMetadata, QARecordCEP, RunMetadata
-
         pipeline_dir = self.results_dir / pipeline_id
         if not pipeline_dir.exists():
             raise FileNotFoundError(f"Pipeline directory not found: {pipeline_dir}")
@@ -152,3 +154,103 @@ class ResultsCollector:
                 logger.warning("Failed to load run: %s", run_id, exc_info=True)
 
         return reports
+
+    def load_run_config(self, pipeline_id: str) -> ConfigSnapshot | None:
+        """Load configuration snapshot for a pipeline run.
+
+        Reads config from the run_metadata.json of the most relevant step
+        (CEP if available, otherwise transcription).
+
+        Args:
+            pipeline_id: The pipeline ID to load config for.
+
+        Returns:
+            ConfigSnapshot if available, None otherwise.
+        """
+        pipeline_dir = self.results_dir / pipeline_id
+        for step in ("cep", "transcription"):
+            run_metadata_file = pipeline_dir / step / "run_metadata.json"
+            if run_metadata_file.exists():
+                try:
+                    metadata = RunMetadata.load(run_metadata_file)
+                    return metadata.config
+                except Exception:
+                    logger.debug(
+                        "Failed to load run_metadata for %s/%s", pipeline_id, step, exc_info=True
+                    )
+        return None
+
+    def load_qa_record(self, pipeline_id: str, source_filename: str) -> QARecordCEP | None:
+        """Load a single CEP QA record by source filename.
+
+        Scans the CEP outputs directory for a file matching the source filename
+        pattern: `{source_filename_stem}_cep_qa.json`.
+
+        Args:
+            pipeline_id: The pipeline ID containing the record.
+            source_filename: Original source filename to match.
+
+        Returns:
+            QARecordCEP if found, None otherwise.
+        """
+        stem = Path(source_filename).stem
+        outputs_dir = self.results_dir / pipeline_id / "cep" / "outputs"
+        target = outputs_dir / f"{stem}_cep_qa.json"
+        if target.exists():
+            try:
+                return QARecordCEP.load(target)
+            except Exception:
+                logger.debug("Failed to load QA record: %s", target, exc_info=True)
+        return None
+
+    def load_transcription_record(
+        self, pipeline_id: str, source_filename: str
+    ) -> EnrichedRecord | None:
+        """Load a single transcription record by source filename.
+
+        Scans the transcription outputs directory for a JSON file matching
+        the source filename.
+
+        Args:
+            pipeline_id: The pipeline ID containing the record.
+            source_filename: Original source filename to match.
+
+        Returns:
+            EnrichedRecord if found, None otherwise.
+        """
+        outputs_dir = self.results_dir / pipeline_id / "transcription" / "outputs"
+        if not outputs_dir.exists():
+            return None
+        for output_file in outputs_dir.glob("*.json"):
+            try:
+                record = EnrichedRecord.model_validate_json(output_file.read_text())
+                if record.name == source_filename:
+                    return record
+            except Exception:
+                logger.debug("Failed to load transcription record: %s", output_file, exc_info=True)
+        return None
+
+    def load_all_run_configs(self, pipeline_id: str) -> dict[str, ConfigSnapshot]:
+        """Load all configuration snapshots for a pipeline run.
+
+        Returns configs from both transcription and CEP steps.
+
+        Args:
+            pipeline_id: The pipeline ID to load configs for.
+
+        Returns:
+            Dictionary mapping step name to ConfigSnapshot.
+        """
+        configs: dict[str, ConfigSnapshot] = {}
+        pipeline_dir = self.results_dir / pipeline_id
+        for step in ("transcription", "cep"):
+            run_metadata_file = pipeline_dir / step / "run_metadata.json"
+            if run_metadata_file.exists():
+                try:
+                    metadata = RunMetadata.load(run_metadata_file)
+                    configs[step] = metadata.config
+                except Exception:
+                    logger.debug(
+                        "Failed to load run_metadata for %s/%s", pipeline_id, step, exc_info=True
+                    )
+        return configs
