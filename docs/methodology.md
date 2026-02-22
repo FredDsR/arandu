@@ -443,7 +443,7 @@ flowchart LR
     subgraph S4["Stage 4 — Answer Scoring"]
         direction TB
         A4["Compare generated<br/>answer vs ground truth"]:::stage
-        A4D["Token F1 + BERTScore<br/>per Bloom level"]:::detail
+        A4D["LLM-as-a-Judge<br/>correctness × faithfulness"]:::detail
         A4 --- A4D
     end
 
@@ -464,7 +464,7 @@ A match is accepted if the similarity exceeds a threshold $\tau_e$ (default: 0.7
 
 $$G_i = \bigcup_{a \in A_i} \mathcal{N}_k(a,\, G)$$
 
-where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$). For questions flagged as multi-hop ($\text{is\_multi\_hop} = \text{true}$), the retrieval radius is extended to $k = \min(\text{hop\_count} + 1,\, 3)$ to accommodate the additional reasoning hops while capping context size. The subgraph is linearized into a textual triple representation with node type annotations (e.g., `[PERSON] Maria da Silva --[VIVE_EM]--> [LOCATION] Barra do Ribeiro`) to provide the LLM with structural context. The retrieval strategy is deliberately minimal -- entity matching plus neighborhood extraction -- to isolate the knowledge graph's content quality from retrieval algorithm sophistication. Full GraphRAG evaluation with advanced retrieval strategies (community detection, hierarchical summarization) constitutes a separate downstream benchmark.
+where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$). For questions flagged as multi-hop ($\text{is\_multi\_hop} = \text{true}$), the retrieval radius is extended to $k = \min(\text{hop\_count} + 1,\, 3)$ to accommodate the additional reasoning hops while capping context size. The subgraph is linearized into a textual triple representation with node type annotations (e.g., `[PERSON] Maria da Silva --[VIVE_EM]--> [LOCATION] Barra do Ribeiro`) to provide the LLM with structural context. The retrieval strategy is deliberately minimal -- entity matching plus neighborhood extraction -- to isolate the knowledge graph's content quality from retrieval algorithm sophistication. The implementation builds directly on NetworkX (graph traversal), FAISS (embedding index), and sentence-transformers (multilingual embeddings), following the same BFS-based $k$-hop pattern used by AutoSchemaKG's `SubgraphRetriever` (Bai et al., 2025) but without depending on the `atlas_rag` package, whose dependency tree (Neo4j, FastAPI, graphdatascience) is disproportionate for the minimal retrieval required here. Full GraphRAG evaluation with advanced retrieval strategies -- including AutoSchemaKG's own `atlas_rag` pipeline (HippoRAG, Think-on-Graph) and Microsoft's GraphRAG (community detection, hierarchical summarization) -- constitutes a separate downstream benchmark where the QA dataset serves as ground truth.
 
 **Stage 3 -- Answer Generation.** The linearized subgraph and the question are provided to an LLM with a constrained prompt:
 
@@ -472,16 +472,61 @@ where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hop
 
 The prompt explicitly prevents the LLM from using parametric knowledge, ensuring that answer quality reflects exclusively what the knowledge graph contains. The `INSUFFICIENT` response allows the metric to distinguish between incorrect answers (the KG contains wrong or misleading information) and absent answers (the KG lacks the relevant information entirely). Generation uses low temperature ($T = 0.3$) for reproducibility.
 
-**Stage 4 -- Answer Scoring.** Each generated answer $\hat{a}_i$ is compared against the ground-truth answer $a_i$ using two complementary metrics:
+**Stage 4 -- Answer Scoring.** Each generated answer $\hat{a}_i$ is evaluated against the ground-truth answer $a_i$ using an **LLM-as-a-Judge** approach -- the same evaluation paradigm already employed in Phase 2 (Section 4.5) for QA pair validation. Two criteria are assessed in a single judge invocation: **correctness** (does the answer match the ground truth?) and **faithfulness** (is the answer derivable from the provided triples?). The combination ensures that the score reflects KG quality rather than LLM parametric knowledge.
 
-- **Token F1**: Lexical overlap after lowercasing, tokenization, and Portuguese stopword removal. Penalizes hallucinated content (via precision) and missing information (via recall).
-- **BERTScore** ($F_1$ variant): Embedding-based semantic similarity using a multilingual model. Captures paraphrase equivalence that lexical matching misses (e.g., *"enchente"* vs. *"inundação"*, *"guardar o barco"* vs. *"recolher a embarcação"*).
+##### Correctness
 
-The per-pair answer score combines both:
+The judge receives the question, ground-truth answer, and generated answer, and assesses **answer correctness** on a 0.0--1.0 scale:
 
-$$\text{Score}(q_i) = \beta \cdot F_1^{\text{token}}(a_i, \hat{a}_i) + (1 - \beta) \cdot F_1^{\text{BERT}}(a_i, \hat{a}_i) \qquad (\beta = 0.5)$$
+| Score Range | Criterion |
+|-------------|-----------|
+| **0.8 -- 1.0** | Semantically equivalent: conveys the same factual content, may differ in wording |
+| **0.5 -- 0.7** | Partially correct: captures key facts but omits important elements or adds minor inaccuracies |
+| **0.2 -- 0.4** | Marginally relevant: addresses the topic but misses the core answer |
+| **0.0 -- 0.1** | Incorrect or irrelevant: factually wrong, unrelated, or `INSUFFICIENT` response |
 
-If no anchor entities are matched ($A_i = \emptyset$) or the LLM responds `INSUFFICIENT`, the score is $\text{Score}(q_i) = 0$ -- the KG lacks the entities or relational structure needed to address the question.
+##### Faithfulness to Subgraph
+
+The judge also receives the linearized triples from Stage 2 and assesses whether the generated answer is **derivable from the explicit relationships** in the subgraph. Unlike Phase 2's faithfulness criterion -- which evaluates grounding against narrative text where inference depth varies continuously -- Phase 4 operates on structured triples where information is either explicitly represented or absent. The gradient therefore measures the **proportion of claims in the answer that are traceable to the provided triples**, not the depth of inference:
+
+| Score Range | Criterion |
+|-------------|-----------|
+| **1.0** | All claims directly derivable from the provided triples |
+| **0.8** | Most claims derivable; minor elaborations inferred from combining multiple triples |
+| **0.6** | Core claims derivable but significant content not traceable to any triple |
+| **0.4** | Some claims derivable but the majority relies on information absent from the triples |
+| **0.2** | Few claims traceable to the triples; answer largely relies on external knowledge |
+| **0.0** | No claims derivable from the triples; answer entirely from parametric knowledge or hallucinated |
+
+A high correctness score paired with low faithfulness indicates that the LLM used parametric knowledge to bypass the subgraph constraint -- the answer is right, but not *because of the KG*. This is a **validity threat**: the score would reflect LLM capability, not graph quality. The combined score uses multiplication to enforce this dependency:
+
+$$\text{Score}(q_i) = \text{Correctness}(q_i) \times \text{Faithfulness}(q_i)$$
+
+Multiplication ensures that both conditions must hold: a correct but ungrounded answer ($1.0 \times 0.2 = 0.2$) scores low, as does a grounded but incorrect answer ($0.2 \times 1.0 = 0.2$). Only answers that are both correct *and* derivable from the KG receive high scores, which is precisely what Knowledge Coverage should measure.
+
+#### Why Not Token F1 or BERTScore
+
+Standard QA evaluation metrics -- Token F1 (lexical overlap) and BERTScore (embedding similarity) -- were designed for **extractive** question answering, where the correct answer is a short span copied verbatim from the source text (Rajpurkar et al., 2016). In that setting, high lexical overlap between the predicted and gold answer reliably indicates correctness. However, the Knowledge Coverage evaluation operates on **generative, open-ended answers** across multiple cognitive levels, where these metrics break down:
+
+- **Token F1** measures word-level precision and recall between the generated and ground-truth answer. It penalizes correct answers that use different vocabulary (e.g., *"enchente"* vs. *"inundação"*), rewards incorrect answers that happen to share surface tokens with the ground truth, and systematically underscores longer explanatory answers -- precisely the kind produced at Analyze and Evaluate levels -- because additional explanatory tokens reduce precision even when they are factually correct. For a Remember-level answer like *"maio de 2024"*, Token F1 may suffice; for an Evaluate-level answer explaining *why* a fisherman prioritizes one protective strategy over another, it cannot distinguish a correct reformulation from a wrong answer that shares some keywords.
+
+- **BERTScore** improves on lexical matching by computing token-level cosine similarity in an embedding space, capturing paraphrase equivalence that Token F1 misses. However, it measures **semantic similarity**, not **factual correctness**. A fluent, well-structured answer that is factually wrong can achieve a high BERTScore if it uses semantically related vocabulary. BERTScore also lacks sensitivity to negation and causal direction -- *"the flood caused the migration"* and *"the migration caused the flood"* receive similar scores despite expressing opposite causal claims. For Analyze-level questions where causal direction is the core of the answer, this is a critical failure mode.
+
+Both metrics share a fundamental limitation: they evaluate surface-level resemblance between text strings, not whether the **knowledge content** of the generated answer is correct. The Knowledge Coverage evaluation requires assessing whether a reasoning chain is sound, whether a causal explanation is accurate, and whether an expert judgment is supported -- evaluations that demand language understanding, not string comparison.
+
+#### LLM-as-a-Judge Rationale
+
+The LLM-as-a-Judge approach addresses these limitations by delegating answer evaluation to a language model capable of semantic reasoning. This design choice is grounded in three considerations:
+
+1. **Consistency with the pipeline.** Phase 2 already employs LLM-as-a-Judge for QA pair validation (Section 4.5), establishing the pattern as a core evaluation mechanism of the methodology. Reusing the same paradigm in Phase 4 ensures architectural coherence.
+
+2. **No additional computational cost profile.** Stage 3 already requires LLM invocations for answer generation. Adding a judge call per QA pair does not introduce a new dependency -- the evaluation already requires LLM access.
+
+3. **Alignment with RAG evaluation standards.** Recent frameworks for evaluating retrieval-augmented generation systems -- RAGAS (Es et al., 2024), ARES (Saad-Falcon et al., 2023), and RAGEval (Zhu et al., 2025) -- all adopt LLM-as-a-Judge as the primary metric for generative QA assessment, providing methodological precedent and comparability with published benchmarks.
+
+$$\text{Score}(q_i) = \text{Correctness}(q_i) \times \text{Faithfulness}(q_i) \in [0,\, 1]$$
+
+If no anchor entities are matched ($A_i = \emptyset$), the score is $\text{Score}(q_i) = 0$ -- the KG lacks the entities needed to address the question. If the LLM responds `INSUFFICIENT` in Stage 3, the judge receives this response and scores it accordingly (correctness $= 0.0$, faithfulness $= 1.0$ since `INSUFFICIENT` is an honest acknowledgment of absent information, yielding $\text{Score} = 0.0$).
 
 #### Bloom-Stratified Analysis
 
@@ -517,9 +562,10 @@ where $w_{\text{Remember}} = 0.20$, $w_{\text{Understand}} = 0.30$, $w_{\text{An
 |-----------|---------|-------------|
 | $\tau_e$ | 0.75 | Cosine similarity threshold for entity-to-node matching |
 | $k$ | 2 | Hop radius for subgraph retrieval (extended for multi-hop questions) |
-| $\beta$ | 0.5 | Weight of Token F1 vs. BERTScore in answer scoring |
-| $T$ | 0.3 | LLM temperature for answer generation |
-| Embedding model | `paraphrase-multilingual-MiniLM-L12-v2` | Multilingual sentence-transformer for entity matching and BERTScore |
+| $T$ | 0.3 | LLM temperature for answer generation and judge evaluation |
+| Embedding model | `paraphrase-multilingual-MiniLM-L12-v2` | Multilingual sentence-transformer for entity matching |
+| Graph library | NetworkX | In-memory directed graph traversal (BFS $k$-hop) |
+| Vector index | FAISS (HNSW) | Approximate nearest-neighbor search for entity matching |
 
 ### 6.5 Overall Score Computation
 
@@ -531,7 +577,7 @@ This weighting prioritizes **knowledge coverage** (how well the graph captures Q
 
 ### 6.6 Output
 
-An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Remember}}$, $\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), intrinsic graph metrics (entity coverage, relation metrics, semantic quality), the composite overall score, and the Bloom-stratified diagnostic profile.
+An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Remember}}$, $\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), per-question correctness and faithfulness scores, mean faithfulness across the dataset (as a validity indicator), intrinsic graph metrics (entity coverage, relation metrics, semantic quality), the composite overall score, and the Bloom-stratified diagnostic profile.
 
 ---
 
