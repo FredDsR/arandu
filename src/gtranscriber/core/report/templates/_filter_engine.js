@@ -8,13 +8,16 @@
   var ACTIVE_THRESHOLDS = { validation: null, quality: null };
   var _thresholdCache = {};
   var activeRunId = null;
+  var activeRunThreshold = 0.6;
   var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc" };
   var DEFAULT_SCORE_THRESHOLD = 0.6;
   var BLOOM_COLORS = {
     remember: "#0173B2",
     understand: "#029E73",
+    apply: "#D55E00",
     analyze: "#DE8F05",
     evaluate: "#CC3311",
+    create: "#CC79A7",
   };
   var CRITERION_COLORS = {
     faithfulness: "#0173B2",
@@ -82,6 +85,18 @@
   async function setActiveRun(pipelineId) {
     if (!pipelineId) return;
     activeRunId = pipelineId;
+    // Fetch and cache the run config threshold for score coloring
+    try {
+      var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      activeRunThreshold = (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null)
+        ? config.configs.cep.validation_threshold
+        : DEFAULT_SCORE_THRESHOLD;
+    } catch (e) {
+      activeRunThreshold = DEFAULT_SCORE_THRESHOLD;
+    }
     try {
       var results = await Promise.all([
         fetch("/api/qa?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
@@ -1391,7 +1406,7 @@
       }
     });
     html += "</tr></thead><tbody>";
-    var threshold = DEFAULT_SCORE_THRESHOLD;
+    var threshold = activeRunThreshold;
     items.forEach(function (item) {
       html += '<tr class="expandable" data-pipeline="' + esc(item.pipeline_id)
         + '" data-filename="' + esc(item.source_filename)
@@ -1493,6 +1508,9 @@
       }
       if (detail.validation_rationale) {
         html += '<div class="detail-field"><strong>Judge Rationale:</strong><p>' + esc(detail.validation_rationale) + "</p></div>";
+      }
+      if (detail.generation_thinking) {
+        html += '<div class="detail-field"><strong>Generation Thinking:</strong><p>' + esc(detail.generation_thinking) + "</p></div>";
       }
       html += "</div></td></tr>";
       row.insertAdjacentHTML("afterend", html);

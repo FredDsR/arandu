@@ -730,5 +730,7 @@ footer {
 
 .bloom-badge.remember { background: #0173B2; }
 .bloom-badge.understand { background: #029E73; }
+.bloom-badge.apply { background: #D55E00; }
 .bloom-badge.analyze { background: #DE8F05; }
 .bloom-badge.evaluate { background: #CC3311; }
+.bloom-badge.create { background: #CC79A7; }
