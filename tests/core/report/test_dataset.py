@@ -11,19 +11,16 @@ from gtranscriber.core.report.dataset import (
     build_dataset,
 )
 from gtranscriber.schemas import (
-    ConfigSnapshot,
     EnrichedRecord,
-    ExecutionEnvironment,
-    HardwareInfo,
     PipelineMetadata,
     PipelineType,
     QAPairValidated,
     QARecordCEP,
-    RunMetadata,
     SourceMetadata,
     TranscriptionQualityScore,
     ValidationScore,
 )
+from tests.core.report.helpers import make_run_metadata
 
 
 def _make_enriched_record(
@@ -334,43 +331,16 @@ class TestReportDataset:
         assert dataset.bloom_levels == []
 
 
-def _make_run_metadata(
-    pipeline_type: PipelineType = PipelineType.TRANSCRIPTION,
-    config_values: dict | None = None,
-) -> RunMetadata:
-    """Create a minimal RunMetadata for testing."""
-    execution = ExecutionEnvironment(hostname="test-host", username="test-user")
-    hardware = HardwareInfo(
-        device_type="cpu",
-        cpu_count=4,
-        torch_version="2.0.0",
-        python_version="3.13.0",
-    )
-    config = ConfigSnapshot(
-        config_type="TestConfig",
-        config_values=config_values or {},
-    )
-    return RunMetadata(
-        run_id="20240515_120000_test",
-        pipeline_type=pipeline_type,
-        execution=execution,
-        hardware=hardware,
-        config=config,
-        output_directory="/tmp/test",
-        gtranscriber_version="0.1.0",
-    )
-
-
 class TestRunSummaryNewFields:
     """Tests for new RunSummaryRow fields added for dashboard support."""
 
     def test_run_summary_includes_model_ids(self) -> None:
         """Verify model IDs are extracted from config."""
-        transcription_meta = _make_run_metadata(
+        transcription_meta = make_run_metadata(
             pipeline_type=PipelineType.TRANSCRIPTION,
             config_values={"model_id": "openai/whisper-large-v3", "quality_threshold": 0.7},
         )
-        cep_meta = _make_run_metadata(
+        cep_meta = make_run_metadata(
             pipeline_type=PipelineType.CEP,
             config_values={
                 "model_id": "gpt-4o",
@@ -393,11 +363,11 @@ class TestRunSummaryNewFields:
 
     def test_run_summary_includes_thresholds(self) -> None:
         """Verify threshold values are extracted from config."""
-        transcription_meta = _make_run_metadata(
+        transcription_meta = make_run_metadata(
             pipeline_type=PipelineType.TRANSCRIPTION,
             config_values={"quality_threshold": 0.65},
         )
-        cep_meta = _make_run_metadata(
+        cep_meta = make_run_metadata(
             pipeline_type=PipelineType.CEP,
             config_values={"validation_threshold": 0.75},
         )
@@ -514,7 +484,7 @@ class TestRunSummaryNewFields:
 
     def test_run_summary_partial_config_keys(self) -> None:
         """Verify missing config keys default to None gracefully."""
-        transcription_meta = _make_run_metadata(
+        transcription_meta = make_run_metadata(
             pipeline_type=PipelineType.TRANSCRIPTION,
             config_values={"model_id": "whisper-small"},  # no quality_threshold key
         )

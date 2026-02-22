@@ -204,8 +204,8 @@ class ResultsCollector:
     ) -> EnrichedRecord | None:
         """Load a single transcription record by source filename.
 
-        Scans the transcription outputs directory for a JSON file matching
-        the source filename.
+        Resolves the output file using the source filename pattern:
+        `{source_filename_stem}_transcription.json`.
 
         Args:
             pipeline_id: The pipeline ID containing the record.
@@ -214,16 +214,14 @@ class ResultsCollector:
         Returns:
             EnrichedRecord if found, None otherwise.
         """
+        stem = Path(source_filename).stem
         outputs_dir = self.results_dir / pipeline_id / "transcription" / "outputs"
-        if not outputs_dir.exists():
-            return None
-        for output_file in outputs_dir.glob("*.json"):
+        target = outputs_dir / f"{stem}_transcription.json"
+        if target.exists():
             try:
-                record = EnrichedRecord.model_validate_json(output_file.read_text())
-                if record.name == source_filename:
-                    return record
+                return EnrichedRecord.model_validate_json(target.read_text())
             except Exception:
-                logger.debug("Failed to load transcription record: %s", output_file, exc_info=True)
+                logger.debug("Failed to load transcription record: %s", target, exc_info=True)
         return None
 
     def load_all_run_configs(self, pipeline_id: str) -> dict[str, ConfigSnapshot]:
@@ -244,7 +242,8 @@ class ResultsCollector:
             if run_metadata_file.exists():
                 try:
                     metadata = RunMetadata.load(run_metadata_file)
-                    configs[step] = metadata.config
+                    if metadata.config is not None:
+                        configs[step] = metadata.config
                 except Exception:
                     logger.debug(
                         "Failed to load run_metadata for %s/%s", pipeline_id, step, exc_info=True

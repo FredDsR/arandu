@@ -11,16 +11,13 @@ if TYPE_CHECKING:
 
 from gtranscriber.core.report.collector import ResultsCollector, RunReport
 from gtranscriber.schemas import (
-    ConfigSnapshot,
     EnrichedRecord,
-    ExecutionEnvironment,
-    HardwareInfo,
     PipelineMetadata,
     PipelineType,
     QARecordCEP,
-    RunMetadata,
     SourceMetadata,
 )
+from tests.core.report.helpers import make_run_metadata
 
 
 @pytest.fixture
@@ -180,36 +177,6 @@ class TestRunReport:
         assert report.transcription_records[0].name == "test.mp3"
 
 
-def _make_run_metadata_for_collector(
-    pipeline_type: PipelineType = PipelineType.TRANSCRIPTION,
-    config_values: dict | None = None,
-    pipeline_id: str = "test_pipeline_001",
-    output_directory: str = "/tmp/test",
-) -> RunMetadata:
-    """Create a minimal RunMetadata for collector tests."""
-    execution = ExecutionEnvironment(hostname="test-host", username="test-user")
-    hardware = HardwareInfo(
-        device_type="cpu",
-        cpu_count=4,
-        torch_version="2.0.0",
-        python_version="3.13.0",
-    )
-    config = ConfigSnapshot(
-        config_type="TestConfig",
-        config_values=config_values or {},
-    )
-    return RunMetadata(
-        run_id="20240515_120000_test",
-        pipeline_id=pipeline_id,
-        pipeline_type=pipeline_type,
-        execution=execution,
-        hardware=hardware,
-        config=config,
-        output_directory=output_directory,
-        gtranscriber_version="0.1.0",
-    )
-
-
 @pytest.fixture
 def extended_results_dir(tmp_path: Path) -> Path:
     """Create an extended results directory with run_metadata.json and CEP outputs.
@@ -239,7 +206,7 @@ def extended_results_dir(tmp_path: Path) -> Path:
     trans_outputs = transcription_dir / "outputs"
     trans_outputs.mkdir()
 
-    transcription_meta = _make_run_metadata_for_collector(
+    transcription_meta = make_run_metadata(
         pipeline_type=PipelineType.TRANSCRIPTION,
         config_values={"model_id": "openai/whisper-large-v3", "quality_threshold": 0.65},
         output_directory=str(transcription_dir),
@@ -268,7 +235,7 @@ def extended_results_dir(tmp_path: Path) -> Path:
     cep_outputs = cep_dir / "outputs"
     cep_outputs.mkdir()
 
-    cep_meta = _make_run_metadata_for_collector(
+    cep_meta = make_run_metadata(
         pipeline_type=PipelineType.CEP,
         config_values={
             "model_id": "gpt-4o",

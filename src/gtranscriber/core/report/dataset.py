@@ -197,13 +197,13 @@ def _build_run_summary(report: RunReport, run_rows: list[RunSummaryRow]) -> None
         1
         for cep in report.cep_records
         for qa in cep.qa_pairs
-        if getattr(qa, "is_valid", True) is True
+        if getattr(qa, "is_valid", None) is True
     )
     invalid_qa_pairs = sum(
         1
         for cep in report.cep_records
         for qa in cep.qa_pairs
-        if getattr(qa, "is_valid", True) is False
+        if getattr(qa, "is_valid", None) is False
     )
 
     row = RunSummaryRow(
