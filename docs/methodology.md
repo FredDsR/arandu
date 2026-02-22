@@ -374,19 +374,16 @@ flowchart TD
 
     QR --> KC
     GR --> KC
-    GR --> EC
-    GR --> RM
-    GR --> SQ
+    GR --> EP
+    GR --> GS
 
     KC["Knowledge Coverage<br/><i>Functional: can the KG<br/>answer the QA pairs?</i>"]:::metric
-    EC["Entity Coverage<br/>total, unique, density,<br/>diversity"]:::metric
-    RM["Relation Metrics<br/>density, connectivity,<br/>degree distribution"]:::metric
-    SQ["Semantic Quality<br/>coherence, information<br/>density"]:::metric
+    EP["Schema Profile<br/>entity type diversity,<br/>relation type diversity"]:::metric
+    GS["Graph Structure<br/>relation density, connectivity,<br/>clustering, degree"]:::metric
 
     KC --> R
-    EC --> R
-    RM --> R
-    SQ --> R
+    EP --> R
+    GS --> R
 
     R(["Evaluation Report"]):::report
 ```
@@ -396,11 +393,100 @@ flowchart TD
 | Dimension | Inputs | What It Measures |
 |-----------|--------|-----------------|
 | **Knowledge Coverage** | QA dataset + KG | Functional answer quality: can the KG support answering the cognitively-scaffolded QA pairs? Measured per Bloom level. |
-| **Entity Coverage** | KG | Total/unique entities, entity density (per 100 tokens), type diversity |
-| **Relation Metrics** | KG | Relation density (per entity), graph connectivity, degree distribution |
-| **Semantic Quality** | KG | Coherence of entity neighborhoods, information density |
+| **Schema Profile** | KG | Richness of the induced schema: entity type diversity and relation type diversity |
+| **Graph Structure** | KG | Structural properties: relation density, connectivity, clustering coefficient, degree distribution |
 
-Knowledge Coverage is the key extrinsic metric that bridges the QA and KG pipelines: it answers *"can the knowledge that the QA pairs confirmed exists in the interviews be recovered from the graph?"* The Bloom-stratified scores further answer *"at what cognitive depth does the graph support knowledge retrieval?"*
+Knowledge Coverage is the key **extrinsic** metric that bridges the QA and KG pipelines: it answers *"can the knowledge that the QA pairs confirmed exists in the interviews be recovered from the graph?"* The Bloom-stratified scores further answer *"at what cognitive depth does the graph support knowledge retrieval?"*
+
+The two **intrinsic** dimensions assess structural quality directly from the GraphML output -- all metrics are computed on the NetworkX graph without reference to source text or external resources.
+
+```mermaid
+flowchart TD
+    classDef source fill:#4a6fa5,stroke:#2d4a7a,color:#fff,rx:8,ry:8
+    classDef score fill:#c44569,stroke:#943349,color:#fff,rx:8,ry:8
+    classDef diag fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
+    classDef formula fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:10,ry:10
+
+    KG["Knowledge Graph<br/><i>GraphML</i>"]:::source
+
+    KG --> SP
+    KG --> GS
+
+    subgraph SP["Schema Profile"]
+        De["D_e — Entity type diversity"]:::score
+        Dr["D_r — Relation type diversity"]:::diag
+    end
+
+    subgraph GS["Graph Structure"]
+        RD["Relation density"]:::score
+        CR["Connectivity ratio"]:::score
+        GD["Graph density"]:::diag
+        CD["C_dir — Clustering (directed)"]:::diag
+        CU["C_undir — Clustering (undirected)"]:::diag
+        CA["C_undir / C_dir — Asymmetry ratio"]:::diag
+        DD["Degree distribution"]:::diag
+    end
+
+    De -->|"w = 0.20"| OV
+    RD -->|"w = 0.20"| OV
+    CR -->|"w = 0.20"| OV
+
+    Dr -.->|diagnostic| RP
+    GD -.->|diagnostic| RP
+    CD -.->|diagnostic| RP
+    CU -.->|diagnostic| RP
+    CA -.->|diagnostic| RP
+    DD -.->|diagnostic| RP
+
+    OV(["Overall Score<br/><i>0.4·KC + 0.2·D_e + 0.2·RD' + 0.2·CR</i>"]):::formula
+    RP(["Diagnostic Profile<br/><i>topology characterization</i>"]):::diag
+```
+
+> Solid arrows (→) indicate metrics that feed the Overall Score formula. Dashed arrows (⇢) indicate diagnostic metrics included in the Evaluation Report for topology characterization but not scored.
+
+#### Schema Profile
+
+AutoSchemaKG's conceptualization stage (Section 5.3) induces entity types and relation types from the data. The Schema Profile measures how rich and diverse the induced schema is:
+
+- **Entity type diversity** ($D_e$): Normalized Shannon entropy of the entity type distribution.
+- **Relation type diversity** ($D_r$): Normalized Shannon entropy of the relation type distribution, computed analogously over edge types $T_E$.
+
+$$D_e = \frac{-\sum_{t \in T_V} p_t \ln p_t}{\ln |T_V|} \qquad D_r = \frac{-\sum_{r \in T_E} p_r \ln p_r}{\ln |T_E|}$$
+
+where $T_V$ is the set of entity types, $p_t$ the proportion of nodes with type $t$, $T_E$ the set of relation types, and $p_r$ the proportion of edges with type $r$. Both metrics are bounded in $[0, 1]$ and directly computable from the `type` attribute on nodes and the `relation` attribute on edges.
+
+| $D_e$ / $D_r$ range | Interpretation |
+|----------------------|----------------|
+| $\approx 0.0$ | Trivial schema — nearly all nodes/edges share a single type |
+| $0.3 - 0.6$ | Moderate diversity — a few dominant types with some variation |
+| $0.7 - 0.9$ | Rich schema — well-distributed types reflecting varied concepts |
+| $\approx 1.0$ | Maximally diverse — uniform distribution across all types |
+
+#### Graph Structure
+
+Standard graph-theoretic metrics computed on the directed graph $G = (V, E)$:
+
+| Metric | Formula | Role |
+|--------|---------|------|
+| **Relation density** | $|E| \,/\, |V|$ | **Scored** — average edges per node; measures relational richness |
+| **Connectivity ratio** | $|V_{\text{LCC}}| \,/\, |V|$ | **Scored** — fraction of nodes in the largest weakly connected component |
+| **Graph density** | $|E| \,/\, (|V| \cdot (|V| - 1))$ | Diagnostic — fraction of possible edges realized |
+| **Clustering (directed)** | $C_{\text{dir}} = \frac{1}{|V|} \sum_{v} \frac{|\text{directed triangles}(v)|}{d_v(d_v - 1)}$ | Diagnostic — local clustering in the directed graph |
+| **Clustering (undirected)** | $C_{\text{undir}}$: same formula on undirected projection | Diagnostic — local clustering ignoring edge direction |
+| **Clustering asymmetry** | $C_{\text{undir}} \,/\, C_{\text{dir}}$ | Diagnostic — hierarchy indicator (see below) |
+| **Degree distribution** | In-degree and out-degree statistics | Diagnostic — identifies hubs and structural imbalances |
+
+The **connectivity ratio** diagnoses fragmentation: many small components suggest the KG failed to link knowledge across interviews, while a single dominant component indicates successful corpus-level integration.
+
+The **clustering coefficient** pair ($C_{\text{dir}}$, $C_{\text{undir}}$) diagnoses graph topology:
+
+| Pattern | $C_{\text{dir}}$ | $C_{\text{undir}} / C_{\text{dir}}$ | Topology |
+|---------|-------------------|--------------------------------------|----------|
+| **Hub-and-Spoke** | Low ($< 0.05$) | $\approx 2$ | Hierarchical — hub concepts bridge sparse neighborhoods |
+| **Clustered** | Moderate ($0.1 - 0.3$) | $\approx 1$ | Community structure — dense local groups |
+| **Flat** | Very low ($< 0.01$) | $\approx 1$ | Tree-like or chain-like — minimal local structure |
+
+For ethnographic knowledge graphs, the Hub-and-Spoke pattern is expected: key concepts (e.g., flood events, fishing techniques) act as hubs connecting diverse interview-specific details. The asymmetry ratio serves as a structural fingerprint indicating whether the KG organizes knowledge hierarchically rather than as a flat network of loosely connected facts.
 
 ### 6.4 Knowledge Coverage
 
@@ -581,15 +667,15 @@ where $w_{\text{Understand}} = 0.35$, $w_{\text{Analyze}} = 0.35$, $w_{\text{Eva
 
 ### 6.5 Overall Score Computation
 
-The composite evaluation score is computed as a weighted average:
+The composite evaluation score is computed as a weighted average of the extrinsic and intrinsic metrics:
 
-$$\text{Overall} = 0.3 \cdot \text{KnowledgeCoverage} + 0.2 \cdot \text{EntityDiversity} + 0.2 \cdot \min\!\left(\frac{\text{RelationDensity}}{3.0},\ 1.0\right) + 0.3 \cdot \text{Coherence}$$
+$$\text{Overall} = 0.4 \cdot \text{KC} + 0.2 \cdot D_e + 0.2 \cdot \min\!\left(\frac{\text{RelationDensity}}{3.0},\ 1.0\right) + 0.2 \cdot \text{ConnectivityRatio}$$
 
-This weighting prioritizes **knowledge coverage** (how well the graph captures QA-validated knowledge) and **semantic coherence**, while incorporating structural graph metrics to ensure the representation is rich and interconnected.
+All components are bounded in $[0, 1]$: KC is already normalized, $D_e$ (entity type diversity) uses normalized Shannon entropy, relation density is capped at 3.0 edges/node, and connectivity ratio is a proportion. Knowledge Coverage receives the highest weight (0.40) as the primary functional metric; the intrinsic metrics (schema diversity, relational richness, connectivity) contribute equally (0.20 each) as structural quality indicators.
 
 ### 6.6 Output
 
-An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), per-question correctness and faithfulness scores, mean faithfulness across the dataset (as a validity indicator), intrinsic graph metrics (entity coverage, relation metrics, semantic quality), the composite overall score, and the Bloom-stratified diagnostic profile.
+An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), per-question correctness and faithfulness scores, mean faithfulness across the dataset (as a validity indicator), schema profile ($D_e$, $D_r$, entity and relation type distributions), graph structure metrics (relation density, connectivity ratio, graph density, clustering coefficients with asymmetry ratio, degree distribution), the composite overall score, and the Bloom-stratified diagnostic profile.
 
 ---
 
