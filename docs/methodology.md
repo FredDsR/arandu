@@ -350,11 +350,17 @@ AutoSchemaKG dynamically induces types from the data, though common types in thi
 
 ### 6.1 Objective
 
-Assess how well the constructed knowledge graph captures the tacit knowledge present in the ethnographic interviews. The **QA dataset from Phase 2 serves as ground truth**: it represents validated, cognitively-scaffolded knowledge that was successfully elicited from the transcriptions. The evaluation measures whether the knowledge graph preserves this knowledge in its entity-relation structure.
+Assess how well the constructed knowledge graph captures the tacit knowledge present in the ethnographic interviews. The **QA dataset from Phase 2 serves as ground truth**: it represents validated, cognitively-scaffolded knowledge that was successfully elicited from the transcriptions. The evaluation combines **intrinsic graph quality metrics** (entity diversity, relation density, semantic coherence) with a **functional assessment** -- Knowledge Coverage -- that measures whether the knowledge graph can support answering the cognitively-scaffolded questions from Phase 2.
 
 ### 6.2 Evaluation Strategy
 
-The QA pairs -- already validated for faithfulness, Bloom calibration, informativeness, and self-containedness -- provide a reference benchmark. The evaluation quantifies how much of the knowledge expressed in the QA dataset is structurally represented in the graph, alongside intrinsic graph quality metrics.
+The QA pairs -- already validated for faithfulness, Bloom calibration, informativeness, and self-containedness -- provide a reference benchmark. The evaluation operates on two complementary axes: **intrinsic** metrics assess the graph's structural properties independently (entity diversity, relation density, semantic coherence), while the **extrinsic** Knowledge Coverage metric tests whether the graph functionally supports answering the validated QA pairs.
+
+#### Why Functional Evaluation
+
+No gold-standard knowledge graph exists for ethnographic tacit knowledge -- the domain is too heterogeneous and the knowledge too situated for any reference ontology. Purely structural approaches (counting entity or triple overlaps between QA text and the graph) would require an unvalidated intermediate extraction step whose errors would be conflated with KG quality: measuring entity recall from QA pairs presupposes an entity extraction method that itself lacks a gold standard. Instead, Knowledge Coverage poses the QA pairs as questions, uses the knowledge graph as the sole knowledge source, and measures answer quality directly. This functional paradigm evaluates the KG by its intended purpose -- supporting question answering -- rather than by proxy structural properties.
+
+The Bloom scaffolding of the QA pairs enables **depth profiling**: a graph that answers Remember-level questions but fails Evaluate-level questions has captured explicit facts but not the tacit expert judgment -- precisely the distinction this evaluation aims to quantify. The CEP's multi-pipeline design mitigates circularity concerns: QA generation (Bloom scaffolding + LLM-as-a-Judge) and KG construction (triple extraction + schema induction) employ fundamentally different techniques on the same source text, ensuring that the evaluation is not tautological.
 
 ```mermaid
 flowchart TD
@@ -372,7 +378,7 @@ flowchart TD
     GR --> RM
     GR --> SQ
 
-    KC["Knowledge Coverage<br/>entities and relations<br/>present in QA pairs"]:::metric
+    KC["Knowledge Coverage<br/><i>Functional: can the KG<br/>answer the QA pairs?</i>"]:::metric
     EC["Entity Coverage<br/>total, unique, density,<br/>diversity"]:::metric
     RM["Relation Metrics<br/>density, connectivity,<br/>degree distribution"]:::metric
     SQ["Semantic Quality<br/>coherence, information<br/>density"]:::metric
@@ -389,14 +395,133 @@ flowchart TD
 
 | Dimension | Inputs | What It Measures |
 |-----------|--------|-----------------|
-| **Knowledge Coverage** | QA dataset + KG | Proportion of entities and relations from QA pairs that appear in the graph |
+| **Knowledge Coverage** | QA dataset + KG | Functional answer quality: can the KG support answering the cognitively-scaffolded QA pairs? Measured per Bloom level. |
 | **Entity Coverage** | KG | Total/unique entities, entity density (per 100 tokens), type diversity |
 | **Relation Metrics** | KG | Relation density (per entity), graph connectivity, degree distribution |
 | **Semantic Quality** | KG | Coherence of entity neighborhoods, information density |
 
-Knowledge Coverage is the key metric that bridges the QA and KG pipelines: it answers *"does the graph contain the knowledge that the QA pairs confirmed exists in the interviews?"*
+Knowledge Coverage is the key extrinsic metric that bridges the QA and KG pipelines: it answers *"can the knowledge that the QA pairs confirmed exists in the interviews be recovered from the graph?"* The Bloom-stratified scores further answer *"at what cognitive depth does the graph support knowledge retrieval?"*
 
-### 6.4 Overall Score Computation
+### 6.4 Knowledge Coverage
+
+Knowledge Coverage is the central extrinsic metric of Phase 4. It measures whether the knowledge graph can functionally support answering the cognitively-scaffolded questions from Phase 2 -- the most direct test of whether tacit knowledge has been successfully elicited, structured, and preserved in the graph.
+
+#### Algorithm
+
+The Knowledge Coverage algorithm proceeds in four stages: anchor identification, subgraph retrieval, answer generation, and answer scoring.
+
+```mermaid
+flowchart LR
+    classDef stage fill:#c44569,stroke:#943349,color:#fff,rx:10,ry:10
+    classDef detail fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
+    classDef io fill:#4a6fa5,stroke:#2d4a7a,color:#fff,rx:8,ry:8
+
+    Q["QA Pair<br/><i>question + ground truth</i>"]:::io
+    KG["Knowledge Graph"]:::io
+
+    subgraph S1["Stage 1 — Anchor Identification"]
+        direction TB
+        A1["Match question terms<br/>to KG nodes via<br/>embedding similarity"]:::stage
+        A1D["cosine sim ≥ τ<sub>e</sub><br/>→ anchor nodes A<sub>i</sub>"]:::detail
+        A1 --- A1D
+    end
+
+    subgraph S2["Stage 2 — Subgraph Retrieval"]
+        direction TB
+        A2["Extract k-hop<br/>neighborhood around<br/>anchor nodes"]:::stage
+        A2D["G<sub>i</sub> = ∪ N<sub>k</sub>(a, G)<br/>linearize as triples"]:::detail
+        A2 --- A2D
+    end
+
+    subgraph S3["Stage 3 — Answer Generation"]
+        direction TB
+        A3["LLM generates answer<br/>from subgraph context<br/>only"]:::stage
+        A3D["Constrained prompt<br/>T = 0.3"]:::detail
+        A3 --- A3D
+    end
+
+    subgraph S4["Stage 4 — Answer Scoring"]
+        direction TB
+        A4["Compare generated<br/>answer vs ground truth"]:::stage
+        A4D["Token F1 + BERTScore<br/>per Bloom level"]:::detail
+        A4 --- A4D
+    end
+
+    Q --> S1
+    KG --> S1
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+```
+
+**Stage 1 -- Anchor Identification.** For each question $q_i$ in the QA dataset, identify **anchor entities** -- knowledge graph nodes that correspond to entities mentioned in the question text. All KG node labels are pre-embedded using a multilingual sentence-transformer model, producing an entity index $\mathcal{I}_{KG}$. Key terms are extracted from $q_i$ via lightweight tokenization (split on punctuation, filter stopwords, retain sequences of 1--4 content words). For each key term $t$, the best-matching KG node is identified by cosine similarity:
+
+$$\text{anchor}(t) = \arg\max_{v \in V} \cos\!\bigl(\text{emb}(t),\, \text{emb}(v.\text{label})\bigr)$$
+
+A match is accepted if the similarity exceeds a threshold $\tau_e$ (default: 0.75). The resulting set of anchor nodes is $A_i \subseteq V$. Entity matching operates on the question text only (not the answer), preventing information leakage from the ground truth into the retrieval step.
+
+**Stage 2 -- Subgraph Retrieval.** For each set of anchor nodes, extract the $k$-hop neighborhood to form a question-specific subgraph:
+
+$$G_i = \bigcup_{a \in A_i} \mathcal{N}_k(a,\, G)$$
+
+where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$). For questions flagged as multi-hop ($\text{is\_multi\_hop} = \text{true}$), the retrieval radius is extended to $k = \min(\text{hop\_count} + 1,\, 3)$ to accommodate the additional reasoning hops while capping context size. The subgraph is linearized into a textual triple representation with node type annotations (e.g., `[PERSON] Maria da Silva --[VIVE_EM]--> [LOCATION] Barra do Ribeiro`) to provide the LLM with structural context. The retrieval strategy is deliberately minimal -- entity matching plus neighborhood extraction -- to isolate the knowledge graph's content quality from retrieval algorithm sophistication. Full GraphRAG evaluation with advanced retrieval strategies (community detection, hierarchical summarization) constitutes a separate downstream benchmark.
+
+**Stage 3 -- Answer Generation.** The linearized subgraph and the question are provided to an LLM with a constrained prompt:
+
+> *Given ONLY the following knowledge graph triples, answer the question. If the information is insufficient to answer, respond with "INSUFFICIENT".*
+
+The prompt explicitly prevents the LLM from using parametric knowledge, ensuring that answer quality reflects exclusively what the knowledge graph contains. The `INSUFFICIENT` response allows the metric to distinguish between incorrect answers (the KG contains wrong or misleading information) and absent answers (the KG lacks the relevant information entirely). Generation uses low temperature ($T = 0.3$) for reproducibility.
+
+**Stage 4 -- Answer Scoring.** Each generated answer $\hat{a}_i$ is compared against the ground-truth answer $a_i$ using two complementary metrics:
+
+- **Token F1**: Lexical overlap after lowercasing, tokenization, and Portuguese stopword removal. Penalizes hallucinated content (via precision) and missing information (via recall).
+- **BERTScore** ($F_1$ variant): Embedding-based semantic similarity using a multilingual model. Captures paraphrase equivalence that lexical matching misses (e.g., *"enchente"* vs. *"inundação"*, *"guardar o barco"* vs. *"recolher a embarcação"*).
+
+The per-pair answer score combines both:
+
+$$\text{Score}(q_i) = \beta \cdot F_1^{\text{token}}(a_i, \hat{a}_i) + (1 - \beta) \cdot F_1^{\text{BERT}}(a_i, \hat{a}_i) \qquad (\beta = 0.5)$$
+
+If no anchor entities are matched ($A_i = \emptyset$) or the LLM responds `INSUFFICIENT`, the score is $\text{Score}(q_i) = 0$ -- the KG lacks the entities or relational structure needed to address the question.
+
+#### Bloom-Stratified Analysis
+
+Knowledge Coverage is computed **per Bloom level** to produce a tacit knowledge depth profile:
+
+$$\text{KC}_\ell = \frac{1}{|Q_\ell|} \sum_{q_i \in Q_\ell} \text{Score}(q_i) \qquad \ell \in \{\text{Remember},\, \text{Understand},\, \text{Analyze},\, \text{Evaluate}\}$$
+
+Each level probes a distinct layer of the graph's knowledge representation:
+
+- $\text{KC}_{\text{Remember}}$ tests **factual completeness** -- whether explicit facts from the interviews (entities, dates, locations) are recoverable from the graph nodes.
+- $\text{KC}_{\text{Understand}}$ tests **process representation** -- whether explanations of how techniques, practices, and natural phenomena work can be reconstructed from the graph's relational structure.
+- $\text{KC}_{\text{Analyze}}$ tests **causal representation** -- whether multi-hop relational paths in the graph enable identifying cause-effect chains and hidden patterns that the interviewee did not explicitly articulate.
+- $\text{KC}_{\text{Evaluate}}$ tests **judgment representation** -- the most demanding level, requiring the graph to contain sufficient relational depth for synthesizing expert decision-making logic from multiple interconnected triples.
+
+The per-level scores form a diagnostic profile:
+
+| Score Pattern | Diagnosis |
+|---------------|-----------|
+| Gradual decline from Remember to Evaluate | Typical; the **decline rate** measures tacit knowledge depth |
+| High Remember + Understand, low Analyze + Evaluate | KG captures entities and processes but misses causal and relational structure |
+| Uniform across levels | Balanced knowledge representation (ideal) |
+| Low Remember | Critical: entity extraction in Phase 3 failed; all other levels unreliable |
+
+The **aggregate Knowledge Coverage** is the Bloom-weighted average, using the same distribution weights as the CEP generation (Section 4.3):
+
+$$\text{KC} = \sum_{\ell} w_\ell \cdot \text{KC}_\ell$$
+
+where $w_{\text{Remember}} = 0.20$, $w_{\text{Understand}} = 0.30$, $w_{\text{Analyze}} = 0.30$, $w_{\text{Evaluate}} = 0.20$. This weighting ensures that higher-order levels (Analyze + Evaluate) together contribute 50% of the aggregate score, prioritizing tacit knowledge coverage over factual recall.
+
+#### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| $\tau_e$ | 0.75 | Cosine similarity threshold for entity-to-node matching |
+| $k$ | 2 | Hop radius for subgraph retrieval (extended for multi-hop questions) |
+| $\beta$ | 0.5 | Weight of Token F1 vs. BERTScore in answer scoring |
+| $T$ | 0.3 | LLM temperature for answer generation |
+| Embedding model | `paraphrase-multilingual-MiniLM-L12-v2` | Multilingual sentence-transformer for entity matching and BERTScore |
+
+### 6.5 Overall Score Computation
 
 The composite evaluation score is computed as a weighted average:
 
@@ -404,9 +529,9 @@ $$\text{Overall} = 0.3 \cdot \text{KnowledgeCoverage} + 0.2 \cdot \text{EntityDi
 
 This weighting prioritizes **knowledge coverage** (how well the graph captures QA-validated knowledge) and **semantic coherence**, while incorporating structural graph metrics to ensure the representation is rich and interconnected.
 
-### 6.5 Output
+### 6.6 Output
 
-An **EvaluationReport** (JSON) aggregating all metrics, dimensional scores, and the composite overall score.
+An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Remember}}$, $\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), intrinsic graph metrics (entity coverage, relation metrics, semantic quality), the composite overall score, and the Bloom-stratified diagnostic profile.
 
 ---
 
@@ -515,7 +640,7 @@ This methodology implements a **four-phase composable pipeline** for tacit knowl
 1. **Phase 1 (Transcription)** converts raw audio/video into quality-validated text using Whisper ASR with automatic failure detection
 2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, enriched with reasoning traces and validated by an LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, and self-containedness for GraphRAG compatibility)
 3. **Phase 3 (Knowledge Graph)** extracts entity-relation structures using AutoSchemaKG with dynamic schema induction
-4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, measuring knowledge coverage, entity diversity, graph connectivity, and semantic coherence
+4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, combining functional Knowledge Coverage (Bloom-stratified QA answering from the graph) with intrinsic metrics (entity diversity, graph connectivity, and semantic coherence)
 
 Each phase is independently deployable, checkpoint-resumable, and configurable through environment variables. The pipeline is designed for execution on HPC clusters via SLURM, enabling processing of large ethnographic corpora with GPU-accelerated inference. All phases share a consistent batch processing architecture that ensures fault tolerance and reproducibility.
 
