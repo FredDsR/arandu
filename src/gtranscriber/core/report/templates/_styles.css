@@ -515,6 +515,14 @@ footer {
     color: var(--text);
 }
 
+.config-section > summary.config-section-title::-webkit-details-marker {
+    display: none;
+}
+
+.config-section > summary.config-section-title::marker {
+    content: "";
+}
+
 .config-section > summary.config-section-title::before {
     content: "▶";
     font-size: 10px;
