@@ -1,0 +1,25 @@
+flowchart LR
+    classDef input fill:#e0e7ee,stroke:#94a3b8,color:#1e293b,rx:10,ry:10
+    classDef criterion fill:#3b6d8f,stroke:#2c5a7a,color:#f0f4f8,rx:10,ry:10
+    classDef score fill:#f8f6f1,stroke:#c4b99a,color:#3d3929,rx:6,ry:6
+    classDef gate fill:#d97706,stroke:#b45309,color:#fff,rx:4,ry:4
+    classDef pass fill:#16a34a,stroke:#15803d,color:#fff,rx:8,ry:8
+    classDef fail fill:#dc2626,stroke:#b91c1c,color:#fff,rx:8,ry:8
+
+    QA["QA Pair<br/>Under Review"]:::input --> F
+    QA --> B
+    QA --> I
+    QA --> SC
+
+    F["<b>Faithfulness</b><br/><i>Weight: 30%</i><br/>Is the answer grounded<br/>in the source text?"]:::criterion
+    B["<b>Bloom Calibration</b><br/><i>Weight: 25%</i><br/>Does the question match<br/>the declared cognitive level?"]:::criterion
+    I["<b>Informativeness</b><br/><i>Weight: 25%</i><br/>Does the answer reveal<br/>non-obvious knowledge?"]:::criterion
+    SC["<b>Self-Containedness</b><br/><i>Weight: 20%</i><br/>Is the question understandable<br/>without the original context?"]:::criterion
+
+    F --> WS["Weighted Score<br/><i>0.3F + 0.25B + 0.25I + 0.2SC</i>"]:::score
+    B --> WS
+    I --> WS
+    SC --> WS
+    WS --> G{"score ≥ 0.6"}:::gate
+    G -- "Pass" --> V["Valid QA Pair"]:::pass
+    G -- "Fail" --> R["Rejected"]:::fail

@@ -1,0 +1,48 @@
+flowchart LR                                                                          
+      classDef input fill:#4a6fa5,stroke:#2d4a7a,color:#fff,rx:12,ry:12                 
+      classDef low fill:#a8dadc,stroke:#457b9d,color:#1d3557,rx:8,ry:8                  
+      classDef mid fill:#e9c46a,stroke:#c9a227,color:#264653,rx:8,ry:8                  
+      classDef high fill:#e76f51,stroke:#c1121f,color:#fff,rx:8,ry:8                    
+      classDef out fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:10,ry:10                   
+                           
+      T(["Text Instance<br/><i>transcription</i>"]):::input
+      R["<b>Remember</b><br/>Recall facts"]:::low
+      U["<b>Understand</b><br/>Explain ideas"]:::low
+      OUT(["Cognitive QA Dataset<br/><i>all levels merged</i>"]):::out
+
+      subgraph HL[" "]
+          direction TB
+          AN["<b>Analyze</b><br/>Causal relations,<br/>multi-hop reasoning"]:::mid
+          EV["<b>Evaluate</b><br/>Expert judgment,<br/>tacit inference"]:::high
+      end
+
+      T --> R
+      R --> U
+      AN --> EV
+
+      T --> U
+      T --> AN
+      T --> EV
+
+      U --> AN
+      R --> AN
+      R --> EV
+      U --> EV
+
+      R --> OUT
+      U --> OUT
+      AN --> OUT
+      EV --> OUT
+
+      style HL fill:none,stroke:none
+
+      %% Input: gray
+      linkStyle 0,3,4,5 stroke:#999,stroke-width:1px
+      %% Remember context: teal
+      linkStyle 1,7,8 stroke:#3d9ea3,stroke-width:3px
+      %% Analyze context: gold
+      linkStyle 2 stroke:#c9a227,stroke-width:3px
+      %% Understand context: steel blue
+      linkStyle 6,9 stroke:#2a6f97,stroke-width:3px
+      %% Output merge: green
+      linkStyle 10,11,12,13 stroke:#2d6a4f,stroke-width:1.5px
