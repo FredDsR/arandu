@@ -406,6 +406,16 @@ Knowledge Coverage is the key extrinsic metric that bridges the QA and KG pipeli
 
 Knowledge Coverage is the central extrinsic metric of Phase 4. It measures whether the knowledge graph can functionally support answering the cognitively-scaffolded questions from Phase 2 -- the most direct test of whether tacit knowledge has been successfully elicited, structured, and preserved in the graph.
 
+#### Why Remember Is Excluded
+
+Remember-level QA pairs are excluded from Knowledge Coverage computation. Two reasons motivate this:
+
+1. **Self-containedness gap.** In Phase 2, Remember questions receive an automatic self-containedness score of 1.0 (Section 4.5), meaning they were never evaluated for standalone comprehensibility. Knowledge Coverage requires questions to function as independent queries against the KG -- a question like *"When did the mentioned event happen?"* cannot anchor to any KG node because it lacks explicit entity references. Without validated self-containedness, low KC scores for Remember would conflate KG quality with question quality.
+
+2. **Misalignment with the evaluation objective.** Knowledge Coverage measures whether the KG captures **tacit knowledge** -- the implicit expertise that interviewees hold but do not articulate as explicit facts. Remember questions test factual recall (entities, dates, locations), which corresponds to **explicit knowledge** already surface-level in the transcriptions. The Bloom levels that probe tacit knowledge are Understand (processes), Analyze (causal chains), and Evaluate (expert judgment). Including Remember would dilute the metric with a dimension orthogonal to its purpose.
+
+Entity and relation coverage metrics (Section 6.3) already assess whether the graph contains the factual elements that Remember questions would test, making $\text{KC}_{\text{Remember}}$ redundant with the intrinsic evaluation axis.
+
 #### Algorithm
 
 The Knowledge Coverage algorithm proceeds in four stages: anchor identification, subgraph retrieval, answer generation, and answer scoring.
@@ -416,7 +426,7 @@ flowchart LR
     classDef detail fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
     classDef io fill:#4a6fa5,stroke:#2d4a7a,color:#fff,rx:8,ry:8
 
-    Q["QA Pair<br/><i>question + ground truth</i>"]:::io
+    Q["QA Pair<br/><i>Understand + Analyze<br/>+ Evaluate only</i>"]:::io
     KG["Knowledge Graph"]:::io
 
     subgraph S1["Stage 1 — Anchor Identification"]
@@ -425,6 +435,8 @@ flowchart LR
         A1D["cosine sim ≥ τ<sub>e</sub><br/>→ anchor nodes A<sub>i</sub>"]:::detail
         A1 --- A1D
     end
+
+    Q --> S1
 
     subgraph S2["Stage 2 — Subgraph Retrieval"]
         direction TB
@@ -447,7 +459,6 @@ flowchart LR
         A4 --- A4D
     end
 
-    Q --> S1
     KG --> S1
     S1 --> S2
     S2 --> S3
@@ -534,11 +545,10 @@ The LLM-as-a-Judge approach addresses these limitations by delegating answer eva
 
 Knowledge Coverage is computed **per Bloom level** to produce a tacit knowledge depth profile:
 
-$$\text{KC}_\ell = \frac{1}{|Q_\ell|} \sum_{q_i \in Q_\ell} \text{Score}(q_i) \qquad \ell \in \{\text{Remember},\, \text{Understand},\, \text{Analyze},\, \text{Evaluate}\}$$
+$$\text{KC}_\ell = \frac{1}{|Q_\ell|} \sum_{q_i \in Q_\ell} \text{Score}(q_i) \qquad \ell \in \{\text{Understand},\, \text{Analyze},\, \text{Evaluate}\}$$
 
-Each level probes a distinct layer of the graph's knowledge representation:
+Each level probes a distinct layer of the graph's tacit knowledge representation:
 
-- $\text{KC}_{\text{Remember}}$ tests **factual completeness** -- whether explicit facts from the interviews (entities, dates, locations) are recoverable from the graph nodes.
 - $\text{KC}_{\text{Understand}}$ tests **process representation** -- whether explanations of how techniques, practices, and natural phenomena work can be reconstructed from the graph's relational structure.
 - $\text{KC}_{\text{Analyze}}$ tests **causal representation** -- whether multi-hop relational paths in the graph enable identifying cause-effect chains and hidden patterns that the interviewee did not explicitly articulate.
 - $\text{KC}_{\text{Evaluate}}$ tests **judgment representation** -- the most demanding level, requiring the graph to contain sufficient relational depth for synthesizing expert decision-making logic from multiple interconnected triples.
@@ -547,16 +557,16 @@ The per-level scores form a diagnostic profile:
 
 | Score Pattern | Diagnosis |
 |---------------|-----------|
-| Gradual decline from Remember to Evaluate | Typical; the **decline rate** measures tacit knowledge depth |
-| High Remember + Understand, low Analyze + Evaluate | KG captures entities and processes but misses causal and relational structure |
-| Uniform across levels | Balanced knowledge representation (ideal) |
-| Low Remember | Critical: entity extraction in Phase 3 failed; all other levels unreliable |
+| Gradual decline from Understand to Evaluate | Typical; the **decline rate** measures tacit knowledge depth |
+| High Understand, low Analyze + Evaluate | KG captures processes but misses causal and relational structure |
+| Uniform across levels | Balanced tacit knowledge representation (ideal) |
+| Low Understand | Critical: the graph lacks even process-level knowledge; Analyze and Evaluate scores unreliable |
 
-The **aggregate Knowledge Coverage** is the Bloom-weighted average, using the same distribution weights as the CEP generation (Section 4.3):
+The **aggregate Knowledge Coverage** is the weighted average across the three tacit knowledge levels:
 
 $$\text{KC} = \sum_{\ell} w_\ell \cdot \text{KC}_\ell$$
 
-where $w_{\text{Remember}} = 0.20$, $w_{\text{Understand}} = 0.30$, $w_{\text{Analyze}} = 0.30$, $w_{\text{Evaluate}} = 0.20$. This weighting ensures that higher-order levels (Analyze + Evaluate) together contribute 50% of the aggregate score, prioritizing tacit knowledge coverage over factual recall.
+where $w_{\text{Understand}} = 0.35$, $w_{\text{Analyze}} = 0.35$, $w_{\text{Evaluate}} = 0.30$. Understand and Analyze receive equal weight as the core tacit knowledge dimensions (processes and causal chains), while Evaluate -- the most demanding level -- receives slightly lower weight to avoid penalizing graphs that capture the bulk of tacit knowledge but lack the deepest relational structure for expert judgment synthesis.
 
 #### Parameters
 
@@ -579,7 +589,7 @@ This weighting prioritizes **knowledge coverage** (how well the graph captures Q
 
 ### 6.6 Output
 
-An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Remember}}$, $\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), per-question correctness and faithfulness scores, mean faithfulness across the dataset (as a validity indicator), intrinsic graph metrics (entity coverage, relation metrics, semantic quality), the composite overall score, and the Bloom-stratified diagnostic profile.
+An **EvaluationReport** (JSON) containing: the aggregate Knowledge Coverage score, per-Bloom-level KC scores ($\text{KC}_{\text{Understand}}$, $\text{KC}_{\text{Analyze}}$, $\text{KC}_{\text{Evaluate}}$), per-question correctness and faithfulness scores, mean faithfulness across the dataset (as a validity indicator), intrinsic graph metrics (entity coverage, relation metrics, semantic quality), the composite overall score, and the Bloom-stratified diagnostic profile.
 
 ---
 
