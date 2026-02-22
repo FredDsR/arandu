@@ -34,14 +34,15 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: list[Path] = []
 
-    # Extract threshold values from the first run that has them
-    validation_threshold: float | None = None
-    quality_threshold: float | None = None
-    for run in dataset.runs:
-        if validation_threshold is None and run.validation_threshold is not None:
-            validation_threshold = run.validation_threshold
-        if quality_threshold is None and run.quality_threshold is not None:
-            quality_threshold = run.quality_threshold
+    # Extract threshold values only when all runs agree (or there is a single run).
+    # If runs disagree, the overlay would silently misrepresent some runs' data, so
+    # we omit the threshold line rather than pick an arbitrary value.
+    validation_threshold: float | None = _consensus_threshold(
+        [r.validation_threshold for r in dataset.runs]
+    )
+    quality_threshold: float | None = _consensus_threshold(
+        [r.quality_threshold for r in dataset.runs]
+    )
 
     chart_specs: list[tuple[str, object]] = [
         ("pipeline_overview", lambda: charts.create_pipeline_overview_chart(dataset.runs)),
@@ -114,3 +115,22 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         logger.info("Chart export: %d succeeded, %d failed", len(generated), failed_count)
 
     return generated
+
+
+def _consensus_threshold(values: list[float | None]) -> float | None:
+    """Return the threshold only when all runs agree on the same value.
+
+    Filters out ``None`` entries then checks whether the remaining values are
+    all equal.  Returns ``None`` if the values are absent or inconsistent so
+    that threshold overlays are never silently applied to the wrong data.
+
+    Args:
+        values: Per-run threshold values (``None`` when not configured).
+
+    Returns:
+        The shared threshold, or ``None`` if values are missing or inconsistent.
+    """
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+    return present[0] if len(set(present)) == 1 else None

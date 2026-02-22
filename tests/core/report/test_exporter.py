@@ -14,7 +14,7 @@ from gtranscriber.core.report.dataset import (
     RunSummaryRow,
     TranscriptionRow,
 )
-from gtranscriber.core.report.exporter import export_charts_as_png
+from gtranscriber.core.report.exporter import _consensus_threshold, export_charts_as_png
 
 # All chart function names referenced by exporter.py
 _CHART_FUNCTIONS = [
@@ -122,3 +122,35 @@ class TestExportChartsAsPng:
         result = export_charts_as_png(dataset, output_dir)
 
         assert result == []
+
+
+class TestConsensusThreshold:
+    """Tests for _consensus_threshold helper."""
+
+    def test_single_value(self) -> None:
+        """Single non-None value is returned as-is."""
+        assert _consensus_threshold([0.7]) == 0.7
+
+    def test_all_agree(self) -> None:
+        """All runs share the same threshold — it is returned."""
+        assert _consensus_threshold([0.7, 0.7, 0.7]) == 0.7
+
+    def test_disagreement_returns_none(self) -> None:
+        """Runs with different thresholds return None to avoid silent misapplication."""
+        assert _consensus_threshold([0.6, 0.7]) is None
+
+    def test_all_none(self) -> None:
+        """No configured thresholds — returns None."""
+        assert _consensus_threshold([None, None]) is None
+
+    def test_empty_list(self) -> None:
+        """Empty list returns None."""
+        assert _consensus_threshold([]) is None
+
+    def test_partial_none_all_agree(self) -> None:
+        """Runs where some lack config but the rest agree — returns the shared value."""
+        assert _consensus_threshold([None, 0.7, 0.7]) == 0.7
+
+    def test_partial_none_disagree(self) -> None:
+        """Mixed None with differing values — returns None."""
+        assert _consensus_threshold([None, 0.6, 0.7]) is None
