@@ -11,6 +11,7 @@ from gtranscriber.core.report.charts import (
     create_bloom_validation_heatmap,
     create_confidence_distribution_chart,
     create_correlation_heatmap,
+    create_funnel_chart,
     create_location_quality_chart,
     create_location_treemap,
     create_multihop_chart,
@@ -22,6 +23,7 @@ from gtranscriber.core.report.charts import (
     create_transcription_quality_chart,
     create_validation_scores_chart,
 )
+from gtranscriber.core.report.api_schemas import FunnelData, FunnelStage
 from gtranscriber.core.report.dataset import QAPairRow, RunSummaryRow, TranscriptionRow
 
 
@@ -408,3 +410,124 @@ class TestEmptyFigure:
         assert fig.layout.title.text == "Test Title"
         assert len(fig.layout.annotations) == 1
         assert fig.layout.annotations[0].text == "No data available"
+
+
+def _make_funnel_data(
+    pipeline_id: str = "run_001",
+    stages: list[FunnelStage] | None = None,
+) -> FunnelData:
+    """Create sample FunnelData for testing."""
+    if stages is None:
+        stages = [
+            FunnelStage(label="Total Transcriptions", count=10, drop_count=0),
+            FunnelStage(label="Valid Transcriptions", count=8, drop_count=2),
+            FunnelStage(label="Total QA Pairs", count=6, drop_count=2),
+            FunnelStage(label="Valid QA Pairs", count=5, drop_count=1),
+        ]
+    return FunnelData(pipeline_id=pipeline_id, stages=stages)
+
+
+class TestFunnelChart:
+    """Tests for create_funnel_chart."""
+
+    def test_funnel_chart_basic(self) -> None:
+        """Verify Sankey figure is created with correct node/link counts."""
+        funnel = _make_funnel_data()
+        fig = create_funnel_chart(funnel)
+        assert isinstance(fig, go.Figure)
+        assert len(fig.data) == 1
+        sankey = fig.data[0]
+        # 4 stages + 1 drop node = 5 nodes
+        assert len(sankey.node.label) == 5
+        # Last node should be Failed/Invalid
+        assert sankey.node.label[-1] == "Failed/Invalid"
+        # Should have links for forward flows and drops
+        assert len(sankey.link.source) > 0
+
+    def test_funnel_chart_no_drops(self) -> None:
+        """Verify clean funnel (only forward links) when no failures."""
+        stages = [
+            FunnelStage(label="Stage A", count=10, drop_count=0),
+            FunnelStage(label="Stage B", count=10, drop_count=0),
+            FunnelStage(label="Stage C", count=10, drop_count=0),
+        ]
+        funnel = FunnelData(pipeline_id="run_001", stages=stages)
+        fig = create_funnel_chart(funnel)
+        assert isinstance(fig, go.Figure)
+        sankey = fig.data[0]
+        # All links should be forward (no drops), so no red links
+        for color in sankey.link.color:
+            assert "204, 51, 17" not in color  # no red links
+
+    def test_funnel_chart_empty_data(self) -> None:
+        """Verify empty figure returned when no stages."""
+        funnel = FunnelData(pipeline_id="run_001", stages=[])
+        fig = create_funnel_chart(funnel)
+        assert isinstance(fig, go.Figure)
+        # Should fall back to empty figure with annotation
+        assert fig.layout.annotations[0].text == "No data available"
+
+
+class TestValidationScoresThreshold:
+    """Tests for threshold overlay on create_validation_scores_chart."""
+
+    def test_validation_scores_with_threshold(self) -> None:
+        """Verify add_hline shape is present when threshold is provided."""
+        qa_pairs = [_make_qa_pair(), _make_qa_pair(faithfulness=0.6)]
+        fig = create_validation_scores_chart(qa_pairs, threshold=0.7)
+        assert isinstance(fig, go.Figure)
+        # add_hline adds a shape and annotation
+        assert len(fig.layout.shapes) > 0
+        y_vals = [s.y0 for s in fig.layout.shapes]
+        assert 0.7 in y_vals
+
+    def test_validation_scores_without_threshold(self) -> None:
+        """Verify no shape added when threshold is None."""
+        qa_pairs = [_make_qa_pair()]
+        fig = create_validation_scores_chart(qa_pairs, threshold=None)
+        assert isinstance(fig, go.Figure)
+        assert len(fig.layout.shapes) == 0
+
+
+class TestTranscriptionQualityThreshold:
+    """Tests for threshold overlay on create_transcription_quality_chart."""
+
+    def test_transcription_quality_with_threshold(self) -> None:
+        """Verify threshold overlay is added to the overall quality subplot."""
+        transcriptions = [_make_transcription(), _make_transcription(overall_quality=0.6)]
+        fig = create_transcription_quality_chart(transcriptions, threshold=0.75)
+        assert isinstance(fig, go.Figure)
+        assert len(fig.layout.shapes) > 0
+
+    def test_transcription_quality_without_threshold(self) -> None:
+        """Verify no shapes when threshold is None."""
+        transcriptions = [_make_transcription()]
+        fig = create_transcription_quality_chart(transcriptions, threshold=None)
+        assert isinstance(fig, go.Figure)
+        assert len(fig.layout.shapes) == 0
+
+
+class TestBloomHeatmapThreshold:
+    """Tests for threshold annotation styling on create_bloom_validation_heatmap."""
+
+    def test_bloom_heatmap_with_threshold_marks_low_cells(self) -> None:
+        """Verify cells below threshold are annotated with warning marker."""
+        qa_pairs = [
+            _make_qa_pair(bloom_level="remember", faithfulness=0.3),
+            _make_qa_pair(bloom_level="analyze", faithfulness=0.9),
+        ]
+        fig = create_bloom_validation_heatmap(qa_pairs, threshold=0.7)
+        assert isinstance(fig, go.Figure)
+        heatmap = fig.data[0]
+        # Flatten text to find any ⚠ annotation
+        all_texts = [cell for row in heatmap.text for cell in row]
+        assert any("⚠" in t for t in all_texts)
+
+    def test_bloom_heatmap_without_threshold(self) -> None:
+        """Verify no ⚠ annotations when threshold is None."""
+        qa_pairs = [_make_qa_pair(bloom_level="remember")]
+        fig = create_bloom_validation_heatmap(qa_pairs, threshold=None)
+        assert isinstance(fig, go.Figure)
+        heatmap = fig.data[0]
+        all_texts = [cell for row in heatmap.text for cell in row]
+        assert not any("⚠" in t for t in all_texts)

@@ -8,7 +8,7 @@ and client-side JS mirroring.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -16,6 +16,7 @@ from plotly.subplots import make_subplots
 from .style import CATEGORICAL_COLORS, get_bloom_color, get_criterion_color
 
 if TYPE_CHECKING:
+    from .api_schemas import FunnelData
     from .dataset import QAPairRow, RunSummaryRow, TranscriptionRow
 
 
@@ -127,7 +128,10 @@ def create_bloom_distribution_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
     return fig
 
 
-def create_validation_scores_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
+def create_validation_scores_chart(
+    qa_pairs: list[QAPairRow],
+    threshold: float | None = None,
+) -> go.Figure:
     """Create violin plots showing validation score distributions.
 
     Uses violin plots instead of box plots to reveal bimodal distributions
@@ -135,6 +139,7 @@ def create_validation_scores_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
 
     Args:
         qa_pairs: List of QAPairRow objects to visualize.
+        threshold: Optional validation threshold for overlay line.
 
     Returns:
         Plotly Figure object.
@@ -161,6 +166,9 @@ def create_validation_scores_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
         template="plotly_white",
         height=450,
     )
+
+    if threshold is not None:
+        _add_threshold_line(fig, threshold)
 
     return fig
 
@@ -197,11 +205,15 @@ def create_confidence_distribution_chart(qa_pairs: list[QAPairRow]) -> go.Figure
     return fig
 
 
-def create_transcription_quality_chart(transcriptions: list[TranscriptionRow]) -> go.Figure:
+def create_transcription_quality_chart(
+    transcriptions: list[TranscriptionRow],
+    threshold: float | None = None,
+) -> go.Figure:
     """Create histograms showing transcription quality score distributions.
 
     Args:
         transcriptions: List of TranscriptionRow objects to visualize.
+        threshold: Optional quality threshold for overlay line on overall score subplot.
 
     Returns:
         Plotly Figure object.
@@ -257,6 +269,9 @@ def create_transcription_quality_chart(transcriptions: list[TranscriptionRow]) -
         template="plotly_white",
         title_text="ASR Transcription Quality Score Distributions",
     )
+
+    if threshold is not None:
+        _add_threshold_line(fig, threshold, row=1, col=1)
 
     return fig
 
@@ -641,13 +656,18 @@ def create_location_treemap(transcriptions: list[TranscriptionRow]) -> go.Figure
     return fig
 
 
-def create_bloom_validation_heatmap(qa_pairs: list[QAPairRow]) -> go.Figure:
+def create_bloom_validation_heatmap(
+    qa_pairs: list[QAPairRow],
+    threshold: float | None = None,
+) -> go.Figure:
     """Create a heatmap of mean validation scores by Bloom level and criterion.
 
     Rows: Bloom levels, Cols: validation criteria. Cells annotated with mean +/- std.
+    When threshold is provided, cells with mean score below threshold are marked with ⚠.
 
     Args:
         qa_pairs: List of QAPairRow objects to visualize.
+        threshold: Optional threshold; cells with mean below this value are flagged.
 
     Returns:
         Plotly Figure object.
@@ -678,7 +698,10 @@ def create_bloom_validation_heatmap(qa_pairs: list[QAPairRow]) -> go.Figure:
                 mean = sum(scores) / len(scores)
                 std = (sum((s - mean) ** 2 for s in scores) / len(scores)) ** 0.5
                 row_z.append(mean)
-                row_text.append(f"{mean:.2f}\n+/-{std:.2f}")
+                cell_text = f"{mean:.2f}\n+/-{std:.2f}"
+                if threshold is not None and mean < threshold:
+                    cell_text = f"⚠ {cell_text}"
+                row_text.append(cell_text)
             else:
                 row_z.append(0.0)
                 row_text.append("N/A")
@@ -817,6 +840,107 @@ def create_location_quality_chart(qa_pairs: list[QAPairRow]) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _add_threshold_line(
+    fig: go.Figure,
+    threshold: float,
+    row: int | None = None,
+    col: int | None = None,
+) -> None:
+    """Add a dashed red threshold line to a figure.
+
+    Args:
+        fig: Plotly Figure to modify in place.
+        threshold: Threshold value for the overlay line.
+        row: Optional subplot row (1-indexed) for figures with subplots.
+        col: Optional subplot column (1-indexed) for figures with subplots.
+    """
+    kwargs: dict[str, Any] = {
+        "y": threshold,
+        "line_dash": "dash",
+        "line_color": "red",
+        "line_width": 2,
+        "annotation_text": f"Threshold: {threshold}",
+        "annotation_position": "top right",
+        "annotation_font_color": "red",
+        "annotation_font_size": 11,
+    }
+    if row is not None:
+        kwargs["row"] = row
+    if col is not None:
+        kwargs["col"] = col
+    fig.add_hline(**kwargs)
+
+
+def create_funnel_chart(funnel_data: FunnelData) -> go.Figure:
+    """Create a Sankey diagram showing data flow through pipeline stages.
+
+    Visualizes the number of items at each stage and drop-off rates
+    between stages. Helps identify where data is lost in the pipeline.
+
+    Args:
+        funnel_data: FunnelData containing ordered stages with counts.
+
+    Returns:
+        Plotly Figure with Sankey diagram.
+    """
+    stages = funnel_data.stages
+    if not stages:
+        return _empty_figure("Data Processing Funnel")
+
+    n = len(stages)
+    drop_node_idx = n  # single shared sink for all drops
+
+    node_labels = [f"{s.label} ({s.count})" for s in stages] + ["Failed/Invalid"]
+    node_colors = ["#029E73"] * n + ["#CC3311"]
+
+    sources: list[int] = []
+    targets: list[int] = []
+    values: list[int] = []
+    link_colors: list[str] = []
+
+    for i in range(n - 1):
+        next_stage = stages[i + 1]
+        # Forward (success) flow
+        if next_stage.count > 0:
+            sources.append(i)
+            targets.append(i + 1)
+            values.append(next_stage.count)
+            link_colors.append("rgba(2, 158, 115, 0.4)")
+        # Drop flow (items lost between stage i and stage i+1)
+        if next_stage.drop_count > 0:
+            sources.append(i)
+            targets.append(drop_node_idx)
+            values.append(next_stage.drop_count)
+            link_colors.append("rgba(204, 51, 17, 0.4)")
+
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                node={
+                    "label": node_labels,
+                    "color": node_colors,
+                    "pad": 15,
+                    "thickness": 20,
+                },
+                link={
+                    "source": sources,
+                    "target": targets,
+                    "value": values,
+                    "color": link_colors,
+                },
+            )
+        ]
+    )
+
+    fig.update_layout(
+        title="Data Processing Funnel",
+        height=400,
+        template="plotly_white",
+    )
+
+    return fig
 
 
 def _pearson_r(x: tuple[float, ...], y: tuple[float, ...]) -> float:

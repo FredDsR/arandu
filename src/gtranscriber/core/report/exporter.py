@@ -34,12 +34,23 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: list[Path] = []
 
+    # Extract threshold values from the first run that has them
+    validation_threshold: float | None = None
+    quality_threshold: float | None = None
+    for run in dataset.runs:
+        if validation_threshold is None and run.validation_threshold is not None:
+            validation_threshold = run.validation_threshold
+        if quality_threshold is None and run.quality_threshold is not None:
+            quality_threshold = run.quality_threshold
+
     chart_specs: list[tuple[str, object]] = [
         ("pipeline_overview", lambda: charts.create_pipeline_overview_chart(dataset.runs)),
         ("bloom_distribution", lambda: charts.create_bloom_distribution_chart(dataset.qa_pairs)),
         (
             "validation_scores",
-            lambda: charts.create_validation_scores_chart(dataset.qa_pairs),
+            lambda: charts.create_validation_scores_chart(
+                dataset.qa_pairs, threshold=validation_threshold
+            ),
         ),
         (
             "confidence_distribution",
@@ -47,7 +58,9 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         ),
         (
             "transcription_quality",
-            lambda: charts.create_transcription_quality_chart(dataset.transcriptions),
+            lambda: charts.create_transcription_quality_chart(
+                dataset.transcriptions, threshold=quality_threshold
+            ),
         ),
         ("multihop", lambda: charts.create_multihop_chart(dataset.qa_pairs)),
         (
@@ -77,7 +90,9 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         ),
         (
             "bloom_validation_heatmap",
-            lambda: charts.create_bloom_validation_heatmap(dataset.qa_pairs),
+            lambda: charts.create_bloom_validation_heatmap(
+                dataset.qa_pairs, threshold=validation_threshold
+            ),
         ),
         (
             "location_quality",
