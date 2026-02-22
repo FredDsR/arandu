@@ -72,6 +72,28 @@ class RunSummaryRow(BaseModel):
     gpu_name: str | None = None
     is_slurm: bool = False
 
+    # Model identification
+    model_id: str | None = Field(default=None, description="Transcription ASR model")
+    cep_model_id: str | None = Field(default=None, description="CEP generation LLM model")
+    validator_model_id: str | None = Field(
+        default=None, description="LLM-as-a-Judge validator model"
+    )
+    provider: str | None = Field(default=None, description="LLM provider (openai, ollama)")
+
+    # Thresholds (from ConfigSnapshot)
+    validation_threshold: float | None = Field(
+        default=None, description="CEP validation pass/fail threshold"
+    )
+    quality_threshold: float | None = Field(
+        default=None, description="Transcription quality pass/fail threshold"
+    )
+
+    # Validity counts
+    valid_transcriptions: int = Field(default=0, description="Count of valid transcriptions")
+    invalid_transcriptions: int = Field(default=0, description="Count of invalid transcriptions")
+    valid_qa_pairs: int = Field(default=0, description="Count of valid QA pairs")
+    invalid_qa_pairs: int = Field(default=0, description="Count of invalid QA pairs")
+
 
 class ReportDataset(BaseModel):
     """Container for all flattened report data with derived filter lists."""
@@ -157,6 +179,32 @@ def _build_run_summary(report: RunReport, run_rows: list[RunSummaryRow]) -> None
         run_rows: Target list to append the row to.
     """
     metadata = report.cep_metadata or report.transcription_metadata
+    transcription_metadata = report.transcription_metadata
+    cep_metadata = report.cep_metadata
+
+    # Extract config values defensively
+    transcription_config = (
+        transcription_metadata.config.config_values
+        if transcription_metadata and transcription_metadata.config
+        else {}
+    )
+    cep_config = cep_metadata.config.config_values if cep_metadata and cep_metadata.config else {}
+
+    # Compute validity counts
+    valid_transcriptions = sum(1 for r in report.transcription_records if r.is_valid is True)
+    invalid_transcriptions = sum(1 for r in report.transcription_records if r.is_valid is False)
+    valid_qa_pairs = sum(
+        1
+        for cep in report.cep_records
+        for qa in cep.qa_pairs
+        if getattr(qa, "is_valid", None) is True
+    )
+    invalid_qa_pairs = sum(
+        1
+        for cep in report.cep_records
+        for qa in cep.qa_pairs
+        if getattr(qa, "is_valid", None) is False
+    )
 
     row = RunSummaryRow(
         pipeline_id=report.pipeline_id,
@@ -166,6 +214,16 @@ def _build_run_summary(report: RunReport, run_rows: list[RunSummaryRow]) -> None
         success_rate=metadata.success_rate if metadata else None,
         completed_items=metadata.completed_items if metadata else 0,
         total_items=metadata.total_items if metadata else 0,
+        model_id=transcription_config.get("model_id"),
+        cep_model_id=cep_config.get("model_id"),
+        validator_model_id=cep_config.get("validator_model_id"),
+        provider=cep_config.get("provider"),
+        validation_threshold=cep_config.get("validation_threshold"),
+        quality_threshold=transcription_config.get("quality_threshold"),
+        valid_transcriptions=valid_transcriptions,
+        invalid_transcriptions=invalid_transcriptions,
+        valid_qa_pairs=valid_qa_pairs,
+        invalid_qa_pairs=invalid_qa_pairs,
     )
 
     if report.pipeline and hasattr(report.pipeline, "created_at"):

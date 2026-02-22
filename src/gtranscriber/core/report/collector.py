@@ -8,14 +8,20 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-if TYPE_CHECKING:
-    from gtranscriber.schemas import EnrichedRecord, PipelineMetadata, QARecordCEP, RunMetadata
+from gtranscriber.schemas import (
+    ConfigSnapshot,
+    EnrichedRecord,
+    PipelineMetadata,
+    QARecordCEP,
+    RunMetadata,
+)
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_STEPS: frozenset[str] = frozenset({"transcription", "cep"})
 
 
 class RunReport(BaseModel):
@@ -76,8 +82,6 @@ class ResultsCollector:
         Raises:
             FileNotFoundError: If the pipeline directory doesn't exist.
         """
-        from gtranscriber.schemas import EnrichedRecord, PipelineMetadata, QARecordCEP, RunMetadata
-
         pipeline_dir = self.results_dir / pipeline_id
         if not pipeline_dir.exists():
             raise FileNotFoundError(f"Pipeline directory not found: {pipeline_dir}")
@@ -152,3 +156,130 @@ class ResultsCollector:
                 logger.warning("Failed to load run: %s", run_id, exc_info=True)
 
         return reports
+
+    def _validate_pipeline_path(self, pipeline_id: str, step: str) -> Path:
+        """Validate inputs and return the resolved step directory path.
+
+        Prevents path traversal by ensuring pipeline_id is a single directory
+        name, step is an allowed value, and the resolved path stays within
+        results_dir.
+
+        Args:
+            pipeline_id: Pipeline ID. Must not contain path separators or '..'.
+            step: Pipeline step name. Must be one of the allowed steps.
+
+        Returns:
+            Resolved Path to the step directory within results_dir.
+
+        Raises:
+            ValueError: If pipeline_id or step is invalid, or if the resolved
+                path escapes results_dir.
+        """
+        if "/" in pipeline_id or "\\" in pipeline_id or pipeline_id in (".", ".."):
+            raise ValueError(f"Invalid pipeline_id: {pipeline_id!r}")
+        if step not in _ALLOWED_STEPS:
+            raise ValueError(f"Invalid step {step!r}. Allowed: {sorted(_ALLOWED_STEPS)}")
+        step_path = (self.results_dir / pipeline_id / step).resolve()
+        base = self.results_dir.resolve()
+        try:
+            step_path.relative_to(base)
+        except ValueError as err:
+            raise ValueError(f"Path {step_path} escapes results directory {base}") from err
+        return step_path
+
+    def load_run_config(self, pipeline_id: str, step: str) -> ConfigSnapshot | None:
+        """Load configuration snapshot for a specific pipeline step.
+
+        Args:
+            pipeline_id: The pipeline ID to load config for.
+            step: The pipeline step name (e.g. "transcription", "cep").
+
+        Returns:
+            ConfigSnapshot if available, None otherwise.
+
+        Raises:
+            ValueError: If pipeline_id or step is invalid.
+        """
+        step_dir = self._validate_pipeline_path(pipeline_id, step)
+        run_metadata_file = step_dir / "run_metadata.json"
+        if run_metadata_file.exists():
+            try:
+                metadata = RunMetadata.load(run_metadata_file)
+                return metadata.config
+            except Exception:
+                logger.debug(
+                    "Failed to load run_metadata for %s/%s", pipeline_id, step, exc_info=True
+                )
+        return None
+
+    def load_qa_record(self, pipeline_id: str, source_filename: str) -> QARecordCEP | None:
+        """Load a single CEP QA record by source filename.
+
+        Resolves the expected QA file path in the CEP outputs directory using the source
+        filename stem and looks for a file named `{source_filename_stem}_cep_qa.json`.
+
+        Args:
+            pipeline_id: The pipeline ID containing the record.
+            source_filename: Original source filename to match.
+
+        Returns:
+            QARecordCEP if found, None otherwise.
+
+        Raises:
+            ValueError: If pipeline_id is invalid.
+        """
+        step_dir = self._validate_pipeline_path(pipeline_id, "cep")
+        stem = Path(source_filename).stem
+        target = step_dir / "outputs" / f"{stem}_cep_qa.json"
+        if target.exists():
+            try:
+                return QARecordCEP.load(target)
+            except Exception:
+                logger.debug("Failed to load QA record: %s", target, exc_info=True)
+        return None
+
+    def load_transcription_record(
+        self, pipeline_id: str, source_filename: str
+    ) -> EnrichedRecord | None:
+        """Load a single transcription record by source filename.
+
+        Resolves the output file using the source filename pattern:
+        `{source_filename_stem}_transcription.json`.
+
+        Args:
+            pipeline_id: The pipeline ID containing the record.
+            source_filename: Original source filename to match.
+
+        Returns:
+            EnrichedRecord if found, None otherwise.
+
+        Raises:
+            ValueError: If pipeline_id is invalid.
+        """
+        step_dir = self._validate_pipeline_path(pipeline_id, "transcription")
+        stem = Path(source_filename).stem
+        target = step_dir / "outputs" / f"{stem}_transcription.json"
+        if target.exists():
+            try:
+                return EnrichedRecord.model_validate_json(target.read_text())
+            except Exception:
+                logger.debug("Failed to load transcription record: %s", target, exc_info=True)
+        return None
+
+    def load_all_run_configs(self, pipeline_id: str) -> dict[str, ConfigSnapshot]:
+        """Load all configuration snapshots for a pipeline run.
+
+        Returns configs from both transcription and CEP steps.
+
+        Args:
+            pipeline_id: The pipeline ID to load configs for.
+
+        Returns:
+            Dictionary mapping step name to ConfigSnapshot.
+        """
+        configs: dict[str, ConfigSnapshot] = {}
+        for step in ("transcription", "cep"):
+            config = self.load_run_config(pipeline_id=pipeline_id, step=step)
+            if config is not None:
+                configs[step] = config
+        return configs

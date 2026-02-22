@@ -13,12 +13,14 @@ from gtranscriber.core.report.dataset import (
 from gtranscriber.schemas import (
     EnrichedRecord,
     PipelineMetadata,
+    PipelineType,
     QAPairValidated,
     QARecordCEP,
     SourceMetadata,
     TranscriptionQualityScore,
     ValidationScore,
 )
+from tests.core.report.helpers import make_run_metadata
 
 
 def _make_enriched_record(
@@ -327,3 +329,171 @@ class TestReportDataset:
         assert dataset.locations == []
         assert dataset.participants == []
         assert dataset.bloom_levels == []
+
+
+class TestRunSummaryNewFields:
+    """Tests for new RunSummaryRow fields added for dashboard support."""
+
+    def test_run_summary_includes_model_ids(self) -> None:
+        """Verify model IDs are extracted from config."""
+        transcription_meta = make_run_metadata(
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            config_values={"model_id": "openai/whisper-large-v3", "quality_threshold": 0.7},
+        )
+        cep_meta = make_run_metadata(
+            pipeline_type=PipelineType.CEP,
+            config_values={
+                "model_id": "gpt-4o",
+                "validator_model_id": "gpt-4o-mini",
+                "provider": "openai",
+            },
+        )
+        report = RunReport(
+            pipeline_id="run_model_ids",
+            transcription_metadata=transcription_meta,
+            cep_metadata=cep_meta,
+        )
+        dataset = build_dataset([report])
+        run = dataset.runs[0]
+
+        assert run.model_id == "openai/whisper-large-v3"
+        assert run.cep_model_id == "gpt-4o"
+        assert run.validator_model_id == "gpt-4o-mini"
+        assert run.provider == "openai"
+
+    def test_run_summary_includes_thresholds(self) -> None:
+        """Verify threshold values are extracted from config."""
+        transcription_meta = make_run_metadata(
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            config_values={"quality_threshold": 0.65},
+        )
+        cep_meta = make_run_metadata(
+            pipeline_type=PipelineType.CEP,
+            config_values={"validation_threshold": 0.75},
+        )
+        report = RunReport(
+            pipeline_id="run_thresholds",
+            transcription_metadata=transcription_meta,
+            cep_metadata=cep_meta,
+        )
+        dataset = build_dataset([report])
+        run = dataset.runs[0]
+
+        assert run.quality_threshold == 0.65
+        assert run.validation_threshold == 0.75
+
+    def test_run_summary_validity_counts(self) -> None:
+        """Verify valid/invalid counts are computed from records."""
+        valid_record = _make_enriched_record(name="valid.mp3", is_valid=True)
+        invalid_record = _make_enriched_record(name="invalid.mp3", is_valid=False)
+
+        # Build a CEP record with 2 valid + 1 invalid QA pair
+        invalid_qa = QAPairValidated(
+            question="Q?",
+            answer="A.",
+            context="ctx",
+            question_type="factual",
+            confidence=0.5,
+            bloom_level="remember",
+            validation=ValidationScore(
+                faithfulness=0.3,
+                bloom_calibration=0.3,
+                informativeness=0.3,
+                self_containedness=0.3,
+                overall_score=0.3,
+            ),
+            is_valid=False,
+        )
+        # _make_cep_record produces 2 valid pairs; add 1 invalid by building manually
+        cep_record = QARecordCEP(
+            source_gdrive_id="gdrive_123",
+            source_filename="test.mp3",
+            source_metadata=SourceMetadata(
+                participant_name="Maria", location="Pelotas", recording_date="2024-05-15"
+            ),
+            transcription_text="Test.",
+            qa_pairs=[
+                QAPairValidated(
+                    question="Q1?",
+                    answer="A1.",
+                    context="ctx",
+                    question_type="factual",
+                    confidence=0.9,
+                    bloom_level="analyze",
+                    validation=ValidationScore(
+                        faithfulness=0.9,
+                        bloom_calibration=0.85,
+                        informativeness=0.75,
+                        self_containedness=0.95,
+                        overall_score=0.86,
+                    ),
+                    is_valid=True,
+                ),
+                QAPairValidated(
+                    question="Q2?",
+                    answer="A2.",
+                    context="ctx",
+                    question_type="factual",
+                    confidence=0.85,
+                    bloom_level="analyze",
+                    validation=ValidationScore(
+                        faithfulness=0.8,
+                        bloom_calibration=0.85,
+                        informativeness=0.75,
+                        self_containedness=0.95,
+                        overall_score=0.84,
+                    ),
+                    is_valid=True,
+                ),
+                invalid_qa,
+            ],
+            model_id="gpt-4o",
+            provider="openai",
+            total_pairs=3,
+            bloom_distribution={"analyze": 2, "remember": 1},
+        )
+
+        report = RunReport(
+            pipeline_id="run_counts",
+            transcription_records=[valid_record, invalid_record],
+            cep_records=[cep_record],
+        )
+        dataset = build_dataset([report])
+        run = dataset.runs[0]
+
+        assert run.valid_transcriptions == 1
+        assert run.invalid_transcriptions == 1
+        assert run.valid_qa_pairs == 2
+        assert run.invalid_qa_pairs == 1
+
+    def test_run_summary_missing_config(self) -> None:
+        """Verify graceful handling when metadata or config keys are absent."""
+        # No metadata at all
+        report = RunReport(pipeline_id="run_no_meta")
+        dataset = build_dataset([report])
+        run = dataset.runs[0]
+
+        assert run.model_id is None
+        assert run.cep_model_id is None
+        assert run.validator_model_id is None
+        assert run.provider is None
+        assert run.quality_threshold is None
+        assert run.validation_threshold is None
+        assert run.valid_transcriptions == 0
+        assert run.invalid_transcriptions == 0
+
+    def test_run_summary_partial_config_keys(self) -> None:
+        """Verify missing config keys default to None gracefully."""
+        transcription_meta = make_run_metadata(
+            pipeline_type=PipelineType.TRANSCRIPTION,
+            config_values={"model_id": "whisper-small"},  # no quality_threshold key
+        )
+        report = RunReport(
+            pipeline_id="run_partial",
+            transcription_metadata=transcription_meta,
+        )
+        dataset = build_dataset([report])
+        run = dataset.runs[0]
+
+        assert run.model_id == "whisper-small"
+        assert run.quality_threshold is None
