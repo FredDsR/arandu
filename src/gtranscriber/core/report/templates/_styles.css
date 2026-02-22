@@ -609,6 +609,20 @@ footer {
     font-size: 12px;
 }
 
+/* --------------- Score Cell Classes --------------- */
+
+.score-high {
+    background: #d4edda;
+}
+
+.score-medium {
+    background: #fff3cd;
+}
+
+.score-low {
+    background: #f8d7da;
+}
+
 /* --------------- Issues List (expanded transcription row) --------------- */
 
 .issues-list {
@@ -701,12 +715,6 @@ footer {
     border-left: 2px solid var(--border);
     padding-left: 12px;
 }
-
-/* --------------- Score Cell Coloring --------------- */
-
-.score-high { background-color: #d4edda; }
-.score-medium { background-color: #fff3cd; }
-.score-low { background-color: #f8d7da; }
 
 /* --------------- Pagination Controls --------------- */
 

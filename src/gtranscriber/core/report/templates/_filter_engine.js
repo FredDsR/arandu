@@ -381,8 +381,7 @@
         } else if (btn.dataset.subtab === "qa-alerts" && activeRunId) {
           loadQAAlerts(activeRunId, getActiveFilters());
         } else if (btn.dataset.subtab === "trans-detail" && activeRunId) {
-          TRANS_TABLE_STATE.page = 1;
-          loadTranscriptionDetailTable(activeRunId, 1, TRANS_TABLE_STATE.sortBy, TRANS_TABLE_STATE.sortOrder);
+          loadTranscriptionDetailTable(activeRunId, TRANS_TABLE_STATE.page, TRANS_TABLE_STATE.sortBy, TRANS_TABLE_STATE.sortOrder);
         } else if (btn.dataset.subtab === "trans-alerts" && activeRunId) {
           loadTranscriptionAlerts(activeRunId);
         }
@@ -1261,11 +1260,42 @@
 
   function scoreCell(value, threshold) {
     if (value === null || value === undefined) return "<td>N/A</td>";
-    var bg = "";
-    if (value >= 0.8) bg = "background:#d4edda;";
-    else if (value >= threshold) bg = "background:#fff3cd;";
-    else bg = "background:#f8d7da;";
-    return '<td style="' + bg + '">' + value.toFixed(3) + "</td>";
+    var cls = value >= 0.8 ? "score-high" : value >= threshold ? "score-medium" : "score-low";
+    return '<td class="' + cls + '">' + value.toFixed(3) + "</td>";
+  }
+
+  function buildTranscriptionRowHtml(row, idx, threshold, prefix) {
+    var validBadge = row.is_valid === true
+      ? '<span class="status-badge status-completed">Yes</span>'
+      : row.is_valid === false
+      ? '<span class="status-badge status-failed">No</span>'
+      : "N/A";
+    return '<tr class="expandable" data-idx="' + idx + '" data-file="' + esc(row.source_filename) + '">' +
+      "<td><strong>" + esc(row.source_filename) + "</strong></td>" +
+      "<td>" + esc(row.participant_name || "") + "</td>" +
+      "<td>" + esc(row.location || "") + "</td>" +
+      "<td>" + esc(row.model_id || "") + "</td>" +
+      "<td>" + esc(row.detected_language || "") + "</td>" +
+      "<td>" + (row.processing_duration_sec != null ? row.processing_duration_sec.toFixed(1) : "N/A") + "</td>" +
+      scoreCell(row.overall_quality, threshold) +
+      scoreCell(row.script_match, threshold) +
+      scoreCell(row.repetition, threshold) +
+      scoreCell(row.segment_quality, threshold) +
+      scoreCell(row.content_density, threshold) +
+      "<td>" + validBadge + "</td>" +
+      '<td><span class="issues-badge" id="' + prefix + '-issues-' + idx + '">?</span></td>' +
+      "</tr>" +
+      '<tr class="expanded-row" data-parent="' + idx + '" style="display:none">' +
+      '<td colspan="13"><div id="' + prefix + '-detail-' + idx + '"><em>Loading detail…</em></div></td>' +
+      "</tr>";
+  }
+
+  function buildPaginationHtml(currentPage, totalPages) {
+    return '<div style="display:flex;align-items:center;gap:12px;margin:12px 0">' +
+      '<button id="trans-prev-btn" ' + (currentPage <= 1 ? "disabled" : "") + '>« Prev</button>' +
+      '<span>Page ' + currentPage + ' of ' + totalPages + '</span>' +
+      '<button id="trans-next-btn" ' + (currentPage >= totalPages ? "disabled" : "") + '>Next »</button>' +
+      "</div>";
   }
 
   async function loadTranscriptionDetailTable(pipelineId, page, sortBy, sortOrder) {
@@ -1339,40 +1369,13 @@
     html += "</tr></thead><tbody>";
 
     items.forEach(function (row, idx) {
-      var validBadge = row.is_valid === true
-        ? '<span class="status-badge status-completed">Yes</span>'
-        : row.is_valid === false
-        ? '<span class="status-badge status-failed">No</span>'
-        : "N/A";
-
-      html += '<tr class="expandable" data-idx="' + idx + '" data-file="' + esc(row.source_filename) + '">' +
-        "<td><strong>" + esc(row.source_filename) + "</strong></td>" +
-        "<td>" + esc(row.participant_name || "") + "</td>" +
-        "<td>" + esc(row.location || "") + "</td>" +
-        "<td>" + esc(row.model_id || "") + "</td>" +
-        "<td>" + esc(row.detected_language || "") + "</td>" +
-        "<td>" + (row.processing_duration_sec != null ? row.processing_duration_sec.toFixed(1) : "N/A") + "</td>" +
-        scoreCell(row.overall_quality, threshold) +
-        scoreCell(row.script_match, threshold) +
-        scoreCell(row.repetition, threshold) +
-        scoreCell(row.segment_quality, threshold) +
-        scoreCell(row.content_density, threshold) +
-        "<td>" + validBadge + "</td>" +
-        '<td><span class="issues-badge" id="trans-issues-' + idx + '">?</span></td>' +
-        "</tr>" +
-        '<tr class="expanded-row" data-parent="' + idx + '" style="display:none">' +
-        '<td colspan="13"><div id="trans-detail-' + idx + '"><em>Loading detail…</em></div></td>' +
-        "</tr>";
+      html += buildTranscriptionRowHtml(row, idx, threshold, "trans");
     });
 
     html += "</tbody></table>";
 
     // Pagination controls
-    html += '<div style="display:flex;align-items:center;gap:12px;margin:12px 0">' +
-      '<button id="trans-prev-btn" ' + (currentPage <= 1 ? "disabled" : "") + '>« Prev</button>' +
-      '<span>Page ' + currentPage + ' of ' + totalPages + '</span>' +
-      '<button id="trans-next-btn" ' + (currentPage >= totalPages ? "disabled" : "") + '>Next »</button>' +
-      "</div>";
+    html += buildPaginationHtml(currentPage, totalPages);
 
     container.innerHTML = html;
 
@@ -1465,6 +1468,8 @@
 
   /* ===================== Transcription Quality Alerts ===================== */
 
+  var ALERTS_STATE = { allItems: [], shown: 0, threshold: 0.5 };
+
   async function loadTranscriptionAlerts(pipelineId) {
     var container = document.getElementById("trans-alerts-container");
     if (!container) return;
@@ -1474,111 +1479,102 @@
       var config = await fetch(configUrl).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
       var threshold = getQualityThreshold(config);
 
-      var url = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) +
-        "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc&per_page=20";
-      var data = await fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+      // Fetch both: below-threshold items AND explicitly invalid items (OR condition from spec).
+      // per_page=200 covers most practical datasets; very large datasets may exceed this limit.
+      var baseUrl = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=200";
+      var results = await Promise.all([
+        fetch(baseUrl + "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc")
+          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }),
+        fetch(baseUrl + "&is_valid=false")
+          .then(function (r) { return r.ok ? r.json() : { items: [] }; }).catch(function () { return { items: [] }; }),
+      ]);
 
-      buildTranscriptionAlertsTable(data, threshold, container, pipelineId);
+      // Merge and deduplicate by source_filename
+      var seen = {};
+      var merged = [];
+      (results[0].items || []).concat(results[1].items || []).forEach(function (item) {
+        var key = item.pipeline_id + ":" + item.source_filename;
+        if (!seen[key]) { seen[key] = true; merged.push(item); }
+      });
+
+      // Sort by overall_quality ascending (nulls last)
+      merged.sort(function (a, b) {
+        if (a.overall_quality == null) return 1;
+        if (b.overall_quality == null) return -1;
+        return a.overall_quality - b.overall_quality;
+      });
+
+      ALERTS_STATE.allItems = merged;
+      ALERTS_STATE.shown = 0;
+      ALERTS_STATE.threshold = threshold;
+
+      renderTranscriptionAlertsTable(container, pipelineId, false);
     } catch (e) {
       console.error("Failed to load transcription alerts:", e);
       container.innerHTML = '<p class="placeholder-text">Failed to load quality alerts.</p>';
     }
   }
 
-  function buildTranscriptionAlertsTable(data, threshold, container, pipelineId) {
-    var items = data.items || [];
-    var total = data.total || items.length;
-    var totalPages = data.pages || 1;
-    var currentPage = data.page || 1;
+  function renderTranscriptionAlertsTable(container, pipelineId, append) {
+    var allItems = ALERTS_STATE.allItems;
+    var threshold = ALERTS_STATE.threshold;
+    var PAGE_SIZE = 20;
 
-    var header = '<p style="margin-bottom:12px"><strong>' + total +
-      ' transcription' + (total !== 1 ? "s" : "") +
-      '</strong> below quality threshold (<strong>' + threshold.toFixed(2) + "</strong>)</p>";
+    var header = '<p style="margin-bottom:12px"><strong>' + allItems.length +
+      ' transcription' + (allItems.length !== 1 ? "s" : "") +
+      '</strong> below quality threshold or invalid (<strong>' + threshold.toFixed(2) + "</strong>)</p>";
 
-    if (!items.length) {
+    if (!allItems.length) {
       container.innerHTML = header + '<p class="placeholder-text">No transcriptions below quality threshold.</p>';
       return;
     }
 
-    var html = '<table class="data-table"><thead><tr>' +
+    var startIdx = append ? ALERTS_STATE.shown : 0;
+    var newItems = allItems.slice(startIdx, startIdx + PAGE_SIZE);
+    ALERTS_STATE.shown = startIdx + newItems.length;
+
+    var tableHeader = '<table class="data-table"><thead><tr>' +
       "<th>Source File</th><th>Participant</th><th>Location</th><th>Model</th><th>Language</th>" +
       "<th>Duration (s)</th><th>Overall</th><th>Script Match</th><th>Repetition</th>" +
       "<th>Segment Qual.</th><th>Content Dens.</th><th>Valid</th><th>Issues</th>" +
       "</tr></thead><tbody>";
+    var tableFooter = "</tbody></table>";
+    var showMoreHtml = ALERTS_STATE.shown < allItems.length
+      ? '<button id="alerts-show-more-btn" style="margin-top:8px">Show More (' +
+        (allItems.length - ALERTS_STATE.shown) + ' remaining)</button>'
+      : "";
 
-    items.forEach(function (row, idx) {
-      var validBadge = row.is_valid === true
-        ? '<span class="status-badge status-completed">Yes</span>'
-        : row.is_valid === false
-        ? '<span class="status-badge status-failed">No</span>'
-        : "N/A";
-
-      html += '<tr class="expandable" data-idx="' + idx + '" data-file="' + esc(row.source_filename) + '">' +
-        "<td><strong>" + esc(row.source_filename) + "</strong></td>" +
-        "<td>" + esc(row.participant_name || "") + "</td>" +
-        "<td>" + esc(row.location || "") + "</td>" +
-        "<td>" + esc(row.model_id || "") + "</td>" +
-        "<td>" + esc(row.detected_language || "") + "</td>" +
-        "<td>" + (row.processing_duration_sec != null ? row.processing_duration_sec.toFixed(1) : "N/A") + "</td>" +
-        scoreCell(row.overall_quality, threshold) +
-        scoreCell(row.script_match, threshold) +
-        scoreCell(row.repetition, threshold) +
-        scoreCell(row.segment_quality, threshold) +
-        scoreCell(row.content_density, threshold) +
-        "<td>" + validBadge + "</td>" +
-        '<td><span class="issues-badge has-issues" id="alerts-issues-' + idx + '">!</span></td>' +
-        "</tr>" +
-        '<tr class="expanded-row" data-parent="' + idx + '" style="display:none">' +
-        '<td colspan="13"><div id="alerts-detail-' + idx + '"><em>Loading detail…</em></div></td>' +
-        "</tr>";
-    });
-
-    html += "</tbody></table>";
-
-    if (totalPages > 1) {
-      html += '<div style="display:flex;align-items:center;gap:12px;margin:12px 0">' +
-        '<button id="alerts-prev-btn" ' + (currentPage <= 1 ? "disabled" : "") + '>« Prev</button>' +
-        '<span>Page ' + currentPage + ' of ' + totalPages + '</span>' +
-        '<button id="alerts-next-btn" ' + (currentPage >= totalPages ? "disabled" : "") + '>Next »</button>' +
-        "</div>";
+    if (append) {
+      // Append rows to existing tbody and update Show More button
+      var tbody = container.querySelector("table.data-table tbody");
+      if (tbody) {
+        var fragment = document.createElement("tbody");
+        fragment.innerHTML = newItems.map(function (row, i) {
+          return buildTranscriptionRowHtml(row, startIdx + i, threshold, "alerts");
+        }).join("");
+        while (fragment.firstChild) tbody.appendChild(fragment.firstChild);
+      }
+      var oldBtn = document.getElementById("alerts-show-more-btn");
+      if (oldBtn) oldBtn.outerHTML = showMoreHtml;
+    } else {
+      var rowsHtml = newItems.map(function (row, i) {
+        return buildTranscriptionRowHtml(row, startIdx + i, threshold, "alerts");
+      }).join("");
+      container.innerHTML = header + tableHeader + rowsHtml + tableFooter + showMoreHtml;
     }
 
-    container.innerHTML = header + html;
-
-    // Pagination button handlers
-    var prevBtn = document.getElementById("alerts-prev-btn");
-    var nextBtn = document.getElementById("alerts-next-btn");
-    if (prevBtn) {
-      prevBtn.onclick = function () {
-        if (currentPage > 1) {
-          var url = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) +
-            "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc&per_page=20&page=" + (currentPage - 1);
-          fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-            .then(function (d) { buildTranscriptionAlertsTable(d, threshold, container, pipelineId); })
-            .catch(function (e) {
-              console.error("Failed to load alerts page:", e);
-              container.innerHTML = '<p class="placeholder-text">Failed to load quality alerts.</p>';
-            });
-        }
-      };
-    }
-    if (nextBtn) {
-      nextBtn.onclick = function () {
-        if (currentPage < totalPages) {
-          var url = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) +
-            "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc&per_page=20&page=" + (currentPage + 1);
-          fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-            .then(function (d) { buildTranscriptionAlertsTable(d, threshold, container, pipelineId); })
-            .catch(function (e) {
-              console.error("Failed to load alerts page:", e);
-              container.innerHTML = '<p class="placeholder-text">Failed to load quality alerts.</p>';
-            });
-        }
+    // Show More button handler
+    var showMoreBtn = document.getElementById("alerts-show-more-btn");
+    if (showMoreBtn) {
+      showMoreBtn.onclick = function () {
+        renderTranscriptionAlertsTable(container, pipelineId, true);
       };
     }
 
-    // Expandable row handlers
+    // Expandable row handlers (attach to all current expandable rows)
     container.querySelectorAll("tr.expandable").forEach(function (row) {
+      if (row._expandBound) return; // avoid duplicate handlers
+      row._expandBound = true;
       row.onclick = function () {
         var idx = row.dataset.idx;
         var filename = row.dataset.file;
