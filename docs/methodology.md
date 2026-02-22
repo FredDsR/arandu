@@ -237,7 +237,75 @@ Each transcription yields a **QARecordCEP** (JSON) containing: the complete set 
 
 Extract structured entity-relation triples from transcription text and organize them into a corpus-level knowledge graph that represents the semantic structure of the interviewees' knowledge.
 
-### 5.2 Extraction Pipeline
+### 5.2 Framework Selection Rationale
+
+Knowledge graph construction in this pipeline adopts **AutoSchemaKG** (Bai et al., 2025), a framework for autonomous schema induction from unstructured text. This choice is motivated by a fundamental mismatch between traditional KG construction approaches and the nature of ethnographic tacit knowledge.
+
+#### Closed World vs. Open World Assumption
+
+Most conventional KG construction systems operate under the **Closed World Assumption (CWA)**: a fixed ontology defines the permissible set of entity types and relation types *a priori*, and any element not matching the schema is discarded. Under CWA, absence of a statement implies its falsehood -- if a triple is not in the graph, the system treats the corresponding fact as false. This works well for domains with stable, well-defined schemas (e.g., biomedical ontologies, product catalogs), but it is fundamentally incompatible with ethnographic knowledge elicitation for three reasons:
+
+1. **No canonical ontology exists for the domain.** Riverine communities' knowledge encompasses ecological observation, subsistence practices, flood response strategies, kinship networks, and cultural rituals -- a heterogeneous mix that no single established ontology covers. Forcing this knowledge into a predefined schema would either require an ad-hoc ontology (introducing researcher bias) or a general-purpose one (losing domain-specific nuance).
+
+2. **Tacit knowledge is emergent and incomplete.** The knowledge surfaced by the CEP (Phase 2) is inherently partial -- interviewees articulate different aspects of their expertise depending on conversational context, and no single interview captures the full extent of a community's collective knowledge. Under CWA, unmentioned facts would be treated as false rather than unknown, conflating **absence of evidence** with **evidence of absence**. The **Open World Assumption (OWA)** adopted by AutoSchemaKG avoids this: unrepresented knowledge is simply unknown, preserving the integrity of what *is* captured without making false claims about what *is not*.
+
+3. **Events must be first-class citizens.** Traditional entity-centric KGs represent the world as static nodes connected by relations, but ethnographic narratives are fundamentally **event-driven** -- floods, migrations, fishing seasons, community responses. Entity-only knowledge graphs preserve approximately 70% of the informational content of source texts, while event-aware representations retain over 90% (Bai et al., 2025). AutoSchemaKG treats events as extractable elements alongside entities, enabling the graph to capture temporal dynamics, causal chains, and situated actions that are central to the interviewees' lived experience.
+
+AutoSchemaKG addresses these challenges through **dynamic schema induction**: rather than constraining extraction to a fixed type system, it allows the LLM to extract triples freely and then induces the schema *from the data itself*, producing a type system that reflects the actual conceptual structure of the source material.
+
+### 5.3 Conceptualization
+
+The core innovation of AutoSchemaKG is the **conceptualization** process, which transforms raw extracted triples into a canonicalized, typed knowledge graph without requiring a predefined ontology.
+
+#### Formal Definition
+
+A conceptualized knowledge graph is defined as:
+
+$$G = (V, E, C, \varphi, \psi)$$
+
+where $V$ is the set of entity nodes, $E$ is the set of relation edges, $C$ is the **concept set** (the induced schema), $\varphi: V \rightarrow C$ maps each entity node to its concept type, and $\psi: E \rightarrow C$ maps each relation edge to its concept type. The key distinction from fixed-ontology approaches is that $C$ is not specified *a priori* -- it emerges from the extraction and canonicalization process described below.
+
+#### Extract-Define-Canonicalize Pipeline
+
+AutoSchemaKG constructs the conceptualized graph through three sequential stages:
+
+```mermaid
+flowchart LR
+    classDef stage fill:#7b68ae,stroke:#5a4d8a,color:#fff,rx:10,ry:10
+    classDef detail fill:#f4f1de,stroke:#bbb,color:#333,rx:6,ry:6
+    classDef arrow fill:none,stroke:none
+
+    subgraph S1["Stage 1 — Open Extraction"]
+        direction TB
+        E1["LLM extracts triples<br/>without schema constraints"]:::stage
+        E1D["(subject, predicate, object)<br/>free-form text"]:::detail
+        E1 --- E1D
+    end
+
+    subgraph S2["Stage 2 — Schema Definition"]
+        direction TB
+        E2["LLM generates ≥ 3<br/>conceptual phrases per element"]:::stage
+        E2D["Varying abstraction levels<br/>+ graph-neighbor context"]:::detail
+        E2 --- E2D
+    end
+
+    subgraph S3["Stage 3 — Self-Canonicalization"]
+        direction TB
+        E3["Embedding similarity<br/>+ LLM verification"]:::stage
+        E3D["Cosine similarity merges<br/>equivalent concepts"]:::detail
+        E3 --- E3D
+    end
+
+    S1 --> S2 --> S3
+```
+
+**Stage 1 -- Open Extraction.** The LLM receives a passage of transcription text and extracts `(subject, predicate, object)` triples with no schema constraints. This **open extraction** strategy ensures that domain-specific entities (e.g., *"enchente de 2024"*, *"pesca de tarrafa"*) and culturally situated relations (e.g., *"aprendeu com"*, *"se protege usando"*) are captured exactly as the interviewee expressed them, rather than being forced into anglophone or generic categories. The absence of schema constraints is what operationalizes the Open World Assumption at the extraction level.
+
+**Stage 2 -- Schema Definition.** For each extracted entity and relation, the LLM generates a minimum of three **conceptual phrases** at varying levels of abstraction. For example, the entity *"enchente de maio de 2024"* might receive the concepts `["specific flood event", "natural disaster", "climate event"]`. To improve conceptualization quality, AutoSchemaKG employs **context-enhanced entity conceptualization**: when defining concepts for a node, the prompt includes the node's graph neighbors (adjacent entities and their relations), providing structural context that disambiguates polysemous terms and produces more precise type assignments.
+
+**Stage 3 -- Self-Canonicalization.** The conceptual phrases from Stage 2 are embedded into a vector space, and **cosine similarity** is used to identify candidate merges -- concept pairs whose embeddings exceed a similarity threshold. Each candidate merge is then verified by an **LLM judge** that determines whether the two concepts are genuinely synonymous or merely related. This two-step process (embedding retrieval + LLM verification) balances efficiency (embeddings are fast to compute) with precision (the LLM catches false positives that surface-level similarity would miss). The result is a canonicalized concept set $C$ where semantically equivalent types have been unified, producing a coherent schema without manual curation.
+
+### 5.4 Extraction Pipeline
 
 Knowledge graph construction uses **AutoSchemaKG**, which performs:
 
@@ -263,14 +331,14 @@ flowchart LR
     T --> TE --> CSV --> SI --> CC --> GE --> IG --> MG --> CG
 ```
 
-### 5.3 Entity and Relation Types
+### 5.5 Entity and Relation Types
 
 AutoSchemaKG dynamically induces types from the data, though common types in this ethnographic domain include:
 
 - **Entities**: `PERSON`, `LOCATION`, `EVENT`, `DATE`, `CONCEPT`, `OBJECT`, `ORGANIZATION`
 - **Relations**: `LOCATED_IN`, `CAUSED_BY`, `AFFECTED_BY`, `OCCURRED_IN`, `BELONGS_TO`, and dynamically discovered domain-specific relations
 
-### 5.4 Output
+### 5.6 Output
 
 - **Per-document graphs**: Individual `.graphml` files for each transcription
 - **Corpus-level graph**: A merged `corpus_graph.graphml` with entity resolution across all interviews
@@ -464,4 +532,4 @@ Each phase is independently deployable, checkpoint-resumable, and configurable t
 - Wanner, L., et al. (2024). DnDScore: Decontextualization and Decomposition for Factuality Verification. *arXiv preprint*.
 - Zheng, L., Chiang, W.-L., Sheng, Y., et al. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. *Advances in Neural Information Processing Systems*.
 - Zhu, K., et al. (2025). RAGEval: Scenario Specific RAG Evaluation Dataset Generation Framework. *Proceedings of ACL 2025*.
-- AutoSchemaKG: LLM-driven knowledge graph construction with schema induction.
+- Bai, J., Fan, W., Hu, Q., et al. (2025). AutoSchemaKG: Autonomous Knowledge Graph Construction through Dynamic Schema Induction from Web-Scale Corpora. *arXiv preprint arXiv:2505.23628*.
