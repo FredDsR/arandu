@@ -8,7 +8,7 @@ and client-side JS mirroring.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -16,6 +16,8 @@ from plotly.subplots import make_subplots
 from .style import CATEGORICAL_COLORS, get_bloom_color, get_criterion_color
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from .api_schemas import FunnelData
     from .dataset import QAPairRow, RunSummaryRow, TranscriptionRow
 
