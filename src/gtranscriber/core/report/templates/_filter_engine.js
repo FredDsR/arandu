@@ -9,7 +9,8 @@
   var _thresholdCache = {};
   var activeRunId = null;
   var activeRunThreshold = 0.6;
-  var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc" };
+  var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
+  var qaRequestId = 0;
   var DEFAULT_SCORE_THRESHOLD = 0.6;
   var BLOOM_COLORS = {
     remember: "#0173B2",
@@ -1350,6 +1351,7 @@
   async function buildQADetailTable(pipelineId, filters) {
     var container = document.getElementById("subtab-qa-detail");
     if (!container || !pipelineId) return;
+    var currentRequest = ++qaRequestId;
     container.innerHTML = '<p class="placeholder-text">Loading QA pairs\u2026</p>';
     try {
       var params = new URLSearchParams({
@@ -1367,12 +1369,15 @@
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       });
+      if (currentRequest !== qaRequestId) return;
       var items = data.items || [];
       var totalPages = data.total_pages || 1;
       var total = data.total || 0;
+      qaDetailState.totalPages = totalPages;
       container.innerHTML = renderQADetailTableHtml(items, total, totalPages);
       attachQADetailHandlers(container, pipelineId);
     } catch (e) {
+      if (currentRequest !== qaRequestId) return;
       console.error("Failed to load QA detail table:", e);
       container.innerHTML = '<p class="placeholder-text">Failed to load QA data. Please try again.</p>';
     }
@@ -1466,8 +1471,10 @@
     }
     if (nextBtn) {
       nextBtn.onclick = function () {
-        qaDetailState.page++;
-        buildQADetailTable(pipelineId, getActiveFilters());
+        if (qaDetailState.page < qaDetailState.totalPages) {
+          qaDetailState.page++;
+          buildQADetailTable(pipelineId, getActiveFilters());
+        }
       };
     }
     container.querySelectorAll("tr.expandable").forEach(function (row) {
@@ -1557,6 +1564,7 @@
       });
       if (filters.validity === "valid") params.set("is_valid", "true");
       if (filters.validity === "invalid") params.set("is_valid", "false");
+      if (filters.minScore > 0) params.set("min_score", filters.minScore);
       if (filters.search) params.set("search", filters.search);
       var data = await fetch("/api/qa?" + params.toString()).then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
