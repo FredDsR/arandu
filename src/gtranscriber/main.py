@@ -1880,13 +1880,20 @@ def serve_report(
 
     fastapi_app = create_app(results_dir)
 
-    # Override the dependency so all handlers use the correct results_dir
+    # Override the dependency so all handlers use the correct results_dir.
+    # The service instance is cached so the lazy-loaded dataset is reused
+    # across requests instead of re-reading the filesystem on every call.
     from gtranscriber.core.report.api import get_report_service
     from gtranscriber.core.report.service import ReportService
 
+    _cached_service: ReportService | None = None
+
     def _service_override() -> ReportService:
-        collector = ResultsCollector(results_dir)
-        return ReportService(collector)
+        nonlocal _cached_service
+        if _cached_service is None:
+            collector = ResultsCollector(results_dir)
+            _cached_service = ReportService(collector)
+        return _cached_service
 
     fastapi_app.dependency_overrides[get_report_service] = _service_override
 

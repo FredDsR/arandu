@@ -22,7 +22,15 @@ from .api_schemas import (
     TranscriptionDetail,
     TranscriptionFilterParams,
 )
-from .dataset import QAPairRow, RunSummaryRow, TranscriptionRow, build_dataset
+from .dataset import (
+    QAPairRow,
+    ReportDataset,
+    RunSummaryRow,
+    TranscriptionRow,
+    build_dataset,
+    build_qa_rows,
+    build_transcription_rows,
+)
 
 if TYPE_CHECKING:
     from .collector import ResultsCollector
@@ -49,7 +57,7 @@ class ReportService:
         self._collector = collector
         self._dataset = None
 
-    def _get_dataset(self) -> object:
+    def _get_dataset(self) -> ReportDataset:
         """Return (and lazily build) the cached ReportDataset.
 
         Returns:
@@ -66,7 +74,7 @@ class ReportService:
         Returns:
             List of RunSummaryRow objects for all pipeline runs.
         """
-        return self._get_dataset().runs  # type: ignore[union-attr]
+        return self._get_dataset().runs
 
     def get_run_summary(self, pipeline_id: str) -> RunSummaryRow:
         """Return summary for a single run.
@@ -140,7 +148,7 @@ class ReportService:
         Returns:
             PaginatedResponse containing the matching QA pairs.
         """
-        rows: list[QAPairRow] = list(self._get_dataset().qa_pairs)  # type: ignore[union-attr]
+        rows: list[QAPairRow] = list(self._get_dataset().qa_pairs)
 
         # Apply filters
         if filters.pipeline is not None:
@@ -220,12 +228,11 @@ class ReportService:
 
         # Build the summary row (reuse build logic)
         from .collector import RunReport
-        from .dataset import _build_qa_rows
 
         # Minimal RunReport to reuse the helper
         temp_report = RunReport(pipeline_id=pipeline_id, cep_records=[record])
         qa_rows: list[QAPairRow] = []
-        _build_qa_rows(temp_report, qa_rows)
+        build_qa_rows(temp_report, qa_rows)
         if index >= len(qa_rows):
             raise KeyError(f"QA pair index {index} out of range after building rows")
         summary = qa_rows[index]
@@ -252,7 +259,7 @@ class ReportService:
         Returns:
             PaginatedResponse containing the matching transcription rows.
         """
-        rows: list[TranscriptionRow] = list(self._get_dataset().transcriptions)  # type: ignore[union-attr]
+        rows: list[TranscriptionRow] = list(self._get_dataset().transcriptions)
 
         # Apply filters
         if filters.pipeline is not None:
@@ -317,7 +324,7 @@ class ReportService:
 
         # Find matching row in dataset for summary
         summary: TranscriptionRow | None = None
-        for row in self._get_dataset().transcriptions:  # type: ignore[union-attr]
+        for row in self._get_dataset().transcriptions:
             if row.pipeline_id == pipeline_id and row.source_filename == source_filename:
                 summary = row
                 break
@@ -325,11 +332,10 @@ class ReportService:
         if summary is None:
             # Build from record directly
             from .collector import RunReport
-            from .dataset import _build_transcription_rows
 
             temp_report = RunReport(pipeline_id=pipeline_id, transcription_records=[record])
             rows: list[TranscriptionRow] = []
-            _build_transcription_rows(temp_report, rows)
+            build_transcription_rows(temp_report, rows)
             if not rows:
                 raise KeyError(f"Could not build summary for {pipeline_id}/{source_filename}")
             summary = rows[0]

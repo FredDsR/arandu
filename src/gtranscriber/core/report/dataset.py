@@ -160,8 +160,8 @@ def build_dataset(reports: list[RunReport]) -> ReportDataset:
 
     for report in reports:
         _build_run_summary(report, run_rows)
-        _build_transcription_rows(report, transcription_rows)
-        _build_qa_rows(report, qa_rows)
+        build_transcription_rows(report, transcription_rows)
+        build_qa_rows(report, qa_rows)
 
     return ReportDataset(
         qa_pairs=qa_rows,
@@ -239,9 +239,7 @@ def _build_run_summary(report: RunReport, run_rows: list[RunSummaryRow]) -> None
     run_rows.append(row)
 
 
-def _build_transcription_rows(
-    report: RunReport, transcription_rows: list[TranscriptionRow]
-) -> None:
+def build_transcription_rows(report: RunReport, transcription_rows: list[TranscriptionRow]) -> None:
     """Extract transcription rows from a RunReport.
 
     Args:
@@ -271,7 +269,7 @@ def _build_transcription_rows(
         transcription_rows.append(row)
 
 
-def _build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
+def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
     """Extract QA pair rows from a RunReport.
 
     Args:
