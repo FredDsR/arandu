@@ -35,15 +35,16 @@ class TestGenerateHtmlReport:
         assert output.stat().st_size > 0
 
     @patch("gtranscriber.core.report.generator.build_dataset")
-    def test_contains_report_data_variable(self, mock_build: MagicMock, tmp_path: Path) -> None:
-        """Test that output HTML contains the embedded dataset variable."""
+    def test_contains_run_selector(self, mock_build: MagicMock, tmp_path: Path) -> None:
+        """Test that output HTML contains the run selector for API-driven loading."""
         mock_build.return_value = ReportDataset(generated_at="2025-01-01T00:00:00Z")
         output = tmp_path / "report.html"
 
         generate_html_report(_make_minimal_reports(), output, self_contained=False)
 
         html = output.read_text(encoding="utf-8")
-        assert "window.__REPORT_DATA__" in html
+        assert "run-selector" in html
+        assert "/api/runs" in html
 
     @patch("gtranscriber.core.report.generator.build_dataset")
     def test_contains_template_structure(self, mock_build: MagicMock, tmp_path: Path) -> None:
@@ -57,6 +58,21 @@ class TestGenerateHtmlReport:
         assert "filter-bar" in html
         assert "tab-nav" in html
         assert "G-Transcriber Pipeline Report" in html
+        # 6 tabs
+        assert 'data-tab="overview"' in html
+        assert 'data-tab="qa"' in html
+        assert 'data-tab="transcriptions"' in html
+        assert 'data-tab="source"' in html
+        assert 'data-tab="config"' in html
+        assert 'data-tab="compare"' in html
+        # sub-tabs
+        assert "sub-tab-nav" in html
+        assert "subtab-qa-charts" in html
+        assert "subtab-trans-charts" in html
+        # new filter controls
+        assert "filter-validity" in html
+        assert "filter-min-score" in html
+        assert "filter-search" in html
 
     @patch("gtranscriber.core.report.generator.build_dataset")
     def test_cdn_fallback_without_self_contained(
