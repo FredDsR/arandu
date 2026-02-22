@@ -41,7 +41,10 @@
 
   async function loadDashboardData() {
     try {
-      var runs = await fetch("/api/runs").then(function (r) { return r.json(); });
+      var runs = await fetch("/api/runs").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
       ALL_RUNS = runs || [];
       populateRunSelector(runs);
       if (runs && runs.length) {
@@ -64,9 +67,9 @@
       opt.textContent = r.pipeline_id;
       sel.appendChild(opt);
     });
-    sel.addEventListener("change", function () {
+    sel.onchange = function () {
       setActiveRun(sel.value);
-    });
+    };
     // Also populate pipeline filter
     populateSelect("filter-pipeline", runs.map(function (r) { return r.pipeline_id; }));
   }
@@ -75,9 +78,18 @@
     if (!pipelineId) return;
     try {
       var results = await Promise.all([
-        fetch("/api/qa?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) { return r.json(); }),
-        fetch("/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) { return r.json(); }),
-        fetch("/api/runs/" + encodeURIComponent(pipelineId)).then(function (r) { return r.json(); }),
+        fetch("/api/qa?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }),
+        fetch("/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }),
+        fetch("/api/runs/" + encodeURIComponent(pipelineId)).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }),
       ]);
       var qaData = results[0];
       var transData = results[1];
@@ -948,10 +960,22 @@
         }
         try {
           var results = await Promise.all([
-            fetch("/api/qa?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) { return r.json(); }),
-            fetch("/api/qa?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) { return r.json(); }),
-            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) { return r.json(); }),
-            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) { return r.json(); }),
+            fetch("/api/qa?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+            fetch("/api/qa?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
           ]);
           var qaAll = (results[0].items || []).concat(results[1].items || []);
           var transAll = (results[2].items || []).concat(results[3].items || []);
@@ -963,7 +987,9 @@
           buildCompareRadar(DATA.qa_pairs, DATA.transcriptions, runA, runB, "chart-compare-radar");
         }
       };
-      btn.click();
+      if (pids.length >= 2) {
+        btn.click();
+      }
     }
   }
 
