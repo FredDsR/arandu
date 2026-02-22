@@ -34,12 +34,24 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: list[Path] = []
 
+    # Extract threshold values only when all runs agree (or there is a single run).
+    # If runs disagree, the overlay would silently misrepresent some runs' data, so
+    # we omit the threshold line rather than pick an arbitrary value.
+    validation_threshold: float | None = _consensus_threshold(
+        [r.validation_threshold for r in dataset.runs]
+    )
+    quality_threshold: float | None = _consensus_threshold(
+        [r.quality_threshold for r in dataset.runs]
+    )
+
     chart_specs: list[tuple[str, object]] = [
         ("pipeline_overview", lambda: charts.create_pipeline_overview_chart(dataset.runs)),
         ("bloom_distribution", lambda: charts.create_bloom_distribution_chart(dataset.qa_pairs)),
         (
             "validation_scores",
-            lambda: charts.create_validation_scores_chart(dataset.qa_pairs),
+            lambda: charts.create_validation_scores_chart(
+                dataset.qa_pairs, threshold=validation_threshold
+            ),
         ),
         (
             "confidence_distribution",
@@ -47,7 +59,9 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         ),
         (
             "transcription_quality",
-            lambda: charts.create_transcription_quality_chart(dataset.transcriptions),
+            lambda: charts.create_transcription_quality_chart(
+                dataset.transcriptions, threshold=quality_threshold
+            ),
         ),
         ("multihop", lambda: charts.create_multihop_chart(dataset.qa_pairs)),
         (
@@ -77,7 +91,9 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         ),
         (
             "bloom_validation_heatmap",
-            lambda: charts.create_bloom_validation_heatmap(dataset.qa_pairs),
+            lambda: charts.create_bloom_validation_heatmap(
+                dataset.qa_pairs, threshold=validation_threshold
+            ),
         ),
         (
             "location_quality",
@@ -99,3 +115,22 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         logger.info("Chart export: %d succeeded, %d failed", len(generated), failed_count)
 
     return generated
+
+
+def _consensus_threshold(values: list[float | None]) -> float | None:
+    """Return the threshold only when all runs agree on the same value.
+
+    Filters out ``None`` entries then checks whether the remaining values are
+    all equal.  Returns ``None`` if the values are absent or inconsistent so
+    that threshold overlays are never silently applied to the wrong data.
+
+    Args:
+        values: Per-run threshold values (``None`` when not configured).
+
+    Returns:
+        The shared threshold, or ``None`` if values are missing or inconsistent.
+    """
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+    return present[0] if len(set(present)) == 1 else None

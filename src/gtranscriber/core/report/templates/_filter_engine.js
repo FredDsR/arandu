@@ -5,6 +5,8 @@
   var DATA = { qa_pairs: [], transcriptions: [], runs: [] };
   var ALL_RUNS = [];
   var renderedTabs = {};
+  var ACTIVE_THRESHOLDS = { validation: null, quality: null };
+  var _thresholdCache = {};
   var BLOOM_COLORS = {
     remember: "#0173B2",
     understand: "#029E73",
@@ -107,6 +109,8 @@
       var activeTab = document.querySelector("#tab-nav button.active");
       var tabId = activeTab ? activeTab.dataset.tab : "overview";
       renderedTabs[tabId] = true;
+      // Fetch thresholds in parallel with rendering
+      ACTIVE_THRESHOLDS = await getRunThresholds(pipelineId);
       renderTab(tabId, DATA);
     } catch (e) {
       console.error("Failed to load run data for", pipelineId, ":", e);
@@ -391,15 +395,17 @@
     switch (tabId) {
       case "overview":
         buildRunSummaryTable(filtered.runs, "chart-run-summary-table");
+        buildFunnelChart(filtered.runs, "chart-funnel");
         buildPipelineOverview(filtered.runs, "chart-pipeline-overview");
         buildRunTimeline(filtered.runs, "chart-run-timeline");
         break;
       case "qa":
         buildBloomDistribution(filtered.qa_pairs, "chart-bloom-distribution");
-        buildValidationViolins(filtered.qa_pairs, "chart-validation-violins");
+        buildValidationViolins(filtered.qa_pairs, "chart-validation-violins", ACTIVE_THRESHOLDS.validation);
         buildBloomValidationHeatmap(
           filtered.qa_pairs,
-          "chart-bloom-validation-heatmap"
+          "chart-bloom-validation-heatmap",
+          ACTIVE_THRESHOLDS.validation
         );
         buildConfidenceDistribution(
           filtered.qa_pairs,
@@ -418,7 +424,8 @@
       case "transcriptions":
         buildTranscriptionQuality(
           filtered.transcriptions,
-          "chart-transcription-quality"
+          "chart-transcription-quality",
+          ACTIVE_THRESHOLDS.quality
         );
         buildQualityRadar(
           filtered.qa_pairs,
@@ -567,7 +574,7 @@
     });
   }
 
-  function buildValidationViolins(qa, divId) {
+  function buildValidationViolins(qa, divId, threshold) {
     var criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"];
     var traces = [];
     criteria.forEach(function (c) {
@@ -581,10 +588,14 @@
         });
       }
     });
-    plotReact(divId, traces, {
+    var layout = {
       title: "LLM-as-a-Judge Validation Score Distributions",
       yaxis: { title: "Score (0-1)" }, height: 450, template: "plotly_white",
-    });
+    };
+    if (threshold != null) {
+      addThresholdOverlay(layout, threshold);
+    }
+    plotReact(divId, traces, layout);
   }
 
   function buildConfidenceDistribution(qa, divId) {
@@ -599,7 +610,7 @@
     });
   }
 
-  function buildTranscriptionQuality(trans, divId) {
+  function buildTranscriptionQuality(trans, divId, threshold) {
     var fields = [
       ["overall_quality", "Overall Score"],
       ["script_match", "Script Match"],
@@ -627,11 +638,16 @@
       marker: { color: [COLORS[2], COLORS[3]] }, showlegend: false,
       xaxis: "x6", yaxis: "y6",
     });
-    plotReact(divId, traces, {
+    var layout = {
       grid: { rows: 2, columns: 3, pattern: "independent" },
       height: 600, showlegend: false, template: "plotly_white",
       title: "ASR Transcription Quality Score Distributions",
-    });
+    };
+    if (threshold != null) {
+      // Scope to the first subplot (Overall Score) only, matching Python's row=1, col=1
+      addThresholdOverlay(layout, threshold, "y", "x domain");
+    }
+    plotReact(divId, traces, layout);
   }
 
   function buildMultihopChart(qa, divId) {
@@ -798,7 +814,7 @@
     }], { title: "Source Hierarchy: Location > Participant > Document Count", height: 500, template: "plotly_white" });
   }
 
-  function buildBloomValidationHeatmap(qa, divId) {
+  function buildBloomValidationHeatmap(qa, divId, threshold) {
     var levels = ["remember", "understand", "analyze", "evaluate"];
     var criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"];
     var cLabels = criteria.map(function (c) { return c.replace(/_/g, " ").replace(/\b\w/g, function (l) { return l.toUpperCase(); }); });
@@ -817,7 +833,11 @@
         if (s.length) {
           var m = mean(s), sd = stddev(s);
           zRow.push(m);
-          tRow.push(m.toFixed(2) + "\n+/-" + sd.toFixed(2));
+          var cellText = m.toFixed(2) + "\n+/-" + sd.toFixed(2);
+          if (threshold != null && m < threshold) {
+            cellText = "⚠ " + cellText;
+          }
+          tRow.push(cellText);
         } else { zRow.push(0); tRow.push("N/A"); }
       });
       z.push(zRow); text.push(tRow);
@@ -929,6 +949,110 @@
         children.forEach(function (c) { c.style.display = visible ? "none" : ""; });
       };
     });
+  }
+
+  function addThresholdOverlay(layout, threshold, yref, xref) {
+    yref = yref || "y";
+    xref = xref || "paper";
+    layout.shapes = (layout.shapes || []).concat([{
+      type: "line",
+      y0: threshold, y1: threshold,
+      x0: 0, x1: 1,
+      xref: xref, yref: yref,
+      line: { color: "#CC3311", width: 2, dash: "dash" },
+    }]);
+    layout.annotations = (layout.annotations || []).concat([{
+      x: 1, xref: xref,
+      y: threshold, yref: yref,
+      text: "Threshold: " + threshold.toFixed(2),
+      showarrow: false,
+      font: { color: "#CC3311", size: 11 },
+      xanchor: "right",
+    }]);
+  }
+
+  async function getRunThresholds(pipelineId) {
+    if (_thresholdCache[pipelineId]) return _thresholdCache[pipelineId];
+    try {
+      var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      var result = {
+        validation: (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null)
+          ? config.configs.cep.validation_threshold : null,
+        quality: (config.configs && config.configs.transcription && config.configs.transcription.quality_threshold != null)
+          ? config.configs.transcription.quality_threshold : null,
+      };
+      _thresholdCache[pipelineId] = result;
+      return result;
+    } catch (e) {
+      console.warn("Could not fetch thresholds for", pipelineId, ":", e);
+      return { validation: null, quality: null };
+    }
+  }
+
+  function buildFunnelChart(runs, divId) {
+    var FUNNEL_TITLE = "Data Processing Funnel";
+    var run = runs && runs.length ? runs[0] : null;
+    if (!run) {
+      plotReact(divId, [], { title: FUNNEL_TITLE + ": No data", height: 400 });
+      return;
+    }
+    fetch("/api/funnel/" + encodeURIComponent(run.pipeline_id))
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (funnel) {
+        var stages = funnel.stages || [];
+        if (!stages.length) {
+          plotReact(divId, [], { title: FUNNEL_TITLE + ": No data", height: 400 });
+          return;
+        }
+        var n = stages.length;
+        var dropNodeIdx = n;
+        var nodeLabels = stages.map(function (s) { return s.label + " (" + s.count + ")"; });
+        nodeLabels.push("Failed/Invalid");
+        var nodeColors = stages.map(function () { return "#029E73"; });
+        nodeColors.push("#CC3311");
+        var sources = [], targets = [], values = [], linkColors = [];
+        for (var i = 0; i < n - 1; i++) {
+          var next = stages[i + 1];
+          if (next.count > 0) {
+            sources.push(i); targets.push(i + 1); values.push(next.count);
+            linkColors.push("rgba(2, 158, 115, 0.4)");
+          }
+          if (next.drop_count > 0) {
+            sources.push(i); targets.push(dropNodeIdx); values.push(next.drop_count);
+            linkColors.push("rgba(204, 51, 17, 0.4)");
+          }
+        }
+        plotReact(divId, [{
+          type: "sankey",
+          orientation: "h",
+          node: {
+            label: nodeLabels,
+            color: nodeColors,
+            pad: 15,
+            thickness: 20,
+          },
+          link: {
+            source: sources,
+            target: targets,
+            value: values,
+            color: linkColors,
+          },
+        }], {
+          title: FUNNEL_TITLE,
+          height: 400,
+          template: "plotly_white",
+        });
+      })
+      .catch(function (e) {
+        console.warn("Could not build funnel chart:", e);
+        plotReact(divId, [], { title: FUNNEL_TITLE + ": Unavailable", height: 400 });
+      });
   }
 
   /* ===================== Compare Tab ===================== */
