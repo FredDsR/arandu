@@ -544,7 +544,7 @@ footer {
     font-weight: 500;
     text-transform: capitalize;
     border-bottom: 1px solid var(--border);
-    background: #fafbfc;
+    background: var(--bg);
 }
 
 .config-value {
@@ -558,7 +558,40 @@ footer {
 .config-value.threshold {
     font-weight: 700;
     color: var(--accent);
-    background: #fff8ee;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+}
+
+.threshold-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: #fff;
+    vertical-align: middle;
+    margin-left: 4px;
+    font-family: inherit;
+}
+
+.weights-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: inherit;
+}
+
+.weights-list span {
+    padding: 2px 8px;
+    background: var(--primary-light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
 }
 
 .config-null {
@@ -578,4 +611,6 @@ footer {
     #tab-nav { flex-wrap: wrap; }
     #tab-nav button { flex: none; width: 33.33%; font-size: 12px; padding: 10px 6px; }
     .sub-tab-nav { flex-wrap: wrap; }
+    .config-grid { grid-template-columns: 1fr; }
+    .config-key { border-bottom: none; padding-bottom: 2px; font-weight: 600; }
 }

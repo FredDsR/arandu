@@ -1125,6 +1125,7 @@
       html +=
         '<div class="config-key">' +
         esc(displayKey) +
+        (isThreshold ? ' <span class="threshold-badge">threshold</span>' : "") +
         "</div>" +
         '<div class="config-value' +
         (isThreshold ? " threshold" : "") +
@@ -1148,10 +1149,25 @@
     if (key === "bloom_distribution" && typeof val === "object") {
       return renderBloomMiniBar(val);
     }
+    if (typeof val === "object" && isNumericObject(val)) {
+      return renderWeightsList(val);
+    }
     if (typeof val === "object") {
       return "<code>" + esc(JSON.stringify(val)) + "</code>";
     }
     return esc(String(val));
+  }
+
+  function isNumericObject(obj) {
+    var keys = Object.keys(obj);
+    return keys.length > 0 && keys.every(function (k) { return typeof obj[k] === "number"; });
+  }
+
+  function renderWeightsList(obj) {
+    var chips = Object.keys(obj).map(function (k) {
+      return '<span>' + esc(k.replace(/_/g, " ") + ": " + obj[k].toFixed(2)) + "</span>";
+    }).join("");
+    return '<div class="weights-list">' + chips + "</div>";
   }
 
   function renderBloomMiniBar(dist) {
@@ -1172,9 +1188,7 @@
           '" style="width:' +
           pct +
           '%" title="' +
-          l +
-          ": " +
-          count +
+          esc(l + ": " + count) +
           '"></div>';
       }
     });
