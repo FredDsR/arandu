@@ -11,6 +11,7 @@ requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.12.0",
     "bitsandbytes>=0.49.1",
+    "fastapi>=0.115.0",
     "google-api-python-client>=2.100.0",
     "google-auth-httplib2>=0.1.0",
     "google-auth-oauthlib>=1.0.0",
@@ -21,6 +22,7 @@ dependencies = [
     "tenacity>=8.0.0",
     "transformers>=4.57.3",
     "typer[all]>=0.9.0",
+    "uvicorn[standard]>=0.34.0",
     # LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
     "openai>=1.0.0",
     "httpx>=0.27.0",
@@ -53,6 +55,9 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 # CLI command functions don't need exhaustive annotations
 "src/gtranscriber/main.py" = ["ANN001", "ANN201"]
+# FastAPI route handlers intentionally use Depends/Query in defaults (B008)
+# and ReportService is needed at runtime for FastAPI dependency inspection (TC001, TC003)
+"src/gtranscriber/core/report/api.py" = ["B008", "TC001", "TC003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["gtranscriber"]
