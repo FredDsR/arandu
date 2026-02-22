@@ -464,7 +464,11 @@ A match is accepted if the similarity exceeds a threshold $\tau_e$ (default: 0.7
 
 $$G_i = \bigcup_{a \in A_i} \mathcal{N}_k(a,\, G)$$
 
-where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$). For questions flagged as multi-hop (`is_multi_hop = true`), the retrieval radius is extended to $k = \min(h + 1,\, 3)$ where $h$ is the question's `hop_count` to accommodate the additional reasoning hops while capping context size. The subgraph is linearized into a textual triple representation with node type annotations (e.g., `[PERSON] Maria da Silva --[VIVE_EM]--> [LOCATION] Barra do Ribeiro`) to provide the LLM with structural context. The retrieval strategy is deliberately minimal -- entity matching plus neighborhood extraction -- to isolate the knowledge graph's content quality from retrieval algorithm sophistication. The implementation builds directly on NetworkX (graph traversal), FAISS (embedding index), and sentence-transformers (multilingual embeddings), following the same BFS-based $k$-hop pattern used by AutoSchemaKG's `SubgraphRetriever` (Bai et al., 2025) but without depending on the `atlas_rag` package, whose dependency tree (Neo4j, FastAPI, graphdatascience) is disproportionate for the minimal retrieval required here. Full GraphRAG evaluation with advanced retrieval strategies -- including AutoSchemaKG's own `atlas_rag` pipeline (HippoRAG, Think-on-Graph) and Microsoft's GraphRAG (community detection, hierarchical summarization) -- constitutes a separate downstream benchmark where the QA dataset serves as ground truth.
+where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$). For questions flagged as multi-hop (`is_multi_hop = true`), the retrieval radius is extended to $k = \min(h + 1,\, 3)$ where $h$ is the question's `hop_count`, accommodating additional reasoning hops while capping context size.
+
+The subgraph is linearized into a textual triple representation with node type annotations (e.g., `[PERSON] Maria da Silva --[VIVE_EM]--> [LOCATION] Barra do Ribeiro`) to provide the LLM with structural context.
+
+The retrieval strategy is deliberately minimal -- entity matching plus neighborhood extraction -- to isolate the knowledge graph's content quality from retrieval algorithm sophistication. The implementation builds directly on NetworkX (graph traversal), FAISS (embedding index), and sentence-transformers (multilingual embeddings), following the same BFS-based $k$-hop pattern used by AutoSchemaKG's `SubgraphRetriever` (Bai et al., 2025) but without depending on the `atlas_rag` package, whose dependency tree (Neo4j, FastAPI, graphdatascience) is disproportionate for the minimal retrieval required here. Full GraphRAG evaluation with advanced retrieval strategies -- including AutoSchemaKG's own `atlas_rag` pipeline (HippoRAG, Think-on-Graph) and Microsoft's GraphRAG (community detection, hierarchical summarization) -- constitutes a separate downstream benchmark where the QA dataset serves as ground truth.
 
 **Stage 3 -- Answer Generation.** The linearized subgraph and the question are provided to an LLM with a constrained prompt:
 
@@ -504,6 +508,8 @@ $$\text{Score}(q_i) = \text{Correctness}(q_i) \times \text{Faithfulness}(q_i)$$
 
 Multiplication ensures that both conditions must hold: a correct but ungrounded answer ($1.0 \times 0.2 = 0.2$) scores low, as does a grounded but incorrect answer ($0.2 \times 1.0 = 0.2$). Only answers that are both correct *and* derivable from the KG receive high scores, which is precisely what Knowledge Coverage should measure.
 
+If no anchor entities are matched ($A_i = \emptyset$), the score is $\text{Score}(q_i) = 0$ -- the KG lacks the entities needed to address the question. If the LLM responds `INSUFFICIENT` in Stage 3, the judge receives this response and scores it accordingly (correctness $= 0.0$, faithfulness $= 1.0$ since `INSUFFICIENT` is an honest acknowledgment of absent information, yielding $\text{Score} = 0.0$).
+
 #### Why Not Token F1 or BERTScore
 
 Standard QA evaluation metrics -- Token F1 (lexical overlap) and BERTScore (embedding similarity) -- were designed for **extractive** question answering, where the correct answer is a short span copied verbatim from the source text (Rajpurkar et al., 2016). In that setting, high lexical overlap between the predicted and gold answer reliably indicates correctness. However, the Knowledge Coverage evaluation operates on **generative, open-ended answers** across multiple cognitive levels, where these metrics break down:
@@ -523,10 +529,6 @@ The LLM-as-a-Judge approach addresses these limitations by delegating answer eva
 2. **No additional computational cost profile.** Stage 3 already requires LLM invocations for answer generation. Adding a judge call per QA pair does not introduce a new dependency -- the evaluation already requires LLM access.
 
 3. **Alignment with RAG evaluation standards.** Recent frameworks for evaluating retrieval-augmented generation systems -- RAGAS (Es et al., 2024), ARES (Saad-Falcon et al., 2023), and RAGEval (Zhu et al., 2025) -- all adopt LLM-as-a-Judge as the primary metric for generative QA assessment, providing methodological precedent and comparability with published benchmarks.
-
-$$\text{Score}(q_i) = \text{Correctness}(q_i) \times \text{Faithfulness}(q_i) \in [0,\, 1]$$
-
-If no anchor entities are matched ($A_i = \emptyset$), the score is $\text{Score}(q_i) = 0$ -- the KG lacks the entities needed to address the question. If the LLM responds `INSUFFICIENT` in Stage 3, the judge receives this response and scores it accordingly (correctness $= 0.0$, faithfulness $= 1.0$ since `INSUFFICIENT` is an honest acknowledgment of absent information, yielding $\text{Score} = 0.0$).
 
 #### Bloom-Stratified Analysis
 
