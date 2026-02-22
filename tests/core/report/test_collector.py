@@ -304,45 +304,27 @@ def extended_results_dir(tmp_path: Path) -> Path:
 class TestResultsCollectorOnDemandLoading:
     """Tests for on-demand loading methods of ResultsCollector."""
 
-    def test_load_run_config_from_cep(self, extended_results_dir: Path) -> None:
-        """Verify config loaded from CEP step when available."""
+    def test_load_run_config_for_step(self, extended_results_dir: Path) -> None:
+        """Verify config loaded for a specific step."""
         collector = ResultsCollector(extended_results_dir)
-        config = collector.load_run_config("test_pipeline_001")
 
-        assert config is not None
-        assert config.config_values["model_id"] == "gpt-4o"
-        assert config.config_values["validation_threshold"] == 0.75
+        cep_config = collector.load_run_config("test_pipeline_001", "cep")
+        assert cep_config is not None
+        assert cep_config.config_values["model_id"] == "gpt-4o"
+        assert cep_config.config_values["validation_threshold"] == 0.75
 
-    def test_load_run_config_from_transcription_fallback(self, tmp_path: Path) -> None:
-        """Verify fallback to transcription step when CEP is absent."""
-        results_dir = tmp_path / "results"
-        results_dir.mkdir()
-        pipeline_dir = results_dir / "run_trans_only"
-        pipeline_dir.mkdir()
-
-        transcription_dir = pipeline_dir / "transcription"
-        transcription_dir.mkdir()
-        meta = _make_run_metadata_for_collector(
-            pipeline_type=PipelineType.TRANSCRIPTION,
-            config_values={"model_id": "whisper-small", "quality_threshold": 0.6},
-            output_directory=str(transcription_dir),
-        )
-        meta.save(transcription_dir / "run_metadata.json")
-
-        collector = ResultsCollector(results_dir)
-        config = collector.load_run_config("run_trans_only")
-
-        assert config is not None
-        assert config.config_values["model_id"] == "whisper-small"
+        trans_config = collector.load_run_config("test_pipeline_001", "transcription")
+        assert trans_config is not None
+        assert trans_config.config_values["model_id"] == "openai/whisper-large-v3"
 
     def test_load_run_config_missing(self, tmp_path: Path) -> None:
-        """Verify None return when no run_metadata.json exists."""
+        """Verify None return when no run_metadata.json exists for the step."""
         results_dir = tmp_path / "results"
         results_dir.mkdir()
         (results_dir / "empty_run").mkdir()
 
         collector = ResultsCollector(results_dir)
-        config = collector.load_run_config("empty_run")
+        config = collector.load_run_config("empty_run", "cep")
 
         assert config is None
 

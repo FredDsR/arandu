@@ -155,29 +155,25 @@ class ResultsCollector:
 
         return reports
 
-    def load_run_config(self, pipeline_id: str) -> ConfigSnapshot | None:
-        """Load configuration snapshot for a pipeline run.
-
-        Reads config from the run_metadata.json of the most relevant step
-        (CEP if available, otherwise transcription).
+    def load_run_config(self, pipeline_id: str, step: str) -> ConfigSnapshot | None:
+        """Load configuration snapshot for a specific pipeline step.
 
         Args:
             pipeline_id: The pipeline ID to load config for.
+            step: The pipeline step name (e.g. "transcription", "cep").
 
         Returns:
             ConfigSnapshot if available, None otherwise.
         """
-        pipeline_dir = self.results_dir / pipeline_id
-        for step in ("cep", "transcription"):
-            run_metadata_file = pipeline_dir / step / "run_metadata.json"
-            if run_metadata_file.exists():
-                try:
-                    metadata = RunMetadata.load(run_metadata_file)
-                    return metadata.config
-                except Exception:
-                    logger.debug(
-                        "Failed to load run_metadata for %s/%s", pipeline_id, step, exc_info=True
-                    )
+        run_metadata_file = self.results_dir / pipeline_id / step / "run_metadata.json"
+        if run_metadata_file.exists():
+            try:
+                metadata = RunMetadata.load(run_metadata_file)
+                return metadata.config
+            except Exception:
+                logger.debug(
+                    "Failed to load run_metadata for %s/%s", pipeline_id, step, exc_info=True
+                )
         return None
 
     def load_qa_record(self, pipeline_id: str, source_filename: str) -> QARecordCEP | None:
