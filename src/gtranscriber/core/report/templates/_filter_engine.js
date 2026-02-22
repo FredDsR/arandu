@@ -453,6 +453,11 @@
       case "compare":
         initCompareTab();
         break;
+      case "config": {
+        var sel = document.getElementById("run-selector");
+        loadConfigTab(sel ? sel.value : "");
+        break;
+      }
     }
   }
 
@@ -1053,6 +1058,128 @@
         console.warn("Could not build funnel chart:", e);
         plotReact(divId, [], { title: FUNNEL_TITLE + ": Unavailable", height: 400 });
       });
+  }
+
+  /* ===================== Config Tab ===================== */
+
+  async function loadConfigTab(pipelineId) {
+    var content = document.getElementById("config-content");
+    if (!content) return;
+    if (!pipelineId) {
+      content.innerHTML = '<p class="placeholder-text">Select a run to view its configuration.</p>';
+      return;
+    }
+    content.innerHTML = '<p class="placeholder-text">Loading configuration...</p>';
+    try {
+      var config = await fetch(
+        "/api/runs/" + encodeURIComponent(pipelineId) + "/config"
+      ).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      renderConfigSections(config, content);
+    } catch (e) {
+      console.error("Failed to load config for", pipelineId, ":", e);
+      content.innerHTML =
+        '<p class="placeholder-text">Configuration data unavailable.</p>';
+    }
+  }
+
+  function renderConfigSections(config, container) {
+    var html = "";
+    var stepLabels = {
+      transcription: "Transcription",
+      cep: "CEP / QA Generation",
+    };
+    Object.keys(config.configs || {}).forEach(function (step) {
+      var label =
+        stepLabels[step] ||
+        step.charAt(0).toUpperCase() + step.slice(1).replace(/_/g, " ");
+      var values = config.configs[step];
+      var thresholds = (config.threshold_fields || {})[step] || [];
+      html += renderConfigSection(label, values, thresholds);
+    });
+    if (config.hardware) {
+      html += renderConfigSection("Hardware", config.hardware, []);
+    }
+    if (config.execution) {
+      html += renderConfigSection("Execution Environment", config.execution, []);
+    }
+    if (!html) {
+      html =
+        '<p class="placeholder-text">No configuration data available for this run.</p>';
+    }
+    container.innerHTML = html;
+  }
+
+  function renderConfigSection(label, values, thresholds) {
+    var html =
+      '<details class="config-section" open>' +
+      '<summary class="config-section-title">' +
+      esc(label) +
+      "</summary>" +
+      '<div class="config-grid">';
+    Object.keys(values).forEach(function (key) {
+      var isThreshold = thresholds.indexOf(key) >= 0;
+      var displayKey = key.replace(/_/g, " ");
+      html +=
+        '<div class="config-key">' +
+        esc(displayKey) +
+        "</div>" +
+        '<div class="config-value' +
+        (isThreshold ? " threshold" : "") +
+        '">' +
+        renderConfigValue(key, values[key]) +
+        "</div>";
+    });
+    html += "</div></details>";
+    return html;
+  }
+
+  function renderConfigValue(key, val) {
+    if (val === null || val === undefined) {
+      return '<span class="config-null">N/A</span>';
+    }
+    if (typeof val === "boolean") {
+      return val
+        ? '<span class="status-badge status-completed">Yes</span>'
+        : '<span class="status-badge status-failed">No</span>';
+    }
+    if (key === "bloom_distribution" && typeof val === "object") {
+      return renderBloomMiniBar(val);
+    }
+    if (typeof val === "object") {
+      return "<code>" + esc(JSON.stringify(val)) + "</code>";
+    }
+    return esc(String(val));
+  }
+
+  function renderBloomMiniBar(dist) {
+    var levels = ["remember", "understand", "analyze", "evaluate"];
+    function getCount(l) {
+      return dist[l] || dist[l.charAt(0).toUpperCase() + l.slice(1)] || 0;
+    }
+    var total = levels.reduce(function (s, l) { return s + getCount(l); }, 0);
+    if (total === 0) return '<span class="config-null">N/A</span>';
+    var bars = '<div class="bloom-mini-bars">';
+    levels.forEach(function (l) {
+      var count = getCount(l);
+      var pct = (count / total) * 100;
+      if (pct > 0) {
+        bars +=
+          '<div class="bar-' +
+          l +
+          '" style="width:' +
+          pct +
+          '%" title="' +
+          l +
+          ": " +
+          count +
+          '"></div>';
+      }
+    });
+    bars += "</div>";
+    return bars;
   }
 
   /* ===================== Compare Tab ===================== */
