@@ -6,6 +6,7 @@
   var ALL_RUNS = [];
   var renderedTabs = {};
   var ACTIVE_THRESHOLDS = { validation: null, quality: null };
+  var _thresholdCache = {};
   var BLOOM_COLORS = {
     remember: "#0173B2",
     understand: "#029E73",
@@ -592,21 +593,7 @@
       yaxis: { title: "Score (0-1)" }, height: 450, template: "plotly_white",
     };
     if (threshold != null) {
-      layout.shapes = [{
-        type: "line",
-        y0: threshold, y1: threshold,
-        x0: 0, x1: 1,
-        xref: "paper",
-        line: { color: "#CC3311", width: 2, dash: "dash" },
-      }];
-      layout.annotations = (layout.annotations || []).concat([{
-        x: 1, xref: "paper",
-        y: threshold,
-        text: "Threshold: " + threshold.toFixed(2),
-        showarrow: false,
-        font: { color: "#CC3311", size: 11 },
-        xanchor: "right",
-      }]);
+      addThresholdOverlay(layout, threshold);
     }
     plotReact(divId, traces, layout);
   }
@@ -657,21 +644,8 @@
       title: "ASR Transcription Quality Score Distributions",
     };
     if (threshold != null) {
-      layout.shapes = [{
-        type: "line",
-        y0: threshold, y1: threshold,
-        x0: 0, x1: 1,
-        xref: "paper", yref: "y",
-        line: { color: "#CC3311", width: 2, dash: "dash" },
-      }];
-      layout.annotations = (layout.annotations || []).concat([{
-        x: 1, xref: "paper",
-        y: threshold, yref: "y",
-        text: "Threshold: " + threshold.toFixed(2),
-        showarrow: false,
-        font: { color: "#CC3311", size: 11 },
-        xanchor: "right",
-      }]);
+      // Scope to the first subplot (Overall Score) only, matching Python's row=1, col=1
+      addThresholdOverlay(layout, threshold, "y", "x domain");
     }
     plotReact(divId, traces, layout);
   }
@@ -977,18 +951,41 @@
     });
   }
 
+  function addThresholdOverlay(layout, threshold, yref, xref) {
+    yref = yref || "y";
+    xref = xref || "paper";
+    layout.shapes = (layout.shapes || []).concat([{
+      type: "line",
+      y0: threshold, y1: threshold,
+      x0: 0, x1: 1,
+      xref: xref, yref: yref,
+      line: { color: "#CC3311", width: 2, dash: "dash" },
+    }]);
+    layout.annotations = (layout.annotations || []).concat([{
+      x: 1, xref: xref,
+      y: threshold, yref: yref,
+      text: "Threshold: " + threshold.toFixed(2),
+      showarrow: false,
+      font: { color: "#CC3311", size: 11 },
+      xanchor: "right",
+    }]);
+  }
+
   async function getRunThresholds(pipelineId) {
+    if (_thresholdCache[pipelineId]) return _thresholdCache[pipelineId];
     try {
       var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       });
-      return {
+      var result = {
         validation: (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null)
           ? config.configs.cep.validation_threshold : null,
         quality: (config.configs && config.configs.transcription && config.configs.transcription.quality_threshold != null)
           ? config.configs.transcription.quality_threshold : null,
       };
+      _thresholdCache[pipelineId] = result;
+      return result;
     } catch (e) {
       console.warn("Could not fetch thresholds for", pipelineId, ":", e);
       return { validation: null, quality: null };
