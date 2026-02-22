@@ -72,6 +72,39 @@ h1 {
     margin-bottom: 12px;
 }
 
+/* --------------- Run Selector --------------- */
+
+#run-selector-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px 20px;
+    background: var(--card-bg);
+    border: 2px solid var(--primary);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+#run-selector-bar label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+#run-selector {
+    padding: 6px 10px;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+    min-width: 260px;
+    color: var(--text);
+}
+
 /* --------------- Filter Bar --------------- */
 
 #filter-bar {
@@ -99,13 +132,18 @@ h1 {
 }
 
 #filter-bar select,
-#filter-bar input[type="range"] {
+#filter-bar input[type="range"],
+#filter-bar input[type="text"] {
     padding: 6px 10px;
     border: 1px solid var(--border);
     border-radius: 4px;
     font-size: 13px;
     background: white;
     min-width: 140px;
+}
+
+#filter-search {
+    min-width: 180px;
 }
 
 #filter-bar select[multiple] {
@@ -198,6 +236,12 @@ h1 {
     font-size: 28px;
     font-weight: 700;
     color: var(--text);
+}
+
+.stat-card .label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
 }
 
 .stat-card:nth-child(2) { border-left-color: var(--accent); }
@@ -394,11 +438,68 @@ footer {
     font-size: 13px;
 }
 
+/* --------------- Sub-Tab Navigation --------------- */
+
+.sub-tab-nav {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+}
+
+.sub-tab-nav button {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
+}
+
+.sub-tab-nav button:hover {
+    color: var(--text);
+    background: var(--primary-light);
+}
+
+.sub-tab-nav button.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.sub-tab-panel {
+    display: none;
+}
+
+.sub-tab-panel.active {
+    display: block;
+}
+
+/* --------------- Placeholder Text --------------- */
+
+.placeholder-text {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-style: italic;
+    padding: 32px;
+    text-align: center;
+    background: var(--card-bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    margin: 16px 0;
+}
+
 /* --------------- Responsive --------------- */
 
 @media (max-width: 768px) {
+    #run-selector-bar { flex-direction: column; align-items: flex-start; }
+    #run-selector { min-width: 100%; }
     #filter-bar { flex-direction: column; }
     .chart-row { grid-template-columns: 1fr; }
     #tab-nav { flex-wrap: wrap; }
-    #tab-nav button { flex: none; width: 50%; }
+    #tab-nav button { flex: none; width: 33.33%; font-size: 12px; padding: 10px 6px; }
+    .sub-tab-nav { flex-wrap: wrap; }
 }

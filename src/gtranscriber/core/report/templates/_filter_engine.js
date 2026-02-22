@@ -2,7 +2,8 @@
 (function () {
   "use strict";
 
-  var DATA = window.__REPORT_DATA__;
+  var DATA = { qa_pairs: [], transcriptions: [], runs: [] };
+  var ALL_RUNS = [];
   var renderedTabs = {};
   var BLOOM_COLORS = {
     remember: "#0173B2",
@@ -32,16 +33,90 @@
   function init() {
     initFilters();
     initTabs();
-    applyAndUpdate();
+    initSubTabs();
+    loadDashboardData();
+  }
+
+  /* ===================== API Data Loading ===================== */
+
+  async function loadDashboardData() {
+    try {
+      var runs = await fetch("/api/runs").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      ALL_RUNS = runs || [];
+      populateRunSelector(runs);
+      if (runs && runs.length) {
+        await setActiveRun(runs[0].pipeline_id);
+      }
+    } catch (e) {
+      // API not available; fall back to empty data
+      console.error("Failed to load dashboard data:", e);
+      applyAndUpdate();
+    }
+  }
+
+  function populateRunSelector(runs) {
+    var sel = document.getElementById("run-selector");
+    if (!sel || !runs) return;
+    sel.innerHTML = "";
+    runs.forEach(function (r) {
+      var opt = document.createElement("option");
+      opt.value = r.pipeline_id;
+      opt.textContent = r.pipeline_id;
+      sel.appendChild(opt);
+    });
+    sel.onchange = function () {
+      setActiveRun(sel.value);
+    };
+    // Also populate pipeline filter
+    populateSelect("filter-pipeline", runs.map(function (r) { return r.pipeline_id; }));
+  }
+
+  async function setActiveRun(pipelineId) {
+    if (!pipelineId) return;
+    try {
+      var results = await Promise.all([
+        fetch("/api/qa?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }),
+        fetch("/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }),
+        fetch("/api/runs/" + encodeURIComponent(pipelineId)).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }),
+      ]);
+      var qaData = results[0];
+      var transData = results[1];
+      var runDetail = results[2];
+      DATA.qa_pairs = qaData.items || [];
+      DATA.transcriptions = transData.items || [];
+      DATA.runs = [runDetail];
+      // Populate location/participant filters from fetched data
+      var locs = unique(DATA.transcriptions.map(function (t) { return t.location || ""; }).filter(Boolean));
+      var parts = unique(DATA.transcriptions.map(function (t) { return t.participant_name || ""; }).filter(Boolean));
+      populateSelect("filter-location", locs);
+      populateSelect("filter-participant", parts);
+      updateSummaryCards(runDetail, DATA.qa_pairs, DATA.transcriptions);
+      renderedTabs = {};
+      var activeTab = document.querySelector("#tab-nav button.active");
+      var tabId = activeTab ? activeTab.dataset.tab : "overview";
+      renderedTabs[tabId] = true;
+      renderTab(tabId, DATA);
+    } catch (e) {
+      console.error("Failed to load run data for", pipelineId, ":", e);
+      applyAndUpdate();
+    }
   }
 
   /* ===================== Filters ===================== */
 
   function initFilters() {
-    populateSelect("filter-pipeline", DATA.pipeline_ids);
-    populateSelect("filter-location", DATA.locations);
-    populateSelect("filter-participant", DATA.participants);
-
     // Bloom toggles
     var bloomDiv = document.getElementById("filter-bloom");
     if (bloomDiv) {
@@ -67,6 +142,24 @@
         applyAndUpdate();
       });
     }
+
+    // Min validation score slider
+    var minScore = document.getElementById("filter-min-score");
+    if (minScore) {
+      minScore.addEventListener("input", function () {
+        var display = document.getElementById("min-score-value");
+        if (display) display.textContent = parseFloat(minScore.value).toFixed(2);
+        applyAndUpdate();
+      });
+    }
+
+    // Validity dropdown
+    var validity = document.getElementById("filter-validity");
+    if (validity) validity.addEventListener("change", applyAndUpdate);
+
+    // Search input
+    var search = document.getElementById("filter-search");
+    if (search) search.addEventListener("input", applyAndUpdate);
 
     // Select change handlers
     ["filter-pipeline", "filter-location", "filter-participant"].forEach(
@@ -95,6 +188,16 @@
           var d = document.getElementById("confidence-value");
           if (d) d.textContent = "0.00";
         }
+        var ms = document.getElementById("filter-min-score");
+        if (ms) {
+          ms.value = 0;
+          var dm = document.getElementById("min-score-value");
+          if (dm) dm.textContent = "0.00";
+        }
+        var v = document.getElementById("filter-validity");
+        if (v) v.value = "";
+        var sr = document.getElementById("filter-search");
+        if (sr) sr.value = "";
         document.querySelectorAll(".bloom-toggle").forEach(function (b) {
           b.classList.add("active");
         });
@@ -123,6 +226,15 @@
 
     var slider = document.getElementById("filter-confidence");
     filters.minConfidence = slider ? parseFloat(slider.value) : 0;
+
+    var minScore = document.getElementById("filter-min-score");
+    filters.minScore = minScore ? parseFloat(minScore.value) : 0;
+
+    var validity = document.getElementById("filter-validity");
+    filters.validity = validity ? validity.value : "";
+
+    var search = document.getElementById("filter-search");
+    filters.search = search ? search.value.trim().toLowerCase() : "";
 
     filters.bloomLevels = [];
     document.querySelectorAll(".bloom-toggle.active").forEach(function (btn) {
@@ -168,6 +280,14 @@
         filters.bloomLevels.indexOf(q.bloom_level) === -1
       )
         return false;
+      if (filters.validity === "valid" && !q.is_valid) return false;
+      if (filters.validity === "invalid" && q.is_valid) return false;
+      if (filters.minScore > 0 && (q.overall_score === null || q.overall_score < filters.minScore))
+        return false;
+      if (filters.search) {
+        var hay = ((q.source_filename || "") + " " + (q.participant_name || "")).toLowerCase();
+        if (hay.indexOf(filters.search) === -1) return false;
+      }
       return true;
     });
 
@@ -188,6 +308,12 @@
           filters.participants.indexOf(t.participant_name) === -1)
       )
         return false;
+      if (filters.validity === "valid" && !t.is_valid) return false;
+      if (filters.validity === "invalid" && t.is_valid) return false;
+      if (filters.search) {
+        var hay = ((t.source_filename || "") + " " + (t.participant_name || "")).toLowerCase();
+        if (hay.indexOf(filters.search) === -1) return false;
+      }
       return true;
     });
 
@@ -209,6 +335,20 @@
     document.querySelectorAll("#tab-nav button").forEach(function (btn) {
       btn.onclick = function () {
         switchTab(btn.dataset.tab);
+      };
+    });
+  }
+
+  function initSubTabs() {
+    document.querySelectorAll(".sub-tab-nav button").forEach(function (btn) {
+      btn.onclick = function () {
+        var parent = btn.closest(".tab-panel");
+        parent.querySelectorAll(".sub-tab-nav button").forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
+        parent.querySelectorAll(".sub-tab-panel").forEach(function (p) {
+          p.classList.toggle("active", p.id === "subtab-" + btn.dataset.subtab);
+        });
       };
     });
   }
@@ -236,7 +376,8 @@
   function applyAndUpdate() {
     var filters = getActiveFilters();
     var filtered = applyFilters(DATA, filters);
-    updateSummaryCards(filtered);
+    var runSummary = filtered.runs.length ? filtered.runs[0] : null;
+    updateSummaryCards(runSummary, filtered.qa_pairs, filtered.transcriptions);
 
     // Re-render all previously rendered tabs
     renderedTabs = {};
@@ -303,49 +444,49 @@
         );
         break;
       case "compare":
-        initCompareTab(filtered);
+        initCompareTab();
         break;
     }
   }
 
   /* ===================== Summary Cards ===================== */
 
-  function updateSummaryCards(filtered) {
-    setText("card-total-runs", filtered.runs.length);
-    setText("card-total-transcriptions", filtered.transcriptions.length);
-    setText("card-total-qa", filtered.qa_pairs.length);
+  function updateSummaryCards(runSummary, qaPairs, transcriptions) {
+    var validTrans = transcriptions.filter(function (t) { return t.is_valid === true; }).length;
+    setText("card-total-transcriptions", validTrans + "/" + transcriptions.length);
 
-    var rates = filtered.runs
-      .map(function (r) {
-        return r.success_rate;
-      })
-      .filter(function (v) {
-        return v !== null;
-      });
-    var avgRate = rates.length
-      ? (rates.reduce(function (a, b) { return a + b; }, 0) / rates.length).toFixed(1) + "%"
-      : "N/A";
-    setText("card-avg-success", avgRate);
+    var validQA = qaPairs.filter(function (q) { return q.is_valid; }).length;
+    setText("card-total-qa", validQA + "/" + qaPairs.length);
 
-    var validQA = filtered.qa_pairs.filter(function (q) {
-      return q.is_valid;
-    }).length;
-    var validRate = filtered.qa_pairs.length
-      ? ((validQA / filtered.qa_pairs.length) * 100).toFixed(1) + "%"
-      : "N/A";
-    setText("card-valid-rate", validRate);
-
-    var scores = filtered.qa_pairs
-      .map(function (q) {
-        return q.overall_score;
-      })
-      .filter(function (v) {
-        return v !== null;
-      });
+    var scores = qaPairs
+      .map(function (q) { return q.overall_score; })
+      .filter(function (v) { return v !== null; });
     var avgScore = scores.length
       ? (scores.reduce(function (a, b) { return a + b; }, 0) / scores.length).toFixed(3)
       : "N/A";
     setText("card-avg-score", avgScore);
+
+    var successRate = (runSummary && runSummary.success_rate != null)
+      ? runSummary.success_rate.toFixed(1) + "%"
+      : "N/A";
+    setText("card-avg-success", successRate);
+
+    var tqScores = transcriptions
+      .map(function (t) { return t.overall_quality; })
+      .filter(function (v) { return v !== null; });
+    var avgTQ = tqScores.length
+      ? (tqScores.reduce(function (a, b) { return a + b; }, 0) / tqScores.length).toFixed(3)
+      : "N/A";
+    setText("card-avg-trans-quality", avgTQ);
+
+    // HOTS ratio (Analyze + Evaluate / total)
+    var hots = qaPairs.filter(function (q) {
+      return q.bloom_level === "analyze" || q.bloom_level === "evaluate";
+    }).length;
+    var hotsRatio = qaPairs.length
+      ? ((hots / qaPairs.length) * 100).toFixed(1) + "%"
+      : "N/A";
+    setText("card-hots-ratio", hotsRatio);
   }
 
   function setText(id, val) {
@@ -792,12 +933,12 @@
 
   /* ===================== Compare Tab ===================== */
 
-  function initCompareTab(filtered) {
+  function initCompareTab() {
     var selA = document.getElementById("compare-run-a");
     var selB = document.getElementById("compare-run-b");
     if (!selA || !selB) return;
 
-    var pids = unique(filtered.runs.map(function (r) { return r.pipeline_id; })).sort();
+    var pids = unique(ALL_RUNS.map(function (r) { return r.pipeline_id; })).sort();
     [selA, selB].forEach(function (sel) {
       sel.innerHTML = "";
       pids.forEach(function (pid) {
@@ -810,11 +951,45 @@
 
     var btn = document.getElementById("btn-compare");
     if (btn) {
-      btn.onclick = function () {
-        buildCrossRunComparison(filtered.qa_pairs, selA.value, selB.value, "chart-cross-run-comparison");
-        buildCompareRadar(filtered.qa_pairs, filtered.transcriptions, selA.value, selB.value, "chart-compare-radar");
+      btn.onclick = async function () {
+        var runA = selA.value;
+        var runB = selB.value;
+        if (!runA || !runB) {
+          alert("Please select both Run A and Run B before comparing.");
+          return;
+        }
+        try {
+          var results = await Promise.all([
+            fetch("/api/qa?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+            fetch("/api/qa?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            }),
+          ]);
+          var qaAll = (results[0].items || []).concat(results[1].items || []);
+          var transAll = (results[2].items || []).concat(results[3].items || []);
+          buildCrossRunComparison(qaAll, runA, runB, "chart-cross-run-comparison");
+          buildCompareRadar(qaAll, transAll, runA, runB, "chart-compare-radar");
+        } catch (e) {
+          console.error("Failed to fetch comparison data:", e);
+          buildCrossRunComparison(DATA.qa_pairs, runA, runB, "chart-cross-run-comparison");
+          buildCompareRadar(DATA.qa_pairs, DATA.transcriptions, runA, runB, "chart-compare-radar");
+        }
       };
-      btn.click();
+      if (pids.length >= 2) {
+        btn.click();
+      }
     }
   }
 
