@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from gtranscriber.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
@@ -13,7 +15,7 @@ from gtranscriber.schemas import (
 
 def make_run_metadata(
     pipeline_type: PipelineType = PipelineType.TRANSCRIPTION,
-    config_values: dict | None = None,
+    config_values: dict[str, Any] | None = None,
     pipeline_id: str | None = None,
     output_directory: str = "/tmp/test",
 ) -> RunMetadata:
