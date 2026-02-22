@@ -1822,5 +1822,87 @@ def report(
             raise typer.Exit(code=1) from e
 
 
+@app.command()
+def serve_report(
+    results_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to results directory containing pipeline runs.",
+        ),
+    ],
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            "-p",
+            help="Port for the dashboard server.",
+        ),
+    ] = 8050,
+    host: Annotated[
+        str,
+        typer.Option(
+            "--host",
+            help="Host address to bind.",
+        ),
+    ] = "127.0.0.1",
+    no_browser: Annotated[
+        bool,
+        typer.Option(
+            "--no-browser",
+            help="Do not automatically open browser on startup.",
+        ),
+    ] = False,
+) -> None:
+    """Launch interactive dashboard for pipeline results exploration.
+
+    Starts a local FastAPI server serving an interactive dashboard with
+    charts, data tables, and drill-down views for pipeline results.
+
+    Examples:
+        gtranscriber serve-report results/
+        gtranscriber serve-report results/ --port 9000 --no-browser
+    """
+    import webbrowser
+
+    import uvicorn
+
+    from gtranscriber.core.report.api import create_app
+    from gtranscriber.core.report.collector import ResultsCollector
+
+    setup_logging()
+
+    if not results_dir.exists():
+        print_error(f"Results directory not found: {results_dir}")
+        raise typer.Exit(code=1)
+
+    url = f"http://{host}:{port}"
+    print_info(f"Starting report dashboard at [bold]{url}[/bold]")
+
+    fastapi_app = create_app(results_dir)
+
+    # Override the dependency so all handlers use the correct results_dir
+    from gtranscriber.core.report.api import get_report_service
+    from gtranscriber.core.report.service import ReportService
+
+    def _service_override() -> ReportService:
+        collector = ResultsCollector(results_dir)
+        return ReportService(collector)
+
+    fastapi_app.dependency_overrides[get_report_service] = _service_override
+
+    if not no_browser:
+        import threading
+
+        def _open_browser() -> None:
+            import time
+
+            time.sleep(1.0)
+            webbrowser.open(url)
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    uvicorn.run(fastapi_app, host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
