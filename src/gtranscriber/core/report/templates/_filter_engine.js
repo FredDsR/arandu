@@ -7,6 +7,8 @@
   var renderedTabs = {};
   var ACTIVE_THRESHOLDS = { validation: null, quality: null };
   var _thresholdCache = {};
+  var activeRunId = null;
+  var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc" };
   var BLOOM_COLORS = {
     remember: "#0173B2",
     understand: "#029E73",
@@ -78,6 +80,7 @@
 
   async function setActiveRun(pipelineId) {
     if (!pipelineId) return;
+    activeRunId = pipelineId;
     try {
       var results = await Promise.all([
         fetch("/api/qa?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
@@ -353,6 +356,12 @@
         parent.querySelectorAll(".sub-tab-panel").forEach(function (p) {
           p.classList.toggle("active", p.id === "subtab-" + btn.dataset.subtab);
         });
+        if (btn.dataset.subtab === "qa-detail" && activeRunId) {
+          qaDetailState.page = 1;
+          buildQADetailTable(activeRunId, getActiveFilters());
+        } else if (btn.dataset.subtab === "qa-alerts" && activeRunId) {
+          loadQAAlerts(activeRunId, getActiveFilters());
+        }
       };
     });
   }
@@ -420,6 +429,18 @@
           filtered.qa_pairs,
           "chart-parallel-coordinates"
         );
+        if (activeRunId) {
+          var qaActiveSubTab = document.querySelector("#tab-qa .sub-tab-nav button.active");
+          if (qaActiveSubTab) {
+            var activeFilters = getActiveFilters();
+            if (qaActiveSubTab.dataset.subtab === "qa-detail") {
+              qaDetailState.page = 1;
+              buildQADetailTable(activeRunId, activeFilters);
+            } else if (qaActiveSubTab.dataset.subtab === "qa-alerts") {
+              loadQAAlerts(activeRunId, activeFilters);
+            }
+          }
+        }
         break;
       case "transcriptions":
         buildTranscriptionQuality(
@@ -1308,12 +1329,356 @@
     });
   }
 
+  /* ===================== QA Detail Table ===================== */
+
+  async function buildQADetailTable(pipelineId, filters) {
+    var container = document.getElementById("subtab-qa-detail");
+    if (!container || !pipelineId) return;
+    container.innerHTML = '<p class="placeholder-text">Loading QA pairs\u2026</p>';
+    try {
+      var params = new URLSearchParams({
+        pipeline: pipelineId,
+        page: qaDetailState.page,
+        per_page: 25,
+        sort_by: qaDetailState.sortBy,
+        sort_order: qaDetailState.sortOrder,
+      });
+      if (filters.validity === "valid") params.set("is_valid", "true");
+      if (filters.validity === "invalid") params.set("is_valid", "false");
+      if (filters.minScore > 0) params.set("min_score", filters.minScore);
+      if (filters.search) params.set("search", filters.search);
+      var data = await fetch("/api/qa?" + params.toString()).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      var items = data.items || [];
+      var totalPages = data.total_pages || 1;
+      var total = data.total || 0;
+      container.innerHTML = renderQADetailTableHtml(items, total, totalPages);
+      attachQADetailHandlers(container, pipelineId);
+    } catch (e) {
+      console.error("Failed to load QA detail table:", e);
+      container.innerHTML = '<p class="placeholder-text">Failed to load QA data. Please try again.</p>';
+    }
+  }
+
+  function renderQADetailTableHtml(items, total, totalPages) {
+    var cols = [
+      { field: "source_filename", label: "Source File", sortable: true },
+      { field: "bloom_level", label: "Bloom", sortable: true },
+      { field: null, label: "Question", sortable: false },
+      { field: null, label: "Answer", sortable: false },
+      { field: "confidence", label: "Confidence", sortable: true },
+      { field: "faithfulness", label: "Faithfulness", sortable: true },
+      { field: "bloom_calibration", label: "Bloom Cal.", sortable: true },
+      { field: "informativeness", label: "Informative.", sortable: true },
+      { field: "self_containedness", label: "Self-Cont.", sortable: true },
+      { field: "overall_score", label: "Overall", sortable: true },
+      { field: "is_valid", label: "Valid", sortable: true },
+    ];
+    var html = '<table class="data-table"><thead><tr>';
+    cols.forEach(function (col) {
+      if (col.sortable) {
+        var indicator = col.field === qaDetailState.sortBy
+          ? (qaDetailState.sortOrder === "asc" ? " \u25b2" : " \u25bc")
+          : " \u21c5";
+        html += '<th data-field="' + col.field + '" class="sortable-header">'
+          + esc(col.label)
+          + '<span class="sort-indicator">' + indicator + "</span></th>";
+      } else {
+        html += "<th>" + esc(col.label) + "</th>";
+      }
+    });
+    html += "</tr></thead><tbody>";
+    var threshold = 0.6;
+    items.forEach(function (item) {
+      html += '<tr class="expandable" data-pipeline="' + esc(item.pipeline_id)
+        + '" data-filename="' + esc(item.source_filename)
+        + '" data-idx="' + (item.idx !== undefined ? item.idx : 0) + '">';
+      html += "<td>" + esc(item.source_filename) + "</td>";
+      html += "<td>" + bloomBadge(item.bloom_level) + "</td>";
+      html += '<td><em style="color:var(--text-muted);font-size:12px">Click row to expand</em></td>';
+      html += '<td><em style="color:var(--text-muted);font-size:12px">Click row to expand</em></td>';
+      html += '<td class="' + scoreClass(item.confidence, threshold) + '">'
+        + fmtScore(item.confidence, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.faithfulness, threshold) + '">'
+        + fmtScore(item.faithfulness, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.bloom_calibration, threshold) + '">'
+        + fmtScore(item.bloom_calibration, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.informativeness, threshold) + '">'
+        + fmtScore(item.informativeness, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.self_containedness, threshold) + '">'
+        + fmtScore(item.self_containedness, 2) + "</td>";
+      var passBadge = item.is_valid
+        ? '<span class="status-badge status-completed">Pass</span>'
+        : '<span class="status-badge status-failed">Fail</span>';
+      html += '<td class="' + scoreClass(item.overall_score, threshold) + '">'
+        + fmtScore(item.overall_score, 3) + " " + passBadge + "</td>";
+      html += "<td>" + (item.is_valid
+        ? '<span class="status-badge status-completed">Yes</span>'
+        : '<span class="status-badge status-failed">No</span>') + "</td>";
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    html += buildPaginationHtml(qaDetailState.page, totalPages, total, "qa-detail-pagination");
+    return html;
+  }
+
+  function attachQADetailHandlers(container, pipelineId) {
+    container.querySelectorAll(".sortable-header").forEach(function (th) {
+      th.onclick = function () {
+        var field = th.dataset.field;
+        if (qaDetailState.sortBy === field) {
+          qaDetailState.sortOrder = qaDetailState.sortOrder === "asc" ? "desc" : "asc";
+        } else {
+          qaDetailState.sortBy = field;
+          qaDetailState.sortOrder = "asc";
+        }
+        qaDetailState.page = 1;
+        buildQADetailTable(pipelineId, getActiveFilters());
+      };
+    });
+    var prevBtn = document.getElementById("qa-detail-pagination-prev");
+    var nextBtn = document.getElementById("qa-detail-pagination-next");
+    if (prevBtn) {
+      prevBtn.onclick = function () {
+        if (qaDetailState.page > 1) {
+          qaDetailState.page--;
+          buildQADetailTable(pipelineId, getActiveFilters());
+        }
+      };
+    }
+    if (nextBtn) {
+      nextBtn.onclick = function () {
+        qaDetailState.page++;
+        buildQADetailTable(pipelineId, getActiveFilters());
+      };
+    }
+    container.querySelectorAll("tr.expandable").forEach(function (row) {
+      row.onclick = function (e) {
+        if (e.target.tagName === "BUTTON") return;
+        expandQARow(row.dataset.pipeline, row.dataset.filename, parseInt(row.dataset.idx, 10), row);
+      };
+    });
+  }
+
+  async function expandQARow(pipelineId, sourceFilename, index, row) {
+    var existing = row.nextElementSibling;
+    if (existing && existing.classList.contains("qa-expanded-detail")) {
+      existing.remove();
+      row.classList.remove("row-expanded");
+      return;
+    }
+    try {
+      var detail = await fetch(
+        "/api/qa/" + encodeURIComponent(pipelineId)
+        + "/" + encodeURIComponent(sourceFilename)
+        + "/" + index
+      ).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      var colCount = row.cells.length;
+      var html = '<tr class="qa-expanded-detail"><td colspan="' + colCount + '">'
+        + '<div class="detail-panel">'
+        + '<div class="detail-field"><strong>Question:</strong><p>' + esc(detail.question) + "</p></div>"
+        + '<div class="detail-field"><strong>Answer:</strong><p>' + esc(detail.answer) + "</p></div>"
+        + '<div class="detail-field"><strong>Context:</strong><p class="context-text">' + esc(detail.context) + "</p></div>";
+      if (detail.reasoning_trace) {
+        html += '<div class="detail-field"><strong>Reasoning Trace:</strong><p>' + esc(detail.reasoning_trace) + "</p></div>";
+      }
+      if (detail.tacit_inference) {
+        html += '<div class="detail-field"><strong>Tacit Inference:</strong><p>' + esc(detail.tacit_inference) + "</p></div>";
+      }
+      if (detail.validation_rationale) {
+        html += '<div class="detail-field"><strong>Judge Rationale:</strong><p>' + esc(detail.validation_rationale) + "</p></div>";
+      }
+      html += "</div></td></tr>";
+      row.insertAdjacentHTML("afterend", html);
+      row.classList.add("row-expanded");
+    } catch (e) {
+      console.error("Failed to load QA detail:", e);
+    }
+  }
+
+  function buildPaginationHtml(page, totalPages, total, id) {
+    return '<div class="pagination" id="' + id + '">'
+      + '<button id="' + id + '-prev"' + (page <= 1 ? " disabled" : "") + ">&lt; Prev</button>"
+      + '<span class="page-info">Page ' + page + " of " + totalPages + " (" + total + " items)</span>"
+      + '<button id="' + id + '-next"' + (page >= totalPages ? " disabled" : "") + ">Next &gt;</button>"
+      + "</div>";
+  }
+
+  /* ===================== QA Alerts ===================== */
+
+  async function loadQAAlerts(pipelineId, filters) {
+    var container = document.getElementById("subtab-qa-alerts");
+    if (!container || !pipelineId) return;
+    container.innerHTML = '<p class="placeholder-text">Loading quality alerts\u2026</p>';
+    var threshold = 0.6;
+    try {
+      var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      if (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null) {
+        threshold = config.configs.cep.validation_threshold;
+      }
+    } catch (e) {
+      console.warn("Could not load run config for threshold:", e);
+    }
+    try {
+      var params = new URLSearchParams({
+        pipeline: pipelineId,
+        max_score: threshold,
+        sort_by: "overall_score",
+        sort_order: "asc",
+        per_page: 20,
+        page: 1,
+      });
+      if (filters.validity === "valid") params.set("is_valid", "true");
+      if (filters.validity === "invalid") params.set("is_valid", "false");
+      if (filters.search) params.set("search", filters.search);
+      var data = await fetch("/api/qa?" + params.toString()).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+      container.innerHTML = renderAlertsHtml(data.items || [], data.total || 0, data.total_pages || 1, threshold);
+      attachAlertsHandlers(container, pipelineId, threshold, filters);
+    } catch (e) {
+      console.error("Failed to load QA alerts:", e);
+      container.innerHTML = '<p class="placeholder-text">Failed to load quality alerts.</p>';
+    }
+  }
+
+  function renderAlertsHtml(items, total, totalPages, threshold) {
+    var html = '<div class="alerts-header">'
+      + '<span class="alerts-count">' + total + " items</span>"
+      + "<span> below validation threshold (" + threshold.toFixed(2) + ")</span>"
+      + "</div>";
+    if (!items.length) {
+      html += '<p class="placeholder-text">No QA pairs below threshold \u2014 all items pass quality checks.</p>';
+      return html;
+    }
+    html += '<table class="data-table"><thead><tr>'
+      + "<th>Source File</th><th>Bloom</th><th>Confidence</th>"
+      + "<th>Faithfulness</th><th>Bloom Cal.</th><th>Informative.</th>"
+      + "<th>Self-Cont.</th><th>Overall</th><th>Valid</th>"
+      + "</tr></thead><tbody>";
+    items.forEach(function (item) {
+      html += '<tr class="expandable" data-pipeline="' + esc(item.pipeline_id)
+        + '" data-filename="' + esc(item.source_filename)
+        + '" data-idx="' + (item.idx !== undefined ? item.idx : 0) + '">';
+      html += "<td>" + esc(item.source_filename) + "</td>";
+      html += "<td>" + bloomBadge(item.bloom_level) + "</td>";
+      html += '<td class="' + scoreClass(item.confidence, threshold) + '">' + fmtScore(item.confidence, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.faithfulness, threshold) + '">' + fmtScore(item.faithfulness, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.bloom_calibration, threshold) + '">' + fmtScore(item.bloom_calibration, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.informativeness, threshold) + '">' + fmtScore(item.informativeness, 2) + "</td>";
+      html += '<td class="' + scoreClass(item.self_containedness, threshold) + '">' + fmtScore(item.self_containedness, 2) + "</td>";
+      html += '<td class="score-low">' + fmtScore(item.overall_score, 3) + "</td>";
+      html += "<td>" + (item.is_valid
+        ? '<span class="status-badge status-completed">Yes</span>'
+        : '<span class="status-badge status-failed">No</span>') + "</td>";
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    if (totalPages > 1) {
+      html += '<div style="text-align:center;padding:12px">'
+        + '<button id="qa-alerts-show-more" data-page="2" data-threshold="' + threshold + '">Show More</button>'
+        + "</div>";
+    }
+    return html;
+  }
+
+  function attachAlertsHandlers(container, pipelineId, threshold, filters) {
+    container.querySelectorAll("tr.expandable").forEach(function (row) {
+      row.onclick = function (e) {
+        if (e.target.tagName === "BUTTON") return;
+        expandQARow(row.dataset.pipeline, row.dataset.filename, parseInt(row.dataset.idx, 10), row);
+      };
+    });
+    var showMoreBtn = document.getElementById("qa-alerts-show-more");
+    if (showMoreBtn) {
+      showMoreBtn.onclick = async function () {
+        var page = parseInt(showMoreBtn.dataset.page, 10);
+        try {
+          var params = new URLSearchParams({
+            pipeline: pipelineId,
+            max_score: threshold,
+            sort_by: "overall_score",
+            sort_order: "asc",
+            per_page: 20,
+            page: page,
+          });
+          if (filters.validity === "valid") params.set("is_valid", "true");
+          if (filters.validity === "invalid") params.set("is_valid", "false");
+          if (filters.search) params.set("search", filters.search);
+          var data = await fetch("/api/qa?" + params.toString()).then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          });
+          var tbody = container.querySelector("tbody");
+          if (tbody) {
+            (data.items || []).forEach(function (item) {
+              var tr = document.createElement("tr");
+              tr.className = "expandable";
+              tr.dataset.pipeline = item.pipeline_id;
+              tr.dataset.filename = item.source_filename;
+              tr.dataset.idx = item.idx !== undefined ? item.idx : 0;
+              tr.innerHTML = "<td>" + esc(item.source_filename) + "</td>"
+                + "<td>" + bloomBadge(item.bloom_level) + "</td>"
+                + '<td class="' + scoreClass(item.confidence, threshold) + '">' + fmtScore(item.confidence, 2) + "</td>"
+                + '<td class="' + scoreClass(item.faithfulness, threshold) + '">' + fmtScore(item.faithfulness, 2) + "</td>"
+                + '<td class="' + scoreClass(item.bloom_calibration, threshold) + '">' + fmtScore(item.bloom_calibration, 2) + "</td>"
+                + '<td class="' + scoreClass(item.informativeness, threshold) + '">' + fmtScore(item.informativeness, 2) + "</td>"
+                + '<td class="' + scoreClass(item.self_containedness, threshold) + '">' + fmtScore(item.self_containedness, 2) + "</td>"
+                + '<td class="score-low">' + fmtScore(item.overall_score, 3) + "</td>"
+                + "<td>" + (item.is_valid
+                  ? '<span class="status-badge status-completed">Yes</span>'
+                  : '<span class="status-badge status-failed">No</span>') + "</td>";
+              tr.onclick = function (e) {
+                if (e.target.tagName === "BUTTON") return;
+                expandQARow(tr.dataset.pipeline, tr.dataset.filename, parseInt(tr.dataset.idx, 10), tr);
+              };
+              tbody.appendChild(tr);
+            });
+          }
+          if (page >= data.total_pages) {
+            showMoreBtn.parentElement.remove();
+          } else {
+            showMoreBtn.dataset.page = page + 1;
+          }
+        } catch (e) {
+          console.error("Failed to load more alerts:", e);
+        }
+      };
+    }
+  }
+
   /* ===================== Helpers ===================== */
 
   function plotReact(divId, traces, layout) {
     var el = document.getElementById(divId);
     if (!el) return;
     Plotly.react(divId, traces, layout, { responsive: true });
+  }
+
+  function scoreClass(score, threshold) {
+    if (score === null || score === undefined) return "";
+    if (score >= 0.8) return "score-high";
+    if (score >= (threshold || 0.6)) return "score-medium";
+    return "score-low";
+  }
+
+  function bloomBadge(level) {
+    if (!level) return "";
+    return '<span class="bloom-badge ' + esc(level) + '">'
+      + esc(level.charAt(0).toUpperCase() + level.slice(1)) + "</span>";
+  }
+
+  function fmtScore(val, digits) {
+    return val !== null && val !== undefined ? val.toFixed(digits) : "N/A";
   }
 
   function mean(arr) {
