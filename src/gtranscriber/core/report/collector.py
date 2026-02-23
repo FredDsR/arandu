@@ -56,6 +56,7 @@ class ResultsCollector:
             results_dir: Path to the results directory containing pipeline runs.
         """
         self.results_dir = Path(results_dir)
+        self._run_cache: dict[str, RunReport] = {}
 
     def discover_runs(self) -> list[str]:
         """List run IDs by scanning subdirectories of results_dir.
@@ -82,6 +83,9 @@ class ResultsCollector:
         Raises:
             FileNotFoundError: If the pipeline directory doesn't exist.
         """
+        if pipeline_id in self._run_cache:
+            return self._run_cache[pipeline_id]
+
         pipeline_dir = self.results_dir / pipeline_id
         if not pipeline_dir.exists():
             raise FileNotFoundError(f"Pipeline directory not found: {pipeline_dir}")
@@ -137,6 +141,7 @@ class ResultsCollector:
                             exc_info=True,
                         )
 
+        self._run_cache[pipeline_id] = report
         return report
 
     def load_all_runs(self) -> list[RunReport]:
@@ -215,8 +220,9 @@ class ResultsCollector:
     def load_qa_record(self, pipeline_id: str, source_filename: str) -> QARecordCEP | None:
         """Load a single CEP QA record by source filename.
 
-        Resolves the expected QA file path in the CEP outputs directory using the source
-        filename stem and looks for a file named `{source_filename_stem}_cep_qa.json`.
+        Looks up the record from the cached RunReport, matching on
+        ``source_filename`` which is the same field used to populate the
+        dashboard rows.
 
         Args:
             pipeline_id: The pipeline ID containing the record.
@@ -224,18 +230,14 @@ class ResultsCollector:
 
         Returns:
             QARecordCEP if found, None otherwise.
-
-        Raises:
-            ValueError: If pipeline_id is invalid.
         """
-        step_dir = self._validate_pipeline_path(pipeline_id, "cep")
-        stem = Path(source_filename).stem
-        target = step_dir / "outputs" / f"{stem}_cep_qa.json"
-        if target.exists():
-            try:
-                return QARecordCEP.load(target)
-            except Exception:
-                logger.debug("Failed to load QA record: %s", target, exc_info=True)
+        try:
+            report = self.load_run(pipeline_id)
+        except FileNotFoundError:
+            return None
+        for record in report.cep_records:
+            if record.source_filename == source_filename:
+                return record
         return None
 
     def load_transcription_record(
@@ -243,8 +245,8 @@ class ResultsCollector:
     ) -> EnrichedRecord | None:
         """Load a single transcription record by source filename.
 
-        Resolves the output file using the source filename pattern:
-        `{source_filename_stem}_transcription.json`.
+        Looks up the record from the cached RunReport, matching on
+        ``name`` which is the same field used to populate the dashboard rows.
 
         Args:
             pipeline_id: The pipeline ID containing the record.
@@ -252,18 +254,14 @@ class ResultsCollector:
 
         Returns:
             EnrichedRecord if found, None otherwise.
-
-        Raises:
-            ValueError: If pipeline_id is invalid.
         """
-        step_dir = self._validate_pipeline_path(pipeline_id, "transcription")
-        stem = Path(source_filename).stem
-        target = step_dir / "outputs" / f"{stem}_transcription.json"
-        if target.exists():
-            try:
-                return EnrichedRecord.model_validate_json(target.read_text())
-            except Exception:
-                logger.debug("Failed to load transcription record: %s", target, exc_info=True)
+        try:
+            report = self.load_run(pipeline_id)
+        except FileNotFoundError:
+            return None
+        for record in report.transcription_records:
+            if record.name == source_filename:
+                return record
         return None
 
     def load_all_run_configs(self, pipeline_id: str) -> dict[str, ConfigSnapshot]:
