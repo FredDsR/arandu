@@ -163,7 +163,7 @@ def list_qa_pairs(
     sort_by: str = Query(default="overall_score"),
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=25, ge=1, le=100),
+    per_page: int = Query(default=25, ge=1, le=250),
     service: ReportService = Depends(get_report_service),
 ) -> dict:
     """Return a paginated, filtered list of QA pairs.
@@ -258,7 +258,7 @@ def list_transcriptions(
     sort_by: str = Query(default="overall_quality"),
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=25, ge=1, le=100),
+    per_page: int = Query(default=25, ge=1, le=250),
     service: ReportService = Depends(get_report_service),
 ) -> dict:
     """Return a paginated, filtered list of transcriptions.

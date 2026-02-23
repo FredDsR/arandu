@@ -38,6 +38,49 @@
     "#949494",
   ];
 
+  /* ===================== Auto-Pagination ===================== */
+
+  /**
+   * Fetch all pages from a paginated API endpoint and return a flat array.
+   * Uses per_page=250 (backend max) and fetches remaining pages in parallel
+   * (batched, max 4 concurrent).
+   */
+  async function fetchAllPages(baseUrl) {
+    var separator = baseUrl.indexOf("?") === -1 ? "?" : "&";
+    var firstUrl = baseUrl + separator + "per_page=250&page=1";
+    var first = await fetch(firstUrl).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+    var items = first.items || [];
+    var totalPages = first.total_pages || 1;
+    if (totalPages <= 1) return items;
+
+    // Build remaining page URLs
+    var urls = [];
+    for (var p = 2; p <= totalPages; p++) {
+      urls.push(baseUrl + separator + "per_page=250&page=" + p);
+    }
+
+    // Fetch in batches of 4
+    var BATCH = 4;
+    for (var i = 0; i < urls.length; i += BATCH) {
+      var batch = urls.slice(i, i + BATCH);
+      var pages = await Promise.all(
+        batch.map(function (url) {
+          return fetch(url).then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          });
+        })
+      );
+      pages.forEach(function (page) {
+        items = items.concat(page.items || []);
+      });
+    }
+    return items;
+  }
+
   /* ===================== Init ===================== */
 
   function init() {
@@ -102,24 +145,18 @@
     }
     try {
       var results = await Promise.all([
-        fetch("/api/qa?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        }),
-        fetch("/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=1000").then(function (r) {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        }),
+        fetchAllPages("/api/qa?pipeline=" + encodeURIComponent(pipelineId)),
+        fetchAllPages("/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId)),
         fetch("/api/runs/" + encodeURIComponent(pipelineId)).then(function (r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
           return r.json();
         }),
       ]);
-      var qaData = results[0];
-      var transData = results[1];
+      var qaItems = results[0];
+      var transItems = results[1];
       var runDetail = results[2];
-      DATA.qa_pairs = qaData.items || [];
-      DATA.transcriptions = transData.items || [];
+      DATA.qa_pairs = qaItems;
+      DATA.transcriptions = transItems;
       DATA.runs = [runDetail];
       // Populate location/participant filters from fetched data
       var locs = unique(DATA.transcriptions.map(function (t) { return t.location || ""; }).filter(Boolean));
@@ -1480,19 +1517,16 @@
       var threshold = getQualityThreshold(config);
 
       // Fetch both: below-threshold items AND explicitly invalid items (OR condition from spec).
-      // per_page=200 covers most practical datasets; very large datasets may exceed this limit.
-      var baseUrl = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=200";
+      var baseUrl = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId);
       var results = await Promise.all([
-        fetch(baseUrl + "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc")
-          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }),
-        fetch(baseUrl + "&is_valid=false")
-          .then(function (r) { return r.ok ? r.json() : { items: [] }; }).catch(function () { return { items: [] }; }),
+        fetchAllPages(baseUrl + "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc"),
+        fetchAllPages(baseUrl + "&is_valid=false").catch(function () { return []; }),
       ]);
 
       // Merge and deduplicate by source_filename
       var seen = {};
       var merged = [];
-      (results[0].items || []).concat(results[1].items || []).forEach(function (item) {
+      results[0].concat(results[1]).forEach(function (item) {
         var key = item.pipeline_id + ":" + item.source_filename;
         if (!seen[key]) { seen[key] = true; merged.push(item); }
       });
@@ -1624,25 +1658,13 @@
         }
         try {
           var results = await Promise.all([
-            fetch("/api/qa?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) {
-              if (!r.ok) throw new Error("HTTP " + r.status);
-              return r.json();
-            }),
-            fetch("/api/qa?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) {
-              if (!r.ok) throw new Error("HTTP " + r.status);
-              return r.json();
-            }),
-            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runA) + "&per_page=1000").then(function (r) {
-              if (!r.ok) throw new Error("HTTP " + r.status);
-              return r.json();
-            }),
-            fetch("/api/transcriptions?pipeline=" + encodeURIComponent(runB) + "&per_page=1000").then(function (r) {
-              if (!r.ok) throw new Error("HTTP " + r.status);
-              return r.json();
-            }),
+            fetchAllPages("/api/qa?pipeline=" + encodeURIComponent(runA)),
+            fetchAllPages("/api/qa?pipeline=" + encodeURIComponent(runB)),
+            fetchAllPages("/api/transcriptions?pipeline=" + encodeURIComponent(runA)),
+            fetchAllPages("/api/transcriptions?pipeline=" + encodeURIComponent(runB)),
           ]);
-          var qaAll = (results[0].items || []).concat(results[1].items || []);
-          var transAll = (results[2].items || []).concat(results[3].items || []);
+          var qaAll = results[0].concat(results[1]);
+          var transAll = results[2].concat(results[3]);
           buildCrossRunComparison(qaAll, runA, runB, "chart-cross-run-comparison");
           buildCompareRadar(qaAll, transAll, runA, runB, "chart-compare-radar");
         } catch (e) {
