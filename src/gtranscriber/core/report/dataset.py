@@ -36,6 +36,7 @@ class QAPairRow(BaseModel):
     validator_model_id: str | None = None
     provider: str | None = None
     is_valid: bool = True
+    idx: int = Field(default=0, description="Zero-based index of QA pair within its source file")
 
 
 class TranscriptionRow(BaseModel):
@@ -279,7 +280,7 @@ def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
     for cep_record in report.cep_records:
         source = cep_record.source_metadata
 
-        for qa_pair in cep_record.qa_pairs:
+        for file_idx, qa_pair in enumerate(cep_record.qa_pairs):
             validation = getattr(qa_pair, "validation", None)
 
             row = QAPairRow(
@@ -301,5 +302,6 @@ def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
                 validator_model_id=cep_record.validator_model_id,
                 provider=cep_record.provider,
                 is_valid=getattr(qa_pair, "is_valid", True),
+                idx=file_idx,
             )
             qa_rows.append(row)

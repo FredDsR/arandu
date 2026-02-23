@@ -621,4 +621,116 @@ footer {
     .sub-tab-nav { flex-wrap: wrap; }
     .config-grid { grid-template-columns: 1fr; }
     .config-key { border-bottom: none; padding-bottom: 2px; font-weight: 600; }
+    .data-table { font-size: 11px; }
+    .data-table th, .data-table td { padding: 6px 8px; }
 }
+
+/* --------------- QA Detail Panel (expanded rows) --------------- */
+
+.expand-hint {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.detail-panel {
+    padding: 16px;
+    background: #f8f9fb;
+    border-left: 3px solid var(--primary);
+}
+
+.detail-field {
+    margin-bottom: 12px;
+}
+
+.detail-field strong {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.detail-field p {
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.context-text {
+    font-style: italic;
+    color: var(--text-muted);
+    border-left: 2px solid var(--border);
+    padding-left: 12px;
+}
+
+/* --------------- Score Cell Coloring --------------- */
+
+.score-high { background-color: #d4edda; }
+.score-medium { background-color: #fff3cd; }
+.score-low { background-color: #f8d7da; }
+
+/* --------------- Pagination Controls --------------- */
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+}
+
+.pagination button {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pagination .page-info {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* --------------- Quality Alerts --------------- */
+
+.alerts-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.alerts-count {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger);
+}
+
+.show-more-container {
+    text-align: center;
+    padding: 12px;
+}
+
+/* --------------- Bloom Badges --------------- */
+
+.bloom-badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+}
+
+.bloom-badge.remember { background: #0173B2; }
+.bloom-badge.understand { background: #029E73; }
+.bloom-badge.apply { background: #D55E00; }
+.bloom-badge.analyze { background: #DE8F05; }
+.bloom-badge.evaluate { background: #CC3311; }
+.bloom-badge.create { background: #CC79A7; }
