@@ -37,7 +37,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_THRESHOLD_FIELDS: list[str] = ["validation_threshold", "quality_threshold"]
+_THRESHOLD_FIELDS: dict[str, list[str]] = {
+    "transcription": ["quality_threshold"],
+    "cep": [
+        "validation_threshold",
+        "faithfulness_weight",
+        "bloom_calibration_weight",
+        "informativeness_weight",
+        "self_containedness_weight",
+    ],
+}
 _TEXT_PREVIEW_CHARS: int = 500
 
 
@@ -113,7 +122,8 @@ class ReportService:
         for step, snapshot in configs_raw.items():
             values = snapshot.config_values
             configs[step] = values
-            found = [f for f in _THRESHOLD_FIELDS if f in values]
+            step_thresholds = _THRESHOLD_FIELDS.get(step, [])
+            found = [f for f in step_thresholds if f in values]
             if found:
                 threshold_fields[step] = found
 

@@ -492,6 +492,123 @@ footer {
     margin: 16px 0;
 }
 
+/* --------------- Config Tab --------------- */
+
+.config-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+}
+
+.config-section > summary.config-section-title {
+    padding: 12px 16px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius);
+    color: var(--text);
+}
+
+.config-section > summary.config-section-title::-webkit-details-marker {
+    display: none;
+}
+
+.config-section > summary.config-section-title::marker {
+    content: "";
+}
+
+.config-section > summary.config-section-title::before {
+    content: "▶";
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+}
+
+.config-section[open] > summary.config-section-title::before {
+    transform: rotate(90deg);
+}
+
+.config-section > summary.config-section-title:hover {
+    background: var(--primary-light);
+}
+
+.config-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 30%) 1fr;
+    gap: 0;
+    padding: 0 0 8px;
+}
+
+.config-key {
+    padding: 6px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: capitalize;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.config-value {
+    padding: 6px 16px;
+    font-size: 13px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    border-bottom: 1px solid var(--border);
+    word-break: break-all;
+}
+
+.config-value.threshold {
+    font-weight: 700;
+    color: var(--accent);
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+}
+
+.threshold-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: #fff;
+    vertical-align: middle;
+    margin-left: 4px;
+    font-family: inherit;
+}
+
+.weights-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: inherit;
+}
+
+.weights-list span {
+    padding: 2px 8px;
+    background: var(--primary-light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.config-null {
+    color: var(--text-muted);
+    font-style: italic;
+    font-family: inherit;
+    font-size: 12px;
+}
+
 /* --------------- Responsive --------------- */
 
 @media (max-width: 768px) {
@@ -502,4 +619,6 @@ footer {
     #tab-nav { flex-wrap: wrap; }
     #tab-nav button { flex: none; width: 33.33%; font-size: 12px; padding: 10px 6px; }
     .sub-tab-nav { flex-wrap: wrap; }
+    .config-grid { grid-template-columns: 1fr; }
+    .config-key { border-bottom: none; padding-bottom: 2px; font-weight: 600; }
 }

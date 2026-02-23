@@ -251,6 +251,52 @@ class TestGetRunConfig:
         assert "quality_threshold" in config.threshold_fields["transcription"]
         assert "validation_threshold" in config.threshold_fields["cep"]
 
+    def test_get_run_config_cep_weight_thresholds(self, mock_collector: MagicMock) -> None:
+        """Returns cep weight fields as thresholds when present."""
+        cep_snap = ConfigSnapshot(
+            config_type="CEPConfig",
+            config_values={
+                "model_id": "gpt-4o",
+                "validation_threshold": 0.75,
+                "faithfulness_weight": 0.3,
+                "bloom_calibration_weight": 0.25,
+                "informativeness_weight": 0.25,
+                "self_containedness_weight": 0.2,
+            },
+        )
+        mock_collector.load_all_run_configs.return_value = {"cep": cep_snap}
+        mock_collector.load_run.side_effect = FileNotFoundError
+
+        svc = ReportService(mock_collector)
+        config = svc.get_run_config("pipe_000")
+
+        cep_thresholds = config.threshold_fields.get("cep", [])
+        assert "validation_threshold" in cep_thresholds
+        assert "faithfulness_weight" in cep_thresholds
+        assert "bloom_calibration_weight" in cep_thresholds
+        assert "informativeness_weight" in cep_thresholds
+        assert "self_containedness_weight" in cep_thresholds
+
+    def test_get_run_config_no_cross_step_leakage(self, mock_collector: MagicMock) -> None:
+        """Transcription step does not inherit CEP threshold fields."""
+        trans_snap = ConfigSnapshot(
+            config_type="TranscriberConfig",
+            config_values={
+                "model_id": "whisper-large-v3",
+                "quality_threshold": 0.65,
+                "validation_threshold": 0.7,  # present but not a transcription threshold
+            },
+        )
+        mock_collector.load_all_run_configs.return_value = {"transcription": trans_snap}
+        mock_collector.load_run.side_effect = FileNotFoundError
+
+        svc = ReportService(mock_collector)
+        config = svc.get_run_config("pipe_000")
+
+        trans_thresholds = config.threshold_fields.get("transcription", [])
+        assert "quality_threshold" in trans_thresholds
+        assert "validation_threshold" not in trans_thresholds
+
     def test_get_run_config_missing(self, mock_collector: MagicMock) -> None:
         """Handles missing config (empty dict) gracefully."""
         mock_collector.load_all_run_configs.return_value = {}
