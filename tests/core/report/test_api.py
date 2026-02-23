@@ -232,3 +232,65 @@ class TestGetFunnelEndpoint:
         mock_service.get_funnel.side_effect = KeyError("not found")
         resp = client.get("/api/funnel/nonexistent")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /api/export/csv
+# ---------------------------------------------------------------------------
+
+
+class TestExportCsvEndpoint:
+    """Tests for GET /api/export/csv."""
+
+    def test_export_csv_endpoint(self, client: object, mock_service: MagicMock) -> None:
+        """GET /api/export/csv?type=qa returns CSV with correct headers."""
+        mock_service.export_csv.return_value = "pipeline_id,source_filename\npipe_001,audio.mp3\n"
+        resp = client.get("/api/export/csv?type=qa")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+
+    def test_export_csv_content_disposition(self, client: object, mock_service: MagicMock) -> None:
+        """GET /api/export/csv returns Content-Disposition attachment header."""
+        mock_service.export_csv.return_value = "pipeline_id\npipe_001\n"
+        resp = client.get("/api/export/csv?type=runs")
+        assert resp.status_code == 200
+        assert "attachment" in resp.headers["content-disposition"]
+        assert "runs_export.csv" in resp.headers["content-disposition"]
+
+    def test_export_csv_invalid_type(self, client: object, mock_service: MagicMock) -> None:
+        """GET /api/export/csv?type=invalid returns 422."""
+        resp = client.get("/api/export/csv?type=invalid")
+        assert resp.status_code == 422
+
+    def test_export_csv_passes_filters(self, client: object, mock_service: MagicMock) -> None:
+        """GET /api/export/csv passes pipeline and min_score filters to service."""
+        mock_service.export_csv.return_value = ""
+        resp = client.get("/api/export/csv?type=qa&pipeline=pipe_001&min_score=0.7")
+        assert resp.status_code == 200
+        mock_service.export_csv.assert_called_once()
+        call_filters = mock_service.export_csv.call_args[0][1]
+        assert call_filters.get("pipeline") == "pipe_001"
+        assert call_filters.get("min_score") == 0.7
+
+
+# ---------------------------------------------------------------------------
+# /api/export/html/{pipeline_id}
+# ---------------------------------------------------------------------------
+
+
+class TestExportHtmlEndpoint:
+    """Tests for GET /api/export/html/{pipeline_id}."""
+
+    def test_export_html_endpoint(self, client: object, mock_service: MagicMock) -> None:
+        """GET /api/export/html/{id} returns HTML content."""
+        mock_service.export_single_run_html.return_value = "<html><body>Report</body></html>"
+        resp = client.get("/api/export/html/pipe_001")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "Report" in resp.text
+
+    def test_export_html_not_found(self, client: object, mock_service: MagicMock) -> None:
+        """GET /api/export/html/nonexistent returns 404."""
+        mock_service.export_single_run_html.side_effect = KeyError("Pipeline not found: nonexistent")
+        resp = client.get("/api/export/html/nonexistent")
+        assert resp.status_code == 404

@@ -1755,6 +1755,10 @@ def report(
     The report discovers results by scanning the filesystem directly,
     without relying on index.json which can become stale.
 
+    .. deprecated::
+        Use ``serve-report`` for the interactive dashboard.
+        This command will be removed in a future version.
+
     Examples:
         # Generate HTML report + PNGs for all runs
         gtranscriber report
@@ -1773,6 +1777,11 @@ def report(
     from gtranscriber.core.report.exporter import export_charts_as_png
     from gtranscriber.core.report.generator import generate_html_report
 
+    print_warning(
+        "The 'report' command is deprecated and will be removed in a future version. "
+        "Use 'serve-report' for the interactive dashboard with drill-down, "
+        "filtering, and export capabilities."
+    )
     setup_logging()
 
     # Initialize collector

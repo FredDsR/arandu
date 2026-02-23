@@ -466,10 +466,51 @@ class ReportService:
                 writer.writeheader()
                 for row in all_trans_rows:
                     writer.writerow(row.model_dump())
+        elif data_type == "runs":
+            run_rows = self.list_runs()
+            if filters.get("pipeline") is not None:
+                run_rows = [r for r in run_rows if r.pipeline_id == filters["pipeline"]]
+            if run_rows:
+                writer = csv.DictWriter(output, fieldnames=list(RunSummaryRow.model_fields))
+                writer.writeheader()
+                for row in run_rows:
+                    writer.writerow(row.model_dump())
         else:
-            raise ValueError(f"Unsupported data_type: {data_type!r}. Use 'qa' or 'transcriptions'")
+            raise ValueError(
+                f"Unsupported data_type: {data_type!r}. Use 'qa', 'transcriptions', or 'runs'"
+            )
 
         return output.getvalue()
+
+    def export_single_run_html(self, pipeline_id: str) -> str:
+        """Generate static HTML report for one pipeline run.
+
+        Uses the existing generate_html_report() infrastructure but
+        filters to a single run.
+
+        Args:
+            pipeline_id: Pipeline run to export.
+
+        Returns:
+            HTML content as string.
+
+        Raises:
+            KeyError: If the pipeline_id is not found.
+        """
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from .generator import generate_html_report
+
+        try:
+            report = self._collector.load_run(pipeline_id)
+        except FileNotFoundError as exc:
+            raise KeyError(f"Pipeline not found: {pipeline_id}") from exc
+
+        with TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "report.html"
+            generate_html_report([report], output_path)
+            return output_path.read_text(encoding="utf-8")
 
 
 def _paginate(rows: list, page: int, per_page: int) -> PaginatedResponse:
