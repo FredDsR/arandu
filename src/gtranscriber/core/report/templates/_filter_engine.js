@@ -12,6 +12,7 @@
   var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
   var qaRequestId = 0;
   var DEFAULT_SCORE_THRESHOLD = 0.6;
+  var TRANS_TABLE_STATE = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
   var BLOOM_COLORS = {
     remember: "#0173B2",
     understand: "#029E73",
@@ -86,6 +87,7 @@
   async function setActiveRun(pipelineId) {
     if (!pipelineId) return;
     activeRunId = pipelineId;
+    TRANS_TABLE_STATE = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
     // Fetch and cache the run config threshold for score coloring
     try {
       var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
@@ -378,6 +380,10 @@
           buildQADetailTable(activeRunId, getActiveFilters());
         } else if (btn.dataset.subtab === "qa-alerts" && activeRunId) {
           loadQAAlerts(activeRunId, getActiveFilters());
+        } else if (btn.dataset.subtab === "trans-detail" && activeRunId) {
+          loadTranscriptionDetailTable(activeRunId, TRANS_TABLE_STATE.page, TRANS_TABLE_STATE.sortBy, TRANS_TABLE_STATE.sortOrder);
+        } else if (btn.dataset.subtab === "trans-alerts" && activeRunId) {
+          loadTranscriptionAlerts(activeRunId);
         }
       };
     });
@@ -470,6 +476,16 @@
           filtered.transcriptions,
           "chart-quality-radar"
         );
+        // Also load active subtab if it's detail or alerts
+        if (activeRunId) {
+          var activeTransSubtab = document.querySelector("#tab-transcriptions .sub-tab-nav button.active");
+          var transSubtabId = activeTransSubtab ? activeTransSubtab.dataset.subtab : "trans-charts";
+          if (transSubtabId === "trans-detail") {
+            loadTranscriptionDetailTable(activeRunId, TRANS_TABLE_STATE.page, TRANS_TABLE_STATE.sortBy, TRANS_TABLE_STATE.sortOrder);
+          } else if (transSubtabId === "trans-alerts") {
+            loadTranscriptionAlerts(activeRunId);
+          }
+        }
         break;
       case "source":
         buildLocationTreemap(
@@ -1232,6 +1248,351 @@
     });
     bars += "</div>";
     return bars;
+  }
+
+  /* ===================== Transcription Detail Table ===================== */
+
+  function getQualityThreshold(config) {
+    return (config && config.configs && config.configs.transcription &&
+      config.configs.transcription.quality_threshold != null)
+      ? config.configs.transcription.quality_threshold : 0.5;
+  }
+
+  function scoreCell(value, threshold) {
+    if (value === null || value === undefined) return "<td>N/A</td>";
+    var cls = value >= 0.8 ? "score-high" : value >= threshold ? "score-medium" : "score-low";
+    return '<td class="' + cls + '">' + value.toFixed(3) + "</td>";
+  }
+
+  function buildTranscriptionRowHtml(row, idx, threshold, prefix) {
+    var validBadge = row.is_valid === true
+      ? '<span class="status-badge status-completed">Yes</span>'
+      : row.is_valid === false
+      ? '<span class="status-badge status-failed">No</span>'
+      : "N/A";
+    return '<tr class="expandable" data-idx="' + idx + '" data-file="' + esc(row.source_filename) + '">' +
+      "<td><strong>" + esc(row.source_filename) + "</strong></td>" +
+      "<td>" + esc(row.participant_name || "") + "</td>" +
+      "<td>" + esc(row.location || "") + "</td>" +
+      "<td>" + esc(row.model_id || "") + "</td>" +
+      "<td>" + esc(row.detected_language || "") + "</td>" +
+      "<td>" + (row.processing_duration_sec != null ? row.processing_duration_sec.toFixed(1) : "N/A") + "</td>" +
+      scoreCell(row.overall_quality, threshold) +
+      scoreCell(row.script_match, threshold) +
+      scoreCell(row.repetition, threshold) +
+      scoreCell(row.segment_quality, threshold) +
+      scoreCell(row.content_density, threshold) +
+      "<td>" + validBadge + "</td>" +
+      '<td><span class="issues-badge" id="' + prefix + '-issues-' + idx + '">?</span></td>' +
+      "</tr>" +
+      '<tr class="expanded-row" data-parent="' + idx + '" style="display:none">' +
+      '<td colspan="13"><div id="' + prefix + '-detail-' + idx + '"><em>Loading detail…</em></div></td>' +
+      "</tr>";
+  }
+
+  function buildPaginationHtml(currentPage, totalPages) {
+    return '<div style="display:flex;align-items:center;gap:12px;margin:12px 0">' +
+      '<button id="trans-prev-btn" ' + (currentPage <= 1 ? "disabled" : "") + '>« Prev</button>' +
+      '<span>Page ' + currentPage + ' of ' + totalPages + '</span>' +
+      '<button id="trans-next-btn" ' + (currentPage >= totalPages ? "disabled" : "") + '>Next »</button>' +
+      "</div>";
+  }
+
+  async function loadTranscriptionDetailTable(pipelineId, page, sortBy, sortOrder) {
+    var container = document.getElementById("trans-detail-container");
+    if (!container) return;
+    container.innerHTML = '<p class="placeholder-text">Loading…</p>';
+    try {
+      var filters = getActiveFilters();
+      var url = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) +
+        "&page=" + page + "&per_page=25" +
+        "&sort_by=" + encodeURIComponent(sortBy) +
+        "&sort_order=" + encodeURIComponent(sortOrder);
+      if (filters.validity === "valid") url += "&is_valid=true";
+      else if (filters.validity === "invalid") url += "&is_valid=false";
+      if (filters.minScore > 0) url += "&min_score=" + filters.minScore;
+      if (filters.search) url += "&search=" + encodeURIComponent(filters.search);
+
+      var configUrl = "/api/runs/" + encodeURIComponent(pipelineId) + "/config";
+      var results = await Promise.all([
+        fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }),
+        fetch(configUrl).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      ]);
+      var data = results[0];
+      var config = results[1];
+      var threshold = getQualityThreshold(config);
+
+      TRANS_TABLE_STATE.page = page;
+      TRANS_TABLE_STATE.sortBy = sortBy;
+      TRANS_TABLE_STATE.sortOrder = sortOrder;
+      TRANS_TABLE_STATE.totalPages = data.pages || 1;
+
+      buildTranscriptionDetailTable(data, threshold, container, pipelineId);
+    } catch (e) {
+      console.error("Failed to load transcription detail table:", e);
+      container.innerHTML = '<p class="placeholder-text">Failed to load transcription data.</p>';
+    }
+  }
+
+  function buildTranscriptionDetailTable(data, threshold, container, pipelineId) {
+    var items = data.items || [];
+    var totalPages = data.pages || 1;
+    var currentPage = data.page || 1;
+
+    var cols = [
+      { label: "Source File", field: "source_filename", sortable: true },
+      { label: "Participant", field: "participant_name", sortable: true },
+      { label: "Location", field: "location", sortable: true },
+      { label: "Model", field: "model_id", sortable: true },
+      { label: "Language", field: "detected_language", sortable: true },
+      { label: "Duration (s)", field: "processing_duration_sec", sortable: true },
+      { label: "Overall", field: "overall_quality", sortable: true },
+      { label: "Script Match", field: "script_match", sortable: true },
+      { label: "Repetition", field: "repetition", sortable: true },
+      { label: "Segment Qual.", field: "segment_quality", sortable: true },
+      { label: "Content Dens.", field: "content_density", sortable: true },
+      { label: "Valid", field: "is_valid", sortable: true },
+      { label: "Issues", field: null, sortable: false },
+    ];
+
+    var s = TRANS_TABLE_STATE;
+    var html = '<table class="data-table"><thead><tr>';
+    cols.forEach(function (col) {
+      if (!col.sortable) {
+        html += "<th>" + col.label + "</th>";
+        return;
+      }
+      var indicator = col.field === s.sortBy ? (s.sortOrder === "asc" ? " ▲" : " ▼") : "";
+      html += '<th data-field="' + col.field + '" style="cursor:pointer">' +
+        col.label + '<span class="sort-indicator">' + indicator + "</span></th>";
+    });
+    html += "</tr></thead><tbody>";
+
+    items.forEach(function (row, idx) {
+      html += buildTranscriptionRowHtml(row, idx, threshold, "trans");
+    });
+
+    html += "</tbody></table>";
+
+    // Pagination controls
+    html += buildPaginationHtml(currentPage, totalPages);
+
+    container.innerHTML = html;
+
+    // Sort header click handlers
+    container.querySelectorAll("th[data-field]").forEach(function (th) {
+      th.onclick = function () {
+        var field = th.dataset.field;
+        var newOrder = (s.sortBy === field && s.sortOrder === "asc") ? "desc" : "asc";
+        loadTranscriptionDetailTable(pipelineId, 1, field, newOrder);
+      };
+    });
+
+    // Pagination button handlers
+    var prevBtn = document.getElementById("trans-prev-btn");
+    var nextBtn = document.getElementById("trans-next-btn");
+    if (prevBtn) {
+      prevBtn.onclick = function () {
+        if (currentPage > 1) loadTranscriptionDetailTable(pipelineId, currentPage - 1, s.sortBy, s.sortOrder);
+      };
+    }
+    if (nextBtn) {
+      nextBtn.onclick = function () {
+        if (currentPage < totalPages) loadTranscriptionDetailTable(pipelineId, currentPage + 1, s.sortBy, s.sortOrder);
+      };
+    }
+
+    // Expandable row handlers
+    container.querySelectorAll("tr.expandable").forEach(function (row) {
+      row.onclick = function () {
+        var idx = row.dataset.idx;
+        var filename = row.dataset.file;
+        var detailRow = container.querySelector('tr[data-parent="' + idx + '"]');
+        if (!detailRow) return;
+        var isVisible = detailRow.style.display !== "none";
+        if (isVisible) {
+          detailRow.style.display = "none";
+        } else {
+          detailRow.style.display = "";
+          expandTranscriptionRow(pipelineId, filename, idx, container);
+        }
+      };
+    });
+  }
+
+  async function expandTranscriptionRow(pipelineId, sourceFilename, idx, container) {
+    await expandTranscriptionDetailRow("trans", pipelineId, sourceFilename, idx);
+  }
+
+  async function expandTranscriptionDetailRow(prefix, pipelineId, sourceFilename, idx) {
+    var detailDiv = document.getElementById(prefix + "-detail-" + idx);
+    var badgeEl = document.getElementById(prefix + "-issues-" + idx);
+    if (!detailDiv) return;
+    try {
+      var detail = await fetch(
+        "/api/transcriptions/" + encodeURIComponent(pipelineId) + "/" + encodeURIComponent(sourceFilename)
+      ).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+
+      var issueCount = detail.issues_detected ? detail.issues_detected.length : 0;
+      if (badgeEl) {
+        badgeEl.textContent = issueCount;
+        badgeEl.className = "issues-badge " + (issueCount > 0 ? "has-issues" : "no-issues");
+      }
+
+      var issuesHtml = issueCount > 0
+        ? '<strong>Issues Detected:</strong><ul class="issues-list">' +
+          detail.issues_detected.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") +
+          "</ul>"
+        : '<strong>Issues Detected:</strong><p class="no-issues">No quality issues detected</p>';
+
+      var rationaleHtml = detail.quality_rationale
+        ? "<strong>Quality Rationale:</strong><p>" + esc(detail.quality_rationale) + "</p>"
+        : "";
+
+      var previewHtml = detail.transcription_text_preview
+        ? "<strong>Transcription Preview:</strong><p>" + esc(detail.transcription_text_preview) + "</p>"
+        : "";
+
+      detailDiv.innerHTML =
+        '<div style="padding:8px 0">' +
+        issuesHtml +
+        rationaleHtml +
+        "<strong>Segments:</strong><p>" + detail.segment_count + " segments</p>" +
+        previewHtml +
+        "</div>";
+    } catch (e) {
+      console.error("Failed to load transcription detail for", sourceFilename, ":", e);
+      if (detailDiv) detailDiv.innerHTML = "<em>Failed to load detail.</em>";
+    }
+  }
+
+  /* ===================== Transcription Quality Alerts ===================== */
+
+  var ALERTS_STATE = { allItems: [], shown: 0, threshold: 0.5 };
+
+  async function loadTranscriptionAlerts(pipelineId) {
+    var container = document.getElementById("trans-alerts-container");
+    if (!container) return;
+    container.innerHTML = '<p class="placeholder-text">Loading…</p>';
+    try {
+      var configUrl = "/api/runs/" + encodeURIComponent(pipelineId) + "/config";
+      var config = await fetch(configUrl).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+      var threshold = getQualityThreshold(config);
+
+      // Fetch both: below-threshold items AND explicitly invalid items (OR condition from spec).
+      // per_page=200 covers most practical datasets; very large datasets may exceed this limit.
+      var baseUrl = "/api/transcriptions?pipeline=" + encodeURIComponent(pipelineId) + "&per_page=200";
+      var results = await Promise.all([
+        fetch(baseUrl + "&max_score=" + threshold + "&sort_by=overall_quality&sort_order=asc")
+          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }),
+        fetch(baseUrl + "&is_valid=false")
+          .then(function (r) { return r.ok ? r.json() : { items: [] }; }).catch(function () { return { items: [] }; }),
+      ]);
+
+      // Merge and deduplicate by source_filename
+      var seen = {};
+      var merged = [];
+      (results[0].items || []).concat(results[1].items || []).forEach(function (item) {
+        var key = item.pipeline_id + ":" + item.source_filename;
+        if (!seen[key]) { seen[key] = true; merged.push(item); }
+      });
+
+      // Sort by overall_quality ascending (nulls last)
+      merged.sort(function (a, b) {
+        if (a.overall_quality == null) return 1;
+        if (b.overall_quality == null) return -1;
+        return a.overall_quality - b.overall_quality;
+      });
+
+      ALERTS_STATE.allItems = merged;
+      ALERTS_STATE.shown = 0;
+      ALERTS_STATE.threshold = threshold;
+
+      renderTranscriptionAlertsTable(container, pipelineId, false);
+    } catch (e) {
+      console.error("Failed to load transcription alerts:", e);
+      container.innerHTML = '<p class="placeholder-text">Failed to load quality alerts.</p>';
+    }
+  }
+
+  function renderTranscriptionAlertsTable(container, pipelineId, append) {
+    var allItems = ALERTS_STATE.allItems;
+    var threshold = ALERTS_STATE.threshold;
+    var PAGE_SIZE = 20;
+
+    var header = '<p style="margin-bottom:12px"><strong>' + allItems.length +
+      ' transcription' + (allItems.length !== 1 ? "s" : "") +
+      '</strong> below quality threshold or invalid (<strong>' + threshold.toFixed(2) + "</strong>)</p>";
+
+    if (!allItems.length) {
+      container.innerHTML = header + '<p class="placeholder-text">No transcriptions below quality threshold.</p>';
+      return;
+    }
+
+    var startIdx = append ? ALERTS_STATE.shown : 0;
+    var newItems = allItems.slice(startIdx, startIdx + PAGE_SIZE);
+    ALERTS_STATE.shown = startIdx + newItems.length;
+
+    var tableHeader = '<table class="data-table"><thead><tr>' +
+      "<th>Source File</th><th>Participant</th><th>Location</th><th>Model</th><th>Language</th>" +
+      "<th>Duration (s)</th><th>Overall</th><th>Script Match</th><th>Repetition</th>" +
+      "<th>Segment Qual.</th><th>Content Dens.</th><th>Valid</th><th>Issues</th>" +
+      "</tr></thead><tbody>";
+    var tableFooter = "</tbody></table>";
+    var showMoreHtml = ALERTS_STATE.shown < allItems.length
+      ? '<button id="alerts-show-more-btn" style="margin-top:8px">Show More (' +
+        (allItems.length - ALERTS_STATE.shown) + ' remaining)</button>'
+      : "";
+
+    if (append) {
+      // Append rows to existing tbody and update Show More button
+      var tbody = container.querySelector("table.data-table tbody");
+      if (tbody) {
+        var fragment = document.createElement("tbody");
+        fragment.innerHTML = newItems.map(function (row, i) {
+          return buildTranscriptionRowHtml(row, startIdx + i, threshold, "alerts");
+        }).join("");
+        while (fragment.firstChild) tbody.appendChild(fragment.firstChild);
+      }
+      var oldBtn = document.getElementById("alerts-show-more-btn");
+      if (oldBtn) oldBtn.outerHTML = showMoreHtml;
+    } else {
+      var rowsHtml = newItems.map(function (row, i) {
+        return buildTranscriptionRowHtml(row, startIdx + i, threshold, "alerts");
+      }).join("");
+      container.innerHTML = header + tableHeader + rowsHtml + tableFooter + showMoreHtml;
+    }
+
+    // Show More button handler
+    var showMoreBtn = document.getElementById("alerts-show-more-btn");
+    if (showMoreBtn) {
+      showMoreBtn.onclick = function () {
+        renderTranscriptionAlertsTable(container, pipelineId, true);
+      };
+    }
+
+    // Expandable row handlers (attach to all current expandable rows)
+    container.querySelectorAll("tr.expandable").forEach(function (row) {
+      if (row._expandBound) return; // avoid duplicate handlers
+      row._expandBound = true;
+      row.onclick = function () {
+        var idx = row.dataset.idx;
+        var filename = row.dataset.file;
+        var detailRow = container.querySelector('tr[data-parent="' + idx + '"]');
+        if (!detailRow) return;
+        var isVisible = detailRow.style.display !== "none";
+        if (isVisible) {
+          detailRow.style.display = "none";
+        } else {
+          detailRow.style.display = "";
+          expandAlertsRow(pipelineId, filename, idx);
+        }
+      };
+    });
+  }
+
+  async function expandAlertsRow(pipelineId, sourceFilename, idx) {
+    await expandTranscriptionDetailRow("alerts", pipelineId, sourceFilename, idx);
   }
 
   /* ===================== Compare Tab ===================== */
