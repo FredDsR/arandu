@@ -7,6 +7,7 @@
   var renderedTabs = {};
   var ACTIVE_THRESHOLDS = { validation: null, quality: null };
   var _thresholdCache = {};
+  var _funnelCache = {};
   var activeRunId = null;
   var activeRunThreshold = 0.6;
   var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
@@ -1095,60 +1096,71 @@
       plotReact(divId, [], { title: FUNNEL_TITLE + ": No data", height: 400 });
       return;
     }
-    fetch("/api/funnel/" + encodeURIComponent(run.pipeline_id))
+    var pid = run.pipeline_id;
+    if (_funnelCache[pid]) {
+      _renderFunnelFromData(_funnelCache[pid], divId);
+      return;
+    }
+    fetch("/api/funnel/" + encodeURIComponent(pid))
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
       .then(function (funnel) {
-        var stages = funnel.stages || [];
-        if (!stages.length) {
-          plotReact(divId, [], { title: FUNNEL_TITLE + ": No data", height: 400 });
-          return;
-        }
-        var n = stages.length;
-        var dropNodeIdx = n;
-        var nodeLabels = stages.map(function (s) { return s.label + " (" + s.count + ")"; });
-        nodeLabels.push("Failed/Invalid");
-        var nodeColors = stages.map(function () { return "#029E73"; });
-        nodeColors.push("#CC3311");
-        var sources = [], targets = [], values = [], linkColors = [];
-        for (var i = 0; i < n - 1; i++) {
-          var next = stages[i + 1];
-          if (next.count > 0) {
-            sources.push(i); targets.push(i + 1); values.push(next.count);
-            linkColors.push("rgba(2, 158, 115, 0.4)");
-          }
-          if (next.drop_count > 0) {
-            sources.push(i); targets.push(dropNodeIdx); values.push(next.drop_count);
-            linkColors.push("rgba(204, 51, 17, 0.4)");
-          }
-        }
-        plotReact(divId, [{
-          type: "sankey",
-          orientation: "h",
-          node: {
-            label: nodeLabels,
-            color: nodeColors,
-            pad: 15,
-            thickness: 20,
-          },
-          link: {
-            source: sources,
-            target: targets,
-            value: values,
-            color: linkColors,
-          },
-        }], {
-          title: FUNNEL_TITLE,
-          height: 400,
-          template: "plotly_white",
-        });
+        _funnelCache[pid] = funnel;
+        _renderFunnelFromData(funnel, divId);
       })
       .catch(function (e) {
         console.warn("Could not build funnel chart:", e);
         plotReact(divId, [], { title: FUNNEL_TITLE + ": Unavailable", height: 400 });
       });
+  }
+
+  function _renderFunnelFromData(funnel, divId) {
+    var FUNNEL_TITLE = "Data Processing Funnel";
+    var stages = funnel.stages || [];
+    if (!stages.length) {
+      plotReact(divId, [], { title: FUNNEL_TITLE + ": No data", height: 400 });
+      return;
+    }
+    var n = stages.length;
+    var dropNodeIdx = n;
+    var nodeLabels = stages.map(function (s) { return s.label + " (" + s.count + ")"; });
+    nodeLabels.push("Failed/Invalid");
+    var nodeColors = stages.map(function () { return "#029E73"; });
+    nodeColors.push("#CC3311");
+    var sources = [], targets = [], values = [], linkColors = [];
+    for (var i = 0; i < n - 1; i++) {
+      var next = stages[i + 1];
+      if (next.count > 0) {
+        sources.push(i); targets.push(i + 1); values.push(next.count);
+        linkColors.push("rgba(2, 158, 115, 0.4)");
+      }
+      if (next.drop_count > 0) {
+        sources.push(i); targets.push(dropNodeIdx); values.push(next.drop_count);
+        linkColors.push("rgba(204, 51, 17, 0.4)");
+      }
+    }
+    plotReact(divId, [{
+      type: "sankey",
+      orientation: "h",
+      node: {
+        label: nodeLabels,
+        color: nodeColors,
+        pad: 15,
+        thickness: 20,
+      },
+      link: {
+        source: sources,
+        target: targets,
+        value: values,
+        color: linkColors,
+      },
+    }], {
+      title: FUNNEL_TITLE,
+      height: 400,
+      template: "plotly_white",
+    });
   }
 
   /* ===================== Config Tab ===================== */
@@ -1875,6 +1887,8 @@
       row.classList.remove("row-expanded");
       return;
     }
+    if (row.dataset.loading === "true") return;
+    row.dataset.loading = "true";
     try {
       var detail = await fetch(
         "/api/qa/" + encodeURIComponent(pipelineId)
@@ -1905,8 +1919,18 @@
       html += "</div></td></tr>";
       row.insertAdjacentHTML("afterend", html);
       row.classList.add("row-expanded");
+      delete row.dataset.loading;
     } catch (e) {
       console.error("Failed to load QA detail:", e);
+      var colCount = row.cells.length;
+      var errHtml = '<tr class="qa-expanded-detail"><td colspan="' + colCount + '">'
+        + '<div class="detail-panel" style="border-left-color: #CC3311;">'
+        + '<p style="color: #CC3311;">'
+        + "\u26A0 Could not load detail \u2014 " + esc(e.message) + ". Click row to dismiss and retry."
+        + "</p></div></td></tr>";
+      row.insertAdjacentHTML("afterend", errHtml);
+      row.classList.add("row-expanded");
+      delete row.dataset.loading;
     }
   }
 
