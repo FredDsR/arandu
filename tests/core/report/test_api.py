@@ -291,6 +291,8 @@ class TestExportHtmlEndpoint:
 
     def test_export_html_not_found(self, client: object, mock_service: MagicMock) -> None:
         """GET /api/export/html/nonexistent returns 404."""
-        mock_service.export_single_run_html.side_effect = KeyError("Pipeline not found: nonexistent")
+        mock_service.export_single_run_html.side_effect = KeyError(
+            "Pipeline not found: nonexistent"
+        )
         resp = client.get("/api/export/html/nonexistent")
         assert resp.status_code == 404

@@ -231,7 +231,7 @@ class TestReportCommandDeprecation:
             mock_collector.load_all_runs.return_value = []
             mock_collector_cls.return_value = mock_collector
 
-            result = runner.invoke(app, ["report", "--no-png"])
+            runner.invoke(app, ["report", "--no-png"])
 
         # Verify the deprecation warning was printed
         assert mock_warn.called
