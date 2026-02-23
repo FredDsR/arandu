@@ -7,14 +7,18 @@ ReportService. No business logic lives here.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
+from jinja2 import Environment, FileSystemLoader
 
 from .service import ReportService
 
 logger = logging.getLogger(__name__)
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 router = APIRouter(prefix="/api")
 
@@ -36,6 +40,23 @@ def create_app(results_dir: Path) -> FastAPI:
 
     app.state.results_dir = results_dir
     app.include_router(router)
+
+    env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
+    template = env.get_template("report.html.j2")
+
+    @app.get("/", response_class=HTMLResponse)
+    def serve_dashboard() -> HTMLResponse:
+        """Render the interactive dashboard HTML shell.
+
+        Returns:
+            Rendered HTML page that fetches data from ``/api/*`` endpoints.
+        """
+        html = template.render(
+            dataset_json=None,
+            plotly_js=None,
+            timestamp=datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        )
+        return HTMLResponse(content=html)
 
     return app
 
@@ -142,7 +163,7 @@ def list_qa_pairs(
     sort_by: str = Query(default="overall_score"),
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=25, ge=1, le=100),
+    per_page: int = Query(default=25, ge=1, le=250),
     service: ReportService = Depends(get_report_service),
 ) -> dict:
     """Return a paginated, filtered list of QA pairs.
@@ -237,7 +258,7 @@ def list_transcriptions(
     sort_by: str = Query(default="overall_quality"),
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=25, ge=1, le=100),
+    per_page: int = Query(default=25, ge=1, le=250),
     service: ReportService = Depends(get_report_service),
 ) -> dict:
     """Return a paginated, filtered list of transcriptions.

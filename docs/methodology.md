@@ -67,14 +67,12 @@ flowchart TD
 
     subgraph P4["Phase 4 — KG Evaluation"]
         direction TB
-        EC["Entity Coverage<br/>Density, Diversity"]:::p4
-        RM["Relation Metrics<br/>Connectivity"]:::p4
-        SQ["Semantic Quality<br/>Coherence"]:::p4
-        KC["Knowledge Coverage<br/>QA vs KG overlap"]:::p4
+        SP["Schema Profile<br/>Entity & Relation Diversity"]:::p4
+        GS["Graph Structure<br/>Density, Connectivity, Clustering"]:::p4
+        KC["Knowledge Coverage<br/>QA-based Functional Test"]:::p4
         RP(["Evaluation Report"]):::out
-        EC --> RP
-        RM --> RP
-        SQ --> RP
+        SP --> RP
+        GS --> RP
         KC --> RP
     end
 ```
@@ -155,7 +153,7 @@ The pipeline uses four of the six Bloom levels: **Remember**, **Understand**, **
 
 - **Understand** (30%) bridges factual recall and analytical reasoning. It verifies **semantic comprehension** -- whether processes, mechanisms, and concepts can be paraphrased and explained beyond literal repetition. In ethnographic interviews, much domain expertise is processual: how a technique works, what a natural sign indicates, how a seasonal cycle affects daily routines. This processual knowledge is not captured by factual questions (Remember) nor by evaluative judgment (Evaluate), yet it is central to the Knowledge Graph representation. Understand also plays a critical scaffolding role: without this intermediate conceptual layer, the LLM would have to leap from raw facts directly to causal analysis, losing the comprehension base that Analyze depends on.
 
-- **Analyze** (30%) is where the pipeline begins to extract **tacit knowledge** in earnest. It identifies causal relationships, hidden patterns, and connections between elements that the interviewee did not necessarily articulate explicitly. This is the level where Module II (Reasoning & Grounding) is most active: Analyze-level questions frequently require **multi-hop reasoning**, synthesizing information from distant parts of the transcript into explicit causal chains. It also drives **tacit inference extraction** -- surfacing implicit domain knowledge that interviewees assumed as shared understanding but never verbalized. From a Knowledge Graph perspective, Analyze maps directly to **relation edges** (subject-predicate-object triples): while Remember populates graph nodes, Analyze populates the connections between them, providing the richest ground truth for the Relation Metrics evaluation dimension.
+- **Analyze** (30%) is where the pipeline begins to extract **tacit knowledge** in earnest. It identifies causal relationships, hidden patterns, and connections between elements that the interviewee did not necessarily articulate explicitly. This is the level where Module II (Reasoning & Grounding) is most active: Analyze-level questions frequently require **multi-hop reasoning**, synthesizing information from distant parts of the transcript into explicit causal chains. It also drives **tacit inference extraction** -- surfacing implicit domain knowledge that interviewees assumed as shared understanding but never verbalized. From a Knowledge Graph perspective, Analyze maps directly to **relation edges** (subject-predicate-object triples): while Remember populates graph nodes, Analyze populates the connections between them, providing the richest ground truth for the Graph Structure evaluation dimension.
 
 - **Evaluate** (20%) is the highest level employed and targets **expert judgment** -- decisions, priorities, and criteria that domain experts apply based on years of experience but rarely verbalize explicitly. The distinction from Analyze is cognitive in nature: Analyze identifies relationships descriptively (*why* X causes Y), while Evaluate requires prescriptive judgment (*is X worth doing? When should one act? Which alternative is better?*). Evaluate has the strongest dependency on scaffolding, receiving QA pairs from all three prior levels, enabling the LLM to construct judgment questions grounded in established facts (Remember), conceptual understanding (Understand), and causal connections (Analyze). For GraphRAG evaluation, Evaluate-level questions represent the most demanding test: if the Knowledge Graph can answer questions requiring synthesis of multiple relations to support an expert judgment, it demonstrates the capacity to represent not just facts but the implicit decision-making logic of the interviewees.
 
@@ -350,11 +348,11 @@ AutoSchemaKG dynamically induces types from the data, though common types in thi
 
 ### 6.1 Objective
 
-Assess how well the constructed knowledge graph captures the tacit knowledge present in the ethnographic interviews. The **QA dataset from Phase 2 serves as ground truth**: it represents validated, cognitively-scaffolded knowledge that was successfully elicited from the transcriptions. The evaluation combines **intrinsic graph quality metrics** (entity diversity, relation density, semantic coherence) with a **functional assessment** -- Knowledge Coverage -- that measures whether the knowledge graph can support answering the cognitively-scaffolded questions from Phase 2.
+Assess how well the constructed knowledge graph captures the tacit knowledge present in the ethnographic interviews. The **QA dataset from Phase 2 serves as ground truth**: it represents validated, cognitively-scaffolded knowledge that was successfully elicited from the transcriptions. The evaluation combines **intrinsic graph quality metrics** (schema profile, relation density, connectivity) with a **functional assessment** -- Knowledge Coverage -- that measures whether the knowledge graph can support answering the cognitively-scaffolded questions from Phase 2.
 
 ### 6.2 Evaluation Strategy
 
-The QA pairs -- already validated for faithfulness, Bloom calibration, informativeness, and self-containedness -- provide a reference benchmark. The evaluation operates on two complementary axes: **intrinsic** metrics assess the graph's structural properties independently (entity diversity, relation density, semantic coherence), while the **extrinsic** Knowledge Coverage metric tests whether the graph functionally supports answering the validated QA pairs.
+The QA pairs -- already validated for faithfulness, Bloom calibration, informativeness, and self-containedness -- provide a reference benchmark. The evaluation operates on two complementary axes: **intrinsic** metrics assess the graph's structural properties independently (schema profile, relation density, connectivity), while the **extrinsic** Knowledge Coverage metric tests whether the graph functionally supports answering the validated QA pairs.
 
 #### Why Functional Evaluation
 
@@ -792,7 +790,7 @@ This methodology implements a **four-phase composable pipeline** for tacit knowl
 1. **Phase 1 (Transcription)** converts raw audio/video into quality-validated text using Whisper ASR with automatic failure detection
 2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, enriched with reasoning traces and validated by an LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, and self-containedness for GraphRAG compatibility)
 3. **Phase 3 (Knowledge Graph)** extracts entity-relation structures using AutoSchemaKG with dynamic schema induction
-4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, combining functional Knowledge Coverage (Bloom-stratified QA answering from the graph) with intrinsic metrics (entity diversity, graph connectivity, and semantic coherence)
+4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, combining functional Knowledge Coverage (Bloom-stratified QA answering from the graph) with intrinsic metrics (schema profile, relation density, connectivity, and clustering coefficient)
 
 Each phase is independently deployable, checkpoint-resumable, and configurable through environment variables. The pipeline is designed for execution on HPC clusters via SLURM, enabling processing of large ethnographic corpora with GPU-accelerated inference. All phases share a consistent batch processing architecture that ensures fault tolerance and reproducibility.
 

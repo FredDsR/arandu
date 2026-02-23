@@ -34,9 +34,9 @@ class TestPaginatedResponse:
             PaginatedResponse(items=[], total=0, page=0, per_page=25, total_pages=0)
 
     def test_paginated_response_invalid_per_page_over_max(self) -> None:
-        """per_page greater than 100 is rejected."""
+        """per_page greater than 250 is rejected."""
         with pytest.raises(ValidationError):
-            PaginatedResponse(items=[], total=0, page=1, per_page=101, total_pages=0)
+            PaginatedResponse(items=[], total=0, page=1, per_page=251, total_pages=0)
 
     def test_paginated_response_negative_total(self) -> None:
         """Negative total is rejected."""

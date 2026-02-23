@@ -30,7 +30,7 @@ class PaginatedResponse(BaseModel, Generic[T]):  # noqa: UP046
     items: list[T]
     total: int = Field(..., ge=0, description="Total matching items")
     page: int = Field(..., ge=1, description="Current page number")
-    per_page: int = Field(..., ge=1, le=100, description="Items per page")
+    per_page: int = Field(..., ge=1, le=250, description="Items per page")
     total_pages: int = Field(..., ge=0, description="Total pages")
 
 
@@ -115,7 +115,7 @@ class QAFilterParams(BaseModel):
     sort_by: str = Field(default="overall_score", description="Column to sort by")
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$", description="Sort direction")
     page: int = Field(default=1, ge=1, description="Page number")
-    per_page: int = Field(default=25, ge=1, le=100, description="Items per page")
+    per_page: int = Field(default=25, ge=1, le=250, description="Items per page")
 
 
 class TranscriptionFilterParams(BaseModel):
@@ -131,7 +131,7 @@ class TranscriptionFilterParams(BaseModel):
     sort_by: str = Field(default="overall_quality", description="Column to sort by")
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$", description="Sort direction")
     page: int = Field(default=1, ge=1, description="Page number")
-    per_page: int = Field(default=25, ge=1, le=100, description="Items per page")
+    per_page: int = Field(default=25, ge=1, le=250, description="Items per page")
 
 
 __all__ = [
