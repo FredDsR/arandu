@@ -663,6 +663,8 @@
     el.innerHTML = html;
     delegateExportClicks(el);
   }
+
+  function buildPipelineOverview(runs, divId) {
     var filtered = runs.filter(function (r) {
       return r.success_rate !== null;
     });
