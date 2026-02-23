@@ -7,7 +7,7 @@ compute devices (CPU, CUDA, MPS) and appropriate dtype selection.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import torch
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from gtranscriber.config import TranscriberConfig
 
 
-class DeviceType(str, Enum):
+class DeviceType(StrEnum):
     """Supported compute device types."""
 
     CPU = "cpu"

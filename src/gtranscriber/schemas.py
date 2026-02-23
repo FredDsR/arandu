@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -621,7 +621,7 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class PipelineType(str, Enum):
+class PipelineType(StrEnum):
     """Enum representing the different pipeline types."""
 
     TRANSCRIPTION = "transcription"
@@ -684,7 +684,7 @@ class PipelineMetadata(BaseModel):
         return cls.model_validate_json(Path(path).read_text())
 
 
-class RunStatus(str, Enum):
+class RunStatus(StrEnum):
     """Enum representing the status of a pipeline run."""
 
     PENDING = "pending"
