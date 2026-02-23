@@ -671,7 +671,15 @@ The composite evaluation score is computed as a weighted average of the extrinsi
 
 $$\text{Overall} = 0.4 \cdot \text{KC} + 0.2 \cdot D_e + 0.2 \cdot \min\!\left(\frac{\text{RelationDensity}}{3.0},\ 1.0\right) + 0.2 \cdot \text{ConnectivityRatio}$$
 
-All components are bounded in $[0, 1]$: KC is already normalized, $D_e$ (entity type diversity) uses normalized Shannon entropy, relation density is capped at 3.0 edges/node, and connectivity ratio is a proportion. Knowledge Coverage receives the highest weight (0.40) as the primary functional metric; the intrinsic metrics (schema diversity, relational richness, connectivity) contribute equally (0.20 each) as structural quality indicators.
+All components are bounded in $[0, 1]$: KC is already normalized, $D_e$ (entity type diversity) uses normalized Shannon entropy, relation density is capped at 3.0 edges/node, and connectivity ratio is a proportion.
+
+#### Weight Rationale
+
+**Knowledge Coverage (0.40)** receives the highest weight because it is the direct measure of the research objective -- whether the graph captured tacit knowledge. The intrinsic metrics measure structural preconditions, not the objective itself: a graph can have perfect structure yet fail to represent the knowledge that matters, while KC tests this directly by posing questions against the graph.
+
+**The three intrinsic metrics receive equal weights (0.20 each)** because they cover orthogonal and complementary dimensions of structural quality. Entity type diversity ($D_e$) measures schema richness -- whether the conceptualization produced a non-trivial type system. Relation density measures local relational richness -- whether concepts are interconnected rather than isolated. Connectivity ratio measures global integration -- whether the corpus-level graph is cohesive rather than fragmented into disconnected interview-specific subgraphs. None of these is more important than the others: a graph with rich schema but fragmented structure ($D_e$ high, $CR$ low) is as problematic as an integrated graph with trivial schema ($CR$ high, $D_e$ low). Equal weights reflect this independence.
+
+**Why 0.40 and not 0.50 for KC.** With a KC weight of 0.40, a perfect KC score ($= 1.0$) paired with zero intrinsic scores yields an overall of 0.40 -- signaling that the graph "works" but has structural problems. If KC weighted 0.50, the same scenario would yield 0.50, potentially masking severe structural deficiencies. The 0.40/0.60 split ensures that functional evaluation dominates but cannot compensate for a structurally deficient graph on its own.
 
 ### 6.6 Output
 
