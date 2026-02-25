@@ -124,8 +124,6 @@
     sel.onchange = function () {
       setActiveRun(sel.value);
     };
-    // Also populate pipeline filter
-    populateSelect("filter-pipeline", runs.map(function (r) { return r.pipeline_id; }));
   }
 
   async function setActiveRun(pipelineId) {
@@ -226,7 +224,7 @@
     if (search) search.addEventListener("input", applyAndUpdate);
 
     // Select change handlers
-    ["filter-pipeline", "filter-location", "filter-participant"].forEach(
+    ["filter-location", "filter-participant"].forEach(
       function (id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener("change", applyAndUpdate);
@@ -237,7 +235,7 @@
     var resetBtn = document.getElementById("btn-reset-filters");
     if (resetBtn) {
       resetBtn.onclick = function () {
-        ["filter-pipeline", "filter-location", "filter-participant"].forEach(
+        ["filter-location", "filter-participant"].forEach(
           function (id) {
             var el = document.getElementById(id);
             if (el) {
@@ -284,7 +282,6 @@
   function getActiveFilters() {
     var filters = {};
 
-    filters.pipelines = getSelectedValues("filter-pipeline");
     filters.locations = getSelectedValues("filter-location");
     filters.participants = getSelectedValues("filter-participant");
 
@@ -321,11 +318,6 @@
   function applyFilters(data, filters) {
     var qa = data.qa_pairs.filter(function (q) {
       if (
-        filters.pipelines.length &&
-        filters.pipelines.indexOf(q.pipeline_id) === -1
-      )
-        return false;
-      if (
         filters.locations.length &&
         (!q.location || filters.locations.indexOf(q.location) === -1)
       )
@@ -357,11 +349,6 @@
 
     var trans = data.transcriptions.filter(function (t) {
       if (
-        filters.pipelines.length &&
-        filters.pipelines.indexOf(t.pipeline_id) === -1
-      )
-        return false;
-      if (
         filters.locations.length &&
         (!t.location || filters.locations.indexOf(t.location) === -1)
       )
@@ -381,14 +368,7 @@
       return true;
     });
 
-    var runs = data.runs.filter(function (r) {
-      if (
-        filters.pipelines.length &&
-        filters.pipelines.indexOf(r.pipeline_id) === -1
-      )
-        return false;
-      return true;
-    });
+    var runs = data.runs;
 
     return { qa_pairs: qa, transcriptions: trans, runs: runs };
   }
