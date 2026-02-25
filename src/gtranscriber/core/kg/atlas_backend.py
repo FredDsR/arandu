@@ -31,7 +31,7 @@ ATLAS_DEFAULTS: dict[str, Any] = {
 }
 
 # Path to Portuguese prompt files relative to the project root
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts" / "kg" / "pt"
+_PROMPTS_DIR = Path(__file__).resolve().parents[4] / "prompts" / "kg" / "pt"
 
 
 class AtlasRagConstructor:
