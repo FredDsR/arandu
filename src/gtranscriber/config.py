@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -491,6 +492,17 @@ class KGConfig(BaseSettings):
         extra="ignore",
     )
 
+    # Backend selection
+    backend: str = Field(
+        default="atlas",
+        pattern="^(atlas)$",
+        description="KGC backend: atlas (AutoSchemaKG)",
+    )
+    backend_options: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Backend-specific options passed through to the constructor",
+    )
+
     # LLM Provider settings
     provider: str = Field(
         default="ollama",
@@ -509,22 +521,6 @@ class KGConfig(BaseSettings):
         description="Custom base URL for OpenAI-compatible endpoints",
     )
 
-    # Graph settings
-    merge_graphs: bool = Field(
-        default=True,
-        description="Merge individual graphs into corpus-level graph",
-    )
-    output_format: str = Field(
-        default="graphml",
-        pattern="^(graphml|json)$",
-        description="Graph export format: graphml (default, NetworkX-compatible) or json",
-    )
-    schema_mode: str = Field(
-        default="dynamic",
-        pattern="^(dynamic|predefined)$",
-        description="Schema mode: dynamic (infer from data) or predefined",
-    )
-
     # LLM settings
     temperature: float = Field(
         default=0.5,
@@ -538,10 +534,6 @@ class KGConfig(BaseSettings):
         default="pt",
         description="Language code for extraction prompts (ISO 639-1)",
     )
-    prompt_path: str = Field(
-        default="prompts/pt_prompts.json",
-        description="Path to language-specific prompt templates",
-    )
 
     # Output settings
     output_dir: Path = Field(
@@ -549,11 +541,22 @@ class KGConfig(BaseSettings):
         description="Output directory for knowledge graphs",
     )
 
-    # Workers (shared setting, loaded from GTRANSCRIBER_WORKERS)
+    # Workers
     workers: int = Field(
         default=2,
         description="Number of parallel workers for KG construction",
     )
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        """Validate language code for extraction prompts."""
+        valid_languages = {"en", "pt"}
+        if v not in valid_languages:
+            raise ValueError(
+                f"Invalid KG language: {v!r}. Must be one of {sorted(valid_languages)}"
+            )
+        return v
 
 
 class EvaluationConfig(BaseSettings):

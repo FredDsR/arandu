@@ -451,11 +451,13 @@ class KGMetadata(BaseModel):
     model_id: str = Field(..., description="LLM model used for extraction")
     provider: str = Field(..., description="LLM provider")
     language: str = Field(default="pt", description="Language code for extraction (ISO 639-1)")
-    prompt_path: str = Field(
-        default="prompts/pt_prompts.json",
-        description="Path to prompt template file used",
-    )
     created_at: datetime = Field(default_factory=datetime.now, description="When graph was created")
+    total_documents: int = Field(default=0, description="Number of documents processed")
+    total_nodes: int | None = Field(default=None, description="Number of nodes in the graph")
+    total_edges: int | None = Field(default=None, description="Number of edges in the graph")
+    backend_version: str | None = Field(
+        default=None, description="KGC backend identifier and version"
+    )
 
     def save(self, path: str | Path) -> None:
         """Save metadata to JSON file."""
