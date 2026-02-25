@@ -225,8 +225,10 @@ class TestReportCommandDeprecation:
         runner = CliRunner()
 
         # Patch print_warning and the heavy imports to avoid filesystem access
-        with patch("gtranscriber.main.print_warning") as mock_warn, \
-             patch("gtranscriber.core.report.ResultsCollector") as mock_collector_cls:
+        with (
+            patch("gtranscriber.main.print_warning") as mock_warn,
+            patch("gtranscriber.core.report.ResultsCollector") as mock_collector_cls,
+        ):
             mock_collector = MagicMock()
             mock_collector.load_all_runs.return_value = []
             mock_collector_cls.return_value = mock_collector
