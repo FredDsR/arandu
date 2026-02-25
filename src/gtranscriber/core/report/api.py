@@ -359,27 +359,29 @@ def get_funnel(
 
 
 # ---------------------------------------------------------------------------
-# Export endpoint
+# Export endpoints
 # ---------------------------------------------------------------------------
 
 
-@router.get("/export/{data_type}")
+@router.get("/export/csv")
 def export_csv(
-    data_type: str,
+    type: str = Query(..., pattern="^(qa|transcriptions|runs)$"),
     pipeline: str | None = Query(default=None),
     is_valid: bool | None = Query(default=None),
+    min_score: float | None = Query(default=None, ge=0.0, le=1.0),
     service: ReportService = Depends(get_report_service),
 ) -> StreamingResponse:
-    """Export filtered data as CSV.
+    """Export filtered data as CSV download.
 
     Args:
-        data_type: Data type to export (``"qa"`` or ``"transcriptions"``).
+        type: Data type to export (``"qa"``, ``"transcriptions"``, or ``"runs"``).
         pipeline: Optional pipeline filter.
         is_valid: Optional validity filter.
+        min_score: Optional minimum score filter.
         service: Injected ReportService.
 
     Returns:
-        StreamingResponse with CSV content.
+        StreamingResponse with CSV content and download headers.
     """
     try:
         filters: dict = {}
@@ -387,14 +389,50 @@ def export_csv(
             filters["pipeline"] = pipeline
         if is_valid is not None:
             filters["is_valid"] = is_valid
-        csv_content = service.export_csv(data_type, filters)
+        if min_score is not None:
+            filters["min_score"] = min_score
+        csv_content = service.export_csv(type, filters)
         return StreamingResponse(
             iter([csv_content]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={data_type}.csv"},
+            headers={"Content-Disposition": f"attachment; filename={type}_export.csv"},
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
-        logger.exception("Failed to export CSV for %s", data_type)
+        logger.exception("Failed to export CSV for %s", type)
+        raise HTTPException(status_code=500, detail="Internal server error") from None
+
+
+@router.get("/export/html/{pipeline_id}")
+def export_html(
+    pipeline_id: str,
+    service: ReportService = Depends(get_report_service),
+) -> StreamingResponse:
+    """Generate static HTML report for a single pipeline run.
+
+    Creates a self-contained HTML file with summary charts and metrics
+    that can be shared offline.
+
+    Args:
+        pipeline_id: Pipeline run to export.
+        service: Injected ReportService.
+
+    Returns:
+        StreamingResponse with HTML content and download headers.
+
+    Raises:
+        HTTPException: 404 if pipeline_id not found.
+    """
+    try:
+        html_content = service.export_single_run_html(pipeline_id)
+        return StreamingResponse(
+            iter([html_content]),
+            media_type="text/html",
+            headers={"Content-Disposition": f"attachment; filename={pipeline_id}_report.html"},
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Failed to export HTML for %s", pipeline_id)
         raise HTTPException(status_code=500, detail="Internal server error") from None

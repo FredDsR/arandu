@@ -88,12 +88,33 @@
     initFilters();
     initTabs();
     initSubTabs();
+    initExportHtmlButton();
     loadDashboardData();
+  }
+
+  function initExportHtmlButton() {
+    var btn = document.getElementById("btn-export-html");
+    if (!btn) return;
+    if (window.__EMBEDDED_DATA__) {
+      btn.style.display = "none";
+      return;
+    }
+    btn.onclick = function () {
+      var sel = document.getElementById("run-selector");
+      var activeRun = sel ? sel.value : null;
+      if (activeRun) {
+        window.location.href = "/api/export/html/" + encodeURIComponent(activeRun);
+      }
+    };
   }
 
   /* ===================== API Data Loading ===================== */
 
   async function loadDashboardData() {
+    if (window.__EMBEDDED_DATA__) {
+      loadFromEmbeddedData(window.__EMBEDDED_DATA__);
+      return;
+    }
     try {
       var runs = await fetch("/api/runs").then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -108,6 +129,26 @@
       // API not available; fall back to empty data
       console.error("Failed to load dashboard data:", e);
       applyAndUpdate();
+    }
+  }
+
+  function loadFromEmbeddedData(embedded) {
+    ALL_RUNS = embedded.runs || [];
+    DATA.qa_pairs = embedded.qa_pairs || [];
+    DATA.transcriptions = embedded.transcriptions || [];
+    DATA.runs = embedded.runs || [];
+    populateRunSelector(ALL_RUNS);
+    if (ALL_RUNS.length) {
+      activeRunId = ALL_RUNS[0].pipeline_id;
+      activeRunThreshold = DEFAULT_SCORE_THRESHOLD;
+      var locs = unique(DATA.transcriptions.map(function (t) { return t.location || ""; }).filter(Boolean));
+      var parts = unique(DATA.transcriptions.map(function (t) { return t.participant_name || ""; }).filter(Boolean));
+      populateSelect("filter-location", locs);
+      populateSelect("filter-participant", parts);
+      updateSummaryCards(ALL_RUNS[0], DATA.qa_pairs, DATA.transcriptions);
+      renderedTabs = {};
+      ACTIVE_THRESHOLDS = { validation: DEFAULT_SCORE_THRESHOLD, quality: DEFAULT_SCORE_THRESHOLD };
+      renderTab("overview", DATA);
     }
   }
 
@@ -580,10 +621,37 @@
 
   /* ===================== Chart Builders ===================== */
 
+  /* ===================== Export Buttons ===================== */
+
+  function buildExportButton(dataType, pipelineId) {
+    if (window.__EMBEDDED_DATA__) return "";
+    var params = new URLSearchParams({ type: dataType });
+    if (pipelineId) params.set("pipeline", pipelineId);
+    var filters = getActiveFilters();
+    if (filters.validity === "valid") params.set("is_valid", "true");
+    else if (filters.validity === "invalid") params.set("is_valid", "false");
+    if (filters.minScore > 0) params.set("min_score", filters.minScore);
+    var url = "/api/export/csv?" + params.toString();
+    // Use data attribute to avoid inline onclick XSS risk; listener attached by delegateExportClicks
+    return '<button class="export-btn" data-export-url="' + esc(url) + '">&#8595; Download CSV</button>';
+  }
+
+  function delegateExportClicks(container) {
+    if (!container) return;
+    container.querySelectorAll(".export-btn[data-export-url]").forEach(function (btn) {
+      if (btn._exportBound) return;
+      btn._exportBound = true;
+      btn.addEventListener("click", function () {
+        window.location.href = btn.dataset.exportUrl;
+      });
+    });
+  }
+
   function buildRunSummaryTable(runs, divId) {
     var el = document.getElementById(divId);
     if (!el) return;
-    var html =
+    var html = buildExportButton("runs", activeRunId);
+    html +=
       '<table class="data-table"><thead><tr>' +
       "<th>Pipeline ID</th><th>Steps</th><th>Status</th>" +
       "<th>Duration (s)</th><th>Success Rate</th><th>Items</th>" +
@@ -602,6 +670,7 @@
     });
     html += "</tbody></table>";
     el.innerHTML = html;
+    delegateExportClicks(el);
   }
 
   function buildPipelineOverview(runs, divId) {
@@ -1385,7 +1454,8 @@
     ];
 
     var s = TRANS_TABLE_STATE;
-    var html = '<table class="data-table"><thead><tr>';
+    var html = buildExportButton("transcriptions", pipelineId);
+    html += '<table class="data-table"><thead><tr>';
     cols.forEach(function (col) {
       if (!col.sortable) {
         html += "<th>" + col.label + "</th>";
@@ -1407,6 +1477,7 @@
     html += buildPaginationHtml(currentPage, totalPages);
 
     container.innerHTML = html;
+    delegateExportClicks(container);
 
     // Sort header click handlers
     container.querySelectorAll("th[data-field]").forEach(function (th) {
@@ -1551,7 +1622,8 @@
       '</strong> below quality threshold or invalid (<strong>' + threshold.toFixed(2) + "</strong>)</p>";
 
     if (!allItems.length) {
-      container.innerHTML = header + '<p class="placeholder-text">No transcriptions below quality threshold.</p>';
+      container.innerHTML = header + buildExportButton("transcriptions", pipelineId) + '<p class="placeholder-text">No transcriptions below quality threshold.</p>';
+      delegateExportClicks(container);
       return;
     }
 
@@ -1586,7 +1658,8 @@
       var rowsHtml = newItems.map(function (row, i) {
         return buildTranscriptionRowHtml(row, startIdx + i, threshold, "alerts");
       }).join("");
-      container.innerHTML = header + tableHeader + rowsHtml + tableFooter + showMoreHtml;
+      container.innerHTML = header + buildExportButton("transcriptions", pipelineId) + tableHeader + rowsHtml + tableFooter + showMoreHtml;
+      delegateExportClicks(container);
     }
 
     // Show More button handler
@@ -1750,6 +1823,7 @@
       var total = data.total || 0;
       qaDetailState.totalPages = totalPages;
       container.innerHTML = renderQADetailTableHtml(items, total, totalPages);
+      delegateExportClicks(container);
       attachQADetailHandlers(container, pipelineId);
     } catch (e) {
       if (currentRequest !== qaRequestId) return;
@@ -1772,7 +1846,8 @@
       { field: "overall_score", label: "Overall", sortable: true },
       { field: "is_valid", label: "Valid", sortable: true },
     ];
-    var html = '<table class="data-table"><thead><tr>';
+    var html = buildExportButton("qa", activeRunId);
+    html += '<table class="data-table"><thead><tr>';
     cols.forEach(function (col) {
       if (col.sortable) {
         var indicator = col.field === qaDetailState.sortBy
@@ -1958,6 +2033,7 @@
         return r.json();
       });
       container.innerHTML = renderAlertsHtml(data.items || [], data.total || 0, data.total_pages || 1, threshold);
+      delegateExportClicks(container);
       attachAlertsHandlers(container, pipelineId, threshold, filters);
     } catch (e) {
       console.error("Failed to load QA alerts:", e);
@@ -1970,6 +2046,7 @@
       + '<span class="alerts-count">' + total + " items</span>"
       + "<span> below validation threshold (" + threshold.toFixed(2) + ")</span>"
       + "</div>";
+    html += buildExportButton("qa", activeRunId);
     if (!items.length) {
       html += '<p class="placeholder-text">No QA pairs below threshold \u2014 all items pass quality checks.</p>';
       return html;

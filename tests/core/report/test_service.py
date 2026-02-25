@@ -354,10 +354,57 @@ class TestExportCsv:
         assert "pipeline_id" in csv_content
         assert "pipe_000" in csv_content
 
+    def test_export_csv_runs(self, service: ReportService) -> None:
+        """Generates valid CSV content for run summaries."""
+        csv_content = service.export_csv("runs", {})
+        assert "pipeline_id" in csv_content
+        assert "pipe_000" in csv_content
+
+    def test_export_csv_with_filters(self, service: ReportService) -> None:
+        """Pipeline filter is applied before export."""
+        csv_content = service.export_csv("qa", {"pipeline": "pipe_000"})
+        assert "pipe_000" in csv_content
+
+        csv_empty = service.export_csv("qa", {"pipeline": "nonexistent"})
+        assert "pipe_000" not in csv_empty
+
+    def test_export_csv_runs_with_pipeline_filter(self, service: ReportService) -> None:
+        """Pipeline filter narrows run export."""
+        csv_content = service.export_csv("runs", {"pipeline": "nonexistent"})
+        assert "pipe_000" not in csv_content
+
     def test_export_csv_invalid_type(self, service: ReportService) -> None:
         """Raises ValueError for unsupported data_type."""
         with pytest.raises(ValueError, match="Unsupported data_type"):
             service.export_csv("invalid_type", {})
+
+
+# ---------------------------------------------------------------------------
+# export_single_run_html
+# ---------------------------------------------------------------------------
+
+
+class TestExportSingleRunHtml:
+    """Tests for ReportService.export_single_run_html."""
+
+    def test_export_single_run_html(self, mock_collector: MagicMock) -> None:
+        """Returns HTML string containing expected elements."""
+        from gtranscriber.core.report.collector import RunReport
+
+        mock_collector.load_run.return_value = RunReport(pipeline_id="pipe_000")
+        svc = ReportService(mock_collector)
+
+        html = svc.export_single_run_html("pipe_000")
+        assert "<html" in html
+        assert "G-Transcriber" in html
+
+    def test_export_single_run_html_not_found(self, mock_collector: MagicMock) -> None:
+        """Raises KeyError when pipeline_id is not found."""
+        mock_collector.load_run.side_effect = FileNotFoundError("not found")
+        svc = ReportService(mock_collector)
+
+        with pytest.raises(KeyError, match="Pipeline not found"):
+            svc.export_single_run_html("nonexistent")
 
 
 # ---------------------------------------------------------------------------

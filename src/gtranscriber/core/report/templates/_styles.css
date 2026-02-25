@@ -781,3 +781,24 @@ footer {
 .bloom-badge.analyze { background: #DE8F05; }
 .bloom-badge.evaluate { background: #CC3311; }
 .bloom-badge.create { background: #CC79A7; }
+
+.export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    background: white;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 12px;
+    transition: all 0.15s;
+}
+
+.export-btn:hover {
+    background: var(--primary);
+    color: white;
+}
