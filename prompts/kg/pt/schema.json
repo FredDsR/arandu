@@ -1,0 +1,40 @@
+{
+  "entity_relation": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "Head": { "type": "string" },
+        "Relation": { "type": "string" },
+        "Tail": { "type": "string" }
+      },
+      "required": ["Head", "Relation", "Tail"]
+    }
+  },
+  "event_entity": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "Event": { "type": "string" },
+        "Entity": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["Event", "Entity"]
+    }
+  },
+  "event_relation": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "Head": { "type": "string" },
+        "Relation": { "type": "string" },
+        "Tail": { "type": "string" }
+      },
+      "required": ["Head", "Relation", "Tail"]
+    }
+  }
+}
