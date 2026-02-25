@@ -26,6 +26,8 @@ dependencies = [
     # LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
     "openai>=1.0.0",
     "httpx>=0.27.0",
+    # Graph loading and analysis
+    "networkx>=3.1",
 ]
 
 [project.scripts]
@@ -89,6 +91,9 @@ report = [
     "plotly>=6.0.0",
     "jinja2>=3.1.0",
     "kaleido>=0.2.1",
+]
+kg = [
+    "atlas-rag>=0.0.5",
 ]
 
 [dependency-groups]
