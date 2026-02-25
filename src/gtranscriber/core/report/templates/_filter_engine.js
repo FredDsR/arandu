@@ -95,6 +95,10 @@
   function initExportHtmlButton() {
     var btn = document.getElementById("btn-export-html");
     if (!btn) return;
+    if (window.__EMBEDDED_DATA__) {
+      btn.style.display = "none";
+      return;
+    }
     btn.onclick = function () {
       var sel = document.getElementById("run-selector");
       var activeRun = sel ? sel.value : null;
@@ -107,6 +111,10 @@
   /* ===================== API Data Loading ===================== */
 
   async function loadDashboardData() {
+    if (window.__EMBEDDED_DATA__) {
+      loadFromEmbeddedData(window.__EMBEDDED_DATA__);
+      return;
+    }
     try {
       var runs = await fetch("/api/runs").then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -121,6 +129,26 @@
       // API not available; fall back to empty data
       console.error("Failed to load dashboard data:", e);
       applyAndUpdate();
+    }
+  }
+
+  function loadFromEmbeddedData(embedded) {
+    ALL_RUNS = embedded.runs || [];
+    DATA.qa_pairs = embedded.qa_pairs || [];
+    DATA.transcriptions = embedded.transcriptions || [];
+    DATA.runs = embedded.runs || [];
+    populateRunSelector(ALL_RUNS);
+    if (ALL_RUNS.length) {
+      activeRunId = ALL_RUNS[0].pipeline_id;
+      activeRunThreshold = DEFAULT_SCORE_THRESHOLD;
+      var locs = unique(DATA.transcriptions.map(function (t) { return t.location || ""; }).filter(Boolean));
+      var parts = unique(DATA.transcriptions.map(function (t) { return t.participant_name || ""; }).filter(Boolean));
+      populateSelect("filter-location", locs);
+      populateSelect("filter-participant", parts);
+      updateSummaryCards(ALL_RUNS[0], DATA.qa_pairs, DATA.transcriptions);
+      renderedTabs = {};
+      ACTIVE_THRESHOLDS = { validation: DEFAULT_SCORE_THRESHOLD, quality: DEFAULT_SCORE_THRESHOLD };
+      renderTab("overview", DATA);
     }
   }
 
@@ -616,6 +644,7 @@
   /* ===================== Export Buttons ===================== */
 
   function buildExportButton(dataType, pipelineId) {
+    if (window.__EMBEDDED_DATA__) return "";
     var params = new URLSearchParams({ type: dataType });
     if (pipelineId) params.set("pipeline", pipelineId);
     var filters = getActiveFilters();
