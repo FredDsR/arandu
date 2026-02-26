@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from gtranscriber.config import KGConfig
-from gtranscriber.schemas import EnrichedRecord
+from gtranscriber.schemas import EnrichedRecord, SourceMetadata
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -118,6 +118,203 @@ class TestPrepareInputData:
         assert data[0]["text"] == "Texto um."
         assert data[0]["metadata"]["lang"] == "pt"
         assert data[1]["id"] == "id2"
+
+
+class TestBuildMetadataHeader:
+    """Tests for _build_metadata_header."""
+
+    @pytest.fixture
+    def _pt_labels(self) -> dict[str, str]:
+        """Portuguese labels matching metadata_labels.json."""
+        return {
+            "header": "[Contexto da Entrevista]",
+            "transcription": "[Transcrição]",
+            "participant": "Participante",
+            "location": "Local",
+            "date": "Data",
+            "context": "Contexto",
+            "researcher": "Pesquisador(a)",
+            "sequence": "Sequência",
+        }
+
+    @pytest.fixture
+    def _en_labels(self) -> dict[str, str]:
+        """English labels matching metadata_labels.json."""
+        return {
+            "header": "[Interview Context]",
+            "transcription": "[Transcription]",
+            "participant": "Participant",
+            "location": "Location",
+            "date": "Date",
+            "context": "Event Context",
+            "researcher": "Researcher",
+            "sequence": "Sequence",
+        }
+
+    def test_no_metadata_returns_empty(self, _mock_atlas_rag: dict) -> None:
+        """When source_metadata is None, return empty string."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        record = _make_record(text="Texto original.")
+        assert record.source_metadata is None
+
+        result = AtlasRagConstructor._build_metadata_header(
+            record,
+            {"header": "H", "transcription": "T", "participant": "P"},
+        )
+        assert result == ""
+
+    def test_pt_header(
+        self,
+        _mock_atlas_rag: dict,
+        _pt_labels: dict[str, str],
+    ) -> None:
+        """Portuguese metadata header uses Portuguese labels."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        record = _make_record(text="Texto da entrevista.")
+        record.source_metadata = SourceMetadata(
+            participant_name="João da Silva",
+            location="Barra de Pelotas",
+            recording_date="2024-03-15",
+            event_context="Audiência Câmara de Vereadores",
+            researcher_name="Maria Santos",
+            sequence_label="Parte I",
+        )
+
+        result = AtlasRagConstructor._build_metadata_header(record, _pt_labels)
+
+        assert result.startswith("[Contexto da Entrevista]")
+        assert "Participante: João da Silva" in result
+        assert "Local: Barra de Pelotas" in result
+        assert "Data: 2024-03-15" in result
+        assert "Contexto: Audiência Câmara de Vereadores" in result
+        assert "Pesquisador(a): Maria Santos" in result
+        assert "Sequência: Parte I" in result
+        assert result.endswith("[Transcrição]")
+
+    def test_en_header(
+        self,
+        _mock_atlas_rag: dict,
+        _en_labels: dict[str, str],
+    ) -> None:
+        """English metadata header uses English labels."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        record = _make_record(text="Interview text.")
+        record.source_metadata = SourceMetadata(
+            participant_name="John Smith",
+            location="Porto Alegre",
+        )
+
+        result = AtlasRagConstructor._build_metadata_header(record, _en_labels)
+
+        assert result.startswith("[Interview Context]")
+        assert "Participant: John Smith" in result
+        assert "Location: Porto Alegre" in result
+        assert result.endswith("[Transcription]")
+
+    def test_partial_metadata_omits_none_fields(
+        self,
+        _mock_atlas_rag: dict,
+        _pt_labels: dict[str, str],
+    ) -> None:
+        """Only non-None fields appear in the header."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        record = _make_record(text="Texto.")
+        record.source_metadata = SourceMetadata(participant_name="Ana")
+
+        result = AtlasRagConstructor._build_metadata_header(record, _pt_labels)
+
+        assert "Participante: Ana" in result
+        assert "Local:" not in result
+        assert "Data:" not in result
+
+    def test_empty_metadata_returns_empty(
+        self,
+        _mock_atlas_rag: dict,
+        _pt_labels: dict[str, str],
+    ) -> None:
+        """When all SourceMetadata fields are None, return empty string."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        record = _make_record(text="Texto.")
+        record.source_metadata = SourceMetadata()
+
+        result = AtlasRagConstructor._build_metadata_header(record, _pt_labels)
+        assert result == ""
+
+    def test_empty_labels_returns_empty(self, _mock_atlas_rag: dict) -> None:
+        """When labels dict is empty (missing file), return empty string."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        record = _make_record(text="Texto.")
+        record.source_metadata = SourceMetadata(participant_name="Ana")
+
+        result = AtlasRagConstructor._build_metadata_header(record, {})
+        assert result == ""
+
+
+class TestMetadataEnrichedProcessor:
+    """Tests for the DatasetProcessor subclass that prepends headers to chunks."""
+
+    def test_prepends_header_to_all_chunks(self, _mock_atlas_rag: dict) -> None:
+        """Each chunk should have the metadata header prepended."""
+        from gtranscriber.core.kg.atlas_backend import _get_enriched_processor_cls
+
+        ProcessorCls = _get_enriched_processor_cls()
+
+        # Simulate a document with _metadata_header in metadata
+        sample = {
+            "id": "doc1",
+            "text": "Word " * 5000,
+            "metadata": {
+                "lang": "pt",
+                "_metadata_header": "[Contexto]\nParticipante: Ana\n\n[Transcrição]",
+            },
+        }
+
+        from atlas_rag.kg_construction.triple_config import ProcessingConfig
+
+        config = ProcessingConfig(
+            model_path="test",
+            data_directory=".",
+            filename_pattern="test",
+            chunk_size=100,
+        )
+        processor = ProcessorCls(config, {}, {})
+        chunks = processor.create_sample_chunks(sample)
+
+        assert len(chunks) > 1, "Should produce multiple chunks"
+        for chunk in chunks:
+            assert chunk["text"].startswith("[Contexto]\nParticipante: Ana")
+            assert "_metadata_header" not in chunk["metadata"]
+
+    def test_no_header_key_passes_through(self, _mock_atlas_rag: dict) -> None:
+        """Documents without _metadata_header should pass through unchanged."""
+        from gtranscriber.core.kg.atlas_backend import _get_enriched_processor_cls
+
+        ProcessorCls = _get_enriched_processor_cls()
+
+        sample = {
+            "id": "doc1",
+            "text": "Some short text.",
+            "metadata": {"lang": "pt"},
+        }
+
+        from atlas_rag.kg_construction.triple_config import ProcessingConfig
+
+        config = ProcessingConfig(
+            model_path="test",
+            data_directory=".",
+            filename_pattern="test",
+        )
+        processor = ProcessorCls(config, {}, {})
+        chunks = processor.create_sample_chunks(sample)
+
+        assert len(chunks) == 1
+        assert chunks[0]["text"] == "Some short text."
 
 
 class TestCreateOpenAIClient:
