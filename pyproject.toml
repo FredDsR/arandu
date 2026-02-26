@@ -96,6 +96,7 @@ kg = [
     "atlas-rag>=0.0.5",
     "pyarrow>=15,<21",
     "datasets>=2.18",
+    "faiss-cpu>=1.7",
 ]
 
 [dependency-groups]
