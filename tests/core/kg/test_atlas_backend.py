@@ -626,6 +626,23 @@ class TestBuildProcessingConfig:
         assert call_kwargs["chunk_size"] == 4096
         assert call_kwargs["batch_size_triple"] == 3  # default
 
+    def test_passes_resume_from(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Test resume_from is forwarded to ProcessingConfig."""
+        from atlas_rag.kg_construction.triple_config import ProcessingConfig
+
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig()
+        constructor = AtlasRagConstructor(config)
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+
+        constructor._build_processing_config(input_dir, output_dir, resume_from=7)
+
+        call_kwargs = ProcessingConfig.call_args[1]
+        assert call_kwargs["resume_from"] == 7
+
 
 class TestRunPipeline:
     """Tests for _run_pipeline."""
