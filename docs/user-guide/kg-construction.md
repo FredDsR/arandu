@@ -329,6 +329,40 @@ Then add `"es"` to `KGConfig.validate_language` in `src/gtranscriber/config.py`.
 
 If source metadata is not available on the transcription records (i.e., `source_metadata` is `None`), the header is simply omitted and chunks are passed through unmodified. No configuration flag is needed.
 
+## Batch-Level Resume
+
+When a SLURM job times out or is interrupted during triple extraction, the atlas backend automatically resumes from the last completed batch on the next run. No manual intervention is needed.
+
+### How It Works
+
+1. Atlas-rag writes extraction results as JSONL lines to `atlas_output/kg_extraction/`
+2. On the next run, the backend counts existing JSONL lines and divides by `batch_size_triple` to determine completed batches
+3. Any partial last batch (incomplete lines from a mid-batch interruption) is trimmed to avoid duplicates
+4. `ProcessingConfig.resume_from` is set to skip already-processed batches
+5. Atlas-rag creates a new timestamped output file for the remaining batches
+6. Downstream steps (`json2csv`, concept generation, GraphML export) read all files in the directory and merge results automatically
+
+### Requirements
+
+- The `atlas_output/` directory from the previous run must be preserved (same `output_dir`)
+- The input data must be identical (same records produce the same chunks and batch boundaries)
+- `batch_size_triple` must be the same between runs
+
+### Example
+
+```bash
+# First run — times out after processing 9 chunks (3 batches of 3)
+PIPELINE_ID=test-cep-01 sbatch scripts/slurm/kg/tupi.slurm
+
+# Resubmit — automatically detects 3 completed batches, resumes from batch 4
+PIPELINE_ID=test-cep-01 sbatch scripts/slurm/kg/tupi.slurm
+```
+
+The logs will show:
+```
+Resuming from batch 3 (9 chunks already processed)
+```
+
 ## Best Practices
 
 1. **Model Selection**
