@@ -360,6 +360,63 @@ class TestMetadataEnrichedProcessor:
         assert chunks[0]["text"] == "Some short text."
 
 
+class TestLoadMetadataLabels:
+    """Tests for _load_metadata_labels."""
+
+    def test_loads_configured_language(self, _mock_atlas_rag: dict) -> None:
+        """Labels for the configured language are returned."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        labels = constructor._load_metadata_labels()
+
+        assert labels["header"] == "[Contexto da Entrevista]"
+        assert labels["participant"] == "Participante"
+
+    def test_falls_back_to_english(self, _mock_atlas_rag: dict, tmp_path: Path) -> None:
+        """Unknown language falls back to English labels."""
+        from gtranscriber.core.kg import atlas_backend
+
+        labels_file = tmp_path / "metadata_labels.json"
+        labels_file.write_text(
+            json.dumps(
+                {
+                    "en": {"header": "[Context]", "participant": "Participant"},
+                }
+            )
+        )
+        original = atlas_backend._PROMPTS_DIR
+        atlas_backend._PROMPTS_DIR = tmp_path
+
+        try:
+            config = KGConfig(language="pt")
+            constructor = atlas_backend.AtlasRagConstructor(config)
+            labels = constructor._load_metadata_labels()
+            assert labels["header"] == "[Context]"
+        finally:
+            atlas_backend._PROMPTS_DIR = original
+
+    def test_missing_file_returns_empty(
+        self,
+        _mock_atlas_rag: dict,
+        tmp_path: Path,
+    ) -> None:
+        """Missing labels file returns empty dict (graceful degradation)."""
+        from gtranscriber.core.kg import atlas_backend
+
+        original = atlas_backend._PROMPTS_DIR
+        atlas_backend._PROMPTS_DIR = tmp_path / "nonexistent"
+
+        try:
+            config = KGConfig(language="pt")
+            constructor = atlas_backend.AtlasRagConstructor(config)
+            labels = constructor._load_metadata_labels()
+            assert labels == {}
+        finally:
+            atlas_backend._PROMPTS_DIR = original
+
+
 class TestCreateOpenAIClient:
     """Tests for _create_openai_client."""
 
