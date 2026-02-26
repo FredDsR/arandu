@@ -136,8 +136,13 @@ class AtlasRagConstructor:
         client = self._create_openai_client()
         model = LLMGenerator(client, self._config.model_id)
 
-        # Step 4: Build ProcessingConfig
-        processing_config = self._build_processing_config(input_dir, output_dir)
+        # Step 4: Detect resume offset and build ProcessingConfig
+        resume_from = self._detect_resume_offset(output_dir)
+        processing_config = self._build_processing_config(
+            input_dir,
+            output_dir,
+            resume_from=resume_from,
+        )
 
         # Step 5: Run atlas-rag extraction pipeline
         extractor = KnowledgeGraphExtractor(model, processing_config)
@@ -251,6 +256,64 @@ class AtlasRagConstructor:
         )
         return all_labels.get("en", {})
 
+    def _detect_resume_offset(self, output_dir: Path) -> int:
+        """Detect completed batches from a previous extraction run.
+
+        Scans ``atlas_output/kg_extraction/`` for existing JSONL output files,
+        counts total lines, and divides by ``batch_size_triple`` to determine
+        the number of complete batches.  If a partial last batch is detected,
+        the trailing incomplete lines are trimmed from the last file so the
+        resumed run does not produce duplicates.
+
+        Args:
+            output_dir: The pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of complete batches to skip (``resume_from`` value).
+        """
+        kg_dir = output_dir / "atlas_output" / "kg_extraction"
+        if not kg_dir.exists():
+            return 0
+
+        output_files = sorted(kg_dir.glob("*.json"))
+        if not output_files:
+            return 0
+
+        batch_size = self._opts["batch_size_triple"]
+
+        # Count total JSONL lines across all output files
+        line_counts: list[int] = []
+        for f in output_files:
+            with open(f) as fh:
+                line_counts.append(sum(1 for line in fh if line.strip()))
+
+        total_lines = sum(line_counts)
+        completed_batches = total_lines // batch_size
+        expected_lines = completed_batches * batch_size
+
+        # Trim the last file if it contains a partial batch
+        if total_lines > expected_lines:
+            last_file = output_files[-1]
+            with open(last_file) as fh:
+                lines = fh.readlines()
+
+            lines_in_previous = total_lines - len(lines)
+            keep = expected_lines - lines_in_previous
+            with open(last_file, "w") as fh:
+                fh.writelines(lines[:keep])
+
+            trimmed = len(lines) - keep
+            logger.info("Trimmed %d partial lines from %s", trimmed, last_file)
+
+        if completed_batches > 0:
+            logger.info(
+                "Resuming from batch %d (%d chunks already processed)",
+                completed_batches,
+                expected_lines,
+            )
+
+        return completed_batches
+
     def _inject_concept_prompts(self) -> None:
         """Monkey-patch CONCEPT_INSTRUCTIONS with Portuguese entries.
 
@@ -302,12 +365,15 @@ class AtlasRagConstructor:
         self,
         input_dir: Path,
         output_dir: Path,
+        *,
+        resume_from: int = 0,
     ) -> Any:
         """Build atlas-rag ProcessingConfig from KGConfig and backend_options.
 
         Args:
             input_dir: Directory containing prepared input JSON.
             output_dir: Directory for atlas-rag outputs.
+            resume_from: Batch index to resume extraction from (0 = fresh start).
 
         Returns:
             A ``ProcessingConfig`` instance.
@@ -330,6 +396,7 @@ class AtlasRagConstructor:
             include_concept=self._opts["include_concept"],
             triple_extraction_prompt_path=prompt_path,
             triple_extraction_schema_path=schema_path,
+            resume_from=resume_from,
         )
 
     def _run_pipeline(self, extractor: Any) -> None:
