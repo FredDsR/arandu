@@ -1029,14 +1029,6 @@ def build_kg(
             help="KGC backend: atlas (AutoSchemaKG).",
         ),
     ] = None,
-    workers: Annotated[
-        int | None,
-        typer.Option(
-            "--workers",
-            "-w",
-            help="Number of parallel workers.",
-        ),
-    ] = None,
     language: Annotated[
         str | None,
         typer.Option(
@@ -1128,8 +1120,6 @@ def build_kg(
         overrides["temperature"] = temperature
     if output_dir is not None:
         overrides["output_dir"] = output_dir
-    if workers is not None:
-        overrides["workers"] = workers
     if language is not None:
         overrides["language"] = language
 
@@ -1163,11 +1153,6 @@ def build_kg(
             print_error(f"Invalid KG configuration: {e}")
             raise typer.Exit(code=1) from e
 
-    # Validate
-    if kg_config.workers < 1:
-        print_error("Number of workers must be at least 1")
-        raise typer.Exit(code=1)
-
     # Display configuration
     console.print("\n[bold]Knowledge Graph Construction Configuration[/bold]\n")
     console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
@@ -1176,7 +1161,6 @@ def build_kg(
     console.print(f"[cyan]Provider:[/cyan] {kg_config.provider}")
     console.print(f"[cyan]Model:[/cyan] {kg_config.model_id}")
     console.print(f"[cyan]Language:[/cyan] {kg_config.language}")
-    console.print(f"[cyan]Workers:[/cyan] {kg_config.workers}")
     if kg_config.backend_options:
         console.print(f"[cyan]Backend Options:[/cyan] {kg_config.backend_options}")
     if kg_config.provider == "ollama":

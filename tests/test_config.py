@@ -183,7 +183,6 @@ class TestKGConfig:
         assert config.model_id == "llama3.1:8b"
         assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
-        assert config.workers == 2
         assert config.backend == "atlas"
         assert config.backend_options == {}
         assert config.language == "pt"

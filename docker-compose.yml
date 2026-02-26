@@ -357,8 +357,8 @@ services:
   gtranscriber-kg:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: gtranscriber:latest
+      dockerfile: Dockerfile.kg
+    image: gtranscriber-kg:latest
     container_name: gtranscriber-kg-${SLURM_JOB_ID:-local}
     working_dir: /app
 
@@ -378,10 +378,9 @@ services:
       - GTRANSCRIBER_KG_OLLAMA_URL=${GTRANSCRIBER_KG_OLLAMA_URL:-http://ollama:11434/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
-      - GTRANSCRIBER_KG_MERGE_GRAPHS=${GTRANSCRIBER_KG_MERGE_GRAPHS:-true}
-      - GTRANSCRIBER_KG_OUTPUT_FORMAT=${GTRANSCRIBER_KG_OUTPUT_FORMAT:-graphml}
+      - GTRANSCRIBER_KG_BACKEND=${GTRANSCRIBER_KG_BACKEND:-atlas}
+      - GTRANSCRIBER_KG_TEMPERATURE=${GTRANSCRIBER_KG_TEMPERATURE:-0.5}
       - GTRANSCRIBER_KG_LANGUAGE=${GTRANSCRIBER_KG_LANGUAGE:-pt}
-      - GTRANSCRIBER_KG_WORKERS=${GTRANSCRIBER_KG_WORKERS:-2}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -389,7 +388,6 @@ services:
       build-kg
       /app/results
       --id ${PIPELINE_ID:-}
-      --workers ${GTRANSCRIBER_KG_WORKERS:-2}
 
     volumes:
       - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw

@@ -5,15 +5,12 @@
 # This script contains the shared logic for all KG construction SLURM scripts.
 # It should be sourced from partition-specific scripts, not run directly.
 #
-# Required environment variables (set by partition scripts):
-#   GTRANSCRIBER_KG_WORKERS - Number of parallel workers
-#
 # Optional environment variables:
 #   GTRANSCRIBER_KG_MODEL_ID - Ollama model to use (default: llama3.1:8b)
 #   GTRANSCRIBER_KG_PROVIDER - LLM provider (default: ollama)
 #   GTRANSCRIBER_KG_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
-#   GTRANSCRIBER_KG_MERGE_GRAPHS - Merge graphs into corpus graph (default: true)
-#   GTRANSCRIBER_KG_OUTPUT_FORMAT - Output format (default: graphml)
+#   GTRANSCRIBER_KG_BACKEND - KGC backend (default: atlas)
+#   GTRANSCRIBER_KG_TEMPERATURE - LLM temperature (default: 0.5)
 #   GTRANSCRIBER_KG_LANGUAGE - Language for KG extraction (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
 # =============================================================================
@@ -29,10 +26,9 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 export GTRANSCRIBER_KG_PROVIDER="${GTRANSCRIBER_KG_PROVIDER:-ollama}"
 export GTRANSCRIBER_KG_MODEL_ID="${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}"
 export GTRANSCRIBER_KG_OLLAMA_URL="${GTRANSCRIBER_KG_OLLAMA_URL:-http://ollama:11434/v1}"
-export GTRANSCRIBER_KG_MERGE_GRAPHS="${GTRANSCRIBER_KG_MERGE_GRAPHS:-true}"
-export GTRANSCRIBER_KG_OUTPUT_FORMAT="${GTRANSCRIBER_KG_OUTPUT_FORMAT:-graphml}"
+export GTRANSCRIBER_KG_BACKEND="${GTRANSCRIBER_KG_BACKEND:-atlas}"
+export GTRANSCRIBER_KG_TEMPERATURE="${GTRANSCRIBER_KG_TEMPERATURE:-0.5}"
 export GTRANSCRIBER_KG_LANGUAGE="${GTRANSCRIBER_KG_LANGUAGE:-pt}"
-export GTRANSCRIBER_KG_WORKERS="${GTRANSCRIBER_KG_WORKERS:-8}"
 
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
@@ -59,10 +55,9 @@ echo "=============================================="
 echo "KG Provider:   $GTRANSCRIBER_KG_PROVIDER"
 echo "KG Model:      $GTRANSCRIBER_KG_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
-echo "Merge Graphs:  $GTRANSCRIBER_KG_MERGE_GRAPHS"
-echo "Output Format: $GTRANSCRIBER_KG_OUTPUT_FORMAT"
+echo "Backend:       $GTRANSCRIBER_KG_BACKEND"
+echo "Temperature:   $GTRANSCRIBER_KG_TEMPERATURE"
 echo "Language:      $GTRANSCRIBER_KG_LANGUAGE"
-echo "Workers:       $GTRANSCRIBER_KG_WORKERS"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
 echo "=============================================="
 
@@ -154,14 +149,21 @@ docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SER
 
 # Wait for Ollama to be ready
 echo "Waiting for Ollama to be ready..."
+OLLAMA_READY=false
 for i in {1..30}; do
     if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
         echo "Ollama is ready!"
+        OLLAMA_READY=true
         break
     fi
     echo "  Waiting... ($i/30)"
     sleep 5
 done
+
+if [ "$OLLAMA_READY" = false ]; then
+    echo "ERROR: Ollama failed to start after 30 attempts"
+    exit 1
+fi
 
 # Pull the model if using Ollama provider
 if [ "$GTRANSCRIBER_KG_PROVIDER" = "ollama" ]; then
@@ -193,10 +195,10 @@ echo "=============================================="
 echo "End Time:      $(date)"
 echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
 
-# Show graph statistics if corpus graph exists
-CORPUS_GRAPH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/outputs/corpus_graph.graphml" -print -quit 2>/dev/null)
-if [ -n "$CORPUS_GRAPH" ]; then
-    echo "Corpus Graph:  corpus_graph.graphml created"
+# Show graph statistics if atlas output exists
+ATLAS_GRAPH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/atlas_output/*.graphml" -print -quit 2>/dev/null)
+if [ -n "$ATLAS_GRAPH" ]; then
+    echo "Atlas Output:  graphml files created"
 fi
 
 # Count individual graphs

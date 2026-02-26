@@ -541,12 +541,6 @@ class KGConfig(BaseSettings):
         description="Output directory for knowledge graphs",
     )
 
-    # Workers
-    workers: int = Field(
-        default=2,
-        description="Number of parallel workers for KG construction",
-    )
-
     @field_validator("language")
     @classmethod
     def validate_language(cls, v: str) -> str:
