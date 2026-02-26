@@ -417,6 +417,107 @@ class TestLoadMetadataLabels:
             atlas_backend._PROMPTS_DIR = original
 
 
+class TestDetectResumeOffset:
+    """Tests for _detect_resume_offset."""
+
+    def test_no_output_dir_returns_zero(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """When atlas_output/kg_extraction/ does not exist, return 0."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        assert constructor._detect_resume_offset(tmp_path) == 0
+
+    def test_empty_dir_returns_zero(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """When kg_extraction/ exists but has no files, return 0."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        (tmp_path / "atlas_output" / "kg_extraction").mkdir(parents=True)
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        assert constructor._detect_resume_offset(tmp_path) == 0
+
+    def test_complete_batches(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Count complete batches from JSONL lines."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        # 9 lines with batch_size=3 -> 3 complete batches
+        output_file = kg_dir / "model_transcriptions.json_output_20260226_1_in_1.json"
+        output_file.write_text(
+            "\n".join([json.dumps({"id": f"chunk_{i}"}) for i in range(9)]) + "\n"
+        )
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        assert constructor._detect_resume_offset(tmp_path) == 3
+
+    def test_trims_partial_batch(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Partial last batch is trimmed from the output file."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        # 11 lines with batch_size=3 -> 3 complete batches, 2 partial lines trimmed
+        output_file = kg_dir / "model_transcriptions.json_output_20260226_1_in_1.json"
+        lines = [json.dumps({"id": f"chunk_{i}"}) for i in range(11)]
+        output_file.write_text("\n".join(lines) + "\n")
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        result = constructor._detect_resume_offset(tmp_path)
+        assert result == 3
+
+        # File should now have exactly 9 lines
+        remaining = output_file.read_text().strip().split("\n")
+        assert len(remaining) == 9
+
+    def test_multiple_output_files(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Lines from multiple output files are summed."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        # First file: 6 lines, second file: 3 lines -> 9 total, 3 batches
+        f1 = kg_dir / "model_transcriptions.json_output_20260226160000_1_in_1.json"
+        f2 = kg_dir / "model_transcriptions.json_output_20260226180000_1_in_1.json"
+        f1.write_text("\n".join([json.dumps({"id": f"chunk_{i}"}) for i in range(6)]) + "\n")
+        f2.write_text("\n".join([json.dumps({"id": f"chunk_{i}"}) for i in range(6, 9)]) + "\n")
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        assert constructor._detect_resume_offset(tmp_path) == 3
+
+
 class TestCreateOpenAIClient:
     """Tests for _create_openai_client."""
 
