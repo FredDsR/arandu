@@ -19,6 +19,7 @@
    - [Recommended Parallelism Strategies](#35-recommended-parallelism-strategies)
 4. [Ray as the Distributed Runtime](#4-ray-as-the-distributed-runtime)
 5. [SLURM Integration](#5-slurm-integration)
+   - [Pre-Deployment Environment Check](#50-pre-deployment-environment-check)
    - [Modern Approach: ray symmetric-run](#51-modern-approach-ray-symmetric-run)
    - [Traditional Approach](#52-traditional-approach-manual-ray-setup)
    - [Key SLURM Directives](#53-key-slurm-directives)
@@ -43,6 +44,11 @@
 12. [Practical Considerations](#12-practical-considerations)
 13. [Summary](#13-summary)
 14. [References](#14-references)
+15. [Troubleshooting & Diagnostics](#15-troubleshooting--diagnostics)
+    - [Verifying NCCL Communication](#151-verifying-nccl-communication-across-nodes)
+    - [Testing Ray Cluster Initialization](#152-testing-ray-cluster-initialization)
+    - [Checking GPU Availability and Interconnect](#153-checking-gpu-availability-and-interconnect)
+    - [Debugging Common Multi-Node Failures](#154-debugging-common-multi-node-failures)
 
 ---
 
@@ -193,11 +199,22 @@ For Mixture-of-Experts (MoE) models like DeepSeek-R1:
 
 ## 4. Ray as the Distributed Runtime
 
+> **⚠️ IMPORTANT: Ray is REQUIRED for multi-node vLLM.** Official vLLM only supports the Ray backend for multi-node distributed serving. There is no supported path to run vLLM across multiple nodes without Ray. Single-node vLLM works without Ray and is a valid fallback when multi-node is not needed. Future `torchrun`/`srun` based backends are experimental and not officially supported.
+
 Multi-node vLLM **requires Ray** as the distributed backend. Ray provides:
 
 - **Resource discovery**: Automatically detects GPUs, CPUs, and memory on each node.
 - **Worker management**: Spawns and manages worker processes across nodes.
 - **Communication**: Workers communicate via Ray's object store and message queue. Each worker receives work via a broadcast queue, executes forward passes with tensor/pipeline parallelism, and returns results through individual response queues.
+
+**Runtime support summary**:
+
+| Scenario | Ray Required? | Supported? |
+|----------|--------------|------------|
+| Single-node, single GPU | No | ✅ Official |
+| Single-node, multi-GPU | No (Ray optional) | ✅ Official |
+| Multi-node (2+ nodes) | **Yes — mandatory** | ✅ Official (Ray only) |
+| Multi-node without Ray (torchrun/srun) | — | ⚠️ Experimental only |
 
 **Multi-node distributed serving architecture**:
 
@@ -235,6 +252,82 @@ ray list nodes      # List connected nodes
 ---
 
 ## 5. SLURM Integration
+
+### 5.0 Pre-Deployment Environment Check
+
+Before submitting any multi-node SLURM job, verify that your PCAD environment meets all requirements. Run these checks from a login node or interactive allocation.
+
+**Ray availability and version** (Ray >= 2.40 required; >= 2.49 for `ray symmetric-run`):
+
+```bash
+python -c "import ray; print(ray.__version__)"
+ray --version
+```
+
+**NCCL availability and configuration**:
+
+```bash
+python -c "import torch; print('NCCL available:', torch.distributed.is_nccl_available())"
+# Check NCCL version
+python -c "import torch; print('NCCL version:', torch.cuda.nccl.version())"
+# Verify NCCL can see the network interface (replace eth0 with your interface)
+NCCL_DEBUG=INFO NCCL_SOCKET_IFNAME=eth0 python -c "
+import torch, torch.distributed as dist
+dist.init_process_group('nccl', init_method='tcp://localhost:29500', rank=0, world_size=1)
+print('NCCL init OK')
+dist.destroy_process_group()
+"
+```
+
+**CUDA and cuDNN versions**:
+
+```bash
+nvidia-smi                                          # GPU driver and CUDA runtime
+python -c "import torch; print('CUDA:', torch.version.cuda, '| cuDNN:', torch.backends.cudnn.version())"
+nvcc --version                                      # CUDA toolkit (may differ from runtime)
+```
+
+**SLURM configuration for multi-node**:
+
+```bash
+sinfo -p tupi -o "%N %G %C %m"                     # Node list, GPUs, CPUs, memory
+scontrol show partition tupi                        # Partition limits and config
+scontrol show nodes $(sinfo -p tupi -h -o "%N")    # Individual node details for tupi nodes
+# Verify you can allocate multiple nodes
+srun --partition=tupi --nodes=2 --ntasks=2 --gres=gpu:1 hostname
+```
+
+**InfiniBand vs Ethernet network status**:
+
+```bash
+ibstat                                              # InfiniBand adapters (if present)
+ibstatus                                            # InfiniBand link status
+# If ibstat not available, cluster uses Ethernet — use pipeline parallelism (PP), not TP across nodes
+ip addr show                                        # List all network interfaces
+# Check inter-node connectivity
+srun --partition=tupi --nodes=2 --ntasks=2 hostname -I
+```
+
+**HuggingFace cache setup**:
+
+```bash
+# Verify the shared cache directory is accessible from compute nodes
+echo $HF_HOME
+ls -la ${HF_HOME:-$HOME/.cache/huggingface}
+# Set shared project cache to avoid re-downloading models on every run
+export HF_HOME=$PROJECT_DIR/cache/huggingface
+# Test cache is writable
+python -c "from huggingface_hub import scan_cache_dir; print(scan_cache_dir())"
+```
+
+> **Checklist**: Before proceeding, confirm:
+> - `ray.__version__` >= 2.40 (2.49+ for `ray symmetric-run`)
+> - NCCL is available (`torch.distributed.is_nccl_available()` returns `True`)
+> - CUDA version matches between `nvidia-smi` and `torch.version.cuda`
+> - You can allocate 2+ tupi nodes simultaneously with `srun --nodes=2`
+> - `HF_HOME` points to a shared, writable path visible from all allocated nodes
+
+---
 
 ### 5.1 Modern Approach: `ray symmetric-run`
 
@@ -829,6 +922,8 @@ When the vLLM SLURM job is cancelled or reaches its time limit, Ray handles grac
 | Dimension | Finding |
 |-----------|---------|
 | **Core capability** | vLLM is the only production-grade framework with native multi-node LLM inference via Ray |
+| **Ray requirement** | **Hard requirement** for multi-node — there is no supported multi-node path without Ray |
+| **Contingency (no Ray)** | Fall back to single-node vLLM (fits models up to ~21 GB FP8 on tupi) or request Ray install on PCAD |
 | **Code changes needed** | **Zero** — `LLMProvider.CUSTOM` + `base_url` already supported in `LLMClient` |
 | **Config changes needed** | Set `provider=custom` and `base_url=http://head:8000/v1` via environment variables |
 | **Deployment changes** | Replace Ollama Docker sidecar with separate vLLM SLURM job using `ray symmetric-run` |
@@ -836,6 +931,7 @@ When the vLLM SLURM job is cancelled or reaches its time limit, Ray handles grac
 | **Throughput improvement** | ~19x higher throughput than Ollama, even on single GPU |
 | **Network recommendation** | Use pipeline parallelism across nodes (tolerant of Ethernet); verify InfiniBand availability |
 | **Runtime recommendation** | Bare metal or Apptainer (not Docker) for vLLM on SLURM; pipeline containers can keep Docker |
+| **First step** | Run the pre-deployment environment check (Section 5.0) to confirm Ray, NCCL, and SLURM multi-node allocation work before writing SLURM scripts |
 
 ---
 
@@ -857,3 +953,173 @@ When the vLLM SLURM job is cancelled or reaches its time limit, Ray handles grac
 - [vLLM vs Ollama: Key Differences — Northflank](https://northflank.com/blog/vllm-vs-ollama-and-how-to-run-them)
 - [The vLLM MoE Playbook — AMD ROCm](https://rocm.blogs.amd.com/software-tools-optimization/vllm-moe-guide/README.html)
 - [vLLM GitHub Repository](https://github.com/vllm-project/vllm)
+
+---
+
+## 15. Troubleshooting & Diagnostics
+
+### 15.1 Verifying NCCL Communication Across Nodes
+
+NCCL is responsible for GPU-to-GPU communication during tensor and pipeline parallelism. Use these commands to diagnose communication issues:
+
+```bash
+# Enable verbose NCCL output for any vLLM launch to see transport selection
+NCCL_DEBUG=INFO vllm serve <model> ...
+# Look for lines like:
+#   NET/IB/GDRDMA  → InfiniBand with GPU-Direct RDMA (optimal for TP across nodes)
+#   NET/Socket     → TCP socket transport (functional but slower; use PP for cross-node)
+
+# Enable full trace for deep debugging (very verbose — pipe to a file)
+NCCL_DEBUG=TRACE vllm serve <model> ... 2>&1 | tee nccl_trace.log
+
+# Force NCCL to use a specific interface if auto-detect picks the wrong one
+NCCL_SOCKET_IFNAME=eth0 vllm serve <model> ...
+
+# Run NCCL bandwidth/latency test between two nodes (requires nccl-tests)
+# Install: git clone https://github.com/NVIDIA/nccl-tests && cd nccl-tests && make
+srun --nodes=2 --ntasks=2 --gres=gpu:1 \
+    ./build/all_reduce_perf -b 8 -e 256M -f 2 -g 1
+```
+
+### 15.2 Testing Ray Cluster Initialization
+
+Verify Ray can form a healthy cluster across SLURM-allocated nodes before launching vLLM:
+
+```bash
+# Request two nodes interactively and test Ray manually
+srun --partition=tupi --nodes=2 --ntasks=2 --gres=gpu:1 --cpus-per-task=8 \
+    --pty bash -i
+
+# On the allocation, identify head node
+nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
+nodes_array=($nodes)
+HEAD_NODE=${nodes_array[0]}
+HEAD_IP=$(srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" hostname -I | awk '{print $1}')
+
+# Start Ray head (in background)
+srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" ray start --head --port=6379 --block &
+sleep 10
+
+# Start Ray worker on second node
+srun --nodes=1 --ntasks=1 -w "${nodes_array[1]}" \
+    ray start --address="${HEAD_IP}:6379" --block &
+sleep 10
+
+# Verify cluster health
+ray status
+ray list nodes
+# Expected: 2 nodes, each with 1 GPU reported
+
+# Tear down
+ray stop
+```
+
+**Using `ray symmetric-run` for a quick cluster smoke test** (Ray >= 2.49):
+
+```bash
+srun --nodes=2 --ntasks=2 --gres=gpu:1 \
+    ray symmetric-run \
+    --address "${HEAD_NODE}:6379" \
+    --min-nodes 2 \
+    --num-gpus 1 \
+    -- python -c "
+import ray
+ray.init()
+@ray.remote(num_gpus=1)
+def gpu_info():
+    import torch
+    return torch.cuda.get_device_name(0)
+results = ray.get([gpu_info.remote(), gpu_info.remote()])
+print('GPUs found:', results)
+"
+```
+
+### 15.3 Checking GPU Availability and Interconnect
+
+```bash
+# Check GPU visibility on each node
+srun --partition=tupi --nodes=2 --ntasks=2 --gres=gpu:1 \
+    bash -c "echo Node: \$(hostname); nvidia-smi --query-gpu=name,memory.total,uuid --format=csv"
+
+# Check NVLink topology (intra-node GPU-to-GPU; tupi nodes have single GPU so NVLink N/A)
+nvidia-smi topo -m
+
+# Check PCIe bandwidth between GPU and system
+nvidia-smi --query-gpu=pcie.link.gen.current,pcie.link.width.current --format=csv
+
+# Test GPU-to-GPU bandwidth across nodes using PyTorch
+# Save as /tmp/test_p2p.py and run with srun
+cat > /tmp/test_p2p.py << 'EOF'
+import os, torch, torch.distributed as dist
+dist.init_process_group("nccl")
+rank = dist.get_rank()
+tensor = torch.ones(1024*1024, device="cuda") * rank
+dist.all_reduce(tensor)
+print(f"Rank {rank}: all_reduce result = {tensor[0].item()}")
+dist.destroy_process_group()
+EOF
+srun --nodes=2 --ntasks=2 --gres=gpu:1 \
+    --export=ALL,MASTER_ADDR=$(srun --nodes=1 --ntasks=1 hostname -I | awk '{print $1}'),MASTER_PORT=29500 \
+    python /tmp/test_p2p.py
+```
+
+### 15.4 Debugging Common Multi-Node Failures
+
+**Symptom: Ray workers fail to connect to head node**
+
+```bash
+# Check that the Ray port is reachable between nodes
+HEAD_IP=<head_node_ip>
+srun --nodes=1 -w <worker_node> nc -zv $HEAD_IP 6379
+# If connection refused: firewall is blocking — contact PCAD admins to open port 6379
+
+# Ensure head node IP is correct (SLURM_JOB_NODELIST may list hostnames, not IPs)
+srun --nodes=1 -w "$HEAD_NODE" hostname -I   # Get actual IP, not just hostname
+```
+
+**Symptom: vLLM hangs on startup (never reaches "Serving model")**
+
+```bash
+# Check Ray cluster formed correctly before vLLM starts
+ray status --address <head_ip>:6379
+# Also check GPU memory isn't already occupied on worker nodes
+srun --nodes=2 --ntasks=2 --gres=gpu:1 nvidia-smi --query-gpu=memory.used,memory.free --format=csv
+```
+
+**Symptom: NCCL timeout / communication errors during inference**
+
+```bash
+# Increase NCCL timeout (default is 30 min; large models may need more)
+export NCCL_TIMEOUT=3600    # seconds
+
+# Try forcing TCP socket backend if IB detection is causing issues
+export NCCL_IB_DISABLE=1
+export NCCL_SOCKET_IFNAME=eth0
+
+# Check for network interface name on the cluster
+ip -o link show | awk '{print $2, $9}'  # list interfaces and their states
+```
+
+**Symptom: HuggingFace model download fails or is slow on compute nodes**
+
+```bash
+# Verify outbound internet access from compute nodes (PCAD may require proxy)
+srun --nodes=1 --gres=gpu:1 curl -I https://huggingface.co
+
+# Pre-download the model on the login node to the shared cache
+HF_HOME=$PROJECT_DIR/cache/huggingface \
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('meta-llama/Llama-3.3-70B-Instruct')"
+
+# Then point compute jobs at the pre-populated cache
+export HF_HOME=$PROJECT_DIR/cache/huggingface
+export TRANSFORMERS_OFFLINE=1   # Prevent any further download attempts
+```
+
+**Symptom: `ray symmetric-run` not found (Ray < 2.49)**
+
+```bash
+ray --version   # Check current Ray version
+# If version < 2.49, use the traditional approach (Section 5.2)
+# To upgrade Ray in your venv:
+uv pip install "ray[default]>=2.49"
+```
