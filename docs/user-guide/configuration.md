@@ -258,16 +258,14 @@ Configuration settings for the knowledge graph construction pipeline.
 | `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL for KG construction |
 | `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
 
-### Graph Settings
+### Backend Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `merge_graphs` | `bool` | `True` | Merge individual graphs into corpus-level graph |
-| `output_format` | `str` | `"graphml"` | Graph export format: "graphml" (NetworkX-compatible) or "json" |
-| `schema_mode` | `str` | `"dynamic"` | Schema mode: "dynamic" (infer from data) or "predefined" |
+| `backend` | `str` | `"atlas"` | KGC backend: `"atlas"` (AutoSchemaKG) |
+| `backend_options` | `dict` | `{}` | Backend-specific options (e.g., `chunk_size`, `batch_size_triple`, `max_workers`) |
 
-**Output Format Validation**: Must match pattern `^(graphml|json)$`  
-**Schema Mode Validation**: Must match pattern `^(dynamic|predefined)$`
+**Backend Validation**: Must match pattern `^(atlas)$`
 
 ### LLM Settings
 
@@ -279,38 +277,40 @@ Configuration settings for the knowledge graph construction pipeline.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `language` | `str` | `"pt"` | Language code for extraction prompts (ISO 639-1) |
-| `prompt_path` | `str` | `"prompts/pt_prompts.json"` | Path to language-specific prompt templates |
+| `language` | `str` | `"pt"` | Language code for extraction prompts (ISO 639-1): `"pt"`, `"en"` |
+
+Prompts are stored in `prompts/kg/atlas/` using language-keyed JSON files. The atlas backend loads the appropriate language at runtime.
 
 ### Output Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `output_dir` | `Path` | `Path("knowledge_graphs")` | Output directory for knowledge graphs |
-| `workers` | `int` | `2` | Number of parallel workers for KG construction |
 
 **Example Configuration**:
 ```python
 from gtranscriber.config import KGConfig
 
 config = KGConfig(
+    backend="atlas",
     provider="ollama",
-    model_id="llama3.1:8b",
-    merge_graphs=True,
-    output_format="graphml",
-    language="pt"
+    model_id="qwen3:14b",
+    language="pt",
+    temperature=0.5,
+    backend_options={"chunk_size": 4096, "max_workers": 4},
 )
 ```
 
-**Portuguese Prompt Template** (`prompts/pt_prompts.json`):
-```json
-{
-  "pt": {
-    "system": "Você é um assistente especializado em extração de conhecimento...",
-    "triple_extraction": "Extraia triplas de conhecimento (sujeito, predicado, objeto)..."
-  }
-}
-```
+**Atlas Backend Options** (passed via `backend_options`):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `batch_size_triple` | `3` | Batch size for triple extraction |
+| `batch_size_concept` | `16` | Batch size for concept generation |
+| `chunk_size` | `8192` | Characters per text chunk |
+| `max_new_tokens` | `2048` | Max tokens for LLM generation |
+| `include_concept` | `true` | Whether to run concept generation |
+| `max_workers` | `3` | Thread pool size for API calls |
 
 ---
 

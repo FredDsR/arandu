@@ -583,23 +583,29 @@ For provenance tracking, a lightweight metadata sidecar file can be stored along
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `graph_id` | `str` | Yes | Unique graph identifier |
-| `source_documents` | `list[str]` | Yes | List of source document IDs |
+| `source_documents` | `list[str]` | Yes | List of source document gdrive IDs |
 | `created_at` | `datetime` | Yes | When graph was created |
 | `model_id` | `str` | Yes | LLM model used for extraction |
 | `provider` | `str` | Yes | LLM provider |
 | `language` | `str` | Yes | Language code used for extraction (ISO 639-1) |
-| `prompt_path` | `str` | Yes | Path to prompt template file used |
+| `total_documents` | `int` | Yes | Number of source documents |
+| `total_nodes` | `int \| None` | No | Number of nodes in graph |
+| `total_edges` | `int \| None` | No | Number of edges in graph |
+| `backend_version` | `str \| None` | No | Backend identifier (e.g., `"atlas-rag==0.0.5"`) |
 
 **Example** (`corpus_graph_metadata.json`):
 ```json
 {
-  "graph_id": "corpus_merged_2026_01_14",
-  "source_documents": ["1abc123xyz", "2def456uvw", "3ghi789rst"],
-  "created_at": "2026-01-14T15:45:00Z",
-  "model_id": "llama3.1:8b",
+  "graph_id": "test-cep-01",
+  "source_documents": ["1abc123xyz", "2def456uvw"],
+  "created_at": "2026-02-26T15:45:00Z",
+  "model_id": "qwen3:14b",
   "provider": "ollama",
   "language": "pt",
-  "prompt_path": "prompts/pt_prompts.json"
+  "total_documents": 2,
+  "total_nodes": 342,
+  "total_edges": 187,
+  "backend_version": "atlas-rag==0.0.5"
 }
 ```
 
@@ -610,13 +616,16 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 class KGMetadata(BaseModel):
-    """Lightweight metadata for provenance tracking."""
+    """Provenance metadata for knowledge graph construction."""
     graph_id: str
     source_documents: list[str]
     model_id: str
     provider: str
     language: str = Field(default="pt", description="ISO 639-1 language code")
-    prompt_path: str = Field(default="prompts/pt_prompts.json")
+    total_documents: int = 0
+    total_nodes: int | None = None
+    total_edges: int | None = None
+    backend_version: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
 
     def save(self, path: str | Path) -> None:
