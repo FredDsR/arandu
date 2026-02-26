@@ -30,8 +30,60 @@ ATLAS_DEFAULTS: dict[str, Any] = {
     "max_workers": 3,
 }
 
-# Path to Portuguese prompt files relative to the project root
+# Path to atlas-rag prompt files relative to the project root
 _PROMPTS_DIR = Path(__file__).resolve().parents[4] / "prompts" / "kg" / "atlas"
+
+# Lazy reference — populated on first use by _get_enriched_processor_cls()
+_MetadataEnrichedProcessorCls: type | None = None
+
+
+def _create_enriched_processor_cls() -> type:
+    """Create a DatasetProcessor subclass for metadata header injection.
+
+    Returns:
+        A subclass of ``atlas_rag.kg_construction.triple_extraction.DatasetProcessor``.
+    """
+    from atlas_rag.kg_construction.triple_extraction import DatasetProcessor
+
+    class _MetadataEnrichedProcessor(DatasetProcessor):
+        """DatasetProcessor that prepends metadata headers to every chunk.
+
+        Reads a ``_metadata_header`` key from the document metadata dict,
+        removes it before calling ``super()``, then prepends the header
+        string to each chunk's text.
+        """
+
+        def create_sample_chunks(
+            self,
+            sample: dict[str, Any],
+        ) -> list[dict[str, Any]]:
+            """Override to inject metadata header into each chunk."""
+            metadata = sample.get("metadata", {})
+            header = metadata.get("_metadata_header", "")
+
+            if header:
+                sample = {
+                    **sample,
+                    "metadata": {k: v for k, v in metadata.items() if k != "_metadata_header"},
+                }
+
+            chunks = super().create_sample_chunks(sample)
+
+            if header:
+                for chunk in chunks:
+                    chunk["text"] = f"{header}\n{chunk['text']}"
+
+            return chunks
+
+    return _MetadataEnrichedProcessor
+
+
+def _get_enriched_processor_cls() -> type:
+    """Return (and cache) the metadata-enriched DatasetProcessor subclass."""
+    global _MetadataEnrichedProcessorCls
+    if _MetadataEnrichedProcessorCls is None:
+        _MetadataEnrichedProcessorCls = _create_enriched_processor_cls()
+    return _MetadataEnrichedProcessorCls
 
 
 class AtlasRagConstructor:
@@ -105,25 +157,99 @@ class AtlasRagConstructor:
     ) -> None:
         """Convert EnrichedRecord list to atlas-rag JSON input format.
 
+        Builds a per-document metadata header and stores it in the metadata
+        dict under ``_metadata_header``.  The enriched processor subclass
+        reads this key after chunking and prepends it to every chunk.
+
         Args:
             records: Transcription records to convert.
             input_dir: Directory to write the input JSON file.
         """
         input_dir.mkdir(parents=True, exist_ok=True)
+        labels = self._load_metadata_labels()
 
         documents = []
         for record in records:
+            header = self._build_metadata_header(record, labels)
+            metadata: dict[str, Any] = {"lang": self._config.language}
+            if header:
+                metadata["_metadata_header"] = header
             documents.append(
                 {
                     "id": record.gdrive_id,
                     "text": record.transcription_text,
-                    "metadata": {"lang": self._config.language},
+                    "metadata": metadata,
                 }
             )
 
         input_file = input_dir / "transcriptions.json"
         input_file.write_text(json.dumps(documents, ensure_ascii=False, indent=2))
         logger.info("Prepared %d documents for atlas-rag in %s", len(documents), input_file)
+
+    @staticmethod
+    def _build_metadata_header(
+        record: EnrichedRecord,
+        labels: dict[str, str],
+    ) -> str:
+        """Build a metadata header string for a transcription record.
+
+        If the record has no source metadata, all fields are None, or no
+        labels are provided, returns an empty string. Otherwise builds a
+        header with translated labels ending with the transcription marker.
+
+        Args:
+            record: A single transcription record.
+            labels: Translated label mapping loaded from metadata_labels.json.
+
+        Returns:
+            Header string to prepend to chunks, or empty string.
+        """
+        meta = record.source_metadata
+        if meta is None or not labels:
+            return ""
+
+        field_map = (
+            ("participant", meta.participant_name),
+            ("location", meta.location),
+            ("date", meta.recording_date),
+            ("context", meta.event_context),
+            ("researcher", meta.researcher_name),
+            ("sequence", meta.sequence_label),
+        )
+        lines = [f"{labels.get(key, key.title())}: {value}" for key, value in field_map if value]
+
+        if not lines:
+            return ""
+
+        header_title = labels.get("header", "[Context]")
+        transcription_marker = labels.get("transcription", "[Transcription]")
+        return f"{header_title}\n" + "\n".join(lines) + f"\n\n{transcription_marker}"
+
+    def _load_metadata_labels(self) -> dict[str, str]:
+        """Load translated metadata labels from the prompts directory.
+
+        Reads ``metadata_labels.json`` (same directory as ``prompts.json``)
+        and selects the entry matching ``self._config.language``. Falls back
+        to English if the language key is missing or the file does not exist.
+
+        Returns:
+            Label mapping for the configured language.
+        """
+        labels_file = _PROMPTS_DIR / "metadata_labels.json"
+        if not labels_file.exists():
+            logger.warning("Metadata labels file not found: %s", labels_file)
+            return {}
+
+        all_labels = json.loads(labels_file.read_text())
+        lang = self._config.language
+        if lang in all_labels:
+            return all_labels[lang]
+
+        logger.warning(
+            "Language '%s' not in metadata labels, falling back to 'en'",
+            lang,
+        )
+        return all_labels.get("en", {})
 
     def _inject_concept_prompts(self) -> None:
         """Monkey-patch CONCEPT_INSTRUCTIONS with Portuguese entries.
@@ -209,11 +335,24 @@ class AtlasRagConstructor:
     def _run_pipeline(self, extractor: Any) -> None:
         """Run the atlas-rag extraction pipeline steps.
 
+        Temporarily replaces atlas-rag's ``DatasetProcessor`` with a subclass
+        that prepends metadata headers to every chunk, then restores the
+        original class after extraction completes.
+
         Args:
             extractor: A ``KnowledgeGraphExtractor`` instance.
         """
+        from atlas_rag.kg_construction import triple_extraction
+
+        enriched_cls = _get_enriched_processor_cls()
+        original_cls = triple_extraction.DatasetProcessor
+
         logger.info("Starting triple extraction...")
-        extractor.run_extraction()
+        triple_extraction.DatasetProcessor = enriched_cls
+        try:
+            extractor.run_extraction()
+        finally:
+            triple_extraction.DatasetProcessor = original_cls
 
         logger.info("Converting JSON to CSV...")
         extractor.convert_json_to_csv()

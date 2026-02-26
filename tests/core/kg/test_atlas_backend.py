@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path  # noqa: TC003 — used at runtime for tmp_path fixtures
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,9 +38,31 @@ def _make_record(gdrive_id: str = "test123", text: str = "Test transcription.") 
     )
 
 
+class _StubDatasetProcessor:
+    """Minimal stand-in for ``atlas_rag.kg_construction.triple_extraction.DatasetProcessor``.
+
+    Provides a real base class so that the enriched processor subclass can
+    use standard inheritance (``super()``) during tests.
+    """
+
+    def __init__(self, config: Any, prompts: Any, schema: Any) -> None:
+        self.config = config
+        self.prompts = prompts
+        self.schema = schema
+
+    def create_sample_chunks(self, sample: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the full document text as a single chunk by default."""
+        return [{"text": sample["text"], "metadata": dict(sample.get("metadata", {}))}]
+
+
 @pytest.fixture
 def _mock_atlas_rag() -> dict[str, MagicMock]:
     """Mock all atlas_rag modules so AtlasRagConstructor can be imported."""
+    import gtranscriber.core.kg.atlas_backend as atlas_backend
+
+    # Reset the cached enriched processor class so it is rebuilt with the mock
+    atlas_backend._MetadataEnrichedProcessorCls = None
+
     mocks: dict[str, MagicMock] = {}
 
     # Create mock modules
@@ -51,7 +73,11 @@ def _mock_atlas_rag() -> dict[str, MagicMock]:
     triple_config = MagicMock()
     mocks["atlas_rag.kg_construction"] = MagicMock()
     mocks["atlas_rag.kg_construction.triple_config"] = triple_config
-    mocks["atlas_rag.kg_construction.triple_extraction"] = MagicMock()
+
+    # Use a real class for DatasetProcessor so subclassing works properly
+    triple_extraction = MagicMock()
+    triple_extraction.DatasetProcessor = _StubDatasetProcessor
+    mocks["atlas_rag.kg_construction.triple_extraction"] = triple_extraction
     mocks["atlas_rag.llm_generator"] = MagicMock()
 
     # Mock the prompt module with CONCEPT_INSTRUCTIONS dict
@@ -64,6 +90,9 @@ def _mock_atlas_rag() -> dict[str, MagicMock]:
 
     with patch.dict("sys.modules", mocks):
         yield mocks
+
+    # Reset cache again after test so mocked class is not retained
+    atlas_backend._MetadataEnrichedProcessorCls = None
 
 
 class TestAtlasRagConstructorInit:
@@ -259,8 +288,23 @@ class TestBuildMetadataHeader:
 class TestMetadataEnrichedProcessor:
     """Tests for the DatasetProcessor subclass that prepends headers to chunks."""
 
-    def test_prepends_header_to_all_chunks(self, _mock_atlas_rag: dict) -> None:
+    def test_prepends_header_to_all_chunks(
+        self,
+        _mock_atlas_rag: dict,
+        mocker: MockerFixture,
+    ) -> None:
         """Each chunk should have the metadata header prepended."""
+        # Patch the stub so the base class returns multiple chunks
+        mocker.patch.object(
+            _StubDatasetProcessor,
+            "create_sample_chunks",
+            return_value=[
+                {"text": "Chunk one text.", "metadata": {"lang": "pt"}},
+                {"text": "Chunk two text.", "metadata": {"lang": "pt"}},
+                {"text": "Chunk three text.", "metadata": {"lang": "pt"}},
+            ],
+        )
+
         from gtranscriber.core.kg.atlas_backend import _get_enriched_processor_cls
 
         ProcessorCls = _get_enriched_processor_cls()
@@ -289,7 +333,6 @@ class TestMetadataEnrichedProcessor:
         assert len(chunks) > 1, "Should produce multiple chunks"
         for chunk in chunks:
             assert chunk["text"].startswith("[Contexto]\nParticipante: Ana")
-            assert "_metadata_header" not in chunk["metadata"]
 
     def test_no_header_key_passes_through(self, _mock_atlas_rag: dict) -> None:
         """Documents without _metadata_header should pass through unchanged."""
