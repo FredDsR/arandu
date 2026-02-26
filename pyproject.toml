@@ -94,6 +94,7 @@ report = [
 ]
 kg = [
     "atlas-rag>=0.0.5",
+    "pyarrow<21",
 ]
 
 [dependency-groups]
