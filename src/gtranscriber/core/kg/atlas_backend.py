@@ -20,6 +20,76 @@ from gtranscriber.core.kg.schemas import KGConstructionResult
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_extraction_records(file_path: Path) -> tuple[list[dict[str, Any]], int]:
+    """Parse an extraction output file, handling both JSONL and pretty-printed JSON.
+
+    Atlas-rag normally writes one JSON object per line (JSONL), but some runs
+    (or older versions) produce pretty-printed JSON with one object spanning
+    multiple lines.  This function transparently handles both formats.
+
+    Args:
+        file_path: Path to the extraction output file.
+
+    Returns:
+        Tuple of (valid_records, invalid_count).
+    """
+    content = file_path.read_text()
+    if not content.strip():
+        return [], 0
+
+    # Fast path: try JSONL first (one object per line)
+    lines = [line for line in content.split("\n") if line.strip()]
+    records: list[dict[str, Any]] = []
+    all_valid = True
+
+    for line in lines:
+        try:
+            obj = json.loads(line)
+            if isinstance(obj, dict):
+                records.append(obj)
+            else:
+                all_valid = False
+        except json.JSONDecodeError:
+            all_valid = False
+
+    if all_valid and records:
+        return records, 0
+
+    # Slow path: content is not valid JSONL — try incremental JSON parsing
+    # to handle pretty-printed or concatenated JSON objects
+    records = []
+    invalid_count = 0
+    decoder = json.JSONDecoder()
+    idx = 0
+    length = len(content)
+
+    while idx < length:
+        # Skip whitespace between objects
+        while idx < length and content[idx] in " \t\n\r":
+            idx += 1
+        if idx >= length:
+            break
+
+        try:
+            obj, end_idx = decoder.raw_decode(content, idx)
+            if isinstance(obj, dict):
+                records.append(obj)
+            else:
+                invalid_count += 1
+            idx = end_idx
+        except json.JSONDecodeError:
+            # Skip to the next line to try recovery
+            next_newline = content.find("\n", idx)
+            if next_newline == -1:
+                invalid_count += 1
+                break
+            invalid_count += 1
+            idx = next_newline + 1
+
+    return records, invalid_count
+
+
 # Default values for atlas-rag-specific options (overridden via backend_options)
 ATLAS_DEFAULTS: dict[str, Any] = {
     "batch_size_triple": 3,
@@ -259,11 +329,11 @@ class AtlasRagConstructor:
     def _detect_resume_offset(self, output_dir: Path) -> int:
         """Detect completed batches from a previous extraction run.
 
-        Scans ``atlas_output/kg_extraction/`` for existing JSONL output files,
-        counts total lines, and divides by ``batch_size_triple`` to determine
-        the number of complete batches.  If a partial last batch is detected,
-        the trailing incomplete lines are trimmed from the last file so the
-        resumed run does not produce duplicates.
+        Scans ``atlas_output/kg_extraction/`` for existing output files, parses
+        them (handling both JSONL and pretty-printed formats), counts valid JSON
+        records, and normalizes all files to proper JSONL.  If a partial last
+        batch is detected, trailing records are trimmed so the resumed run does
+        not produce duplicates.
 
         Args:
             output_dir: The pipeline output directory (parent of ``atlas_output``).
@@ -281,35 +351,46 @@ class AtlasRagConstructor:
 
         batch_size = self._opts["batch_size_triple"]
 
-        # Count total JSONL lines across all output files
-        line_counts: list[int] = []
+        # Parse and normalize each file, counting valid records
+        record_counts: list[int] = []
         for f in output_files:
-            with open(f) as fh:
-                line_counts.append(sum(1 for line in fh if line.strip()))
+            records, invalid = _parse_extraction_records(f)
 
-        total_lines = sum(line_counts)
-        completed_batches = total_lines // batch_size
-        expected_lines = completed_batches * batch_size
+            if invalid > 0:
+                logger.warning("Stripped %d invalid records from %s", invalid, f)
+
+            if not records:
+                logger.info("Removing empty extraction file %s", f)
+                f.unlink()
+                continue
+
+            # Rewrite as proper JSONL (normalizes pretty-printed files)
+            f.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n")
+            record_counts.append(len(records))
+
+        total_records = sum(record_counts)
+        completed_batches = total_records // batch_size
+        expected_records = completed_batches * batch_size
 
         # Trim the last file if it contains a partial batch
-        if total_lines > expected_lines:
-            last_file = output_files[-1]
-            with open(last_file) as fh:
-                lines = fh.readlines()
+        if total_records > expected_records:
+            # Re-read the last surviving file
+            remaining_files = sorted(kg_dir.glob("*.json"))
+            if remaining_files:
+                last_file = remaining_files[-1]
+                last_lines = [ln for ln in last_file.read_text().strip().split("\n") if ln.strip()]
+                records_in_previous = total_records - len(last_lines)
+                keep = expected_records - records_in_previous
+                last_file.write_text("\n".join(last_lines[:keep]) + "\n")
 
-            lines_in_previous = total_lines - len(lines)
-            keep = expected_lines - lines_in_previous
-            with open(last_file, "w") as fh:
-                fh.writelines(lines[:keep])
-
-            trimmed = len(lines) - keep
-            logger.info("Trimmed %d partial lines from %s", trimmed, last_file)
+                trimmed = len(last_lines) - keep
+                logger.info("Trimmed %d partial records from %s", trimmed, last_file)
 
         if completed_batches > 0:
             logger.info(
                 "Resuming from batch %d (%d chunks already processed)",
                 completed_batches,
-                expected_lines,
+                expected_records,
             )
 
         return completed_batches

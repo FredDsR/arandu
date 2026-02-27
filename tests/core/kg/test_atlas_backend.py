@@ -417,6 +417,95 @@ class TestLoadMetadataLabels:
             atlas_backend._PROMPTS_DIR = original
 
 
+class TestParseExtractionRecords:
+    """Tests for _parse_extraction_records."""
+
+    def test_parses_jsonl_file(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Standard JSONL file (one JSON object per line) is parsed correctly."""
+        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+
+        f = tmp_path / "output.json"
+        records = [{"id": f"chunk_{i}", "original_text": f"text {i}"} for i in range(5)]
+        f.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+
+        parsed, invalid = _parse_extraction_records(f)
+
+        assert len(parsed) == 5
+        assert invalid == 0
+        assert parsed[0]["id"] == "chunk_0"
+        assert parsed[4]["id"] == "chunk_4"
+
+    def test_parses_pretty_printed_file(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Pretty-printed JSON objects (multi-line, concatenated) are parsed."""
+        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+
+        f = tmp_path / "output.json"
+        records = [{"id": f"chunk_{i}", "original_text": f"text {i}"} for i in range(3)]
+        # Write as concatenated pretty-printed objects (what the bug produces)
+        f.write_text("\n".join(json.dumps(r, indent=4) for r in records) + "\n")
+
+        parsed, invalid = _parse_extraction_records(f)
+
+        assert len(parsed) == 3
+        assert invalid == 0
+        assert parsed[0]["id"] == "chunk_0"
+        assert parsed[2]["id"] == "chunk_2"
+
+    def test_skips_invalid_records(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Invalid JSON lines are skipped and counted."""
+        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+
+        f = tmp_path / "output.json"
+        f.write_text(
+            json.dumps({"id": "good_0"})
+            + "\nNOT VALID JSON\n"
+            + json.dumps({"id": "good_1"})
+            + "\n"
+        )
+
+        parsed, invalid = _parse_extraction_records(f)
+
+        assert len(parsed) == 2
+        assert invalid == 1
+
+    def test_empty_file_returns_empty(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Empty file returns empty list."""
+        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+
+        f = tmp_path / "output.json"
+        f.write_text("")
+
+        parsed, invalid = _parse_extraction_records(f)
+
+        assert len(parsed) == 0
+        assert invalid == 0
+
+    def test_pretty_printed_with_nested_structures(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Pretty-printed JSON with nested arrays/dicts is parsed correctly."""
+        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+
+        f = tmp_path / "output.json"
+        record = {
+            "id": "chunk_0",
+            "original_text": "Some text.",
+            "metadata": {"lang": "pt"},
+            "entity_relation_dict": [
+                {"Head": "A", "Relation": "rel", "Tail": "B"},
+                {"Head": "C", "Relation": "rel2", "Tail": "D"},
+            ],
+            "event_entity_dict": [],
+        }
+        f.write_text(json.dumps(record, indent=4) + "\n")
+
+        parsed, _invalid = _parse_extraction_records(f)
+
+        assert len(parsed) == 1
+        assert parsed[0]["id"] == "chunk_0"
+        assert len(parsed[0]["entity_relation_dict"]) == 2
+
+
 class TestDetectResumeOffset:
     """Tests for _detect_resume_offset."""
 
@@ -480,7 +569,7 @@ class TestDetectResumeOffset:
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
 
-        # 11 lines with batch_size=3 -> 3 complete batches, 2 partial lines trimmed
+        # 11 records with batch_size=3 -> 3 complete batches, 2 partial records trimmed
         output_file = kg_dir / "model_transcriptions.json_output_20260226_1_in_1.json"
         lines = [json.dumps({"id": f"chunk_{i}"}) for i in range(11)]
         output_file.write_text("\n".join(lines) + "\n")
@@ -491,22 +580,70 @@ class TestDetectResumeOffset:
         result = constructor._detect_resume_offset(tmp_path)
         assert result == 3
 
-        # File should now have exactly 9 lines
-        remaining = output_file.read_text().strip().split("\n")
+        # File should now have exactly 9 JSONL lines
+        remaining = [ln for ln in output_file.read_text().strip().split("\n") if ln.strip()]
         assert len(remaining) == 9
+
+    def test_pretty_printed_file_counts_records_not_lines(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Pretty-printed JSON file counts actual records, not raw lines."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        # 9 records written as pretty-printed JSON (many lines per record)
+        output_file = kg_dir / "model_transcriptions.json_output_20260226_1_in_1.json"
+        records = [{"id": f"chunk_{i}", "text": f"text {i}"} for i in range(9)]
+        output_file.write_text("\n".join(json.dumps(r, indent=4) for r in records) + "\n")
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        # Should count 9 records -> 3 batches, NOT thousands of lines
+        assert constructor._detect_resume_offset(tmp_path) == 3
+
+    def test_pretty_printed_file_is_normalized_to_jsonl(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Pretty-printed files are rewritten as JSONL after resume detection."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        output_file = kg_dir / "model_transcriptions.json_output_20260226_1_in_1.json"
+        records = [{"id": f"chunk_{i}", "text": f"text {i}"} for i in range(6)]
+        output_file.write_text("\n".join(json.dumps(r, indent=4) for r in records) + "\n")
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+        constructor._detect_resume_offset(tmp_path)
+
+        # File should now be proper JSONL (one object per line)
+        lines = [ln for ln in output_file.read_text().strip().split("\n") if ln.strip()]
+        assert len(lines) == 6
+        for line in lines:
+            obj = json.loads(line)
+            assert "id" in obj
 
     def test_multiple_output_files(
         self,
         tmp_path: Path,
         _mock_atlas_rag: dict,
     ) -> None:
-        """Lines from multiple output files are summed."""
+        """Records from multiple output files are summed."""
         from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
 
-        # First file: 6 lines, second file: 3 lines -> 9 total, 3 batches
+        # First file: 6 records, second file: 3 records -> 9 total, 3 batches
         f1 = kg_dir / "model_transcriptions.json_output_20260226160000_1_in_1.json"
         f2 = kg_dir / "model_transcriptions.json_output_20260226180000_1_in_1.json"
         f1.write_text("\n".join([json.dumps({"id": f"chunk_{i}"}) for i in range(6)]) + "\n")
@@ -516,6 +653,57 @@ class TestDetectResumeOffset:
         constructor = AtlasRagConstructor(config)
 
         assert constructor._detect_resume_offset(tmp_path) == 3
+
+    def test_removes_empty_output_files(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Empty extraction output files are removed during resume detection."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        f1 = kg_dir / "model_transcriptions.json_output_20260226160000_1_in_1.json"
+        f2 = kg_dir / "model_transcriptions.json_output_20260226220000_1_in_1.json"
+        f1.write_text("\n".join([json.dumps({"id": f"chunk_{i}"}) for i in range(9)]) + "\n")
+        f2.write_text("")  # Empty file from aborted run
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        assert constructor._detect_resume_offset(tmp_path) == 3
+        assert not f2.exists()
+
+    def test_invalid_records_are_stripped(
+        self,
+        tmp_path: Path,
+        _mock_atlas_rag: dict,
+    ) -> None:
+        """Invalid JSON records are removed, count based on valid records only."""
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_extraction"
+        kg_dir.mkdir(parents=True)
+
+        output_file = kg_dir / "model_transcriptions.json_output_20260226_1_in_1.json"
+        lines = [json.dumps({"id": f"chunk_{i}"}) for i in range(9)]
+        lines.insert(3, "INVALID JSON LINE")
+        lines.insert(7, "ANOTHER BAD LINE")
+        output_file.write_text("\n".join(lines) + "\n")
+
+        config = KGConfig(backend_options={"batch_size_triple": 3})
+        constructor = AtlasRagConstructor(config)
+
+        # 9 valid records -> 3 batches (2 invalid lines stripped)
+        assert constructor._detect_resume_offset(tmp_path) == 3
+
+        # File should have exactly 9 valid JSONL lines
+        remaining = [ln for ln in output_file.read_text().strip().split("\n") if ln.strip()]
+        assert len(remaining) == 9
+        for line in remaining:
+            json.loads(line)  # Should not raise
 
 
 class TestCreateOpenAIClient:
