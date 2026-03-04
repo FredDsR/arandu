@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from gtranscriber.core.drive import (
+from arandu.core.drive import (
     DownloadError,
     EmptyDownloadError,
     IncompleteDownloadError,
@@ -85,7 +85,7 @@ class TestDriveClientInitialization:
 
     def test_import_drive_client(self) -> None:
         """Test that DriveClient can be imported."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         assert DriveClient is not None
 
@@ -93,8 +93,8 @@ class TestDriveClientInitialization:
 class TestDriveClientMethods:
     """Tests for DriveClient methods with mocking."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_drive_client_service_initialization(
         self,
         mock_credentials: MagicMock,
@@ -102,7 +102,7 @@ class TestDriveClientMethods:
         tmp_path: Path,
     ) -> None:
         """Test that DriveClient initializes Google Drive service."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -123,8 +123,8 @@ class TestDriveClientMethods:
         assert client.service is not None
         mock_build.assert_called_once()
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_drive_client_without_valid_token(
         self,
         mock_credentials: MagicMock,
@@ -132,7 +132,7 @@ class TestDriveClientMethods:
         tmp_path: Path,
     ) -> None:
         """Test DriveClient initialization without valid token."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks - no valid token
         mock_credentials.from_authorized_user_file.side_effect = FileNotFoundError
@@ -206,25 +206,25 @@ class TestValidateFileId:
 
     def test_valid_file_id_alphanumeric(self) -> None:
         """Test validation of valid alphanumeric file ID."""
-        from gtranscriber.core.drive import _validate_file_id
+        from arandu.core.drive import _validate_file_id
 
         assert _validate_file_id("abc123DEF456") is True
 
     def test_valid_file_id_with_dash(self) -> None:
         """Test validation of file ID with dashes."""
-        from gtranscriber.core.drive import _validate_file_id
+        from arandu.core.drive import _validate_file_id
 
         assert _validate_file_id("abc-123-def") is True
 
     def test_valid_file_id_with_underscore(self) -> None:
         """Test validation of file ID with underscores."""
-        from gtranscriber.core.drive import _validate_file_id
+        from arandu.core.drive import _validate_file_id
 
         assert _validate_file_id("abc_123_def") is True
 
     def test_invalid_file_id_special_chars(self) -> None:
         """Test validation fails for file ID with invalid characters."""
-        from gtranscriber.core.drive import _validate_file_id
+        from arandu.core.drive import _validate_file_id
 
         assert _validate_file_id("abc@123") is False
         assert _validate_file_id("abc#123") is False
@@ -232,13 +232,13 @@ class TestValidateFileId:
 
     def test_invalid_file_id_empty(self) -> None:
         """Test validation fails for empty file ID."""
-        from gtranscriber.core.drive import _validate_file_id
+        from arandu.core.drive import _validate_file_id
 
         assert _validate_file_id("") is False
 
     def test_invalid_file_id_spaces(self) -> None:
         """Test validation fails for file ID with spaces."""
-        from gtranscriber.core.drive import _validate_file_id
+        from arandu.core.drive import _validate_file_id
 
         assert _validate_file_id("abc 123") is False
 
@@ -248,14 +248,14 @@ class TestCheckFilePermissions:
 
     def test_check_permissions_nonexistent_file(self, tmp_path: Path) -> None:
         """Test checking permissions for nonexistent file."""
-        from gtranscriber.core.drive import _check_file_permissions
+        from arandu.core.drive import _check_file_permissions
 
         # Should not raise an exception for nonexistent file
         _check_file_permissions(tmp_path / "nonexistent.txt")
 
     def test_check_permissions_existing_file(self, tmp_path: Path) -> None:
         """Test checking permissions for existing file."""
-        from gtranscriber.core.drive import _check_file_permissions
+        from arandu.core.drive import _check_file_permissions
 
         file_path = tmp_path / "test.txt"
         file_path.write_text("test")
@@ -267,9 +267,9 @@ class TestCheckFilePermissions:
 class TestDriveClientAuthentication:
     """Tests for DriveClient authentication logic."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.InstalledAppFlow")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.InstalledAppFlow")
     def test_authenticate_new_user(
         self,
         mock_flow: MagicMock,
@@ -278,7 +278,7 @@ class TestDriveClientAuthentication:
         tmp_path: Path,
     ) -> None:
         """Test authentication flow for new user without token."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_credentials.from_authorized_user_file.side_effect = FileNotFoundError
@@ -303,8 +303,8 @@ class TestDriveClientAuthentication:
         assert client.credentials_file == str(credentials_file)
         assert client.token_file == str(token_file)
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_authenticate_existing_valid_token(
         self,
         mock_credentials: MagicMock,
@@ -312,7 +312,7 @@ class TestDriveClientAuthentication:
         tmp_path: Path,
     ) -> None:
         """Test authentication with existing valid token."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -341,7 +341,7 @@ class TestDriveScopes:
 
     def test_scopes_constant(self) -> None:
         """Test that SCOPES constant is defined correctly."""
-        from gtranscriber.core.drive import SCOPES
+        from arandu.core.drive import SCOPES
 
         assert isinstance(SCOPES, list)
         assert len(SCOPES) > 0
@@ -355,7 +355,7 @@ class TestNoAudioStreamError:
         """Test creating NoAudioStreamError."""
         from pathlib import Path
 
-        from gtranscriber.core.drive import NoAudioStreamError
+        from arandu.core.drive import NoAudioStreamError
 
         error = NoAudioStreamError("file123", "test.mp4", Path("/tmp/test.mp4"))
 
@@ -369,8 +369,8 @@ class TestNoAudioStreamError:
 class TestDriveClientConfiguration:
     """Tests for DriveClient configuration handling."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_client_with_config_object(
         self,
         mock_credentials: MagicMock,
@@ -378,8 +378,8 @@ class TestDriveClientConfiguration:
         tmp_path: Path,
     ) -> None:
         """Test DriveClient initialization with TranscriberConfig object."""
-        from gtranscriber.config import TranscriberConfig
-        from gtranscriber.core.drive import DriveClient
+        from arandu.config import TranscriberConfig
+        from arandu.core.drive import DriveClient
 
         config = TranscriberConfig(
             credentials="custom_creds.json",
@@ -391,8 +391,8 @@ class TestDriveClientConfiguration:
         assert client.credentials_file == "custom_creds.json"
         assert client.token_file == "custom_token.json"
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_client_explicit_paths_override_config(
         self,
         mock_credentials: MagicMock,
@@ -400,8 +400,8 @@ class TestDriveClientConfiguration:
         tmp_path: Path,
     ) -> None:
         """Test that explicit paths override config values."""
-        from gtranscriber.config import TranscriberConfig
-        from gtranscriber.core.drive import DriveClient
+        from arandu.config import TranscriberConfig
+        from arandu.core.drive import DriveClient
 
         config = TranscriberConfig(
             credentials="config_creds.json",
@@ -421,8 +421,8 @@ class TestDriveClientConfiguration:
 class TestDriveClientGetFileMetadata:
     """Tests for get_file_metadata method."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_get_file_metadata_success(
         self,
         mock_credentials: MagicMock,
@@ -430,7 +430,7 @@ class TestDriveClientGetFileMetadata:
         tmp_path: Path,
     ) -> None:
         """Test getting file metadata successfully."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -462,8 +462,8 @@ class TestDriveClientGetFileMetadata:
         assert metadata["id"] == "file123"
         assert metadata["name"] == "test.mp3"
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_get_file_metadata_invalid_file_id(
         self,
         mock_credentials: MagicMock,
@@ -471,7 +471,7 @@ class TestDriveClientGetFileMetadata:
         tmp_path: Path,
     ) -> None:
         """Test that invalid file ID raises ValueError."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         mock_creds = Mock()
         mock_creds.valid = True
@@ -496,9 +496,9 @@ class TestDriveClientGetFileMetadata:
 class TestDriveAuthenticationEdgeCases:
     """Tests for authentication edge cases."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.Request")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.Request")
     def test_authenticate_refresh_token_expired(
         self,
         mock_request: MagicMock,
@@ -507,7 +507,7 @@ class TestDriveAuthenticationEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Test authentication when token is expired but can be refreshed."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Mock expired credentials that can be refreshed
         mock_creds = Mock()
@@ -533,9 +533,9 @@ class TestDriveAuthenticationEdgeCases:
         # Should have called refresh
         mock_creds.refresh.assert_called_once()
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.Request")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.Request")
     def test_authenticate_refresh_token_fails(
         self,
         mock_request: MagicMock,
@@ -544,7 +544,7 @@ class TestDriveAuthenticationEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Test authentication when token refresh fails."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Mock expired credentials with failing refresh
         mock_creds = Mock()
@@ -569,9 +569,9 @@ class TestDriveAuthenticationEdgeCases:
 
         assert "Failed to refresh OAuth token" in str(exc_info.value)
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.InstalledAppFlow")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.InstalledAppFlow")
     def test_authenticate_new_user_flow_fails(
         self,
         mock_flow: MagicMock,
@@ -580,7 +580,7 @@ class TestDriveAuthenticationEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Test authentication when new user flow fails (no browser)."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Mock no existing credentials
         mock_credentials.from_authorized_user_file.side_effect = FileNotFoundError
@@ -608,9 +608,9 @@ class TestDriveAuthenticationEdgeCases:
 class TestUploadFile:
     """Tests for upload_file method."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaFileUpload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaFileUpload")
     def test_upload_file_success(
         self,
         mock_media_upload: MagicMock,
@@ -619,7 +619,7 @@ class TestUploadFile:
         tmp_path: Path,
     ) -> None:
         """Test uploading a file to Google Drive."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -663,8 +663,8 @@ class TestUploadFile:
 class TestUpdateFileProperties:
     """Tests for update_file_properties method."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_update_file_properties_success(
         self,
         mock_credentials: MagicMock,
@@ -672,7 +672,7 @@ class TestUpdateFileProperties:
         tmp_path: Path,
     ) -> None:
         """Test updating file properties."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -715,8 +715,8 @@ class TestUpdateFileProperties:
 class TestListMediaFiles:
     """Tests for list_media_files method."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_list_media_files_without_filters(
         self,
         mock_credentials: MagicMock,
@@ -724,7 +724,7 @@ class TestListMediaFiles:
         tmp_path: Path,
     ) -> None:
         """Test listing files without folder or status filters."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -757,8 +757,8 @@ class TestListMediaFiles:
         assert result[0]["id"] == "file1"
         assert result[1]["id"] == "file2"
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_list_media_files_with_folder_filter(
         self,
         mock_credentials: MagicMock,
@@ -766,7 +766,7 @@ class TestListMediaFiles:
         tmp_path: Path,
     ) -> None:
         """Test listing files with folder filter."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -796,8 +796,8 @@ class TestListMediaFiles:
 
         assert len(result) == 1
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
     def test_list_media_files_with_status_filter(
         self,
         mock_credentials: MagicMock,
@@ -805,7 +805,7 @@ class TestListMediaFiles:
         tmp_path: Path,
     ) -> None:
         """Test listing files with status filter."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -839,9 +839,9 @@ class TestListMediaFiles:
 class TestDownloadFile:
     """Tests for download_file method."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_success(
         self,
         mock_download: MagicMock,
@@ -850,7 +850,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test successful file download."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -898,9 +898,9 @@ class TestDownloadFile:
         assert destination.exists()
 
     @patch("tenacity.nap.time.sleep", return_value=None)  # Skip retry delays
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_empty_raises_error(
         self,
         mock_download: MagicMock,
@@ -910,7 +910,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test that empty download raises EmptyDownloadError."""
-        from gtranscriber.core.drive import DriveClient, EmptyDownloadError
+        from arandu.core.drive import DriveClient, EmptyDownloadError
 
         # Setup mocks
         mock_creds = Mock()
@@ -950,9 +950,9 @@ class TestDownloadFile:
             )
 
     @patch("tenacity.nap.time.sleep", return_value=None)  # Skip retry delays
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_incomplete_raises_error(
         self,
         mock_download: MagicMock,
@@ -962,7 +962,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test that incomplete download raises IncompleteDownloadError."""
-        from gtranscriber.core.drive import DriveClient, IncompleteDownloadError
+        from arandu.core.drive import DriveClient, IncompleteDownloadError
 
         # Setup mocks
         mock_creds = Mock()
@@ -1003,9 +1003,9 @@ class TestDownloadFile:
                 file_name="test.mp3",
             )
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_within_tolerance(
         self,
         mock_download: MagicMock,
@@ -1014,7 +1014,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test that download within tolerance (0.1%) succeeds."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -1057,9 +1057,9 @@ class TestDownloadFile:
 
         assert result == destination
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_fetches_metadata_if_no_size(
         self,
         mock_download: MagicMock,
@@ -1068,7 +1068,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test that download fetches metadata if expected_size not provided."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -1117,9 +1117,9 @@ class TestDownloadFile:
         # Should have called get to fetch metadata
         mock_service.files().get.assert_called()
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_with_progress(
         self,
         mock_download: MagicMock,
@@ -1128,7 +1128,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test download with progress bar updates."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -1186,10 +1186,10 @@ class TestDownloadFile:
         # Progress should have been updated
         assert progress_mock.update.call_count >= 1
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
-    @patch("gtranscriber.core.drive.io.FileIO")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.io.FileIO")
     def test_download_file_os_error_cleans_up(
         self,
         mock_file_io: MagicMock,
@@ -1199,7 +1199,7 @@ class TestDownloadFile:
         tmp_path: Path,
     ) -> None:
         """Test that OS errors are raised and cleanup occurs."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -1238,9 +1238,9 @@ class TestDownloadFile:
 class TestUploadFileWithProgress:
     """Tests for upload_file with progress updates."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaFileUpload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaFileUpload")
     def test_upload_file_with_progress(
         self,
         mock_media_upload: MagicMock,
@@ -1249,7 +1249,7 @@ class TestUploadFileWithProgress:
         tmp_path: Path,
     ) -> None:
         """Test uploading a file with progress tracking."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()
@@ -1298,9 +1298,9 @@ class TestUploadFileWithProgress:
 class TestDownloadFileMetadataFetch:
     """Tests for metadata fetch behavior in download_file."""
 
-    @patch("gtranscriber.core.drive.build")
-    @patch("gtranscriber.core.drive.Credentials")
-    @patch("gtranscriber.core.drive.MediaIoBaseDownload")
+    @patch("arandu.core.drive.build")
+    @patch("arandu.core.drive.Credentials")
+    @patch("arandu.core.drive.MediaIoBaseDownload")
     def test_download_file_metadata_fetch_fails_gracefully(
         self,
         mock_download: MagicMock,
@@ -1309,7 +1309,7 @@ class TestDownloadFileMetadataFetch:
         tmp_path: Path,
     ) -> None:
         """Test that download continues when metadata fetch fails."""
-        from gtranscriber.core.drive import DriveClient
+        from arandu.core.drive import DriveClient
 
         # Setup mocks
         mock_creds = Mock()

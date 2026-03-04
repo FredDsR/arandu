@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gtranscriber.utils.text import GenerateResult, extract_thinking
+from arandu.utils.text import GenerateResult, extract_thinking
 
 
 class TestExtractThinking:

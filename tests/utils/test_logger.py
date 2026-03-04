@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock, patch
 
-from gtranscriber.utils.logger import (
+from arandu.utils.logger import (
     get_logger,
     log_debug,
     log_error,
@@ -27,7 +27,7 @@ class TestSetupLogging:
         logger = setup_logging()
 
         assert logger is not None
-        assert logger.name == "gtranscriber"
+        assert logger.name == "arandu"
         assert logger.level == logging.INFO
         assert len(logger.handlers) > 0
 
@@ -74,14 +74,14 @@ class TestGetLogger:
         logger = get_logger()
 
         assert logger is not None
-        assert logger.name == "gtranscriber"
+        assert logger.name == "arandu"
 
     def test_get_logger_with_name(self) -> None:
         """Test get_logger with custom name."""
         logger = get_logger("custom")
 
         assert logger is not None
-        assert logger.name == "gtranscriber.custom"
+        assert logger.name == "arandu.custom"
 
     def test_get_logger_different_names(self) -> None:
         """Test that different names return different loggers."""
@@ -96,7 +96,7 @@ class TestGetLogger:
 class TestLogFunctions:
     """Tests for convenience logging functions."""
 
-    @patch("gtranscriber.utils.logger.get_logger")
+    @patch("arandu.utils.logger.get_logger")
     def test_log_info(self, mock_get_logger: MagicMock) -> None:
         """Test log_info function."""
         mock_logger = MagicMock()
@@ -107,7 +107,7 @@ class TestLogFunctions:
         mock_get_logger.assert_called_once()
         mock_logger.info.assert_called_once_with("Test info message")
 
-    @patch("gtranscriber.utils.logger.get_logger")
+    @patch("arandu.utils.logger.get_logger")
     def test_log_error(self, mock_get_logger: MagicMock) -> None:
         """Test log_error function."""
         mock_logger = MagicMock()
@@ -118,7 +118,7 @@ class TestLogFunctions:
         mock_get_logger.assert_called_once()
         mock_logger.error.assert_called_once_with("Test error message")
 
-    @patch("gtranscriber.utils.logger.get_logger")
+    @patch("arandu.utils.logger.get_logger")
     def test_log_warning(self, mock_get_logger: MagicMock) -> None:
         """Test log_warning function."""
         mock_logger = MagicMock()
@@ -129,7 +129,7 @@ class TestLogFunctions:
         mock_get_logger.assert_called_once()
         mock_logger.warning.assert_called_once_with("Test warning message")
 
-    @patch("gtranscriber.utils.logger.get_logger")
+    @patch("arandu.utils.logger.get_logger")
     def test_log_debug(self, mock_get_logger: MagicMock) -> None:
         """Test log_debug function."""
         mock_logger = MagicMock()
@@ -144,7 +144,7 @@ class TestLogFunctions:
 class TestPrintFunctions:
     """Tests for console print functions."""
 
-    @patch("gtranscriber.utils.logger.stderr_console")
+    @patch("arandu.utils.logger.stderr_console")
     def test_print_error(self, mock_stderr_console: MagicMock) -> None:
         """Test print_error function."""
         print_error("Test error")
@@ -154,7 +154,7 @@ class TestPrintFunctions:
         assert "Error:" in call_args
         assert "Test error" in call_args
 
-    @patch("gtranscriber.utils.logger.console")
+    @patch("arandu.utils.logger.console")
     def test_print_success(self, mock_console: MagicMock) -> None:
         """Test print_success function."""
         print_success("Test success")
@@ -164,7 +164,7 @@ class TestPrintFunctions:
         assert "✓" in call_args
         assert "Test success" in call_args
 
-    @patch("gtranscriber.utils.logger.console")
+    @patch("arandu.utils.logger.console")
     def test_print_warning(self, mock_console: MagicMock) -> None:
         """Test print_warning function."""
         print_warning("Test warning")
@@ -174,7 +174,7 @@ class TestPrintFunctions:
         assert "⚠" in call_args
         assert "Test warning" in call_args
 
-    @patch("gtranscriber.utils.logger.console")
+    @patch("arandu.utils.logger.console")
     def test_print_info(self, mock_console: MagicMock) -> None:
         """Test print_info function."""
         print_info("Test info")

@@ -1,6 +1,6 @@
 # Batch Processing Patterns - Analysis for Phase 2 Implementation
 
-**Purpose**: Understand existing patterns in G-Transcriber to ensure consistency when implementing QA generation, KG construction, and evaluation pipelines.
+**Purpose**: Understand existing patterns in Arandu to ensure consistency when implementing QA generation, KG construction, and evaluation pipelines.
 
 **Status**: Phase 1 ✅ Complete | Phase 2 🔄 Ready to implement
 
@@ -56,7 +56,7 @@ The existing transcription batch processing system consists of:
 ## Checkpoint System Pattern
 
 ### Location
-`src/gtranscriber/core/checkpoint.py` (154 lines)
+`src/arandu/core/checkpoint.py` (154 lines)
 
 ### Purpose
 Track progress of batch processing jobs and enable resumption after interruption.
@@ -136,7 +136,7 @@ completed, total = checkpoint.get_progress()
 ## Batch Processing Pattern
 
 ### Location
-`src/gtranscriber/core/batch.py` (563 lines)
+`src/arandu/core/batch.py` (563 lines)
 
 ### Purpose
 Orchestrate parallel processing of multiple files with checkpoint integration.
@@ -403,7 +403,7 @@ with ProcessPoolExecutor(
 ## CLI Command Pattern
 
 ### Location
-`src/gtranscriber/main.py` - `batch_transcribe()` command (lines 475-625)
+`src/arandu/main.py` - `batch_transcribe()` command (lines 475-625)
 
 ### Structure
 
@@ -435,7 +435,7 @@ def batch_transcribe(
         str,
         typer.Option(
             "--model-id", "-m",
-            help="Model ID. Can be set via GTRANSCRIBER_MODEL_ID env var.",
+            help="Model ID. Can be set via ARANDU_MODEL_ID env var.",
         ),
     ] = _config.model_id,  # Default from config
 
@@ -566,7 +566,7 @@ def process_file(file_path: Path) -> Result:
 
 ```python
 # Use Rich console utilities, not print()
-from gtranscriber.utils.logger import (
+from arandu.utils.logger import (
     print_info,
     print_success,
     print_error,
@@ -616,7 +616,7 @@ processing patterns as transcription.
 # CEP QA pipeline follows this structure:
 
 1. Config classes (QAConfig + CEPConfig)
-   └─ Environment variables with GTRANSCRIBER_QA_ and GTRANSCRIBER_CEP_ prefixes
+   └─ Environment variables with ARANDU_QA_ and ARANDU_CEP_ prefixes
 
 2. QAGenerationTask dataclass
    └─ transcription_file, gdrive_id, filename, output_file

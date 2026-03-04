@@ -29,20 +29,20 @@ JudgePipeline
 
 ```bash
 # Enable/disable composable pipeline (default: true)
-GTRANSCRIBER_JUDGE_USE_COMPOSABLE_PIPELINE=true
+ARANDU_JUDGE_USE_COMPOSABLE_PIPELINE=true
 
 # Language for criterion prompts (default: pt)
-GTRANSCRIBER_JUDGE_LANGUAGE=pt
+ARANDU_JUDGE_LANGUAGE=pt
 
 # LLM settings
-GTRANSCRIBER_JUDGE_TEMPERATURE=0.3
-GTRANSCRIBER_JUDGE_MAX_TOKENS=2048
+ARANDU_JUDGE_TEMPERATURE=0.3
+ARANDU_JUDGE_MAX_TOKENS=2048
 ```
 
 ### Programmatic Configuration
 
 ```python
-from gtranscriber.config import JudgeConfig
+from arandu.config import JudgeConfig
 
 judge_config = JudgeConfig(
     use_composable_pipeline=True,  # Use new pipeline
@@ -59,9 +59,9 @@ judge_config = JudgeConfig(
 The QAValidator automatically uses the composable pipeline when enabled:
 
 ```python
-from gtranscriber.config import CEPConfig, JudgeConfig
-from gtranscriber.core.cep.validator import QAValidator
-from gtranscriber.core.llm_client import LLMClient, LLMProvider
+from arandu.config import CEPConfig, JudgeConfig
+from arandu.core.cep.validator import QAValidator
+from arandu.core.llm_client import LLMClient, LLMProvider
 
 # Create LLM client for validation
 validator_client = LLMClient(
@@ -89,8 +89,8 @@ validated_pair = validator.validate(qa_pair, context)
 You can also use the judge pipeline directly:
 
 ```python
-from gtranscriber.core.judge import JudgeRegistry, JudgePipeline
-from gtranscriber.core.llm_client import LLMClient, LLMProvider
+from arandu.core.judge import JudgeRegistry, JudgePipeline
+from arandu.core.llm_client import LLMClient, LLMProvider
 
 # Create LLM client
 llm_client = LLMClient(

@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for G-Transcriber tests.
+"""Shared pytest fixtures for Arandu tests.
 
 This module provides common fixtures used across all test modules.
 """

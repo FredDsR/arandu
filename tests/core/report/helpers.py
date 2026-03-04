@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from gtranscriber.schemas import (
+from arandu.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
@@ -49,5 +49,5 @@ def make_run_metadata(
         hardware=hardware,
         config=config,
         output_directory=output_directory,
-        gtranscriber_version="0.1.0",
+        arandu_version="0.1.0",
     )

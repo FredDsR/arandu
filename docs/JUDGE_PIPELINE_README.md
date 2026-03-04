@@ -52,7 +52,7 @@ A modular, composable judge framework inspired by [G-Eval](https://arxiv.org/abs
 
 ## Files Structure
 
-### Core Module (`src/gtranscriber/core/judge/`)
+### Core Module (`src/arandu/core/judge/`)
 
 ```
 judge/
@@ -93,9 +93,9 @@ judge/
 ### Quick Start (Default: Composable Mode)
 
 ```python
-from gtranscriber.config import CEPConfig
-from gtranscriber.core.cep.validator import QAValidator
-from gtranscriber.core.llm_client import LLMClient, LLMProvider
+from arandu.config import CEPConfig
+from arandu.core.cep.validator import QAValidator
+from arandu.core.llm_client import LLMClient, LLMProvider
 
 # Create validator (automatically uses composable pipeline)
 validator_client = LLMClient(LLMProvider.OLLAMA, "qwen3:14b")
@@ -112,7 +112,7 @@ print(validated_pair.validation.criterion_scores["faithfulness"])
 ### Legacy Mode (Single Call)
 
 ```python
-from gtranscriber.config import JudgeConfig
+from arandu.config import JudgeConfig
 
 judge_config = JudgeConfig(use_composable_pipeline=False)
 validator = QAValidator(validator_client, cep_config, judge_config)
@@ -124,7 +124,7 @@ validated_pair = validator.validate(qa_pair, context)
 ### Direct Pipeline Usage
 
 ```python
-from gtranscriber.core.judge import JudgeRegistry, JudgePipeline
+from arandu.core.judge import JudgeRegistry, JudgePipeline
 
 registry = JudgeRegistry(llm_client, language="pt")
 criteria = registry.get_criteria("cep_validation")
@@ -144,14 +144,14 @@ validation_score = pipeline.evaluate(context, question, answer)
 
 ```bash
 # Enable/disable composable pipeline (default: true)
-GTRANSCRIBER_JUDGE_USE_COMPOSABLE_PIPELINE=true
+ARANDU_JUDGE_USE_COMPOSABLE_PIPELINE=true
 
 # Language for criterion prompts (default: pt)
-GTRANSCRIBER_JUDGE_LANGUAGE=pt
+ARANDU_JUDGE_LANGUAGE=pt
 
 # LLM settings
-GTRANSCRIBER_JUDGE_TEMPERATURE=0.3
-GTRANSCRIBER_JUDGE_MAX_TOKENS=2048
+ARANDU_JUDGE_TEMPERATURE=0.3
+ARANDU_JUDGE_MAX_TOKENS=2048
 ```
 
 ## Benefits
@@ -238,7 +238,7 @@ Run tests: `uv run pytest tests/core/judge/`
 
 ```bash
 # Lint and format
-uv run ruff check --fix src/gtranscriber/core/judge/ && uv run ruff format src/gtranscriber/core/judge/
+uv run ruff check --fix src/arandu/core/judge/ && uv run ruff format src/arandu/core/judge/
 
 # Run tests
 uv run pytest tests/core/judge/ tests/core/cep/test_validator.py -v
@@ -259,7 +259,7 @@ uv run pytest tests/core/judge/ tests/core/cep/test_validator.py -v
 
 To opt-out (use legacy mode):
 ```bash
-export GTRANSCRIBER_JUDGE_USE_COMPOSABLE_PIPELINE=false
+export ARANDU_JUDGE_USE_COMPOSABLE_PIPELINE=false
 ```
 
 ### For Developers

@@ -9,8 +9,8 @@ import torch
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from gtranscriber.config import TranscriberConfig
-from gtranscriber.core.hardware import (
+from arandu.config import TranscriberConfig
+from arandu.core.hardware import (
     DeviceType,
     HardwareConfig,
     get_device_and_dtype,

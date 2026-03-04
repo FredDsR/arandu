@@ -9,8 +9,8 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from gtranscriber.core.report.collector import ResultsCollector, RunReport
-from gtranscriber.schemas import (
+from arandu.core.report.collector import ResultsCollector, RunReport
+from arandu.schemas import (
     EnrichedRecord,
     PipelineMetadata,
     PipelineType,

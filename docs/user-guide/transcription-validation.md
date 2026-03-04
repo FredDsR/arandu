@@ -59,9 +59,9 @@ The `null` sentinel distinguishes records that predate validation from those tha
 
 Validation runs automatically in all transcription entry points:
 
-- `gtranscriber transcribe` - Single file transcription
-- `gtranscriber drive-transcribe` - Google Drive file transcription
-- `gtranscriber batch-transcribe` - Batch processing
+- `arandu transcribe` - Single file transcription
+- `arandu drive-transcribe` - Google Drive file transcription
+- `arandu batch-transcribe` - Batch processing
 
 No extra flags are needed. Quality issues are logged as warnings:
 
@@ -72,7 +72,7 @@ WARNING - Quality issues detected: ['high_word_repetition:obrigada:30', 'repeate
 ### Disabling Inline Validation
 
 ```bash
-export GTRANSCRIBER_QUALITY_ENABLED=false
+export ARANDU_QUALITY_ENABLED=false
 ```
 
 When disabled, records are marked `is_valid: true` and `transcription_quality: null`.
@@ -84,7 +84,7 @@ Validate existing transcription files that were produced before this feature:
 ### Basic Usage
 
 ```bash
-gtranscriber validate-transcriptions results/
+arandu validate-transcriptions results/
 ```
 
 This updates each `*_transcription.json` file in-place with quality scores.
@@ -92,7 +92,7 @@ This updates each `*_transcription.json` file in-place with quality scores.
 ### Report Only (No File Changes)
 
 ```bash
-gtranscriber validate-transcriptions results/ --report-only
+arandu validate-transcriptions results/ --report-only
 ```
 
 Displays a validation summary table without modifying any files.
@@ -100,7 +100,7 @@ Displays a validation summary table without modifying any files.
 ### Custom Threshold
 
 ```bash
-gtranscriber validate-transcriptions results/ --threshold 0.7
+arandu validate-transcriptions results/ --threshold 0.7
 ```
 
 Use a higher threshold for stricter quality requirements.
@@ -108,7 +108,7 @@ Use a higher threshold for stricter quality requirements.
 ### Custom Language
 
 ```bash
-gtranscriber validate-transcriptions results/ --language en
+arandu validate-transcriptions results/ --language en
 ```
 
 Override the expected language for script matching (default: `pt`).
@@ -116,7 +116,7 @@ Override the expected language for script matching (default: `pt`).
 ### Save to Separate Directory
 
 ```bash
-gtranscriber validate-transcriptions results/ --output-dir validated/
+arandu validate-transcriptions results/ --output-dir validated/
 ```
 
 Write validated files to a new directory instead of updating in-place.
@@ -124,7 +124,7 @@ Write validated files to a new directory instead of updating in-place.
 ### Full Example
 
 ```bash
-gtranscriber validate-transcriptions results_tupi/ \
+arandu validate-transcriptions results_tupi/ \
   --threshold 0.6 \
   --language pt \
   --report-only
@@ -215,49 +215,49 @@ Checks whether the words-per-minute ratio falls within a reasonable range for sp
 
 ## Configuration Reference
 
-All settings use the `GTRANSCRIBER_QUALITY_` environment variable prefix.
+All settings use the `ARANDU_QUALITY_` environment variable prefix.
 
 ### General Settings
 
 | Setting | Type | Default | Env Var |
 |---------|------|---------|---------|
-| `enabled` | `bool` | `True` | `GTRANSCRIBER_QUALITY_ENABLED` |
-| `quality_threshold` | `float` | `0.5` | `GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD` |
-| `expected_language` | `str` | `"pt"` | `GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE` |
+| `enabled` | `bool` | `True` | `ARANDU_QUALITY_ENABLED` |
+| `quality_threshold` | `float` | `0.5` | `ARANDU_QUALITY_QUALITY_THRESHOLD` |
+| `expected_language` | `str` | `"pt"` | `ARANDU_QUALITY_EXPECTED_LANGUAGE` |
 
 ### Dimension Weights (must sum to 1.0)
 
 | Setting | Type | Default | Env Var |
 |---------|------|---------|---------|
-| `script_match_weight` | `float` | `0.35` | `GTRANSCRIBER_QUALITY_SCRIPT_MATCH_WEIGHT` |
-| `repetition_weight` | `float` | `0.30` | `GTRANSCRIBER_QUALITY_REPETITION_WEIGHT` |
-| `segment_quality_weight` | `float` | `0.20` | `GTRANSCRIBER_QUALITY_SEGMENT_QUALITY_WEIGHT` |
-| `content_density_weight` | `float` | `0.15` | `GTRANSCRIBER_QUALITY_CONTENT_DENSITY_WEIGHT` |
+| `script_match_weight` | `float` | `0.35` | `ARANDU_QUALITY_SCRIPT_MATCH_WEIGHT` |
+| `repetition_weight` | `float` | `0.30` | `ARANDU_QUALITY_REPETITION_WEIGHT` |
+| `segment_quality_weight` | `float` | `0.20` | `ARANDU_QUALITY_SEGMENT_QUALITY_WEIGHT` |
+| `content_density_weight` | `float` | `0.15` | `ARANDU_QUALITY_CONTENT_DENSITY_WEIGHT` |
 
 ### Detection Thresholds
 
 | Setting | Type | Default | Env Var |
 |---------|------|---------|---------|
-| `max_non_latin_ratio` | `float` | `0.1` | `GTRANSCRIBER_QUALITY_MAX_NON_LATIN_RATIO` |
-| `max_word_repetition_ratio` | `float` | `0.15` | `GTRANSCRIBER_QUALITY_MAX_WORD_REPETITION_RATIO` |
-| `max_phrase_repetition_count` | `int` | `4` | `GTRANSCRIBER_QUALITY_MAX_PHRASE_REPETITION_COUNT` |
-| `suspicious_uniform_intervals` | `int` | `5` | `GTRANSCRIBER_QUALITY_SUSPICIOUS_UNIFORM_INTERVALS` |
-| `min_words_per_minute` | `float` | `30.0` | `GTRANSCRIBER_QUALITY_MIN_WORDS_PER_MINUTE` |
-| `max_words_per_minute` | `float` | `300.0` | `GTRANSCRIBER_QUALITY_MAX_WORDS_PER_MINUTE` |
-| `max_empty_segment_ratio` | `float` | `0.2` | `GTRANSCRIBER_QUALITY_MAX_EMPTY_SEGMENT_RATIO` |
-| `uniform_interval_tolerance` | `float` | `0.1` | `GTRANSCRIBER_QUALITY_UNIFORM_INTERVAL_TOLERANCE` |
+| `max_non_latin_ratio` | `float` | `0.1` | `ARANDU_QUALITY_MAX_NON_LATIN_RATIO` |
+| `max_word_repetition_ratio` | `float` | `0.15` | `ARANDU_QUALITY_MAX_WORD_REPETITION_RATIO` |
+| `max_phrase_repetition_count` | `int` | `4` | `ARANDU_QUALITY_MAX_PHRASE_REPETITION_COUNT` |
+| `suspicious_uniform_intervals` | `int` | `5` | `ARANDU_QUALITY_SUSPICIOUS_UNIFORM_INTERVALS` |
+| `min_words_per_minute` | `float` | `30.0` | `ARANDU_QUALITY_MIN_WORDS_PER_MINUTE` |
+| `max_words_per_minute` | `float` | `300.0` | `ARANDU_QUALITY_MAX_WORDS_PER_MINUTE` |
+| `max_empty_segment_ratio` | `float` | `0.2` | `ARANDU_QUALITY_MAX_EMPTY_SEGMENT_RATIO` |
+| `uniform_interval_tolerance` | `float` | `0.1` | `ARANDU_QUALITY_UNIFORM_INTERVAL_TOLERANCE` |
 
 ### Example `.env` Configuration
 
 ```bash
 # Transcription Quality Validation
-GTRANSCRIBER_QUALITY_ENABLED=true
-GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD=0.6
-GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE=pt
+ARANDU_QUALITY_ENABLED=true
+ARANDU_QUALITY_QUALITY_THRESHOLD=0.6
+ARANDU_QUALITY_EXPECTED_LANGUAGE=pt
 
 # Stricter repetition detection
-GTRANSCRIBER_QUALITY_MAX_WORD_REPETITION_RATIO=0.10
-GTRANSCRIBER_QUALITY_MAX_PHRASE_REPETITION_COUNT=3
+ARANDU_QUALITY_MAX_WORD_REPETITION_RATIO=0.10
+ARANDU_QUALITY_MAX_PHRASE_REPETITION_COUNT=3
 ```
 
 ## Interpreting Results
@@ -284,8 +284,8 @@ GTRANSCRIBER_QUALITY_MAX_PHRASE_REPETITION_COUNT=3
 ## Programmatic Usage
 
 ```python
-from gtranscriber.config import TranscriptionQualityConfig
-from gtranscriber.core.transcription_validator import (
+from arandu.config import TranscriptionQualityConfig
+from arandu.core.transcription_validator import (
     TranscriptionValidator,
     validate_enriched_record,
     get_quality_issues,

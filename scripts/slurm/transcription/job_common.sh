@@ -1,17 +1,17 @@
 #!/bin/bash
 # =============================================================================
-# G-Transcriber Common Job Script
+# Arandu Common Job Script
 #
 # This script contains the shared logic for all SLURM partition scripts.
 # It should be sourced from partition-specific scripts, not run directly.
 #
 # Required environment variables (set by partition scripts):
 #   WORKERS - Number of parallel workers
-#   GTRANSCRIBER_MODEL_ID - Whisper model to use
+#   ARANDU_MODEL_ID - Whisper model to use
 #
 # Optional environment variables:
-#   GTRANSCRIBER_LANGUAGE - Language code for transcription (default: pt)
-#   GTRANSCRIBER_RESULTS_DIR - Custom results directory (default: $PROJECT_DIR/results)
+#   ARANDU_LANGUAGE - Language code for transcription (default: pt)
+#   ARANDU_RESULTS_DIR - Custom results directory (default: $PROJECT_DIR/results)
 #   PIPELINE_ID - Pipeline run ID for versioned results layout (default: auto-resolved)
 # =============================================================================
 
@@ -19,25 +19,25 @@ set -euo pipefail
 
 # -----------------------------------------------------------------------------
 # Configuration (can be overridden via environment variables)
-# Support both old (WORKERS, CATALOG_FILE) and new (GTRANSCRIBER_*) variable names
+# Support both old (WORKERS, CATALOG_FILE) and new (ARANDU_*) variable names
 # for backward compatibility
 # -----------------------------------------------------------------------------
 PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
-# Support both GTRANSCRIBER_WORKERS and WORKERS (prioritize GTRANSCRIBER_*)
-if [ -n "${GTRANSCRIBER_WORKERS:-}" ]; then
-    WORKERS="${GTRANSCRIBER_WORKERS}"
+# Support both ARANDU_WORKERS and WORKERS (prioritize ARANDU_*)
+if [ -n "${ARANDU_WORKERS:-}" ]; then
+    WORKERS="${ARANDU_WORKERS}"
 fi
 WORKERS="${WORKERS:-1}"
 
-# Support both GTRANSCRIBER_CATALOG_FILE and CATALOG_FILE
-if [ -n "${GTRANSCRIBER_CATALOG_FILE:-}" ]; then
-    CATALOG_FILE="${GTRANSCRIBER_CATALOG_FILE}"
+# Support both ARANDU_CATALOG_FILE and CATALOG_FILE
+if [ -n "${ARANDU_CATALOG_FILE:-}" ]; then
+    CATALOG_FILE="${ARANDU_CATALOG_FILE}"
 fi
 CATALOG_FILE="${CATALOG_FILE:-catalog.csv}"
 
 # Support custom results directory (final destination after job completes)
-FINAL_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
+FINAL_RESULTS_DIR="${ARANDU_RESULTS_DIR:-$PROJECT_DIR/results}"
 
 USE_CPU="${USE_CPU:-false}"
 USE_ROCM="${USE_ROCM:-false}"
@@ -46,7 +46,7 @@ USE_ROCM="${USE_ROCM:-false}"
 # Job Information
 # -----------------------------------------------------------------------------
 echo "=============================================="
-echo "G-Transcriber Job Started"
+echo "Arandu Job Started"
 echo "=============================================="
 echo "Job ID:        $SLURM_JOB_ID"
 echo "Job Name:      $SLURM_JOB_NAME"
@@ -56,8 +56,8 @@ echo "CPUs:          ${SLURM_CPUS_PER_TASK:-N/A}"
 echo "Start Time:    $(date)"
 echo "Project Dir:   $PROJECT_DIR"
 echo "Results Dir:   $FINAL_RESULTS_DIR"
-echo "Model:         $GTRANSCRIBER_MODEL_ID"
-echo "Language:      ${GTRANSCRIBER_LANGUAGE:-pt}"
+echo "Model:         $ARANDU_MODEL_ID"
+echo "Language:      ${ARANDU_LANGUAGE:-pt}"
 echo "Workers:       $WORKERS"
 echo "Catalog:       $CATALOG_FILE"
 echo "=============================================="
@@ -120,41 +120,41 @@ echo "  HF Cache Dir:    $WORK_HF_CACHE_DIR"
 export SLURM_JOB_ID
 export PIPELINE_ID="${PIPELINE_ID:-}"
 
-# Export both WORKERS and GTRANSCRIBER_WORKERS
+# Export both WORKERS and ARANDU_WORKERS
 export WORKERS
-export GTRANSCRIBER_WORKERS="$WORKERS"
+export ARANDU_WORKERS="$WORKERS"
 
-export GTRANSCRIBER_MODEL_ID
+export ARANDU_MODEL_ID
 
 # Set default language to Portuguese (Brazilian)
-export GTRANSCRIBER_LANGUAGE="${GTRANSCRIBER_LANGUAGE:-pt}"
+export ARANDU_LANGUAGE="${ARANDU_LANGUAGE:-pt}"
 
-# Export both CATALOG_FILE and GTRANSCRIBER_CATALOG_FILE
+# Export both CATALOG_FILE and ARANDU_CATALOG_FILE
 export CATALOG_FILE
-export GTRANSCRIBER_CATALOG_FILE="$CATALOG_FILE"
+export ARANDU_CATALOG_FILE="$CATALOG_FILE"
 
 # Export both old and new path variables
 export INPUT_DIR="$WORK_INPUT_DIR"
-export GTRANSCRIBER_INPUT_DIR="$WORK_INPUT_DIR"
+export ARANDU_INPUT_DIR="$WORK_INPUT_DIR"
 
 export RESULTS_DIR="$WORK_RESULTS_DIR"
-export GTRANSCRIBER_RESULTS_DIR="$WORK_RESULTS_DIR"
+export ARANDU_RESULTS_DIR="$WORK_RESULTS_DIR"
 
 export CREDENTIALS_DIR="$WORK_CREDENTIALS_DIR"
-export GTRANSCRIBER_CREDENTIALS_DIR="$WORK_CREDENTIALS_DIR"
+export ARANDU_CREDENTIALS_DIR="$WORK_CREDENTIALS_DIR"
 
 export HF_CACHE_DIR="$WORK_HF_CACHE_DIR"
-export GTRANSCRIBER_HF_CACHE_DIR="$WORK_HF_CACHE_DIR"
+export ARANDU_HF_CACHE_DIR="$WORK_HF_CACHE_DIR"
 
 # Set quantization flag (enabled by default for GPU, disabled for CPU)
 if [ "$USE_CPU" = "true" ]; then
-    export GTRANSCRIBER_QUANTIZE=false
-    export GTRANSCRIBER_FORCE_CPU=true
+    export ARANDU_QUANTIZE=false
+    export ARANDU_FORCE_CPU=true
     export QUANTIZE_FLAG=""
     export CPU_FLAG="--cpu"
 else
-    export GTRANSCRIBER_QUANTIZE=false
-    export GTRANSCRIBER_FORCE_CPU=false
+    export ARANDU_QUANTIZE=false
+    export ARANDU_FORCE_CPU=false
     export QUANTIZE_FLAG="--quantize"
     export CPU_FLAG=""
 fi
@@ -175,11 +175,11 @@ echo "Building Docker image..."
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 if [ "$USE_ROCM" = "true" ]; then
-    docker compose -f "$COMPOSE_FILE" --profile rocm build gtranscriber-rocm
+    docker compose -f "$COMPOSE_FILE" --profile rocm build arandu-rocm
 elif [ "$USE_CPU" = "true" ]; then
-    docker compose -f "$COMPOSE_FILE" --profile cpu build gtranscriber-cpu
+    docker compose -f "$COMPOSE_FILE" --profile cpu build arandu-cpu
 else
-    docker compose -f "$COMPOSE_FILE" --profile gpu build gtranscriber
+    docker compose -f "$COMPOSE_FILE" --profile gpu build arandu
 fi
 
 # -----------------------------------------------------------------------------
@@ -191,13 +191,13 @@ echo "=============================================="
 
 if [ "$USE_ROCM" = "true" ]; then
     echo "Running with AMD ROCm support..."
-    docker compose -f "$COMPOSE_FILE" --profile rocm up gtranscriber-rocm --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" --profile rocm up arandu-rocm --abort-on-container-exit
 elif [ "$USE_CPU" = "true" ]; then
     echo "Running in CPU mode..."
-    docker compose -f "$COMPOSE_FILE" --profile cpu up gtranscriber-cpu --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" --profile cpu up arandu-cpu --abort-on-container-exit
 else
     echo "Running with NVIDIA GPU support..."
-    docker compose -f "$COMPOSE_FILE" --profile gpu up gtranscriber --abort-on-container-exit
+    docker compose -f "$COMPOSE_FILE" --profile gpu up arandu --abort-on-container-exit
 fi
 
 # -----------------------------------------------------------------------------
@@ -212,7 +212,7 @@ docker compose -f "$COMPOSE_FILE" down
 # -----------------------------------------------------------------------------
 echo ""
 echo "=============================================="
-echo "G-Transcriber Job Completed"
+echo "Arandu Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
 echo "Results Dir:   $FINAL_RESULTS_DIR"

@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide will help you set up G-Transcriber and run your first pipeline.
+This guide will help you set up Arandu and run your first pipeline.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ cd etno-kgc-preprocessing
 uv sync
 
 # Verify installation
-uv run gtranscriber --help
+uv run arandu --help
 ```
 
 ### Using pip
@@ -43,7 +43,7 @@ cd etno-kgc-preprocessing
 pip install -e .
 
 # Verify installation
-gtranscriber --help
+arandu --help
 ```
 
 ### Install FFmpeg
@@ -64,13 +64,13 @@ ffmpeg -version
 ### 1. Transcribe a Local File
 
 ```bash
-gtranscriber transcribe audio.mp3
+arandu transcribe audio.mp3
 ```
 
 ### 2. Check System Info
 
 ```bash
-gtranscriber info
+arandu info
 ```
 
 This shows your hardware configuration (CPU, GPU, memory).
@@ -79,13 +79,13 @@ This shows your hardware configuration (CPU, GPU, memory).
 
 ```bash
 # Use faster turbo model
-gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3
+arandu transcribe audio.mp3 --model-id openai/whisper-large-v3
 
 # Use quantization for reduced VRAM
-gtranscriber transcribe audio.mp3 --quantize
+arandu transcribe audio.mp3 --quantize
 
 # Force CPU execution
-gtranscriber transcribe audio.mp3 --cpu
+arandu transcribe audio.mp3 --cpu
 ```
 
 ## Google Drive Setup (Optional)
@@ -99,7 +99,7 @@ For processing files from Google Drive:
 
 ```bash
 # Transcribe from Google Drive
-gtranscriber drive-transcribe <file-id> --credentials credentials.json
+arandu drive-transcribe <file-id> --credentials credentials.json
 ```
 
 ## LLM Setup (For QA/KG Pipelines)
@@ -155,7 +155,7 @@ Audio/Video Files
 
 ## Troubleshooting
 
-### "No module named 'gtranscriber'"
+### "No module named 'arandu'"
 
 ```bash
 pip install -e .
@@ -174,10 +174,10 @@ brew install ffmpeg          # macOS
 
 ```bash
 # Use quantization
-gtranscriber transcribe audio.mp3 --quantize
+arandu transcribe audio.mp3 --quantize
 
 # Or force CPU
-gtranscriber transcribe audio.mp3 --cpu
+arandu transcribe audio.mp3 --cpu
 ```
 
 ---

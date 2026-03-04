@@ -9,7 +9,7 @@
 #SBATCH --error=logs/turing_%x_%j.err
 
 # =============================================================================
-# G-Transcriber SLURM Job Script for PCAD - TURING Partition
+# Arandu SLURM Job Script for PCAD - TURING Partition
 #
 # Partition: turing
 # Accelerator: 4x NEC TSUBASA Vector Engine (48 GB each)
@@ -21,7 +21,7 @@
 # Force CPU mode
 export USE_CPU=true
 export WORKERS="${WORKERS:-8}"
-export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-distil-whisper/distil-large-v3}"
+export ARANDU_MODEL_ID="${ARANDU_MODEL_ID:-distil-whisper/distil-large-v3}"
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

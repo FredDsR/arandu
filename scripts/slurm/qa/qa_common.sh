@@ -1,18 +1,18 @@
 #!/bin/bash
 # =============================================================================
-# G-Transcriber QA Generation Common Job Script
+# Arandu QA Generation Common Job Script
 #
 # This script contains the shared logic for all QA generation SLURM scripts.
 # It should be sourced from partition-specific scripts, not run directly.
 #
 # Required environment variables (set by partition scripts):
-#   GTRANSCRIBER_QA_WORKERS - Number of parallel workers
+#   ARANDU_QA_WORKERS - Number of parallel workers
 #
 # Optional environment variables:
-#   GTRANSCRIBER_QA_MODEL_ID - Ollama model to use (default: qwen3:14b)
-#   GTRANSCRIBER_QA_PROVIDER - LLM provider (default: ollama)
-#   GTRANSCRIBER_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
-#   GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT - Questions per document (default: 10)
+#   ARANDU_QA_MODEL_ID - Ollama model to use (default: qwen3:14b)
+#   ARANDU_QA_PROVIDER - LLM provider (default: ollama)
+#   ARANDU_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
+#   ARANDU_QA_QUESTIONS_PER_DOCUMENT - Questions per document (default: 10)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
 # =============================================================================
 
@@ -24,25 +24,25 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
 # QA Generation settings (support override from environment)
-export GTRANSCRIBER_QA_PROVIDER="${GTRANSCRIBER_QA_PROVIDER:-ollama}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
-export GTRANSCRIBER_QA_OLLAMA_URL="${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434/v1}"
-export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT="${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}"
-export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-4}"
+export ARANDU_QA_PROVIDER="${ARANDU_QA_PROVIDER:-ollama}"
+export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
+export ARANDU_QA_OLLAMA_URL="${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}"
+export ARANDU_QA_QUESTIONS_PER_DOCUMENT="${ARANDU_QA_QUESTIONS_PER_DOCUMENT:-10}"
+export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
 
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
 
 # Directories
-export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
+export ARANDU_RESULTS_DIR="${ARANDU_RESULTS_DIR:-$PROJECT_DIR/results}"
+export ARANDU_HF_CACHE_DIR="${ARANDU_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
 # -----------------------------------------------------------------------------
 # Job Information
 # -----------------------------------------------------------------------------
 echo "=============================================="
-echo "G-Transcriber QA Generation Job Started"
+echo "Arandu QA Generation Job Started"
 echo "=============================================="
 echo "Job ID:        ${SLURM_JOB_ID:-local}"
 echo "Job Name:      ${SLURM_JOB_NAME:-qa-generation}"
@@ -52,12 +52,12 @@ echo "CPUs:          ${SLURM_CPUS_PER_TASK:-N/A}"
 echo "Start Time:    $(date)"
 echo "Project Dir:   $PROJECT_DIR"
 echo "=============================================="
-echo "QA Provider:   $GTRANSCRIBER_QA_PROVIDER"
-echo "QA Model:      $GTRANSCRIBER_QA_MODEL_ID"
+echo "QA Provider:   $ARANDU_QA_PROVIDER"
+echo "QA Model:      $ARANDU_QA_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
-echo "Questions/Doc: $GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT"
-echo "Workers:       $GTRANSCRIBER_QA_WORKERS"
-echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
+echo "Questions/Doc: $ARANDU_QA_QUESTIONS_PER_DOCUMENT"
+echo "Workers:       $ARANDU_QA_WORKERS"
+echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -65,8 +65,8 @@ echo "=============================================="
 # -----------------------------------------------------------------------------
 cd "$PROJECT_DIR"
 
-if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
-    echo "Error: Results directory not found: $GTRANSCRIBER_RESULTS_DIR"
+if [ ! -d "$ARANDU_RESULTS_DIR" ]; then
+    echo "Error: Results directory not found: $ARANDU_RESULTS_DIR"
     echo "Please run transcription first."
     exit 1
 fi
@@ -121,7 +121,7 @@ for i in {1..30}; do
     sleep 5
 done
 if [ "$OLLAMA_UP" = true ]; then
-    REQUIRED_MODELS=("$GTRANSCRIBER_QA_MODEL_ID")
+    REQUIRED_MODELS=("$ARANDU_QA_MODEL_ID")
     INSTALLED=$(docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list 2>/dev/null | tail -n +2 | awk '{print $1}') || true
     for model in $INSTALLED; do
         is_required=false
@@ -137,7 +137,7 @@ fi
 
 echo ""
 echo "Building Docker images..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build gtranscriber-qa
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-qa
 
 echo ""
 echo "Starting Ollama sidecar ($OLLAMA_SERVICE) and pulling model..."
@@ -158,17 +158,17 @@ for i in {1..30}; do
 done
 
 # Pull the model if using Ollama provider
-if [ "$GTRANSCRIBER_QA_PROVIDER" = "ollama" ]; then
+if [ "$ARANDU_QA_PROVIDER" = "ollama" ]; then
     echo ""
-    echo "Pulling model: $GTRANSCRIBER_QA_MODEL_ID"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$GTRANSCRIBER_QA_MODEL_ID"
+    echo "Pulling model: $ARANDU_QA_MODEL_ID"
+    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$ARANDU_QA_MODEL_ID"
 fi
 
 echo ""
 echo "Starting QA generation process..."
 echo "=============================================="
 
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up gtranscriber-qa --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up arandu-qa --abort-on-container-exit
 
 # -----------------------------------------------------------------------------
 # Cleanup
@@ -182,12 +182,12 @@ docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down
 # -----------------------------------------------------------------------------
 echo ""
 echo "=============================================="
-echo "G-Transcriber QA Generation Job Completed"
+echo "Arandu QA Generation Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
+echo "Results Dir:   $ARANDU_RESULTS_DIR"
 
 # Count generated files
-QA_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -name "*_qa.json" 2>/dev/null | wc -l)
+QA_COUNT=$(find "$ARANDU_RESULTS_DIR" -name "*_qa.json" 2>/dev/null | wc -l)
 echo "QA Records:    $QA_COUNT files generated"
 echo "=============================================="

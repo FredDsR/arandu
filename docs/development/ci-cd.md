@@ -101,7 +101,7 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 
 # Run tests with coverage
-uv run pytest --cov=gtranscriber --cov-report=term-missing --cov-fail-under=75
+uv run pytest --cov=arandu --cov-report=term-missing --cov-fail-under=75
 ```
 
 ## Troubleshooting

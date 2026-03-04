@@ -1124,7 +1124,7 @@ Captures configuration at the time of run execution.
 | `config_values` | `dict` | Yes | Configuration values as dictionary |
 | `environment_variables` | `dict[str, str]` | Yes | Relevant environment variables (default: empty dict) |
 
-**Class Method**: `from_config(config, env_prefix="GTRANSCRIBER_")` - Creates snapshot from a Pydantic config object
+**Class Method**: `from_config(config, env_prefix="ARANDU_")` - Creates snapshot from a Pydantic config object
 
 **Example**:
 ```json
@@ -1136,8 +1136,8 @@ Captures configuration at the time of run execution.
     "batch_size": 16
   },
   "environment_variables": {
-    "GTRANSCRIBER_MODEL_ID": "openai/whisper-large-v3",
-    "GTRANSCRIBER_DEVICE": "cuda"
+    "ARANDU_MODEL_ID": "openai/whisper-large-v3",
+    "ARANDU_DEVICE": "cuda"
   }
 }
 ```
@@ -1165,7 +1165,7 @@ Complete metadata for a pipeline run. Tracks identity, timing, status, execution
 | `failed_items` | `int` | Yes | Failed items (default: 0) |
 | `output_directory` | `str` | Yes | Path to run output directory |
 | `checkpoint_file` | `str \| None` | No | Path to checkpoint file |
-| `gtranscriber_version` | `str` | Yes | G-Transcriber version |
+| `arandu_version` | `str` | Yes | Arandu version |
 | `schema_version` | `str` | Yes | Schema version for compatibility (default: "1.0") |
 | `input_source` | `str \| None` | No | Input source (catalog, directory) |
 | `duration_seconds` | `float \| None` | Computed | Run duration in seconds (computed field) |
@@ -1201,7 +1201,7 @@ Complete metadata for a pipeline run. Tracks identity, timing, status, execution
   "failed_items": 2,
   "output_directory": "results/20260214_143022_transcription",
   "checkpoint_file": "results/20260214_143022_transcription/checkpoint.json",
-  "gtranscriber_version": "0.1.0",
+  "arandu_version": "0.1.0",
   "schema_version": "1.0",
   "input_source": "catalog",
   "duration_seconds": 4488.0,
@@ -1249,7 +1249,7 @@ class RunMetadata(BaseModel):
     checkpoint_file: str | None = Field(default=None, description="Path to checkpoint file")
 
     # Version info
-    gtranscriber_version: str = Field(..., description="G-Transcriber version")
+    arandu_version: str = Field(..., description="Arandu version")
     schema_version: str = Field(default="1.0", description="Schema version for compatibility")
 
     # Optional input source

@@ -469,7 +469,7 @@ From [Red Hat's benchmarking study](https://developers.redhat.com/articles/2025/
 
 ### 8.1 LLMClient Compatibility
 
-Our `LLMClient` (`src/gtranscriber/core/llm_client.py`) already uses the **OpenAI SDK** with a configurable `base_url`:
+Our `LLMClient` (`src/arandu/core/llm_client.py`) already uses the **OpenAI SDK** with a configurable `base_url`:
 
 ```python
 class LLMProvider(Enum):
@@ -505,7 +505,7 @@ SLURM Job (1 node, 1 GPU)
     ├── docker compose up ollama-gpu     # Ollama sidecar (holds GPU)
     │   └── ollama pull qwen3:14b        # Download GGUF model
     │
-    └── docker compose up gtranscriber-qa  # Pipeline container (CPU)
+    └── docker compose up arandu-qa  # Pipeline container (CPU)
         └── LLMClient → http://ollama:11434/v1
 ```
 
@@ -532,7 +532,7 @@ SLURM Job A: vLLM Server (N nodes, N GPUs)
 
 SLURM Job B: Pipeline (1 node, CPU only)
     │
-    └── docker compose up gtranscriber-qa
+    └── docker compose up arandu-qa
         └── LLMClient → http://<head-node>:8000/v1
 ```
 
@@ -554,21 +554,21 @@ To switch from Ollama to vLLM, override these environment variables:
 
 ```bash
 # QA Pipeline
-export GTRANSCRIBER_QA_PROVIDER=custom
-export GTRANSCRIBER_QA_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
-export GTRANSCRIBER_LLM_BASE_URL=http://<vllm-head-node>:8000/v1
+export ARANDU_QA_PROVIDER=custom
+export ARANDU_QA_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
+export ARANDU_LLM_BASE_URL=http://<vllm-head-node>:8000/v1
 
 # KG Pipeline
-export GTRANSCRIBER_KG_PROVIDER=custom
-export GTRANSCRIBER_KG_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
-export GTRANSCRIBER_KG_BASE_URL=http://<vllm-head-node>:8000/v1
+export ARANDU_KG_PROVIDER=custom
+export ARANDU_KG_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
+export ARANDU_KG_BASE_URL=http://<vllm-head-node>:8000/v1
 
 # CEP Pipeline (generator + validator can use the same vLLM instance)
-export GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=custom
-export GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
+export ARANDU_CEP_VALIDATOR_PROVIDER=custom
+export ARANDU_CEP_VALIDATOR_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct
 ```
 
-The `QAConfig` and `KGConfig` classes in `src/gtranscriber/config.py` already support `provider: str = "custom"` and `base_url: str | None` fields, so no configuration code changes are required.
+The `QAConfig` and `KGConfig` classes in `src/arandu/config.py` already support `provider: str = "custom"` and `base_url: str | None` fields, so no configuration code changes are required.
 
 ---
 
@@ -586,8 +586,8 @@ From `scripts/slurm/qa/tupi.slurm`:
 #SBATCH --gres=gpu:1                    # 1x RTX 4090 (24 GB)
 #SBATCH --time=12:00:00
 
-export GTRANSCRIBER_QA_WORKERS=4
-export GTRANSCRIBER_QA_MODEL_ID=qwen3:14b   # Must fit in 24 GB
+export ARANDU_QA_WORKERS=4
+export ARANDU_QA_MODEL_ID=qwen3:14b   # Must fit in 24 GB
 export USE_GPU_OLLAMA=true
 ```
 
@@ -668,9 +668,9 @@ VLLM_HEAD=$(scontrol show job "$VLLM_JOB_ID" \
 echo "vLLM head node: $VLLM_HEAD"
 
 # 3. Submit QA pipeline with dependency (starts after vLLM is running)
-GTRANSCRIBER_QA_PROVIDER=custom \
-GTRANSCRIBER_QA_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct \
-GTRANSCRIBER_LLM_BASE_URL="http://${VLLM_HEAD}:8000/v1" \
+ARANDU_QA_PROVIDER=custom \
+ARANDU_QA_MODEL_ID=meta-llama/Llama-3.3-70B-Instruct \
+ARANDU_LLM_BASE_URL="http://${VLLM_HEAD}:8000/v1" \
 sbatch --dependency=after:${VLLM_JOB_ID}+1 scripts/slurm/qa/tupi.slurm
 ```
 
@@ -692,9 +692,9 @@ echo "vLLM server job: $VLLM_JOB"
 
 # Submit pipeline job (dependency ensures vLLM starts first)
 # The pipeline script needs to be modified to skip Ollama sidecar
-# when GTRANSCRIBER_QA_PROVIDER=custom
+# when ARANDU_QA_PROVIDER=custom
 sbatch --dependency=after:${VLLM_JOB}+2 \
-    --export=ALL,GTRANSCRIBER_QA_PROVIDER=custom \
+    --export=ALL,ARANDU_QA_PROVIDER=custom \
     "scripts/slurm/${PIPELINE}/tupi.slurm"
 ```
 
@@ -808,7 +808,7 @@ The current Docker Compose sidecar pattern won't work for multi-node vLLM (conta
 | **Apptainer/Singularity** | HPC-native, `--nv` GPU support | Container build step |
 | **Enroot + Pyxis** | NVIDIA's SLURM-native runtime | Requires cluster-level install |
 
-**Recommended**: Install vLLM + Ray in a Python virtual environment (`uv`) on PCAD, or build an Apptainer `.sif` image. The pipeline containers (gtranscriber-qa, etc.) can still use Docker on the head node, connecting to vLLM via HTTP instead of Docker network.
+**Recommended**: Install vLLM + Ray in a Python virtual environment (`uv`) on PCAD, or build an Apptainer `.sif` image. The pipeline containers (arandu-qa, etc.) can still use Docker on the head node, connecting to vLLM via HTTP instead of Docker network.
 
 ### 12.5 Dependencies
 

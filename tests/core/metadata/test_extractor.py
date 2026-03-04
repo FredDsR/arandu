@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from gtranscriber.core.metadata.extractor import GDriveCatalogExtractor
+from arandu.core.metadata.extractor import GDriveCatalogExtractor
 
 
 @pytest.fixture

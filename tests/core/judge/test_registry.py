@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.core.judge.criterion import FileCriterion
-from gtranscriber.core.judge.registry import JudgeRegistry
+from arandu.core.judge.criterion import FileCriterion
+from arandu.core.judge.registry import JudgeRegistry
 
 if TYPE_CHECKING:
     from pathlib import Path

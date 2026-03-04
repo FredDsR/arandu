@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import CEPConfig, QAConfig
-from gtranscriber.core.cep.cep_generator import CEPQAGenerator
-from gtranscriber.schemas import EnrichedRecord, QARecordCEP
-from gtranscriber.utils.text import GenerateResult
+from arandu.config import CEPConfig, QAConfig
+from arandu.core.cep.cep_generator import CEPQAGenerator
+from arandu.schemas import EnrichedRecord, QARecordCEP
+from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -505,7 +505,7 @@ class TestQARecordCEP:
 
     def test_bloom_distribution_validation(self) -> None:
         """Test Bloom distribution validation."""
-        from gtranscriber.schemas import QAPairCEP
+        from arandu.schemas import QAPairCEP
 
         pairs = [
             QAPairCEP(
@@ -542,7 +542,7 @@ class TestQARecordCEP:
 
     def test_validation_summary_optional(self) -> None:
         """Test that validation_summary is optional."""
-        from gtranscriber.schemas import QAPairCEP
+        from arandu.schemas import QAPairCEP
 
         pairs = [
             QAPairCEP(
@@ -571,7 +571,7 @@ class TestQARecordCEP:
 
     def test_to_jsonl_with_bloom_level(self) -> None:
         """Test JSONL export includes Bloom level."""
-        from gtranscriber.schemas import QAPairCEP
+        from arandu.schemas import QAPairCEP
 
         pairs = [
             QAPairCEP(

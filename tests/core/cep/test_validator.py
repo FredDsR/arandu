@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import CEPConfig, JudgeConfig
-from gtranscriber.core.cep.validator import QAValidator
-from gtranscriber.schemas import QAPairCEP, QAPairValidated, ValidationScore
-from gtranscriber.utils.text import GenerateResult
+from arandu.config import CEPConfig, JudgeConfig
+from arandu.core.cep.validator import QAValidator
+from arandu.schemas import QAPairCEP, QAPairValidated, ValidationScore
+from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -810,13 +810,13 @@ class TestQAValidatorComposableMode:
         mocker: MockerFixture,
     ) -> None:
         """Test validator initialization in composable mode."""
-        from gtranscriber.config import JudgeConfig
+        from arandu.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock the judge pipeline initialization
-        mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
-        mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
+        mocker.patch("arandu.core.cep.validator.JudgeRegistry")
+        mocker.patch("arandu.core.cep.validator.JudgePipeline")
 
         validator = QAValidator(
             validator_client=mock_llm_client,
@@ -833,7 +833,7 @@ class TestQAValidatorComposableMode:
         cep_config: CEPConfig,
     ) -> None:
         """Test validator initialization in legacy mode."""
-        from gtranscriber.config import JudgeConfig
+        from arandu.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
 
@@ -854,14 +854,14 @@ class TestQAValidatorComposableMode:
         mocker: MockerFixture,
     ) -> None:
         """Test that validate uses composable pipeline when enabled."""
-        from gtranscriber.config import JudgeConfig
-        from gtranscriber.schemas import ValidationScore
+        from arandu.config import JudgeConfig
+        from arandu.schemas import ValidationScore
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock the judge pipeline
-        mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
-        mock_pipeline_class = mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
+        mocker.patch("arandu.core.cep.validator.JudgeRegistry")
+        mock_pipeline_class = mocker.patch("arandu.core.cep.validator.JudgePipeline")
 
         # Mock the pipeline evaluate method
         mock_pipeline = mocker.MagicMock()
@@ -895,7 +895,7 @@ class TestQAValidatorComposableMode:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that validate uses legacy mode when composable disabled."""
-        from gtranscriber.config import JudgeConfig
+        from arandu.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
 
@@ -928,7 +928,7 @@ class TestQAValidatorComposableMode:
         cep_config: CEPConfig,
     ) -> None:
         """Test _get_bloom_level_desc uses loaded prompts in legacy mode."""
-        from gtranscriber.config import JudgeConfig
+        from arandu.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
 
@@ -950,13 +950,13 @@ class TestQAValidatorComposableMode:
         mocker: MockerFixture,
     ) -> None:
         """Test _get_bloom_level_desc uses fallback in composable mode."""
-        from gtranscriber.config import JudgeConfig
+        from arandu.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock to avoid loading actual prompts
-        mocker.patch("gtranscriber.core.cep.validator.JudgeRegistry")
-        mocker.patch("gtranscriber.core.cep.validator.JudgePipeline")
+        mocker.patch("arandu.core.cep.validator.JudgeRegistry")
+        mocker.patch("arandu.core.cep.validator.JudgePipeline")
 
         validator = QAValidator(
             validator_client=mock_llm_client,
@@ -974,7 +974,7 @@ class TestCriterionScore:
 
     def test_valid_criterion_score(self) -> None:
         """Test valid criterion score initialization."""
-        from gtranscriber.schemas import CriterionScore
+        from arandu.schemas import CriterionScore
 
         score = CriterionScore(
             criterion_name="faithfulness",
@@ -990,7 +990,7 @@ class TestCriterionScore:
 
     def test_criterion_score_without_optional_fields(self) -> None:
         """Test criterion score with minimal fields."""
-        from gtranscriber.schemas import CriterionScore
+        from arandu.schemas import CriterionScore
 
         score = CriterionScore(
             criterion_name="informativeness",
@@ -1008,7 +1008,7 @@ class TestValidationScoreEnhanced:
 
     def test_validation_score_with_criterion_scores(self) -> None:
         """Test ValidationScore stores individual criterion scores."""
-        from gtranscriber.schemas import CriterionScore, ValidationScore
+        from arandu.schemas import CriterionScore, ValidationScore
 
         criterion_scores = {
             "faithfulness": CriterionScore(

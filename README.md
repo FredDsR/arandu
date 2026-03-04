@@ -1,15 +1,19 @@
-# G-Transcriber
+# Arandu
 
 [![.github/workflows/ci.yml](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml/badge.svg)](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml)
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/tests-badge.json)
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
-Automated transcription and knowledge graph construction pipeline for ethnographic audio/video archives.
+Composable pipelines for ethnographic knowledge elicitation: transcription, QA generation, and knowledge graph construction.
+
+## About the Name
+
+**Arandu** comes from the Guarani language (*ara* = time + *endu* = to hear/feel), meaning "wisdom through perceiving time" — knowledge gained through listening and experiencing. This directly mirrors the project's purpose: eliciting tacit knowledge from ethnographic interviews with riverine communities in southern Brazil.
 
 ## Overview
 
-G-Transcriber is a comprehensive pipeline for processing ethnographic media collections. It transcribes audio/video files using state-of-the-art speech recognition, generates synthetic QA pairs for retrieval evaluation, and constructs knowledge graphs for semantic analysis.
+Arandu is a comprehensive pipeline for processing ethnographic media collections. It transcribes audio/video files using state-of-the-art speech recognition, generates synthetic QA pairs for retrieval evaluation, and constructs knowledge graphs for semantic analysis.
 
 ## Features
 
@@ -32,11 +36,11 @@ G-Transcriber is a comprehensive pipeline for processing ethnographic media coll
 - **Multi-Provider LLM Support**: Ollama (local), OpenAI, or custom OpenAI-compatible endpoints
 - **Externalized Prompts**: Language-specific Markdown templates for maintainable prompt engineering
 
-### KG Pipeline (Planned)
-> **Status**: Schemas and configuration exist, but CLI commands and pipeline modules are not yet implemented.
-- **Knowledge Graph Construction**: Extract entities and relations using AutoSchemaKG (planned)
-- **Graph Evaluation**: Measure entity coverage, connectivity, and semantic coherence (planned)
-- **Multilingual Support**: Portuguese, English, and Spanish extraction prompts (planned)
+### KG Pipeline
+- **Knowledge Graph Construction**: Extract entities and relations using AutoSchemaKG via `atlas-rag`
+- **Protocol-Based Backend**: Extensible `KGConstructor` protocol with factory pattern for pluggable backends
+- **Batch Orchestration**: Process transcription results with configurable batch sizes and resume support
+- **Portuguese Extraction Prompts**: Externalized prompt templates optimized for ethnographic content
 
 ## Installation
 
@@ -53,31 +57,31 @@ pip install -e .
 ### Transcribe a Local File
 
 ```bash
-gtranscriber transcribe audio.mp3
+arandu transcribe audio.mp3
 ```
 
 ### Transcribe with Custom Model
 
 ```bash
-gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3
+arandu transcribe audio.mp3 --model-id openai/whisper-large-v3
 ```
 
 ### Transcribe with Quantization (Reduced VRAM)
 
 ```bash
-gtranscriber transcribe audio.mp3 --quantize
+arandu transcribe audio.mp3 --quantize
 ```
 
 ### Force CPU Execution
 
 ```bash
-gtranscriber transcribe audio.mp3 --cpu
+arandu transcribe audio.mp3 --cpu
 ```
 
 ### Transcribe from Google Drive
 
 ```bash
-gtranscriber drive-transcribe <file-id> --credentials credentials.json
+arandu drive-transcribe <file-id> --credentials credentials.json
 ```
 
 ### Batch Transcribe from Catalog
@@ -85,20 +89,20 @@ gtranscriber drive-transcribe <file-id> --credentials credentials.json
 Transcribe all audio/video files from a catalog CSV with parallel processing:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv --credentials credentials.json --workers 4
+arandu batch-transcribe input/catalog.csv --credentials credentials.json --workers 4
 ```
 
 Advanced options:
 
 ```bash
 # Use custom output directory
-gtranscriber batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
+arandu batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
 
 # Use different model with quantization
-gtranscriber batch-transcribe input/catalog.csv --model-id openai/whisper-large-v3 --quantize --workers 4
+arandu batch-transcribe input/catalog.csv --model-id openai/whisper-large-v3 --quantize --workers 4
 
 # Resume interrupted job (uses checkpoint automatically)
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 ```
 
 The batch transcribe command:
@@ -112,30 +116,30 @@ The batch transcribe command:
 ### Check System Information
 
 ```bash
-gtranscriber info
+arandu info
 ```
 
 ### Validate Transcription Quality
 
 ```bash
 # Validate and update in-place
-gtranscriber validate-transcriptions results/
+arandu validate-transcriptions results/
 
 # Report only (no file updates)
-gtranscriber validate-transcriptions results/ --report-only --threshold 0.6
+arandu validate-transcriptions results/ --report-only --threshold 0.6
 ```
 
 ### List Pipeline Runs
 
 ```bash
 # List all runs
-gtranscriber list-runs
+arandu list-runs
 
 # Filter by pipeline type
-gtranscriber list-runs --pipeline cep
+arandu list-runs --pipeline cep
 
 # View specific run details
-gtranscriber run-info latest --pipeline transcription
+arandu run-info latest --pipeline transcription
 ```
 
 ## CEP QA Pipeline
@@ -144,32 +148,32 @@ Generate Cognitive Elicitation Pipeline (CEP) QA pairs from transcriptions with 
 
 ```bash
 # Generate CEP QA pairs with Ollama (default)
-gtranscriber generate-cep-qa results/ -o qa_dataset/ --workers 4
+arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
 
 # With custom Bloom distribution
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --bloom-dist "remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2" \
     --questions 15
 
 # With OpenAI
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --provider openai \
     --model-id gpt-4o-mini \
     --workers 2
 
 # Without validation (faster)
-gtranscriber generate-cep-qa results/ --no-validate
+arandu generate-cep-qa results/ --no-validate
 ```
 
 Configuration:
 
 ```bash
-export GTRANSCRIBER_QA_PROVIDER=ollama                # ollama, openai, custom
-export GTRANSCRIBER_QA_MODEL_ID=qwen3:14b             # Model for generation
-export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=10     # QA pairs per document
-export GTRANSCRIBER_QA_OLLAMA_URL=http://localhost:11434/v1  # Ollama API URL
-export GTRANSCRIBER_CEP_ENABLE_VALIDATION=true        # Enable LLM-as-a-Judge
-export GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b  # Validator model
+export ARANDU_QA_PROVIDER=ollama                # ollama, openai, custom
+export ARANDU_QA_MODEL_ID=qwen3:14b             # Model for generation
+export ARANDU_QA_QUESTIONS_PER_DOCUMENT=10     # QA pairs per document
+export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1  # Ollama API URL
+export ARANDU_CEP_ENABLE_VALIDATION=true        # Enable LLM-as-a-Judge
+export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b  # Validator model
 ```
 
 Output: `qa_dataset/cep_qa_<gdrive_id>.json`
@@ -181,10 +185,10 @@ Output: `qa_dataset/cep_qa_<gdrive_id>.json`
 Knowledge graph construction using AutoSchemaKG for entity and relation extraction is planned for a future release. The configuration infrastructure is in place:
 
 ```bash
-export GTRANSCRIBER_KG_PROVIDER=ollama          # ollama, openai, custom
-export GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b     # Model for extraction
-export GTRANSCRIBER_KG_LANGUAGE=pt              # pt, en, es
-export GTRANSCRIBER_KG_MERGE_GRAPHS=true        # Merge into corpus graph
+export ARANDU_KG_PROVIDER=ollama          # ollama, openai, custom
+export ARANDU_KG_MODEL_ID=llama3.1:8b     # Model for extraction
+export ARANDU_KG_LANGUAGE=pt              # pt, en, es
+export ARANDU_KG_MERGE_GRAPHS=true        # Merge into corpus graph
 ```
 
 Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
@@ -193,12 +197,12 @@ Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
 
 | Profile | Services | Pipeline |
 |---------|----------|----------|
-| `cep` | ollama, gtranscriber-cep | CEP QA Pipeline |
-| `qa` | ollama, gtranscriber-qa | QA Pipeline |
-| `kg` | ollama, gtranscriber-kg | KG Pipeline (planned) |
-| `evaluate` | gtranscriber-eval | Evaluation (planned) |
-| `cpu` | gtranscriber-cpu | Transcription (CPU) |
-| `rocm` | gtranscriber-rocm | Transcription (AMD GPU) |
+| `cep` | ollama, arandu-cep | CEP QA Pipeline |
+| `qa` | ollama, arandu-qa | QA Pipeline |
+| `kg` | ollama, arandu-kg | KG Pipeline (planned) |
+| `evaluate` | arandu-eval | Evaluation (planned) |
+| `cpu` | arandu-cpu | Transcription (CPU) |
+| `rocm` | arandu-rocm | Transcription (AMD GPU) |
 
 ## SLURM Execution
 
@@ -231,46 +235,46 @@ The system can be configured via:
 ### Transcription Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_MODEL_ID` | `openai/whisper-large-v3` | Whisper model ID |
-| `GTRANSCRIBER_FORCE_CPU` | `false` | Force CPU execution |
-| `GTRANSCRIBER_QUANTIZE` | `false` | Enable 8-bit quantization |
-| `GTRANSCRIBER_CREDENTIALS` | `credentials.json` | Path to Google OAuth credentials |
-| `GTRANSCRIBER_TOKEN` | `token.json` | Path to token file |
-| `GTRANSCRIBER_WORKERS` | `1` | Number of parallel workers |
+| `ARANDU_MODEL_ID` | `openai/whisper-large-v3` | Whisper model ID |
+| `ARANDU_FORCE_CPU` | `false` | Force CPU execution |
+| `ARANDU_QUANTIZE` | `false` | Enable 8-bit quantization |
+| `ARANDU_CREDENTIALS` | `credentials.json` | Path to Google OAuth credentials |
+| `ARANDU_TOKEN` | `token.json` | Path to token file |
+| `ARANDU_WORKERS` | `1` | Number of parallel workers |
 
 ### QA/CEP Pipeline Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
-| `GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
-| `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature |
-| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API base URL |
-| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
-| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model ID |
+| `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
+| `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
+| `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
+| `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature |
+| `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API base URL |
+| `ARANDU_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
+| `ARANDU_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model ID |
 
 ### KG Pipeline Settings (Planned)
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_KG_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_KG_MODEL_ID` | `llama3.1:8b` | Model for extraction |
-| `GTRANSCRIBER_KG_LANGUAGE` | `pt` | Language code: `pt`, `en`, `es` |
-| `GTRANSCRIBER_KG_MERGE_GRAPHS` | `true` | Merge into corpus graph |
-| `GTRANSCRIBER_KG_OUTPUT_FORMAT` | `graphml` | Output format: `graphml`, `json` |
+| `ARANDU_KG_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
+| `ARANDU_KG_MODEL_ID` | `llama3.1:8b` | Model for extraction |
+| `ARANDU_KG_LANGUAGE` | `pt` | Language code: `pt`, `en`, `es` |
+| `ARANDU_KG_MERGE_GRAPHS` | `true` | Merge into corpus graph |
+| `ARANDU_KG_OUTPUT_FORMAT` | `graphml` | Output format: `graphml`, `json` |
 
 ### Evaluation Settings (Planned)
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_EVAL_METRICS` | `qa,entity,relation,semantic` | Metrics to compute |
-| `GTRANSCRIBER_EVAL_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Semantic embeddings model |
+| `ARANDU_EVAL_METRICS` | `qa,entity,relation,semantic` | Metrics to compute |
+| `ARANDU_EVAL_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Semantic embeddings model |
 
 ### Results & Quality Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_RESULTS_BASE_DIR` | `./results` | Base directory for versioned results |
-| `GTRANSCRIBER_RESULTS_ENABLE_VERSIONING` | `true` | Enable versioned result directories |
-| `GTRANSCRIBER_QUALITY_ENABLED` | `true` | Enable transcription quality validation |
-| `GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD` | `0.5` | Minimum quality score (0.0-1.0) |
+| `ARANDU_RESULTS_BASE_DIR` | `./results` | Base directory for versioned results |
+| `ARANDU_RESULTS_ENABLE_VERSIONING` | `true` | Enable versioned result directories |
+| `ARANDU_QUALITY_ENABLED` | `true` | Enable transcription quality validation |
+| `ARANDU_QUALITY_QUALITY_THRESHOLD` | `0.5` | Minimum quality score (0.0-1.0) |
 
 See [Configuration Guide](docs/user-guide/configuration.md) for complete reference.
 
@@ -320,7 +324,7 @@ arandu/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── src/
-│   └── gtranscriber/
+│   └── arandu/
 │       ├── __init__.py
 │       ├── main.py                      # CLI entrypoint (10 commands)
 │       ├── config.py                    # 8 separate config classes

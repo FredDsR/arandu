@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-kg
+#SBATCH --job-name=arandu-kg
 #SBATCH --partition=tupi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -10,7 +10,7 @@
 #SBATCH --error=logs/kg_tupi_%x_%j.err
 
 # =============================================================================
-# G-Transcriber KG Construction SLURM Job Script - TUPI Partition
+# Arandu KG Construction SLURM Job Script - TUPI Partition
 #
 # Partition: tupi
 # GPU: NVIDIA GeForce RTX 4090 (24 GB)
@@ -18,7 +18,7 @@
 # =============================================================================
 
 # Partition-specific settings
-export GTRANSCRIBER_KG_MODEL_ID="${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}"
+export ARANDU_KG_MODEL_ID="${ARANDU_KG_MODEL_ID:-llama3.1:8b}"
 export USE_GPU_OLLAMA=true
 
 # Source the common KG script

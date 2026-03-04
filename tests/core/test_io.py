@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from gtranscriber.core.io import (
+from arandu.core.io import (
     cleanup_temp_files,
     create_temp_file,
     ensure_temp_dir,
@@ -16,7 +16,7 @@ from gtranscriber.core.io import (
     get_output_filename,
     save_enriched_record,
 )
-from gtranscriber.schemas import EnrichedRecord
+from arandu.schemas import EnrichedRecord
 
 
 class TestEnsureTempDir:
@@ -53,7 +53,7 @@ class TestEnsureTempDir:
         temp_dir = ensure_temp_dir(None)
 
         assert temp_dir.exists()
-        assert "gtranscriber" in str(temp_dir)
+        assert "arandu" in str(temp_dir)
 
 
 class TestCreateTempFile:
@@ -64,7 +64,7 @@ class TestCreateTempFile:
         temp_file = create_temp_file(base_dir=str(tmp_path))
 
         assert temp_file.exists()
-        assert "gtranscriber_" in temp_file.name
+        assert "arandu_" in temp_file.name
 
     def test_create_temp_file_with_suffix(self, tmp_path: Path) -> None:
         """Test creating temp file with custom suffix."""
@@ -93,7 +93,7 @@ class TestCreateTempFile:
         temp_file = create_temp_file(suffix=".txt", base_dir=None)
 
         assert temp_file.exists()
-        assert "gtranscriber" in str(temp_file.parent)
+        assert "arandu" in str(temp_file.parent)
 
         # Cleanup
         temp_file.unlink()
@@ -271,20 +271,20 @@ class TestCleanupTempFiles:
     def test_cleanup_temp_files_with_files(self, tmp_path: Path) -> None:
         """Test cleanup with temporary files present."""
         # Create some temporary files
-        (tmp_path / "gtranscriber_file1.txt").touch()
-        (tmp_path / "gtranscriber_file2.txt").touch()
-        (tmp_path / "gtranscriber_file3.txt").touch()
+        (tmp_path / "arandu_file1.txt").touch()
+        (tmp_path / "arandu_file2.txt").touch()
+        (tmp_path / "arandu_file3.txt").touch()
 
         success, failure = cleanup_temp_files(str(tmp_path))
 
         assert success == 3
         assert failure == 0
-        assert not (tmp_path / "gtranscriber_file1.txt").exists()
+        assert not (tmp_path / "arandu_file1.txt").exists()
 
     def test_cleanup_temp_files_ignores_other_files(self, tmp_path: Path) -> None:
-        """Test that cleanup only removes gtranscriber_ files."""
-        # Create gtranscriber files and other files
-        (tmp_path / "gtranscriber_file1.txt").touch()
+        """Test that cleanup only removes arandu_ files."""
+        # Create arandu files and other files
+        (tmp_path / "arandu_file1.txt").touch()
         (tmp_path / "other_file.txt").touch()
         (tmp_path / "important.txt").touch()
 
@@ -309,7 +309,7 @@ class TestCleanupTempFiles:
     ) -> None:
         """Test cleanup handles permission errors gracefully."""
         # Create a temporary file
-        temp_file = tmp_path / "gtranscriber_test.txt"
+        temp_file = tmp_path / "arandu_test.txt"
         temp_file.touch()
 
         # Mock unlink to raise OSError

@@ -1,6 +1,6 @@
 # Generic SLURM Deployment Guide
 
-This guide covers running G-Transcriber on any SLURM-based HPC cluster.
+This guide covers running Arandu on any SLURM-based HPC cluster.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This guide covers running G-Transcriber on any SLURM-based HPC cluster.
 
 ## SLURM Scripts
 
-G-Transcriber provides SLURM scripts for each pipeline in `scripts/slurm/`:
+Arandu provides SLURM scripts for each pipeline in `scripts/slurm/`:
 
 | Script | Pipeline | Description |
 |--------|----------|-------------|
@@ -50,7 +50,7 @@ squeue -u $USER
 scontrol show job <job_id>
 
 # View logs
-tail -f logs/gtranscriber_<job_id>.out
+tail -f logs/arandu_<job_id>.out
 ```
 
 ### Cancel a Job
@@ -65,15 +65,15 @@ A typical SLURM script:
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-qa
+#SBATCH --job-name=arandu-qa
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/gtranscriber_%j.out
-#SBATCH --error=logs/gtranscriber_%j.err
+#SBATCH --output=logs/arandu_%j.out
+#SBATCH --error=logs/arandu_%j.err
 
 # Load modules (cluster-specific)
 module load python/3.13
@@ -83,12 +83,12 @@ module load cuda/12.4
 source .venv/bin/activate
 
 # Set environment variables
-export GTRANSCRIBER_QA_PROVIDER=ollama
-export GTRANSCRIBER_QA_MODEL_ID=${QA_MODEL:-qwen3:14b}
-export GTRANSCRIBER_WORKERS=${WORKERS:-4}
+export ARANDU_QA_PROVIDER=ollama
+export ARANDU_QA_MODEL_ID=${QA_MODEL:-qwen3:14b}
+export ARANDU_WORKERS=${WORKERS:-4}
 
 # Run pipeline
-gtranscriber generate-cep-qa results/ -o qa_dataset/
+arandu generate-cep-qa results/ -o qa_dataset/
 ```
 
 ## Environment Variables
@@ -110,7 +110,7 @@ If Docker is available:
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-qa
+#SBATCH --job-name=arandu-qa
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 
@@ -124,16 +124,16 @@ For HPC clusters without Docker:
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-qa
+#SBATCH --job-name=arandu-qa
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 
 # Build container (once)
-singularity build gtranscriber.sif docker://ghcr.io/fredDsR/gtranscriber:latest
+singularity build arandu.sif docker://ghcr.io/fredDsR/arandu:latest
 
 # Run
-singularity exec --nv gtranscriber.sif \
-    gtranscriber generate-cep-qa results/ -o qa_dataset/
+singularity exec --nv arandu.sif \
+    arandu generate-cep-qa results/ -o qa_dataset/
 ```
 
 ## Resource Recommendations
@@ -198,24 +198,24 @@ Each partition script sources `cep_common.sh` which handles:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `GTRANSCRIBER_QA_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
+| `ARANDU_QA_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
 | `USE_GPU_OLLAMA` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
-| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `true` |
-| `GTRANSCRIBER_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
+| `ARANDU_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `true` |
+| `ARANDU_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
 
 ### Override CEP Settings
 
 ```bash
 # Disable validation for faster processing
-GTRANSCRIBER_CEP_ENABLE_VALIDATION=false \
+ARANDU_CEP_ENABLE_VALIDATION=false \
 sbatch scripts/slurm/cep/tupi.slurm
 
 # Use custom validator model
-GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=llama3.3:70b \
+ARANDU_CEP_VALIDATOR_MODEL_ID=llama3.3:70b \
 sbatch scripts/slurm/cep/grace.slurm
 
 # Use English prompts
-GTRANSCRIBER_CEP_LANGUAGE=en sbatch scripts/slurm/cep/tupi.slurm
+ARANDU_CEP_LANGUAGE=en sbatch scripts/slurm/cep/tupi.slurm
 ```
 
 ### CEP Resource Recommendations
@@ -234,7 +234,7 @@ tail -f logs/cep_grace_<jobid>.out
 
 # Check container status
 docker ps --filter name=ollama-cep
-docker ps --filter name=gtranscriber-cep
+docker ps --filter name=arandu-cep
 ```
 
 ## Checkpoint and Resume
@@ -259,7 +259,7 @@ sbatch scripts/slurm/run_qa_generation.slurm
 
 Check error log:
 ```bash
-cat logs/gtranscriber_<job_id>.err
+cat logs/arandu_<job_id>.err
 ```
 
 ### Out of Memory

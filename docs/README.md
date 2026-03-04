@@ -1,12 +1,12 @@
-# G-Transcriber Documentation
+# Arandu Documentation
 
-Welcome to the G-Transcriber documentation. This guide will help you find the information you need based on your role.
+Welcome to the Arandu documentation. This guide will help you find the information you need based on your role.
 
 ## Quick Navigation
 
 ### New Users
 
-Start here if you're new to G-Transcriber:
+Start here if you're new to Arandu:
 
 1. **[Getting Started](user-guide/getting-started.md)** - Installation and first steps
 2. **[Transcription Guide](user-guide/transcription.md)** - Process audio/video files

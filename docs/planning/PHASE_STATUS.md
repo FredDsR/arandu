@@ -26,10 +26,10 @@ Current project implementation status and completed work.
    - Google Drive integration
 
 2. **Core Components**
-   - [core/media.py](../../src/gtranscriber/core/media.py) - Media duration extraction with FFprobe
-   - [core/checkpoint.py](../../src/gtranscriber/core/checkpoint.py) - Checkpoint system for resumption
-   - [core/batch.py](../../src/gtranscriber/core/batch.py) - Batch processing orchestrator
-   - [core/engine.py](../../src/gtranscriber/core/engine.py) - Whisper engine wrapper
+   - [core/media.py](../../src/arandu/core/media.py) - Media duration extraction with FFprobe
+   - [core/checkpoint.py](../../src/arandu/core/checkpoint.py) - Checkpoint system for resumption
+   - [core/batch.py](../../src/arandu/core/batch.py) - Batch processing orchestrator
+   - [core/engine.py](../../src/arandu/core/engine.py) - Whisper engine wrapper
 
 3. **Features**
    - Multiple model support (any Hugging Face Whisper model)
@@ -41,7 +41,7 @@ Current project implementation status and completed work.
 ### Usage
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv --workers 4 --quantize
+arandu batch-transcribe input/catalog.csv --workers 4 --quantize
 ```
 
 ---
@@ -52,7 +52,7 @@ gtranscriber batch-transcribe input/catalog.csv --workers 4 --quantize
 
 ### What Was Implemented
 
-1. **CEP QA Generator** ([core/cep/](../../src/gtranscriber/core/cep/))
+1. **CEP QA Generator** ([core/cep/](../../src/arandu/core/cep/))
    - Bloom's Taxonomy cognitive scaffolding (remember, understand, analyze, evaluate)
    - Configurable Bloom level distribution
    - Scaffolding context (lower-level QA pairs inform higher levels)
@@ -60,7 +60,7 @@ gtranscriber batch-transcribe input/catalog.csv --workers 4 --quantize
    - Reasoning trace generation for multi-hop questions
    - Context chunking for long transcriptions
 
-2. **Batch Orchestrator** ([core/qa_batch.py](../../src/gtranscriber/core/qa_batch.py))
+2. **Batch Orchestrator** ([core/qa_batch.py](../../src/arandu/core/qa_batch.py))
    - Parallel processing with ProcessPoolExecutor
    - Global worker pattern for connection pooling
    - Checkpoint integration
@@ -79,7 +79,7 @@ gtranscriber batch-transcribe input/catalog.csv --workers 4 --quantize
 ### Usage
 
 ```bash
-gtranscriber generate-cep-qa results/ -o qa_dataset/ --workers 4 --questions 12
+arandu generate-cep-qa results/ -o qa_dataset/ --workers 4 --questions 12
 ```
 
 ### Test Coverage

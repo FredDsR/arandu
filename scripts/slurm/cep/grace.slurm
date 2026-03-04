@@ -10,7 +10,7 @@
 #SBATCH --error=logs/cep_%x_%j.err
 
 # =============================================================================
-# G-Transcriber CEP QA Generation SLURM Job Script - GRACE Partition
+# Arandu CEP QA Generation SLURM Job Script - GRACE Partition
 #
 # Partition: grace
 # GPU: NVIDIA L40S (46 GB)
@@ -18,8 +18,8 @@
 # =============================================================================
 
 # Partition-specific settings
-export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-6}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
+export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-6}"
+export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
 export USE_GPU_OLLAMA=true
 
 # Source the common CEP script

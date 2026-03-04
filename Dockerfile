@@ -1,4 +1,4 @@
-# G-Transcriber Docker Image
+# Arandu Docker Image
 # Multi-stage build for optimized image size using official uv images
 
 # Stage 1: Builder - Use official uv image
@@ -12,10 +12,10 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 COPY prompts/ prompts/
 
-# Install dependencies and the gtranscriber package using uv sync
+# Install dependencies and the arandu package using uv sync
 # --frozen ensures exact lockfile reproduction without re-resolving
 # PyTorch CUDA 12.4 versions are configured via tool.uv.sources in pyproject.toml
-# This installs both dependencies AND the gtranscriber CLI tool
+# This installs both dependencies AND the arandu CLI tool
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
@@ -47,5 +47,5 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN mkdir -p /app/input /app/results /app/credentials
 
 # Default command
-ENTRYPOINT ["gtranscriber"]
+ENTRYPOINT ["arandu"]
 CMD ["--help"]

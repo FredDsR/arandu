@@ -1,4 +1,4 @@
-# Running G-Transcriber on PCAD
+# Running Arandu on PCAD
 
 This guide covers the complete workflow for running the transcription process on the PCAD (Parque Computacional de Alto Desempenho) at UFRGS.
 
@@ -33,7 +33,7 @@ This guide covers the complete workflow for running the transcription process on
 Before syncing to PCAD, ensure your Google OAuth token is fresh. Run locally:
 
 ```bash
-gtranscriber info
+arandu info
 ```
 
 This will refresh the token if needed. If the token is expired, you'll be prompted to re-authenticate via browser.
@@ -54,7 +54,7 @@ Edit `.env` to adjust settings:
 
 ```bash
 # Model selection
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
+ARANDU_MODEL_ID=openai/whisper-large-v3
 
 # Number of parallel workers
 WORKERS=4
@@ -184,7 +184,7 @@ You can override settings when submitting:
 WORKERS=6 sbatch scripts/slurm/tupi.slurm
 
 # Use a different model
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3 sbatch scripts/slurm/grace.slurm
+ARANDU_MODEL_ID=openai/whisper-large-v3 sbatch scripts/slurm/grace.slurm
 
 # Use a different catalog
 CATALOG_FILE=my_subset.csv sbatch scripts/slurm/tupi.slurm
@@ -222,13 +222,13 @@ scontrol show job <job_id>
 
 ```bash
 # Real-time output
-tail -f logs/gtranscriber_<job_id>.out
+tail -f logs/arandu_<job_id>.out
 
 # View errors
-tail -f logs/gtranscriber_<job_id>.err
+tail -f logs/arandu_<job_id>.err
 
 # View last 100 lines
-tail -100 logs/gtranscriber_<job_id>.out
+tail -100 logs/arandu_<job_id>.out
 ```
 
 ### Check Progress
@@ -344,7 +344,7 @@ USE_SCRATCH=false sbatch scripts/slurm/tupi.slurm
 
 **Check the error log:**
 ```bash
-cat logs/gtranscriber_<job_id>.err
+cat logs/arandu_<job_id>.err
 ```
 
 **Common causes:**
@@ -361,7 +361,7 @@ WORKERS=2 sbatch scripts/slurm/tupi.slurm
 
 **Use a smaller model:**
 ```bash
-GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 sbatch scripts/slurm/draco.slurm
+ARANDU_MODEL_ID=distil-whisper/distil-large-v3 sbatch scripts/slurm/draco.slurm
 ```
 
 ### OAuth Token Expired
@@ -369,7 +369,7 @@ GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 sbatch scripts/slurm/draco.
 If you see authentication errors:
 
 1. Return to your local machine
-2. Run `gtranscriber info` to refresh the token
+2. Run `arandu info` to refresh the token
 3. Re-sync the token file:
    ```bash
    scp token.json user@gppd-hpc.inf.ufrgs.br:~/etno-kgc-preprocessing/
@@ -387,7 +387,7 @@ docker compose version
 **Clear Docker cache and rebuild:**
 ```bash
 docker system prune -f
-docker compose --profile gpu build --no-cache gtranscriber
+docker compose --profile gpu build --no-cache arandu
 ```
 
 ### Network/Download Issues
@@ -452,7 +452,7 @@ scp credentials.json token.json user@gppd-hpc.inf.ufrgs.br:~/etno-kgc-preprocess
 ssh user@gppd-hpc.inf.ufrgs.br "cd ~/etno-kgc-preprocessing && sbatch scripts/slurm/tupi.slurm"
 
 # 4. Monitor (in another terminal)
-ssh user@gppd-hpc.inf.ufrgs.br "tail -f ~/etno-kgc-preprocessing/logs/gtranscriber_*.out"
+ssh user@gppd-hpc.inf.ufrgs.br "tail -f ~/etno-kgc-preprocessing/logs/arandu_*.out"
 
 # 5. Download results (after completion)
 rsync -avz user@gppd-hpc.inf.ufrgs.br:~/etno-kgc-preprocessing/results/ ./results/

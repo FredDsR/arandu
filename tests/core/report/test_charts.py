@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from gtranscriber.core.report.api_schemas import FunnelData, FunnelStage
-from gtranscriber.core.report.charts import (
+from arandu.core.report.api_schemas import FunnelData, FunnelStage
+from arandu.core.report.charts import (
     _empty_figure,
     _pearson_r,
     create_bloom_distribution_chart,
@@ -24,7 +24,7 @@ from gtranscriber.core.report.charts import (
     create_transcription_quality_chart,
     create_validation_scores_chart,
 )
-from gtranscriber.core.report.dataset import QAPairRow, RunSummaryRow, TranscriptionRow
+from arandu.core.report.dataset import QAPairRow, RunSummaryRow, TranscriptionRow
 
 
 def _make_qa_pair(

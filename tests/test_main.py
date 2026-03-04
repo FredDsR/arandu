@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from gtranscriber.main import (
+from arandu.main import (
     _create_segments_from_result,
     _ensure_float,
     _safe_int_conversion,
@@ -94,7 +94,7 @@ class TestCreateSegmentsFromResult:
 
     def test_create_segments_with_chunks(self) -> None:
         """Test creating segments from result with chunks."""
-        from gtranscriber.core.engine import TranscriptionResult
+        from arandu.core.engine import TranscriptionResult
 
         result = TranscriptionResult(
             text="Test transcription",
@@ -120,7 +120,7 @@ class TestCreateSegmentsFromResult:
 
     def test_create_segments_without_chunks(self) -> None:
         """Test creating segments from result without chunks."""
-        from gtranscriber.core.engine import TranscriptionResult
+        from arandu.core.engine import TranscriptionResult
 
         result = TranscriptionResult(
             text="Test transcription",
@@ -138,7 +138,7 @@ class TestCreateSegmentsFromResult:
 
     def test_create_segments_empty_list(self) -> None:
         """Test creating segments from empty segments list."""
-        from gtranscriber.core.engine import TranscriptionResult
+        from arandu.core.engine import TranscriptionResult
 
         result = TranscriptionResult(
             text="Test",
@@ -161,7 +161,7 @@ class TestMainModuleImports:
 
     def test_import_main_functions(self) -> None:
         """Test that main functions can be imported."""
-        from gtranscriber.main import info, main, transcribe
+        from arandu.main import info, main, transcribe
 
         assert callable(main)
         assert callable(transcribe)
@@ -169,7 +169,7 @@ class TestMainModuleImports:
 
     def test_import_version_callback(self) -> None:
         """Test importing version callback."""
-        from gtranscriber.main import version_callback
+        from arandu.main import version_callback
 
         assert callable(version_callback)
 
@@ -177,7 +177,7 @@ class TestMainModuleImports:
         """Test version callback with True value."""
         import typer
 
-        from gtranscriber.main import version_callback
+        from arandu.main import version_callback
 
         with pytest.raises(typer.Exit) as exc_info:
             version_callback(True)
@@ -185,7 +185,7 @@ class TestMainModuleImports:
 
     def test_version_callback_with_false(self) -> None:
         """Test version callback with False value does nothing."""
-        from gtranscriber.main import version_callback
+        from arandu.main import version_callback
 
         # Should return None and not raise any exception
         result = version_callback(False)
@@ -193,14 +193,14 @@ class TestMainModuleImports:
 
     def test_setup_logging(self) -> None:
         """Test setup_logging function."""
-        from gtranscriber.main import setup_logging
+        from arandu.main import setup_logging
 
         # Should execute without errors
         setup_logging()
 
     def test_main_function(self) -> None:
         """Test main callback function."""
-        from gtranscriber.main import main
+        from arandu.main import main
 
         # Should execute without errors
         main()
@@ -220,14 +220,14 @@ class TestReportCommandDeprecation:
 
         from typer.testing import CliRunner
 
-        from gtranscriber.main import app
+        from arandu.main import app
 
         runner = CliRunner()
 
         # Patch print_warning and the heavy imports to avoid filesystem access
         with (
-            patch("gtranscriber.main.print_warning") as mock_warn,
-            patch("gtranscriber.core.report.ResultsCollector") as mock_collector_cls,
+            patch("arandu.main.print_warning") as mock_warn,
+            patch("arandu.core.report.ResultsCollector") as mock_collector_cls,
         ):
             mock_collector = MagicMock()
             mock_collector.load_all_runs.return_value = []

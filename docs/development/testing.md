@@ -1,6 +1,6 @@
-# G-Transcriber Test Suite Documentation
+# Arandu Test Suite Documentation
 
-This document provides an overview of the test suite for G-Transcriber.
+This document provides an overview of the test suite for Arandu.
 
 ## Test Structure
 
@@ -33,7 +33,7 @@ pytest tests/ -v
 
 ### Run with Coverage Report
 ```bash
-pytest tests/ --cov=gtranscriber --cov-report=term
+pytest tests/ --cov=arandu --cov-report=term
 ```
 
 ### Run Specific Test Module
@@ -154,7 +154,7 @@ Tests for the unified LLM client supporting OpenAI, Ollama, and custom providers
 ```python
 def test_generate_retry_on_failure(mocker: MockerFixture) -> None:
     """Test that generate retries on failure (tenacity decorator)."""
-    mock_openai = mocker.patch("gtranscriber.core.llm_client.OpenAI")
+    mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
     mock_client = Mock()
     
     # First two calls fail, third succeeds
@@ -227,8 +227,8 @@ Tests for file operations and temporary file management:
 **Example**:
 ```python
 def test_cleanup_temp_files_ignores_other_files(tmp_path: Path) -> None:
-    """Test that cleanup only removes gtranscriber_ files."""
-    (tmp_path / "gtranscriber_file1.txt").touch()
+    """Test that cleanup only removes arandu_ files."""
+    (tmp_path / "arandu_file1.txt").touch()
     (tmp_path / "other_file.txt").touch()
 
     success, failure = cleanup_temp_files(str(tmp_path))
@@ -323,7 +323,7 @@ ruff check --fix src/ tests/
 pytest tests/
 
 # Check coverage
-pytest tests/ --cov=gtranscriber
+pytest tests/ --cov=arandu
 ```
 
 ## Adding New Tests
@@ -368,7 +368,7 @@ def test_function_name_scenario(mocker: MockerFixture) -> None:
 ### Import Errors
 1. Ensure `src/` is in PYTHONPATH (configured in pyproject.toml)
 2. Check that `__init__.py` files exist in test directories
-3. Use absolute imports: `from gtranscriber.module import function`
+3. Use absolute imports: `from arandu.module import function`
 
 ## References
 

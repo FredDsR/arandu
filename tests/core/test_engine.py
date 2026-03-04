@@ -10,7 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from gtranscriber.core.engine import TranscriptionResult, WhisperEngine
+from arandu.core.engine import TranscriptionResult, WhisperEngine
 
 
 class TestTranscriptionResult:
@@ -57,8 +57,8 @@ class TestTranscriptionResult:
 class TestWhisperEngineInitialization:
     """Tests for WhisperEngine initialization."""
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_default_initialization(
         self,
         mock_quant_config: MagicMock,
@@ -67,7 +67,7 @@ class TestWhisperEngineInitialization:
         """Test WhisperEngine initialization with defaults."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -83,8 +83,8 @@ class TestWhisperEngineInitialization:
         assert engine._pipe is None  # Lazy initialization
         mock_device.assert_called_once()
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_custom_initialization(
         self,
         mock_quant_config: MagicMock,
@@ -93,7 +93,7 @@ class TestWhisperEngineInitialization:
         """Test WhisperEngine with custom parameters."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cuda:0",
@@ -118,8 +118,8 @@ class TestWhisperEngineInitialization:
         assert engine.pipe_kwargs["chunk_length_s"] == 30
         assert engine.pipe_kwargs["stride_length_s"] == (5, 5)
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_invalid_quantize_bits(
         self,
         mock_quant_config: MagicMock,
@@ -131,8 +131,8 @@ class TestWhisperEngineInitialization:
 
         assert "quantize_bits must be 4 or 8" in str(exc_info.value)
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_valid_quantize_bits_4(
         self,
         mock_quant_config: MagicMock,
@@ -141,7 +141,7 @@ class TestWhisperEngineInitialization:
         """Test valid quantize_bits=4."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -153,8 +153,8 @@ class TestWhisperEngineInitialization:
         engine = WhisperEngine(quantize=True, quantize_bits=4)
         assert engine.quant_config == {"load_in_4bit": True}
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_valid_quantize_bits_8(
         self,
         mock_quant_config: MagicMock,
@@ -163,7 +163,7 @@ class TestWhisperEngineInitialization:
         """Test valid quantize_bits=8."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -179,11 +179,11 @@ class TestWhisperEngineInitialization:
 class TestWhisperEnginePipeline:
     """Tests for pipeline creation and usage."""
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_pipeline_lazy_initialization(
         self,
         mock_quant_config: MagicMock,
@@ -195,7 +195,7 @@ class TestWhisperEnginePipeline:
         """Test that pipeline is initialized lazily."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -217,9 +217,9 @@ class TestWhisperEnginePipeline:
         mock_processor.from_pretrained.assert_called_once()
         mock_pipeline.assert_called_once()
 
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_model_loading_os_error(
         self,
         mock_quant_config: MagicMock,
@@ -229,7 +229,7 @@ class TestWhisperEnginePipeline:
         """Test handling of OSError during model loading."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -247,9 +247,9 @@ class TestWhisperEnginePipeline:
         assert "Could not download or load the model" in str(exc_info.value)
         assert "openai/whisper-large-v3" in str(exc_info.value)
 
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_model_loading_value_error(
         self,
         mock_quant_config: MagicMock,
@@ -259,7 +259,7 @@ class TestWhisperEnginePipeline:
         """Test handling of ValueError during model loading."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -277,9 +277,9 @@ class TestWhisperEnginePipeline:
         assert "Invalid model ID" in str(exc_info.value)
         assert "openai/whisper-large-v3" in str(exc_info.value)
 
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_model_loading_unexpected_error(
         self,
         mock_quant_config: MagicMock,
@@ -289,7 +289,7 @@ class TestWhisperEnginePipeline:
         """Test handling of unexpected errors during model loading."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -308,8 +308,8 @@ class TestWhisperEnginePipeline:
 class TestWhisperEngineConfiguration:
     """Tests for engine configuration handling."""
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_pipe_kwargs_with_chunk_length_only(
         self,
         mock_quant_config: MagicMock,
@@ -318,7 +318,7 @@ class TestWhisperEngineConfiguration:
         """Test pipe_kwargs when only chunk_length_s is specified."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -332,8 +332,8 @@ class TestWhisperEngineConfiguration:
         assert "chunk_length_s" in engine.pipe_kwargs
         assert "stride_length_s" not in engine.pipe_kwargs
 
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_pipe_kwargs_with_stride_length_only(
         self,
         mock_quant_config: MagicMock,
@@ -342,7 +342,7 @@ class TestWhisperEngineConfiguration:
         """Test pipe_kwargs when only stride_length_s is specified."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -361,11 +361,11 @@ class TestWhisperEngineConfiguration:
 class TestWhisperEngineTranscription:
     """Tests for transcription functionality."""
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_transcribe_basic(
         self,
         mock_quant_config: MagicMock,
@@ -378,7 +378,7 @@ class TestWhisperEngineTranscription:
         """Test basic transcription."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -420,11 +420,11 @@ class TestWhisperEngineTranscription:
         assert len(result.segments) == 2
         assert result.processing_duration_sec > 0
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_transcribe_no_chunks(
         self,
         mock_quant_config: MagicMock,
@@ -437,7 +437,7 @@ class TestWhisperEngineTranscription:
         """Test transcription without chunks."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -463,11 +463,11 @@ class TestWhisperEngineTranscription:
         assert result.text == "Simple transcription."
         assert result.segments is None
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_transcribe_with_language(
         self,
         mock_quant_config: MagicMock,
@@ -480,7 +480,7 @@ class TestWhisperEngineTranscription:
         """Test transcription with specified language."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -513,11 +513,11 @@ class TestWhisperEngineTranscription:
 class TestWhisperEngineDeviceFallback:
     """Tests for device fallback logic."""
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_device_fallback_to_cpu(
         self,
         mock_quant_config: MagicMock,
@@ -529,7 +529,7 @@ class TestWhisperEngineDeviceFallback:
         """Test fallback to CPU when device placement fails."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         # Initially try CUDA
         mock_device.return_value = HardwareConfig(
@@ -559,11 +559,11 @@ class TestWhisperEngineDeviceFallback:
 class TestWhisperEngineEdgeCases:
     """Tests for edge cases and error handling."""
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_transcribe_empty_chunks(
         self,
         mock_quant_config: MagicMock,
@@ -576,7 +576,7 @@ class TestWhisperEngineEdgeCases:
         """Test transcription with empty chunks list."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -601,11 +601,11 @@ class TestWhisperEngineEdgeCases:
 
         assert result.segments is None
 
-    @patch("gtranscriber.core.engine.pipeline")
-    @patch("gtranscriber.core.engine.AutoProcessor")
-    @patch("gtranscriber.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("gtranscriber.core.engine.get_device_and_dtype")
-    @patch("gtranscriber.core.engine.get_quantization_config")
+    @patch("arandu.core.engine.pipeline")
+    @patch("arandu.core.engine.AutoProcessor")
+    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.core.engine.get_device_and_dtype")
+    @patch("arandu.core.engine.get_quantization_config")
     def test_transcribe_missing_timestamps(
         self,
         mock_quant_config: MagicMock,
@@ -618,7 +618,7 @@ class TestWhisperEngineEdgeCases:
         """Test transcription with missing timestamp data."""
         import torch
 
-        from gtranscriber.core.hardware import DeviceType, HardwareConfig
+        from arandu.core.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from click.exceptions import Exit as ClickExit
 
-from gtranscriber.schemas import RunStatus
+from arandu.schemas import RunStatus
 from scripts.import_results import (
     _find_extracted_root,
     build_run_metadata,

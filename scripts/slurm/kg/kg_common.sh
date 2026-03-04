@@ -1,17 +1,17 @@
 #!/bin/bash
 # =============================================================================
-# G-Transcriber Knowledge Graph Construction Common Job Script
+# Arandu Knowledge Graph Construction Common Job Script
 #
 # This script contains the shared logic for all KG construction SLURM scripts.
 # It should be sourced from partition-specific scripts, not run directly.
 #
 # Optional environment variables:
-#   GTRANSCRIBER_KG_MODEL_ID - Ollama model to use (default: llama3.1:8b)
-#   GTRANSCRIBER_KG_PROVIDER - LLM provider (default: ollama)
-#   GTRANSCRIBER_KG_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
-#   GTRANSCRIBER_KG_BACKEND - KGC backend (default: atlas)
-#   GTRANSCRIBER_KG_TEMPERATURE - LLM temperature (default: 0.5)
-#   GTRANSCRIBER_KG_LANGUAGE - Language for KG extraction (default: pt)
+#   ARANDU_KG_MODEL_ID - Ollama model to use (default: llama3.1:8b)
+#   ARANDU_KG_PROVIDER - LLM provider (default: ollama)
+#   ARANDU_KG_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
+#   ARANDU_KG_BACKEND - KGC backend (default: atlas)
+#   ARANDU_KG_TEMPERATURE - LLM temperature (default: 0.5)
+#   ARANDU_KG_LANGUAGE - Language for KG extraction (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
 # =============================================================================
 
@@ -23,26 +23,26 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
 # KG Construction settings (support override from environment)
-export GTRANSCRIBER_KG_PROVIDER="${GTRANSCRIBER_KG_PROVIDER:-ollama}"
-export GTRANSCRIBER_KG_MODEL_ID="${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}"
-export GTRANSCRIBER_KG_OLLAMA_URL="${GTRANSCRIBER_KG_OLLAMA_URL:-http://ollama:11434/v1}"
-export GTRANSCRIBER_KG_BACKEND="${GTRANSCRIBER_KG_BACKEND:-atlas}"
-export GTRANSCRIBER_KG_TEMPERATURE="${GTRANSCRIBER_KG_TEMPERATURE:-0.5}"
-export GTRANSCRIBER_KG_LANGUAGE="${GTRANSCRIBER_KG_LANGUAGE:-pt}"
+export ARANDU_KG_PROVIDER="${ARANDU_KG_PROVIDER:-ollama}"
+export ARANDU_KG_MODEL_ID="${ARANDU_KG_MODEL_ID:-llama3.1:8b}"
+export ARANDU_KG_OLLAMA_URL="${ARANDU_KG_OLLAMA_URL:-http://ollama:11434/v1}"
+export ARANDU_KG_BACKEND="${ARANDU_KG_BACKEND:-atlas}"
+export ARANDU_KG_TEMPERATURE="${ARANDU_KG_TEMPERATURE:-0.5}"
+export ARANDU_KG_LANGUAGE="${ARANDU_KG_LANGUAGE:-pt}"
 
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
 
 # Directories
-export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
+export ARANDU_RESULTS_DIR="${ARANDU_RESULTS_DIR:-$PROJECT_DIR/results}"
+export ARANDU_HF_CACHE_DIR="${ARANDU_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
 # -----------------------------------------------------------------------------
 # Job Information
 # -----------------------------------------------------------------------------
 echo "=============================================="
-echo "G-Transcriber KG Construction Job Started"
+echo "Arandu KG Construction Job Started"
 echo "=============================================="
 echo "Job ID:        ${SLURM_JOB_ID:-local}"
 echo "Job Name:      ${SLURM_JOB_NAME:-kg-construction}"
@@ -52,13 +52,13 @@ echo "CPUs:          ${SLURM_CPUS_PER_TASK:-N/A}"
 echo "Start Time:    $(date)"
 echo "Project Dir:   $PROJECT_DIR"
 echo "=============================================="
-echo "KG Provider:   $GTRANSCRIBER_KG_PROVIDER"
-echo "KG Model:      $GTRANSCRIBER_KG_MODEL_ID"
+echo "KG Provider:   $ARANDU_KG_PROVIDER"
+echo "KG Model:      $ARANDU_KG_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
-echo "Backend:       $GTRANSCRIBER_KG_BACKEND"
-echo "Temperature:   $GTRANSCRIBER_KG_TEMPERATURE"
-echo "Language:      $GTRANSCRIBER_KG_LANGUAGE"
-echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
+echo "Backend:       $ARANDU_KG_BACKEND"
+echo "Temperature:   $ARANDU_KG_TEMPERATURE"
+echo "Language:      $ARANDU_KG_LANGUAGE"
+echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -66,8 +66,8 @@ echo "=============================================="
 # -----------------------------------------------------------------------------
 cd "$PROJECT_DIR"
 
-if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
-    echo "Error: Results directory not found: $GTRANSCRIBER_RESULTS_DIR"
+if [ ! -d "$ARANDU_RESULTS_DIR" ]; then
+    echo "Error: Results directory not found: $ARANDU_RESULTS_DIR"
     echo "Please run transcription first."
     exit 1
 fi
@@ -122,7 +122,7 @@ for i in {1..30}; do
     sleep 5
 done
 if [ "$OLLAMA_UP" = true ]; then
-    REQUIRED_MODELS=("$GTRANSCRIBER_KG_MODEL_ID")
+    REQUIRED_MODELS=("$ARANDU_KG_MODEL_ID")
     INSTALLED=$(docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list 2>/dev/null | tail -n +2 | awk '{print $1}') || true
     for model in $INSTALLED; do
         is_required=false
@@ -138,7 +138,7 @@ fi
 
 echo ""
 echo "Building Docker images..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build gtranscriber-kg
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-kg
 
 echo ""
 echo "Starting Ollama sidecar ($OLLAMA_SERVICE) and pulling model..."
@@ -166,17 +166,17 @@ if [ "$OLLAMA_READY" = false ]; then
 fi
 
 # Pull the model if using Ollama provider
-if [ "$GTRANSCRIBER_KG_PROVIDER" = "ollama" ]; then
+if [ "$ARANDU_KG_PROVIDER" = "ollama" ]; then
     echo ""
-    echo "Pulling model: $GTRANSCRIBER_KG_MODEL_ID"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$GTRANSCRIBER_KG_MODEL_ID"
+    echo "Pulling model: $ARANDU_KG_MODEL_ID"
+    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$ARANDU_KG_MODEL_ID"
 fi
 
 echo ""
 echo "Starting KG construction process..."
 echo "=============================================="
 
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up gtranscriber-kg --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up arandu-kg --abort-on-container-exit
 
 # -----------------------------------------------------------------------------
 # Cleanup
@@ -190,18 +190,18 @@ docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down
 # -----------------------------------------------------------------------------
 echo ""
 echo "=============================================="
-echo "G-Transcriber KG Construction Job Completed"
+echo "Arandu KG Construction Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
+echo "Results Dir:   $ARANDU_RESULTS_DIR"
 
 # Show graph statistics if atlas output exists
-ATLAS_GRAPH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/atlas_output/*.graphml" -print -quit 2>/dev/null)
+ATLAS_GRAPH=$(find "$ARANDU_RESULTS_DIR" -path "*/kg/atlas_output/*.graphml" -print -quit 2>/dev/null)
 if [ -n "$ATLAS_GRAPH" ]; then
     echo "Atlas Output:  graphml files created"
 fi
 
 # Count individual graphs
-GRAPH_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -name "*.graphml" 2>/dev/null | wc -l)
+GRAPH_COUNT=$(find "$ARANDU_RESULTS_DIR" -name "*.graphml" 2>/dev/null | wc -l)
 echo "Total Graphs:  $GRAPH_COUNT files generated"
 echo "=============================================="

@@ -8,13 +8,13 @@ from unittest.mock import MagicMock, patch
 if TYPE_CHECKING:
     from pathlib import Path
 
-from gtranscriber.core.report.dataset import (
+from arandu.core.report.dataset import (
     QAPairRow,
     ReportDataset,
     RunSummaryRow,
     TranscriptionRow,
 )
-from gtranscriber.core.report.exporter import _consensus_threshold, export_charts_as_png
+from arandu.core.report.exporter import _consensus_threshold, export_charts_as_png
 
 # All chart function names referenced by exporter.py
 _CHART_FUNCTIONS = [
@@ -84,7 +84,7 @@ def _setup_mock_charts(mock_charts: MagicMock, mock_fig: MagicMock) -> None:
 class TestExportChartsAsPng:
     """Tests for export_charts_as_png function."""
 
-    @patch("gtranscriber.core.report.exporter.charts")
+    @patch("arandu.core.report.exporter.charts")
     def test_creates_output_directory(self, mock_charts: MagicMock, tmp_path: Path) -> None:
         """Test that output directory is created if it doesn't exist."""
         output_dir = tmp_path / "figures"
@@ -96,7 +96,7 @@ class TestExportChartsAsPng:
 
         assert output_dir.exists()
 
-    @patch("gtranscriber.core.report.exporter.charts")
+    @patch("arandu.core.report.exporter.charts")
     def test_returns_generated_paths(self, mock_charts: MagicMock, tmp_path: Path) -> None:
         """Test that generated file paths are returned."""
         output_dir = tmp_path / "figures"
@@ -110,7 +110,7 @@ class TestExportChartsAsPng:
         assert len(result) == 14
         assert mock_fig.write_image.call_count == 14
 
-    @patch("gtranscriber.core.report.exporter.charts")
+    @patch("arandu.core.report.exporter.charts")
     def test_handles_chart_failure(self, mock_charts: MagicMock, tmp_path: Path) -> None:
         """Test that individual chart failures don't stop the export."""
         output_dir = tmp_path / "figures"

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used at runtime in method signatures
 
-from gtranscriber.core.kg.protocol import KGConstructor
-from gtranscriber.core.kg.schemas import KGConstructionResult
-from gtranscriber.schemas import EnrichedRecord, KGMetadata
+from arandu.core.kg.protocol import KGConstructor
+from arandu.core.kg.schemas import KGConstructionResult
+from arandu.schemas import EnrichedRecord, KGMetadata
 
 
 class _DummyConstructor:

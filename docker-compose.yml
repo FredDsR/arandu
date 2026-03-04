@@ -1,10 +1,10 @@
 services:
-  gtranscriber:
+  arandu:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gtranscriber:latest
-    container_name: gtranscriber-${SLURM_JOB_ID:-local}
+    image: arandu:latest
+    container_name: arandu-${SLURM_JOB_ID:-local}
 
     # GPU support - NVIDIA runtime
     deploy:
@@ -17,11 +17,11 @@ services:
 
     # Environment variables
     environment:
-      - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}
-      - GTRANSCRIBER_QUANTIZE=${GTRANSCRIBER_QUANTIZE:-false}
-      - GTRANSCRIBER_FORCE_CPU=${GTRANSCRIBER_FORCE_CPU:-false}
-      - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
-      - GTRANSCRIBER_TOKEN=/app/credentials/token.json
+      - ARANDU_MODEL_ID=${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}
+      - ARANDU_QUANTIZE=${ARANDU_QUANTIZE:-false}
+      - ARANDU_FORCE_CPU=${ARANDU_FORCE_CPU:-false}
+      - ARANDU_CREDENTIALS=/app/credentials/credentials.json
+      - ARANDU_TOKEN=/app/credentials/token.json
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
       - HF_HOME=/app/.cache/huggingface
@@ -30,13 +30,13 @@ services:
     # Volume mounts
     volumes:
       # Input catalog
-      - ${GTRANSCRIBER_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
+      - ${ARANDU_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
       # Output results
-      - ${GTRANSCRIBER_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
+      - ${ARANDU_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
       # Google Drive credentials
-      - ${GTRANSCRIBER_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
+      - ${ARANDU_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
       # Hugging Face cache (persistent model storage)
-      - ${GTRANSCRIBER_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
+      - ${ARANDU_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
 
     # Working directory
     working_dir: /app
@@ -44,11 +44,11 @@ services:
     # Default command for batch transcription
     command: >
       batch-transcribe
-      /app/input/${GTRANSCRIBER_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
+      /app/input/${ARANDU_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
       --credentials /app/credentials/credentials.json
       --token /app/credentials/token.json
       --output-dir /app/results
-      --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-4}}
+      --workers ${ARANDU_WORKERS:-${WORKERS:-4}}
 
     # Resource limits (adjust based on partition)
     shm_size: '16gb'
@@ -69,43 +69,43 @@ services:
       - gpu
 
   # CPU-only variant
-  gtranscriber-cpu:
+  arandu-cpu:
     extends:
-      service: gtranscriber
-    container_name: gtranscriber-cpu-${SLURM_JOB_ID:-local}
+      service: arandu
+    container_name: arandu-cpu-${SLURM_JOB_ID:-local}
 
     # Remove GPU reservation for CPU-only execution
     deploy:
       resources: {}
 
     environment:
-      - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-distil-whisper/distil-large-v3}
-      - GTRANSCRIBER_QUANTIZE=false
-      - GTRANSCRIBER_FORCE_CPU=true
-      - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
-      - GTRANSCRIBER_TOKEN=/app/credentials/token.json
+      - ARANDU_MODEL_ID=${ARANDU_MODEL_ID:-distil-whisper/distil-large-v3}
+      - ARANDU_QUANTIZE=false
+      - ARANDU_FORCE_CPU=true
+      - ARANDU_CREDENTIALS=/app/credentials/credentials.json
+      - ARANDU_TOKEN=/app/credentials/token.json
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
     command: >
       batch-transcribe
-      /app/input/${GTRANSCRIBER_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
+      /app/input/${ARANDU_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
       --credentials /app/credentials/credentials.json
       --token /app/credentials/token.json
       --output-dir /app/results
-      --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-2}}
+      --workers ${ARANDU_WORKERS:-${WORKERS:-2}}
       --cpu
 
     profiles:
       - cpu
 
   # AMD GPU variant (ROCm)
-  gtranscriber-rocm:
+  arandu-rocm:
     build:
       context: .
       dockerfile: Dockerfile.rocm
-    image: gtranscriber:rocm
-    container_name: gtranscriber-rocm-${SLURM_JOB_ID:-local}
+    image: arandu:rocm
+    container_name: arandu-rocm-${SLURM_JOB_ID:-local}
 
     # AMD GPU device access
     devices:
@@ -118,20 +118,20 @@ services:
     # Environment variables
     environment:
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
-      - GTRANSCRIBER_MODEL_ID=${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}
-      - GTRANSCRIBER_QUANTIZE=false
-      - GTRANSCRIBER_FORCE_CPU=false
-      - GTRANSCRIBER_CREDENTIALS=/app/credentials/credentials.json
-      - GTRANSCRIBER_TOKEN=/app/credentials/token.json
+      - ARANDU_MODEL_ID=${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}
+      - ARANDU_QUANTIZE=false
+      - ARANDU_FORCE_CPU=false
+      - ARANDU_CREDENTIALS=/app/credentials/credentials.json
+      - ARANDU_TOKEN=/app/credentials/token.json
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
     # Volume mounts
     volumes:
-      - ${GTRANSCRIBER_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
-      - ${GTRANSCRIBER_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
-      - ${GTRANSCRIBER_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
-      - ${GTRANSCRIBER_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
+      - ${ARANDU_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
+      - ${ARANDU_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
+      - ${ARANDU_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
+      - ${ARANDU_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
 
     # Working directory
     working_dir: /app
@@ -139,11 +139,11 @@ services:
     # Default command for batch transcription
     command: >
       batch-transcribe
-      /app/input/${GTRANSCRIBER_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
+      /app/input/${ARANDU_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
       --credentials /app/credentials/credentials.json
       --token /app/credentials/token.json
       --output-dir /app/results
-      --workers ${GTRANSCRIBER_WORKERS:-${WORKERS:-3}}
+      --workers ${ARANDU_WORKERS:-${WORKERS:-3}}
 
     # Resource limits
     shm_size: '16gb'
@@ -241,12 +241,12 @@ services:
       - ollama-gpu
 
   # QA Generation Service
-  gtranscriber-qa:
+  arandu-qa:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gtranscriber:latest
-    container_name: gtranscriber-qa-${SLURM_JOB_ID:-local}
+    image: arandu:latest
+    container_name: arandu-qa-${SLURM_JOB_ID:-local}
     working_dir: /app
 
     # No GPU needed (QA generation is CPU/API-based)
@@ -259,15 +259,15 @@ services:
         required: false  # Allow running without Ollama (e.g., with OpenAI)
 
     environment:
-      - GTRANSCRIBER_QA_PROVIDER=${GTRANSCRIBER_QA_PROVIDER:-ollama}
-      - GTRANSCRIBER_QA_MODEL_ID=${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}
+      - ARANDU_QA_PROVIDER=${ARANDU_QA_PROVIDER:-ollama}
+      - ARANDU_QA_MODEL_ID=${ARANDU_QA_MODEL_ID:-qwen3:14b}
       # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
-      - GTRANSCRIBER_QA_OLLAMA_URL=${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434/v1}
+      - ARANDU_QA_OLLAMA_URL=${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
-      - GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}
-      - GTRANSCRIBER_QA_TEMPERATURE=${GTRANSCRIBER_QA_TEMPERATURE:-0.7}
-      - GTRANSCRIBER_QA_WORKERS=${GTRANSCRIBER_QA_WORKERS:-2}
+      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
+      - ARANDU_QA_QUESTIONS_PER_DOCUMENT=${ARANDU_QA_QUESTIONS_PER_DOCUMENT:-10}
+      - ARANDU_QA_TEMPERATURE=${ARANDU_QA_TEMPERATURE:-0.7}
+      - ARANDU_QA_WORKERS=${ARANDU_QA_WORKERS:-2}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -275,11 +275,11 @@ services:
       generate-qa
       /app/results
       --id ${PIPELINE_ID:-}
-      --workers ${GTRANSCRIBER_QA_WORKERS:-2}
+      --workers ${ARANDU_QA_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw
-      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
     restart: "no"
@@ -295,12 +295,12 @@ services:
       - qa-gpu
 
   # CEP QA Generation Service (Cognitive Elicitation Pipeline)
-  gtranscriber-cep:
+  arandu-cep:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gtranscriber:latest
-    container_name: gtranscriber-cep-${SLURM_JOB_ID:-local}
+    image: arandu:latest
+    container_name: arandu-cep-${SLURM_JOB_ID:-local}
     working_dir: /app
 
     # No GPU needed (CEP generation is CPU/API-based)
@@ -313,20 +313,20 @@ services:
         required: false  # Allow running without Ollama (e.g., with OpenAI)
 
     environment:
-      - GTRANSCRIBER_QA_PROVIDER=${GTRANSCRIBER_QA_PROVIDER:-ollama}
-      - GTRANSCRIBER_QA_MODEL_ID=${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}
+      - ARANDU_QA_PROVIDER=${ARANDU_QA_PROVIDER:-ollama}
+      - ARANDU_QA_MODEL_ID=${ARANDU_QA_MODEL_ID:-qwen3:14b}
       # Use Ollama sidecar service by default
-      - GTRANSCRIBER_QA_OLLAMA_URL=${GTRANSCRIBER_QA_OLLAMA_URL:-http://ollama:11434/v1}
+      - ARANDU_QA_OLLAMA_URL=${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
-      - GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=${GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT:-10}
-      - GTRANSCRIBER_QA_TEMPERATURE=${GTRANSCRIBER_QA_TEMPERATURE:-0.7}
-      - GTRANSCRIBER_QA_WORKERS=${GTRANSCRIBER_QA_WORKERS:-2}
+      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
+      - ARANDU_QA_QUESTIONS_PER_DOCUMENT=${ARANDU_QA_QUESTIONS_PER_DOCUMENT:-10}
+      - ARANDU_QA_TEMPERATURE=${ARANDU_QA_TEMPERATURE:-0.7}
+      - ARANDU_QA_WORKERS=${ARANDU_QA_WORKERS:-2}
       # CEP-specific configuration
-      - GTRANSCRIBER_CEP_ENABLE_VALIDATION=${GTRANSCRIBER_CEP_ENABLE_VALIDATION:-true}
-      - GTRANSCRIBER_CEP_VALIDATOR_PROVIDER=${GTRANSCRIBER_CEP_VALIDATOR_PROVIDER:-ollama}
-      - GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=${GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID:-qwen3:14b}
-      - GTRANSCRIBER_CEP_LANGUAGE=${GTRANSCRIBER_CEP_LANGUAGE:-pt}
+      - ARANDU_CEP_ENABLE_VALIDATION=${ARANDU_CEP_ENABLE_VALIDATION:-true}
+      - ARANDU_CEP_VALIDATOR_PROVIDER=${ARANDU_CEP_VALIDATOR_PROVIDER:-ollama}
+      - ARANDU_CEP_VALIDATOR_MODEL_ID=${ARANDU_CEP_VALIDATOR_MODEL_ID:-qwen3:14b}
+      - ARANDU_CEP_LANGUAGE=${ARANDU_CEP_LANGUAGE:-pt}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -334,11 +334,11 @@ services:
       generate-cep-qa
       /app/results
       --id ${PIPELINE_ID:-}
-      --workers ${GTRANSCRIBER_QA_WORKERS:-2}
+      --workers ${ARANDU_QA_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw
-      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
     restart: "no"
@@ -354,12 +354,12 @@ services:
       - cep-gpu
 
   # KG Construction Service
-  gtranscriber-kg:
+  arandu-kg:
     build:
       context: .
       dockerfile: Dockerfile.kg
-    image: gtranscriber-kg:latest
-    container_name: gtranscriber-kg-${SLURM_JOB_ID:-local}
+    image: arandu-kg:latest
+    container_name: arandu-kg-${SLURM_JOB_ID:-local}
     working_dir: /app
 
     # No GPU needed (KG construction is CPU/API-based)
@@ -372,15 +372,15 @@ services:
         required: false  # Allow running without Ollama (e.g., with OpenAI)
 
     environment:
-      - GTRANSCRIBER_KG_PROVIDER=${GTRANSCRIBER_KG_PROVIDER:-ollama}
-      - GTRANSCRIBER_KG_MODEL_ID=${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}
+      - ARANDU_KG_PROVIDER=${ARANDU_KG_PROVIDER:-ollama}
+      - ARANDU_KG_MODEL_ID=${ARANDU_KG_MODEL_ID:-llama3.1:8b}
       # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
-      - GTRANSCRIBER_KG_OLLAMA_URL=${GTRANSCRIBER_KG_OLLAMA_URL:-http://ollama:11434/v1}
+      - ARANDU_KG_OLLAMA_URL=${ARANDU_KG_OLLAMA_URL:-http://ollama:11434/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
-      - GTRANSCRIBER_KG_BACKEND=${GTRANSCRIBER_KG_BACKEND:-atlas}
-      - GTRANSCRIBER_KG_TEMPERATURE=${GTRANSCRIBER_KG_TEMPERATURE:-0.5}
-      - GTRANSCRIBER_KG_LANGUAGE=${GTRANSCRIBER_KG_LANGUAGE:-pt}
+      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
+      - ARANDU_KG_BACKEND=${ARANDU_KG_BACKEND:-atlas}
+      - ARANDU_KG_TEMPERATURE=${ARANDU_KG_TEMPERATURE:-0.5}
+      - ARANDU_KG_LANGUAGE=${ARANDU_KG_LANGUAGE:-pt}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -390,8 +390,8 @@ services:
       --id ${PIPELINE_ID:-}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:rw
-      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
     restart: "no"
@@ -407,20 +407,20 @@ services:
       - kg-gpu
 
   # Evaluation Service
-  gtranscriber-eval:
+  arandu-eval:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gtranscriber:latest
-    container_name: gtranscriber-eval-${SLURM_JOB_ID:-local}
+    image: arandu:latest
+    container_name: arandu-eval-${SLURM_JOB_ID:-local}
     working_dir: /app
 
     # No GPU needed (evaluation is CPU-based)
     deploy: {}
 
     environment:
-      - GTRANSCRIBER_EVAL_METRICS=${GTRANSCRIBER_EVAL_METRICS:-qa,entity,relation,semantic}
-      - GTRANSCRIBER_EVAL_EMBEDDING_MODEL=${GTRANSCRIBER_EVAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      - ARANDU_EVAL_METRICS=${ARANDU_EVAL_METRICS:-qa,entity,relation,semantic}
+      - ARANDU_EVAL_EMBEDDING_MODEL=${ARANDU_EVAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -431,9 +431,9 @@ services:
       --output /app/evaluation/report.json
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_EVAL_DIR:-./evaluation}:/app/evaluation:rw
-      - ${GTRANSCRIBER_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:ro
+      - ${ARANDU_EVAL_DIR:-./evaluation}:/app/evaluation:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
 
     shm_size: '16gb'
     restart: "no"

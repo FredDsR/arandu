@@ -40,14 +40,14 @@ sbatch scripts/slurm/run_kg_construction.slurm
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_KG_BACKEND` | `atlas` | KGC backend: `atlas` (AutoSchemaKG) |
-| `GTRANSCRIBER_KG_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_KG_MODEL_ID` | `llama3.1:8b` | Model for extraction |
-| `GTRANSCRIBER_KG_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
-| `GTRANSCRIBER_KG_BASE_URL` | *(none)* | Custom OpenAI-compatible endpoint |
-| `GTRANSCRIBER_KG_LANGUAGE` | `pt` | Language code (ISO 639-1): `pt`, `en` |
-| `GTRANSCRIBER_KG_TEMPERATURE` | `0.5` | LLM temperature (0.0-2.0, lower = more consistent) |
-| `GTRANSCRIBER_KG_OUTPUT_DIR` | `knowledge_graphs` | Output directory for graph artifacts |
+| `ARANDU_KG_BACKEND` | `atlas` | KGC backend: `atlas` (AutoSchemaKG) |
+| `ARANDU_KG_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
+| `ARANDU_KG_MODEL_ID` | `llama3.1:8b` | Model for extraction |
+| `ARANDU_KG_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
+| `ARANDU_KG_BASE_URL` | *(none)* | Custom OpenAI-compatible endpoint |
+| `ARANDU_KG_LANGUAGE` | `pt` | Language code (ISO 639-1): `pt`, `en` |
+| `ARANDU_KG_TEMPERATURE` | `0.5` | LLM temperature (0.0-2.0, lower = more consistent) |
+| `ARANDU_KG_OUTPUT_DIR` | `knowledge_graphs` | Output directory for graph artifacts |
 
 ### Language Support
 
@@ -62,15 +62,15 @@ The pipeline supports multilingual extraction via language-specific prompts:
 
 ```bash
 # KG Construction Settings
-GTRANSCRIBER_KG_BACKEND=atlas
-GTRANSCRIBER_KG_PROVIDER=ollama
-GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
-GTRANSCRIBER_KG_LANGUAGE=pt
-GTRANSCRIBER_KG_TEMPERATURE=0.5
+ARANDU_KG_BACKEND=atlas
+ARANDU_KG_PROVIDER=ollama
+ARANDU_KG_MODEL_ID=llama3.1:8b
+ARANDU_KG_LANGUAGE=pt
+ARANDU_KG_TEMPERATURE=0.5
 
 # Directories
-GTRANSCRIBER_RESULTS_DIR=./results
-GTRANSCRIBER_KG_OUTPUT_DIR=./knowledge_graphs
+ARANDU_RESULTS_DIR=./results
+ARANDU_KG_OUTPUT_DIR=./knowledge_graphs
 ```
 
 ## Usage Examples
@@ -86,22 +86,22 @@ docker compose --profile kg up
 
 ```bash
 # Use larger model for better extraction
-GTRANSCRIBER_KG_MODEL_ID=llama3.1:70b docker compose --profile kg up
+ARANDU_KG_MODEL_ID=llama3.1:70b docker compose --profile kg up
 ```
 
 ### Different Language
 
 ```bash
 # Extract from English transcriptions
-GTRANSCRIBER_KG_LANGUAGE=en docker compose --profile kg up
+ARANDU_KG_LANGUAGE=en docker compose --profile kg up
 ```
 
 ### Using OpenAI
 
 ```bash
 # Use OpenAI for extraction
-export GTRANSCRIBER_KG_PROVIDER=openai
-export GTRANSCRIBER_KG_MODEL_ID=gpt-4o
+export ARANDU_KG_PROVIDER=openai
+export ARANDU_KG_MODEL_ID=gpt-4o
 export OPENAI_API_KEY=sk-...
 docker compose --profile kg up
 ```
@@ -110,7 +110,7 @@ docker compose --profile kg up
 
 ```bash
 # Submit to specific partition
-GTRANSCRIBER_KG_MODEL_ID=qwen3:14b PIPELINE_ID=test-cep-01 \
+ARANDU_KG_MODEL_ID=qwen3:14b PIPELINE_ID=test-cep-01 \
   sbatch scripts/slurm/kg/tupi.slurm
 ```
 
@@ -211,7 +211,7 @@ if len(persons) > 1:
 ### Loading Metadata
 
 ```python
-from gtranscriber.schemas import KGMetadata
+from arandu.schemas import KGMetadata
 
 # Load metadata
 metadata = KGMetadata.load("knowledge_graphs/corpus_graph_metadata.json")
@@ -253,7 +253,7 @@ Common relation types extracted:
 
 ```bash
 # Watch KG construction logs
-docker compose --profile kg logs -f gtranscriber-kg
+docker compose --profile kg logs -f arandu-kg
 
 # Check Ollama status
 docker compose --profile kg logs ollama
@@ -263,7 +263,7 @@ docker compose --profile kg logs ollama
 
 ```bash
 # Monitor job output
-tail -f logs/gtranscriber-kg_<jobid>.out
+tail -f logs/arandu-kg_<jobid>.out
 ```
 
 ## Atlas Backend Metadata Injection
@@ -323,7 +323,7 @@ Add a new key to `prompts/kg/atlas/metadata_labels.json`:
 }
 ```
 
-Then add `"es"` to `KGConfig.validate_language` in `src/gtranscriber/config.py`.
+Then add `"es"` to `KGConfig.validate_language` in `src/arandu/config.py`.
 
 ### Disabling Metadata Injection
 
@@ -393,18 +393,18 @@ cat results/<gdrive_id>.json | jq '.transcription_text | length'
 
 ### Poor Entity Extraction
 
-- Use larger model: `GTRANSCRIBER_KG_MODEL_ID=llama3.1:70b`
-- Lower temperature: `GTRANSCRIBER_KG_TEMPERATURE=0.3`
+- Use larger model: `ARANDU_KG_MODEL_ID=llama3.1:70b`
+- Lower temperature: `ARANDU_KG_TEMPERATURE=0.3`
 - Verify language setting matches transcription language
 
 ### Memory Issues
 
 ```bash
 # Use smaller model
-export GTRANSCRIBER_KG_MODEL_ID=llama3.2:3b
+export ARANDU_KG_MODEL_ID=llama3.2:3b
 
 # Reduce chunk size via backend options
-export GTRANSCRIBER_KG_BACKEND_OPTIONS='{"chunk_size": 4096}'
+export ARANDU_KG_BACKEND_OPTIONS='{"chunk_size": 4096}'
 ```
 
 ### Ollama Timeout

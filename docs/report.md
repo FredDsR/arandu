@@ -1,6 +1,6 @@
 # Results Visualization & Metrics Reporting
 
-This module provides interactive visualization and reporting capabilities for G-Transcriber pipeline results.
+This module provides interactive visualization and reporting capabilities for Arandu pipeline results.
 
 ## Features
 
@@ -30,26 +30,26 @@ pip install plotly jinja2 kaleido
 
 ```bash
 # Generate report for all pipeline runs (HTML + PNGs)
-gtranscriber report
+arandu report
 
 # Generate report for a specific run
-gtranscriber report --run-id 20250101_120000
+arandu report --run-id 20250101_120000
 
 # Custom output path
-gtranscriber report --output ./reports/dashboard.html
+arandu report --output ./reports/dashboard.html
 ```
 
 ### Skip PNG Export
 
 ```bash
 # Generate HTML only (no PNG files)
-gtranscriber report --no-png
+arandu report --no-png
 ```
 
 ## CLI Options
 
 ```
-gtranscriber report [OPTIONS]
+arandu report [OPTIONS]
 
 Options:
   --run-id, --id TEXT      Generate report for a specific pipeline run
@@ -100,7 +100,7 @@ Options:
 ### Module Structure
 
 ```
-src/gtranscriber/core/report/
+src/arandu/core/report/
 ├── __init__.py           # Public API
 ├── collector.py          # Results discovery and aggregation
 ├── charts.py             # Plotly chart builders
@@ -119,7 +119,7 @@ src/gtranscriber/core/report/
 #### ResultsCollector
 
 ```python
-from gtranscriber.core.report import ResultsCollector
+from arandu.core.report import ResultsCollector
 
 collector = ResultsCollector("results/")
 runs = collector.discover_runs()           # List all pipeline IDs
@@ -131,8 +131,8 @@ reports = collector.load_all_runs()        # Load all runs
 
 ```python
 from pathlib import Path
-from gtranscriber.core.report import build_dataset, generate_html_report
-from gtranscriber.core.report.exporter import export_charts_as_png
+from arandu.core.report import build_dataset, generate_html_report
+from arandu.core.report.exporter import export_charts_as_png
 
 # Generate HTML report
 generate_html_report(reports, Path("report.html"))
@@ -166,7 +166,7 @@ export_charts_as_png(dataset, Path("figures/"))
 ### Color Palette
 
 ```python
-from gtranscriber.core.report.style import (
+from arandu.core.report.style import (
     WONG_PALETTE,
     CATEGORICAL_COLORS,
     get_color_palette,
@@ -190,8 +190,8 @@ pytest tests/core/report/ -v
 ### Linting
 
 ```bash
-ruff check src/gtranscriber/core/report/
-ruff format src/gtranscriber/core/report/
+ruff check src/arandu/core/report/
+ruff format src/arandu/core/report/
 ```
 
 ## Troubleshooting
