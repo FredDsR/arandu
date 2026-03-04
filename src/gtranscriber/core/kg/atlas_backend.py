@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from gtranscriber.schemas import EnrichedRecord
 
 from gtranscriber.core.kg.schemas import KGConstructionResult
+from gtranscriber.core.llm_client import create_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,7 @@ class AtlasRagConstructor:
     def __init__(self, config: KGConfig) -> None:
         self._config = config
         self._opts: dict[str, Any] = {**ATLAS_DEFAULTS, **config.backend_options}
+        self._llm_client: Any | None = None
 
     # ------------------------------------------------------------------
     # Public API (Protocol)
@@ -202,9 +204,14 @@ class AtlasRagConstructor:
         if self._opts["include_concept"]:
             self._inject_concept_prompts()
 
-        # Step 3: Create OpenAI client and LLM generator
-        client = self._create_openai_client()
-        model = LLMGenerator(client, self._config.model_id)
+        # Step 3: Create LLM generator using unified LLMClient
+        if self._llm_client is None:
+            self._llm_client = self._build_llm_client()
+        model = LLMGenerator(
+            self._llm_client.client,
+            self._config.model_id,
+            temperature=self._config.temperature,
+        )
 
         # Step 4: Detect resume offset and build ProcessingConfig
         resume_from = self._detect_resume_offset(output_dir)
@@ -420,27 +427,22 @@ class AtlasRagConstructor:
             CONCEPT_INSTRUCTIONS[lang] = all_prompts[lang]
             logger.info("Injected '%s' concept prompts into atlas-rag", lang)
 
-    def _create_openai_client(self) -> Any:
-        """Construct an OpenAI client from KGConfig settings.
+    def _build_llm_client(self) -> Any:
+        """Build a unified ``LLMClient`` from KGConfig settings.
 
-        Mirrors the base_url resolution logic in ``LLMClient.__init__``.
+        Delegates provider/base_url resolution to the shared ``LLMClient``
+        so that API key handling and URL precedence stay consistent with
+        other pipelines (QA, CEP).
 
         Returns:
-            An ``openai.OpenAI`` client instance.
+            A configured ``LLMClient`` instance.
         """
-        from openai import OpenAI
-
-        base_url = self._config.base_url
-        api_key: str | None = None
-
-        if self._config.provider == "ollama":
-            base_url = base_url or self._config.ollama_url
-            api_key = "ollama"
-        elif self._config.provider == "custom":
-            if not base_url:
-                raise ValueError("base_url is required for the 'custom' provider")
-
-        return OpenAI(api_key=api_key, base_url=base_url)
+        return create_llm_client(
+            provider=self._config.provider,
+            model_id=self._config.model_id,
+            base_url=self._config.base_url
+            or (self._config.ollama_url if self._config.provider == "ollama" else None),
+        )
 
     def _build_processing_config(
         self,
@@ -535,9 +537,13 @@ class AtlasRagConstructor:
 
         from gtranscriber.schemas import KGMetadata
 
-        # Find the GraphML file produced by atlas-rag
+        # Find the newest GraphML file produced by atlas-rag
         atlas_output = output_dir / "atlas_output"
-        graphml_files = list(atlas_output.glob("**/*.graphml"))
+        graphml_files = sorted(
+            atlas_output.glob("**/*.graphml"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         if not graphml_files:
             raise FileNotFoundError(f"No GraphML file found in atlas-rag output: {atlas_output}")
 

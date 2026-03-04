@@ -18,13 +18,14 @@ class TestCreateKGConstructor:
 
     def test_atlas_backend_returns_constructor(self, mocker: MockerFixture) -> None:
         """Test factory returns an AtlasRagConstructor for atlas backend."""
-        # Mock AtlasRagConstructor so we don't need atlas-rag installed
         from unittest.mock import MagicMock
 
         mock_cls = MagicMock()
         mock_instance = MagicMock(spec=["build_graph"])
         mock_cls.return_value = mock_instance
 
+        # Ensure find_spec reports atlas_rag as available
+        mocker.patch("importlib.util.find_spec", return_value=MagicMock())
         mocker.patch(
             "gtranscriber.core.kg.atlas_backend.AtlasRagConstructor",
             mock_cls,
@@ -44,21 +45,8 @@ class TestCreateKGConstructor:
             create_kg_constructor(config)
 
     def test_missing_dependency_raises_import_error(self, mocker: MockerFixture) -> None:
-        """Test factory raises ImportError when atlas_backend import fails."""
-        mocker.patch(
-            "gtranscriber.core.kg.factory.AtlasRagConstructor",
-            side_effect=ImportError("No module named 'atlas_rag'"),
-            create=True,
-        )
-        # Simulate the import failing by patching the import itself
-        original = __import__
-
-        def fail_import(name: str, *args: object, **kwargs: object) -> object:
-            if "atlas_backend" in name:
-                raise ImportError("No module named 'atlas_rag'")
-            return original(name, *args, **kwargs)
-
-        mocker.patch("builtins.__import__", side_effect=fail_import)
+        """Test factory raises ImportError when atlas_rag is not installed."""
+        mocker.patch("importlib.util.find_spec", return_value=None)
 
         config = KGConfig(backend="atlas")
         with pytest.raises(ImportError, match="atlas-rag is required"):

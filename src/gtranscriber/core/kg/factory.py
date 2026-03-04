@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,13 +29,13 @@ def create_kg_constructor(kg_config: KGConfig) -> KGConstructor:
     backend = kg_config.backend
 
     if backend == "atlas":
-        try:
-            from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
-        except ImportError as e:
+        if importlib.util.find_spec("atlas_rag") is None:
             raise ImportError(
                 "atlas-rag is required for the 'atlas' backend. "
                 "Install it with: uv pip install atlas-rag"
-            ) from e
+            )
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
         return AtlasRagConstructor(kg_config)
 
     valid_backends = ["atlas"]

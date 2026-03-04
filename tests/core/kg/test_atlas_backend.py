@@ -706,49 +706,59 @@ class TestDetectResumeOffset:
             json.loads(line)  # Should not raise
 
 
-class TestCreateOpenAIClient:
-    """Tests for _create_openai_client."""
+class TestBuildLLMClient:
+    """Tests for _build_llm_client (delegates to unified LLMClient)."""
 
     def test_ollama_provider(self, _mock_atlas_rag: dict, mocker: MockerFixture) -> None:
-        """Test OpenAI client construction for Ollama provider."""
-        mock_openai_cls = mocker.patch("openai.OpenAI")
+        """Test LLM client construction for Ollama provider."""
+        mock_create = mocker.patch("gtranscriber.core.kg.atlas_backend.create_llm_client")
 
         from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(provider="ollama", ollama_url="http://localhost:11434/v1")
         constructor = AtlasRagConstructor(config)
-        constructor._create_openai_client()
+        constructor._build_llm_client()
 
-        mock_openai_cls.assert_called_once_with(
-            api_key="ollama",
+        mock_create.assert_called_once_with(
+            provider="ollama",
+            model_id=config.model_id,
             base_url="http://localhost:11434/v1",
         )
-
-    def test_custom_provider_requires_base_url(self, _mock_atlas_rag: dict) -> None:
-        """Test custom provider raises without base_url."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
-
-        config = KGConfig(provider="custom", base_url=None)
-        constructor = AtlasRagConstructor(config)
-
-        with pytest.raises(ValueError, match="base_url is required"):
-            constructor._create_openai_client()
 
     def test_custom_provider_with_base_url(
         self, _mock_atlas_rag: dict, mocker: MockerFixture
     ) -> None:
-        """Test custom provider uses provided base_url."""
-        mock_openai_cls = mocker.patch("openai.OpenAI")
+        """Test custom provider passes base_url to create_llm_client."""
+        mock_create = mocker.patch("gtranscriber.core.kg.atlas_backend.create_llm_client")
 
         from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(provider="custom", base_url="http://my-api:8000/v1")
         constructor = AtlasRagConstructor(config)
-        constructor._create_openai_client()
+        constructor._build_llm_client()
 
-        mock_openai_cls.assert_called_once_with(
-            api_key=None,
+        mock_create.assert_called_once_with(
+            provider="custom",
+            model_id=config.model_id,
             base_url="http://my-api:8000/v1",
+        )
+
+    def test_custom_provider_without_base_url(
+        self, _mock_atlas_rag: dict, mocker: MockerFixture
+    ) -> None:
+        """Test custom provider passes None base_url to create_llm_client."""
+        mock_create = mocker.patch("gtranscriber.core.kg.atlas_backend.create_llm_client")
+
+        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig(provider="custom", base_url=None)
+        constructor = AtlasRagConstructor(config)
+        constructor._build_llm_client()
+
+        mock_create.assert_called_once_with(
+            provider="custom",
+            model_id=config.model_id,
+            base_url=None,
         )
 
 
