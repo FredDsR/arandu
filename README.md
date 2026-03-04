@@ -1,4 +1,4 @@
-# Arandu
+# Arandu - The Knowledge Discovery Tooling
 
 [![.github/workflows/ci.yml](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml/badge.svg)](https://github.com/FredDsR/etno-kgc-preprocessing/actions/workflows/ci.yml)
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/tests-badge.json)
