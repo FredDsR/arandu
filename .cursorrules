@@ -1,4 +1,4 @@
-# G-Transcriber - Cursor Rules
+# Arandu - Cursor Rules
 
 **Read [AGENTS.md](AGENTS.md) for comprehensive development guidelines.**
 
@@ -7,12 +7,12 @@
 - **Python 3.13+** with uv package manager
 - **Mandatory**: Type annotations, Google docstrings, Ruff linting (100 char line limit)
 - **Git**: Conventional commits (`feat(scope): description`) and branches (`feature/description`)
-- **Never use `print()`**: Use Rich console utilities from `gtranscriber.utils.logger`
+- **Never use `print()`**: Use Rich console utilities from `arandu.utils.logger`
 - **Before commit**: `uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest`
 
 ## Key Patterns
 
-- **Config**: Pydantic Settings with `GTRANSCRIBER_` env prefix
+- **Config**: Pydantic Settings with `ARANDU_` env prefix
 - **Schemas**: Pydantic models with validators
 - **CLI**: Typer with Rich, load defaults from config
 - **LLM**: Use unified `LLMClient`, never provider SDKs directly
@@ -21,7 +21,7 @@
 
 ```bash
 uv sync                           # Install dependencies
-uv run gtranscriber --help        # Run CLI
+uv run arandu --help              # Run CLI
 uv run ruff check --fix src/      # Lint
 uv run ruff format src/           # Format
 uv run pytest                     # Test

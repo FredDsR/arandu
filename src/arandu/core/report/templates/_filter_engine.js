@@ -1,4 +1,4 @@
-/* G-Transcriber Report: Filter Engine + Chart Builders */
+/* Arandu Report: Filter Engine + Chart Builders */
 (function () {
   "use strict";
 
