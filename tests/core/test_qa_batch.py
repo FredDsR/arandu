@@ -38,7 +38,7 @@ def create_test_enriched_data(
     """Create a complete EnrichedRecord test data dictionary.
 
     Args:
-        file_id: Google Drive ID.
+        file_id: Unique file identifier.
         name: Filename.
         transcription_text: Transcription text.
 
