@@ -183,7 +183,9 @@ class TestKGConfig:
         assert config.model_id == "llama3.1:8b"
         assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
-        assert config.workers == 2
+        assert config.backend == "atlas"
+        assert config.backend_options == {}
+        assert config.language == "pt"
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test KG config loading from environment variables."""
@@ -194,6 +196,32 @@ class TestKGConfig:
 
         assert config.provider == "openai"
         assert config.model_id == "gpt-3.5-turbo"
+
+    def test_backend_field(self) -> None:
+        """Test backend field accepts valid values."""
+        config = KGConfig(backend="atlas")
+        assert config.backend == "atlas"
+
+    def test_invalid_backend_raises(self) -> None:
+        """Test invalid backend value raises ValidationError."""
+        with pytest.raises(ValidationError):
+            KGConfig(backend="nonexistent")
+
+    def test_backend_options_passthrough(self) -> None:
+        """Test backend_options dict is stored as-is."""
+        opts = {"chunk_size": 4096, "batch_size_triple": 5}
+        config = KGConfig(backend_options=opts)
+        assert config.backend_options == opts
+
+    def test_valid_language(self) -> None:
+        """Test valid language codes are accepted."""
+        assert KGConfig(language="pt").language == "pt"
+        assert KGConfig(language="en").language == "en"
+
+    def test_invalid_language_raises(self) -> None:
+        """Test invalid language code raises ValueError."""
+        with pytest.raises(ValidationError, match="Invalid KG language"):
+            KGConfig(language="fr")
 
 
 class TestEvaluationConfig:

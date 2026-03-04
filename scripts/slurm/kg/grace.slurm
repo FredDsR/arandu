@@ -18,7 +18,6 @@
 # =============================================================================
 
 # Partition-specific settings
-export GTRANSCRIBER_KG_WORKERS="${GTRANSCRIBER_KG_WORKERS:-8}"
 export GTRANSCRIBER_KG_MODEL_ID="${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}"
 export USE_GPU_OLLAMA=true
 

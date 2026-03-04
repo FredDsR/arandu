@@ -1,0 +1,12 @@
+{
+  "en": {
+    "event": "Given the event \"{name}\", generate 3 or more abstract concept phrases (1-2 words each) that represent the type or category of this event. Return ONLY a comma-separated list of phrases, nothing else.\n\nExample: \"The flood destroyed houses\" -> natural disaster, property damage, climate event",
+    "entity": "Given the entity \"{name}\" with the following context of related entities: [{context}], generate 3 or more abstract concept phrases (1-2 words each) that represent the type or category of this entity. Return ONLY a comma-separated list of phrases, nothing else.\n\nExample: \"Amazon River\" with context [\"Brazil\", \"rainforest\"] -> water body, geographic feature, natural resource",
+    "relation": "Given the relation \"{name}\", generate 3 or more abstract concept phrases (1-2 words each) that represent the type or category of this relation. Return ONLY a comma-separated list of phrases, nothing else.\n\nExample: \"flows through\" -> spatial relation, geographic connection, physical movement"
+  },
+  "pt": {
+    "event": "Dado o evento \"{name}\", gere 3 ou mais frases conceituais abstratas (1-2 palavras cada) que representem o tipo ou categoria deste evento. Retorne APENAS uma lista separada por vírgulas, nada mais.\n\nExemplo: \"A enchente destruiu casas\" -> desastre natural, dano material, evento climático",
+    "entity": "Dada a entidade \"{name}\" com o seguinte contexto de entidades relacionadas: [{context}], gere 3 ou mais frases conceituais abstratas (1-2 palavras cada) que representem o tipo ou categoria desta entidade. Retorne APENAS uma lista separada por vírgulas, nada mais.\n\nExemplo: \"Rio Amazonas\" com contexto [\"Brasil\", \"floresta tropical\"] -> corpo d'água, feição geográfica, recurso natural",
+    "relation": "Dada a relação \"{name}\", gere 3 ou mais frases conceituais abstratas (1-2 palavras cada) que representem o tipo ou categoria desta relação. Retorne APENAS uma lista separada por vírgulas, nada mais.\n\nExemplo: \"flui através de\" -> relação espacial, conexão geográfica, movimento físico"
+  }
+}

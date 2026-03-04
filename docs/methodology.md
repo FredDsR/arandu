@@ -253,7 +253,7 @@ AutoSchemaKG addresses these challenges through **dynamic schema induction**: ra
 
 ### 5.3 Conceptualization
 
-The core innovation of AutoSchemaKG is the **conceptualization** process, which transforms raw extracted triples into a canonicalized, typed knowledge graph without requiring a predefined ontology.
+The core innovation of AutoSchemaKG is the **conceptualization** process, which transforms raw extracted triples into a typed knowledge graph without requiring a predefined ontology.
 
 #### Formal Definition
 
@@ -261,11 +261,11 @@ A conceptualized knowledge graph is defined as:
 
 $$G = (V, E, C, \varphi, \psi)$$
 
-where $V$ is the set of entity nodes, $E$ is the set of relation edges, $C$ is the **concept set** (the induced schema), $\varphi: V \rightarrow C$ maps each entity node to its concept type, and $\psi: E \rightarrow C$ maps each relation edge to its concept type. The key distinction from fixed-ontology approaches is that $C$ is not specified *a priori* -- it emerges from the extraction and canonicalization process described below.
+where $V$ is the set of entity nodes, $E$ is the set of relation edges, $C$ is the **concept set** (the induced schema), $\varphi: V \rightarrow C$ maps each entity node to its concept type, and $\psi: E \rightarrow C$ maps each relation edge to its concept type. The key distinction from fixed-ontology approaches is that $C$ is not specified *a priori* -- it emerges from the extraction and conceptualization process described below.
 
-#### Extract-Define-Canonicalize Pipeline
+#### Extract-and-Conceptualize Pipeline
 
-AutoSchemaKG constructs the conceptualized graph through three sequential stages:
+AutoSchemaKG constructs the conceptualized graph through two sequential stages:
 
 ```mermaid
 flowchart LR
@@ -280,28 +280,27 @@ flowchart LR
         E1 --- E1D
     end
 
-    subgraph S2["Stage 2 — Schema Definition"]
+    subgraph S2["Stage 2 — Conceptualization"]
         direction TB
         E2["LLM generates ≥ 3<br/>conceptual phrases per element"]:::stage
         E2D["Varying abstraction levels<br/>+ graph-neighbor context"]:::detail
         E2 --- E2D
     end
 
-    subgraph S3["Stage 3 — Self-Canonicalization"]
-        direction TB
-        E3["Embedding similarity<br/>+ LLM verification"]:::stage
-        E3D["Cosine similarity merges<br/>equivalent concepts"]:::detail
-        E3 --- E3D
-    end
-
-    S1 --> S2 --> S3
+    S1 --> S2
 ```
 
 **Stage 1 -- Open Extraction.** The LLM receives a passage of transcription text and extracts `(subject, predicate, object)` triples with no schema constraints. This **open extraction** strategy ensures that domain-specific entities (e.g., *"enchente de 2024"*, *"pesca de tarrafa"*) and culturally situated relations (e.g., *"aprendeu com"*, *"se protege usando"*) are captured exactly as the interviewee expressed them, rather than being forced into anglophone or generic categories. The absence of schema constraints is what operationalizes the Open World Assumption at the extraction level.
 
-**Stage 2 -- Schema Definition.** For each extracted entity and relation, the LLM generates a minimum of three **conceptual phrases** at varying levels of abstraction. For example, the entity *"enchente de maio de 2024"* might receive the concepts `["specific flood event", "natural disaster", "climate event"]`. To improve conceptualization quality, AutoSchemaKG employs **context-enhanced entity conceptualization**: when defining concepts for a node, the prompt includes the node's graph neighbors (adjacent entities and their relations), providing structural context that disambiguates polysemous terms and produces more precise type assignments.
+**Stage 2 -- Conceptualization.** For each extracted entity and relation, the LLM generates a minimum of three **conceptual phrases** at varying levels of abstraction. For example, the entity *"enchente de maio de 2024"* might receive the concepts `["specific flood event", "natural disaster", "climate event"]`. To improve conceptualization quality, AutoSchemaKG employs **context-enhanced entity conceptualization**: when defining concepts for a node, the prompt includes the node's graph neighbors (adjacent entities and their relations), providing structural context that disambiguates polysemous terms and produces more precise type assignments. Each conceptual phrase is hashed (SHA-256) to produce a deterministic concept node ID; entities and relations that independently generate the same concept string are linked to the same concept node via `has_concept` edges. This **exact-match deduplication** provides a basic form of schema consolidation -- if two entities share a concept label verbatim, they are implicitly grouped under the same type -- but it does not merge semantically equivalent concepts expressed with different surface forms (e.g., *"natural disaster"* and *"environmental catastrophe"* remain separate concept nodes).
 
-**Stage 3 -- Self-Canonicalization.** The conceptual phrases from Stage 2 are embedded into a vector space, and **cosine similarity** is used to identify candidate merges -- concept pairs whose embeddings exceed a similarity threshold. Each candidate merge is then verified by an **LLM judge** that determines whether the two concepts are genuinely synonymous or merely related. This two-step process (embedding retrieval + LLM verification) balances efficiency (embeddings are fast to compute) with precision (the LLM catches false positives that surface-level similarity would miss). The result is a canonicalized concept set $C$ where semantically equivalent types have been unified, producing a coherent schema without manual curation.
+#### Limitation: No Semantic Concept Canonicalization
+
+A notable limitation of the current AutoSchemaKG pipeline is the absence of a **semantic canonicalization step**. The conceptualization stage produces multiple concept phrases per element at varying abstraction levels, but equivalent concepts expressed with different wording are never unified. The concept set $C$ may therefore contain redundant entries that represent the same semantic type under different surface forms, inflating the schema and reducing the effectiveness of concept-based graph traversal.
+
+This limitation is particularly relevant for ethnographic knowledge graphs built from interviews conducted in Portuguese, where morphological variation, regional vocabulary differences, and code-switching between formal and colloquial registers can produce diverse surface forms for the same underlying concept. For instance, concept phrases like *"evento de enchente"*, *"inundação"*, and *"cheia"* may all refer to the same flood concept but would occupy separate nodes in the current schema.
+
+A potential improvement would introduce a **self-canonicalization step** after conceptualization: (1) embed all concept phrases into a shared vector space using a multilingual sentence-transformer (e.g., `paraphrase-multilingual-MiniLM-L12-v2`), (2) identify candidate merges via cosine similarity above a threshold $\tau_c$, and (3) verify each candidate with an LLM judge to distinguish genuine synonyms from merely related concepts. This two-step approach (embedding retrieval + LLM verification) would balance efficiency with precision, producing a canonicalized concept set where semantically equivalent types are unified. We leave this extension as future work, noting that its impact on downstream evaluation metrics (particularly schema profile diversity $D_e$ and Knowledge Coverage) would itself constitute a valuable empirical contribution.
 
 ### 5.4 Extraction Pipeline
 

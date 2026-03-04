@@ -1,16 +1,5 @@
 # Knowledge Graph Construction Guide
 
-> **⚠️ STATUS: PLANNED - NOT YET IMPLEMENTED**
->
-> Knowledge graph construction using AutoSchemaKG is planned for a future release. The configuration schemas (`KGConfig`, `KGMetadata`) exist in `src/gtranscriber/config.py` and `src/gtranscriber/schemas.py`, but there are currently:
-> - **No CLI commands** for KG construction (no `build-kg` command)
-> - **No pipeline modules** implementing the KG construction logic
-> - **No dependencies** added yet (`atlas-rag`, `networkx` are not in `pyproject.toml`)
->
-> This documentation describes the **planned functionality** and serves as a specification for future implementation.
-
----
-
 Build knowledge graphs from transcription results using AutoSchemaKG for entity and relation extraction.
 
 ## Overview
@@ -20,7 +9,7 @@ The KG construction pipeline extracts entities and relations from transcribed te
 - **Entity Extraction**: People, locations, organizations, events, dates, concepts
 - **Relation Extraction**: Semantic relationships between entities
 - **Dynamic Schema**: AutoSchemaKG infers schema from data
-- **Graph Merging**: Combine individual document graphs into corpus-level graph
+- **Metadata Enrichment**: Automatic injection of source metadata into extraction context
 - **GraphML Export**: NetworkX-compatible format for analysis
 
 ## Prerequisites
@@ -51,40 +40,37 @@ sbatch scripts/slurm/run_kg_construction.slurm
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `GTRANSCRIBER_KG_BACKEND` | `atlas` | KGC backend: `atlas` (AutoSchemaKG) |
 | `GTRANSCRIBER_KG_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
 | `GTRANSCRIBER_KG_MODEL_ID` | `llama3.1:8b` | Model for extraction |
-| `GTRANSCRIBER_KG_OLLAMA_URL` | `http://ollama:11434` | Ollama API URL |
-| `GTRANSCRIBER_KG_MERGE_GRAPHS` | `true` | Merge into corpus graph |
-| `GTRANSCRIBER_KG_OUTPUT_FORMAT` | `graphml` | Export format: `graphml`, `json` |
-| `GTRANSCRIBER_KG_LANGUAGE` | `pt` | Language code (ISO 639-1) |
-| `GTRANSCRIBER_KG_TEMPERATURE` | `0.5` | LLM temperature (lower = more consistent) |
-| `GTRANSCRIBER_WORKERS` | `2` | Parallel workers |
+| `GTRANSCRIBER_KG_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
+| `GTRANSCRIBER_KG_BASE_URL` | *(none)* | Custom OpenAI-compatible endpoint |
+| `GTRANSCRIBER_KG_LANGUAGE` | `pt` | Language code (ISO 639-1): `pt`, `en` |
+| `GTRANSCRIBER_KG_TEMPERATURE` | `0.5` | LLM temperature (0.0-2.0, lower = more consistent) |
+| `GTRANSCRIBER_KG_OUTPUT_DIR` | `knowledge_graphs` | Output directory for graph artifacts |
 
 ### Language Support
 
 The pipeline supports multilingual extraction via language-specific prompts:
 
-| Code | Language | Prompt File |
-|------|----------|-------------|
-| `pt` | Portuguese | `prompts/pt_prompts.json` |
-| `en` | English | `prompts/en_prompts.json` |
-| `es` | Spanish | `prompts/es_prompts.json` |
+| Code | Language | Prompts Directory |
+|------|----------|-------------------|
+| `pt` | Portuguese | `prompts/kg/atlas/` (language-keyed JSON) |
+| `en` | English | `prompts/kg/atlas/` (language-keyed JSON) |
 
 ### Example .env Configuration
 
 ```bash
 # KG Construction Settings
+GTRANSCRIBER_KG_BACKEND=atlas
 GTRANSCRIBER_KG_PROVIDER=ollama
 GTRANSCRIBER_KG_MODEL_ID=llama3.1:8b
-GTRANSCRIBER_KG_MERGE_GRAPHS=true
-GTRANSCRIBER_KG_OUTPUT_FORMAT=graphml
 GTRANSCRIBER_KG_LANGUAGE=pt
 GTRANSCRIBER_KG_TEMPERATURE=0.5
-GTRANSCRIBER_WORKERS=4
 
 # Directories
 GTRANSCRIBER_RESULTS_DIR=./results
-GTRANSCRIBER_KG_DIR=./knowledge_graphs
+GTRANSCRIBER_KG_OUTPUT_DIR=./knowledge_graphs
 ```
 
 ## Usage Examples
@@ -110,13 +96,6 @@ GTRANSCRIBER_KG_MODEL_ID=llama3.1:70b docker compose --profile kg up
 GTRANSCRIBER_KG_LANGUAGE=en docker compose --profile kg up
 ```
 
-### Skip Graph Merging
-
-```bash
-# Keep individual document graphs only
-GTRANSCRIBER_KG_MERGE_GRAPHS=false docker compose --profile kg up
-```
-
 ### Using OpenAI
 
 ```bash
@@ -130,24 +109,24 @@ docker compose --profile kg up
 ### SLURM with Custom Settings
 
 ```bash
-# Submit with custom model and workers
-KG_MODEL=llama3.1:70b WORKERS=8 KG_LANGUAGE=pt \
-  sbatch scripts/slurm/run_kg_construction.slurm
+# Submit to specific partition
+GTRANSCRIBER_KG_MODEL_ID=qwen3:14b PIPELINE_ID=test-cep-01 \
+  sbatch scripts/slurm/kg/tupi.slurm
 ```
 
 ## Output Format
 
-Knowledge graphs are saved in `knowledge_graphs/`:
+Knowledge graphs are saved in the output directory:
 
 ```
-knowledge_graphs/
-├── corpus_graph.graphml           # Merged corpus graph
-├── corpus_graph_metadata.json     # Provenance metadata
-├── individual/                    # Per-document graphs (optional)
-│   ├── <gdrive_id_1>.graphml
-│   └── <gdrive_id_2>.graphml
-└── checkpoints/
-    └── kg_checkpoint.json         # For resumption
+<output_dir>/
+├── atlas_input/
+│   └── transcriptions.json        # Input prepared for atlas-rag
+├── atlas_output/
+│   ├── kg_extraction/             # Raw extraction results
+│   ├── triples_csv/               # Extracted triples as CSV
+│   └── <model>_<timestamp>.graphml  # Final knowledge graph
+└── <model>_<timestamp>.metadata.json  # Provenance sidecar
 ```
 
 ### GraphML Structure
@@ -168,13 +147,16 @@ The GraphML files are NetworkX-compatible and contain:
 
 ```json
 {
-  "graph_id": "corpus_merged_2026_01_26",
+  "graph_id": "test-cep-01",
   "source_documents": ["1abc123xyz", "2def456uvw"],
-  "model_id": "llama3.1:8b",
+  "model_id": "qwen3:14b",
   "provider": "ollama",
   "language": "pt",
-  "prompt_path": "prompts/pt_prompts.json",
-  "created_at": "2026-01-26T15:45:00Z"
+  "created_at": "2026-02-26T15:45:00Z",
+  "total_documents": 2,
+  "total_nodes": 342,
+  "total_edges": 187,
+  "backend_version": "atlas-rag==0.0.5"
 }
 ```
 
@@ -284,6 +266,103 @@ docker compose --profile kg logs ollama
 tail -f logs/gtranscriber-kg_<jobid>.out
 ```
 
+## Atlas Backend Metadata Injection
+
+When transcription records have source metadata (participant name, location, date, event context), the atlas backend automatically prepends a translated metadata header to **every chunk** sent to the LLM for triple extraction. This provides provenance context that improves entity and relation quality.
+
+### How It Works
+
+1. During input preparation, each document's `SourceMetadata` fields are formatted into a header using translated labels from `prompts/kg/atlas/metadata_labels.json`
+2. The header is stored in the document's metadata dict as `_metadata_header`
+3. A custom `DatasetProcessor` subclass intercepts atlas-rag's chunking step
+4. After text is split into chunks, the header is prepended to **each chunk's text**
+5. The LLM sees the full provenance context in every extraction prompt
+
+### Example Chunk (Portuguese)
+
+```
+[Contexto da Entrevista]
+Participante: João da Silva
+Local: Barra de Pelotas
+Data: 2024-03-15
+Contexto: Audiência Câmara de Vereadores
+
+[Transcrição]
+...então a água subiu muito rápido, em menos de duas horas já estava...
+```
+
+### Example Chunk (English)
+
+```
+[Interview Context]
+Participant: João da Silva
+Location: Barra de Pelotas
+Date: 2024-03-15
+Event Context: Audiência Câmara de Vereadores
+
+[Transcription]
+...so the water rose very fast, in less than two hours it was already...
+```
+
+### Adding a New Language
+
+Add a new key to `prompts/kg/atlas/metadata_labels.json`:
+
+```json
+{
+  "es": {
+    "header": "[Contexto de la Entrevista]",
+    "transcription": "[Transcripción]",
+    "participant": "Participante",
+    "location": "Ubicación",
+    "date": "Fecha",
+    "context": "Contexto del Evento",
+    "researcher": "Investigador(a)",
+    "sequence": "Secuencia"
+  }
+}
+```
+
+Then add `"es"` to `KGConfig.validate_language` in `src/gtranscriber/config.py`.
+
+### Disabling Metadata Injection
+
+If source metadata is not available on the transcription records (i.e., `source_metadata` is `None`), the header is simply omitted and chunks are passed through unmodified. No configuration flag is needed.
+
+## Batch-Level Resume
+
+When a SLURM job times out or is interrupted during triple extraction, the atlas backend automatically resumes from the last completed batch on the next run. No manual intervention is needed.
+
+### How It Works
+
+1. Atlas-rag writes extraction results as JSONL lines to `atlas_output/kg_extraction/`
+2. On the next run, the backend counts existing JSONL lines and divides by `batch_size_triple` to determine completed batches
+3. Any partial last batch (incomplete lines from a mid-batch interruption) is trimmed to avoid duplicates
+4. `ProcessingConfig.resume_from` is set to skip already-processed batches
+5. Atlas-rag creates a new timestamped output file for the remaining batches
+6. Downstream steps (`json2csv`, concept generation, GraphML export) read all files in the directory and merge results automatically
+
+### Requirements
+
+- The `atlas_output/` directory from the previous run must be preserved (same `output_dir`)
+- The input data must be identical (same records produce the same chunks and batch boundaries)
+- `batch_size_triple` must be the same between runs
+
+### Example
+
+```bash
+# First run — times out after processing 9 chunks (3 batches of 3)
+PIPELINE_ID=test-cep-01 sbatch scripts/slurm/kg/tupi.slurm
+
+# Resubmit — automatically detects 3 completed batches, resumes from batch 4
+PIPELINE_ID=test-cep-01 sbatch scripts/slurm/kg/tupi.slurm
+```
+
+The logs will show:
+```
+Resuming from batch 3 (9 chunks already processed)
+```
+
 ## Best Practices
 
 1. **Model Selection**
@@ -295,13 +374,10 @@ tail -f logs/gtranscriber-kg_<jobid>.out
    - Match `KG_LANGUAGE` to your transcription language
    - Use appropriate prompt templates
 
-3. **Graph Merging**
-   - Enable for corpus-level analysis
-   - Disable if you need per-document graphs only
-
-4. **Workers**
-   - Match to available CPU cores / 2
-   - KG construction is more memory-intensive than QA
+3. **Backend Options**
+   - Adjust `chunk_size` for memory constraints
+   - Tune `batch_size_triple` for API rate limits
+   - Set `max_workers` to control parallelism
 
 ## Troubleshooting
 
@@ -324,11 +400,11 @@ cat results/<gdrive_id>.json | jq '.transcription_text | length'
 ### Memory Issues
 
 ```bash
-# Reduce workers
-export GTRANSCRIBER_WORKERS=1
-
 # Use smaller model
 export GTRANSCRIBER_KG_MODEL_ID=llama3.2:3b
+
+# Reduce chunk size via backend options
+export GTRANSCRIBER_KG_BACKEND_OPTIONS='{"chunk_size": 4096}'
 ```
 
 ### Ollama Timeout
