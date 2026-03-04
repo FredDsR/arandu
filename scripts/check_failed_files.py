@@ -33,12 +33,12 @@ def load_checkpoint() -> dict[str, Any]:
 
 
 def load_catalog() -> dict[str, dict[str, Any]]:
-    """Load the catalog CSV and index by gdrive_id."""
+    """Load the catalog CSV and index by file_id."""
     catalog = {}
     with open(CATALOG_PATH, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            catalog[row["gdrive_id"]] = row
+            catalog[row["file_id"]] = row
     return catalog
 
 

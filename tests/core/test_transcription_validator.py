@@ -354,7 +354,7 @@ class TestValidateEnrichedRecord:
     def test_good_transcription_marked_valid(self) -> None:
         """Test that a good transcription is marked as valid."""
         record = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["parent_id"],
@@ -380,7 +380,7 @@ class TestValidateEnrichedRecord:
     def test_bad_transcription_marked_invalid(self) -> None:
         """Test that a bad transcription (Japanese when expecting Portuguese) is invalid."""
         record = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["parent_id"],
@@ -404,7 +404,7 @@ class TestValidateEnrichedRecord:
     def test_repeated_word_transcription_marked_invalid(self) -> None:
         """Test that repetitive transcription is marked invalid."""
         record = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["parent_id"],

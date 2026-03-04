@@ -31,7 +31,7 @@ class TestInputRecord:
     def test_valid_initialization(self) -> None:
         """Test initialization with valid data."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder456"],
@@ -39,7 +39,7 @@ class TestInputRecord:
             size_bytes=1024,
         )
 
-        assert record.gdrive_id == "file123"
+        assert record.file_id == "file123"
         assert record.name == "test.mp3"
         assert record.mimeType == "audio/mpeg"
         assert record.parents == ["folder456"]
@@ -48,7 +48,7 @@ class TestInputRecord:
     def test_parse_parents_from_string(self) -> None:
         """Test parsing parents field from JSON string."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents='["folder1", "folder2"]',
@@ -60,7 +60,7 @@ class TestInputRecord:
     def test_parse_parents_from_single_quoted_string(self) -> None:
         """Test parsing parents field from single-quoted JSON string."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents="['folder1', 'folder2']",
@@ -72,7 +72,7 @@ class TestInputRecord:
     def test_parse_parents_invalid_json(self) -> None:
         """Test parsing parents with invalid JSON returns empty list."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents="invalid_json",
@@ -84,7 +84,7 @@ class TestInputRecord:
     def test_parse_size_bytes_from_string(self) -> None:
         """Test parsing size_bytes from string."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder"],
@@ -97,7 +97,7 @@ class TestInputRecord:
     def test_parse_size_bytes_invalid_string(self) -> None:
         """Test parsing size_bytes with invalid string returns None."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder"],
@@ -110,7 +110,7 @@ class TestInputRecord:
     def test_size_bytes_none(self) -> None:
         """Test size_bytes can be None."""
         record = InputRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder"],
@@ -123,7 +123,7 @@ class TestInputRecord:
     def test_web_content_link_alias(self) -> None:
         """Test webContentLink field alias."""
         data = {
-            "gdrive_id": "file123",
+            "file_id": "file123",
             "name": "test.mp3",
             "mimeType": "audio/mpeg",
             "parents": ["folder"],

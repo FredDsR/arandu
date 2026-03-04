@@ -140,7 +140,7 @@ def run_batch_kg_construction(
     logger.info("Loaded %d transcription records for KG construction", len(records))
 
     # Filter out already-processed records
-    remaining = [r for r in records if not checkpoint.is_completed(r.gdrive_id)]
+    remaining = [r for r in records if not checkpoint.is_completed(r.file_id)]
     checkpoint.set_total_files(len(records))
 
     logger.info("Already completed: %d", len(records) - len(remaining))
@@ -176,7 +176,7 @@ def run_batch_kg_construction(
         logger.exception("KG construction failed")
 
         for record in remaining:
-            checkpoint.mark_failed(record.gdrive_id, error_message)
+            checkpoint.mark_failed(record.file_id, error_message)
 
         raise
 

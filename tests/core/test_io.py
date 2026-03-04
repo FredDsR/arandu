@@ -114,7 +114,7 @@ class TestSaveEnrichedRecord:
     def test_save_enriched_record(self, tmp_path: Path) -> None:
         """Test saving an enriched record."""
         record = EnrichedRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder1"],
@@ -142,7 +142,7 @@ class TestSaveEnrichedRecord:
     def test_save_enriched_record_creates_parent_dir(self, tmp_path: Path) -> None:
         """Test that save_enriched_record creates parent directories."""
         record = EnrichedRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder1"],
@@ -165,7 +165,7 @@ class TestSaveEnrichedRecord:
     def test_save_enriched_record_with_str_path(self, tmp_path: Path) -> None:
         """Test saving enriched record with string path."""
         record = EnrichedRecord(
-            gdrive_id="file123",
+            file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder1"],

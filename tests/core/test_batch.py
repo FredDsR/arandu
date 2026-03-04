@@ -437,7 +437,7 @@ class TestLoadCatalog:
         """Test loading a valid catalog CSV file."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
-            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            "file_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
             "file1,test.mp3,audio/mpeg,1024,\"['folder1']\",http://example.com/file1,60000\n"
             "file2,test.mp4,video/mp4,2048,\"['folder2']\",http://example.com/file2,120000\n"
         )
@@ -456,7 +456,7 @@ class TestLoadCatalog:
         """Test that load_catalog filters out non-audio/video files."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
-            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            "file_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
             'file1,test.mp3,audio/mpeg,1024,"[]",http://example.com/file1,60000\n'
             'file2,test.pdf,application/pdf,2048,"[]",http://example.com/file2,\n'
             'file3,test.txt,text/plain,512,"[]",http://example.com/file3,\n'
@@ -471,7 +471,7 @@ class TestLoadCatalog:
         """Test that load_catalog raises error for missing required columns."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
-            "gdrive_id,name\n"  # Missing mime_type
+            "file_id,name\n"  # Missing mime_type
             "file1,test.mp3\n"
         )
 
@@ -487,10 +487,10 @@ class TestLoadCatalog:
             load_catalog(catalog_file)
 
     def test_load_catalog_skips_rows_with_missing_id_or_name(self, tmp_path: Path) -> None:
-        """Test that rows with missing gdrive_id or name are skipped."""
+        """Test that rows with missing file_id or name are skipped."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
-            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            "file_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
             'file1,test.mp3,audio/mpeg,1024,"[]",http://example.com/file1,60000\n'
             ',missing_id.mp3,audio/mpeg,1024,"[]",http://example.com/file2,60000\n'  # Missing ID
             'file3,,audio/mpeg,1024,"[]",http://example.com/file3,60000\n'  # Missing name
@@ -505,7 +505,7 @@ class TestLoadCatalog:
         """Test that invalid size_bytes values are handled gracefully."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
-            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            "file_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
             'file1,test.mp3,audio/mpeg,invalid,"[]",http://example.com/file1,60000\n'
             'file2,test2.mp3,audio/mpeg,,"[]",http://example.com/file2,60000\n'
         )
@@ -520,7 +520,7 @@ class TestLoadCatalog:
         """Test that invalid duration_milliseconds values are handled gracefully."""
         catalog_file = tmp_path / "catalog.csv"
         catalog_file.write_text(
-            "gdrive_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
+            "file_id,name,mime_type,size_bytes,parents,web_content_link,duration_milliseconds\n"
             'file1,test.mp3,audio/mpeg,1024,"[]",http://example.com/file1,invalid\n'
             'file2,test2.mp3,audio/mpeg,1024,"[]",http://example.com/file2,\n'
         )

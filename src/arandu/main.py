@@ -259,7 +259,7 @@ def transcribe(
 
         # Create a minimal input record for local files
         enriched = EnrichedRecord(
-            gdrive_id="local",
+            file_id="local",
             name=file_path.name,
             mimeType=get_mime_type(file_path),
             parents=[],
@@ -380,7 +380,7 @@ def drive_transcribe(
 
         # Validate input
         input_record = InputRecord(
-            gdrive_id=metadata["id"],
+            file_id=metadata["id"],
             name=metadata["name"],
             mimeType=metadata["mimeType"],
             parents=metadata.get("parents", []),
@@ -427,7 +427,7 @@ def drive_transcribe(
             segments = _create_segments_from_result(result)
 
             enriched = EnrichedRecord(
-                gdrive_id=input_record.gdrive_id,
+                file_id=input_record.file_id,
                 name=input_record.name,
                 mimeType=input_record.mimeType,
                 parents=input_record.parents,
@@ -597,7 +597,7 @@ def batch_transcribe(
     processing support and automatic checkpoint/resume capability. Each worker
     loads its own model instance for true parallel processing.
 
-    The catalog CSV must contain columns: gdrive_id, name, mime_type, size_bytes,
+    The catalog CSV must contain columns: file_id, name, mime_type, size_bytes,
     parents, web_content_link, and optionally duration_milliseconds.
 
     Transcription results are saved as JSON files in the output directory with
@@ -1840,7 +1840,7 @@ def enrich_metadata(
 ) -> None:
     """Enrich existing transcription JSONs with source metadata.
 
-    Reads the catalog CSV, matches rows to transcription files by gdrive_id,
+    Reads the catalog CSV, matches rows to transcription files by file_id,
     and extracts structured metadata (participant, location, date, etc.)
     from filenames and folder paths.
 
@@ -1869,14 +1869,14 @@ def enrich_metadata(
 
     print_info(f"Found {len(transcription_files)} transcription file(s)")
 
-    # Build gdrive_id -> row lookup from catalog
+    # Build file_id -> row lookup from catalog
     catalog_lookup: dict[str, dict[str, str]] = {}
     with open(catalog, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            gdrive_id = row.get("gdrive_id", "")
-            if gdrive_id:
-                catalog_lookup[gdrive_id] = dict(row)
+            file_id = row.get("file_id") or row.get("gdrive_id", "")
+            if file_id:
+                catalog_lookup[file_id] = dict(row)
 
     print_info(f"Loaded {len(catalog_lookup)} catalog entries")
 
@@ -1892,9 +1892,9 @@ def enrich_metadata(
             skipped_count += 1
             continue
 
-        catalog_row = catalog_lookup.get(record.gdrive_id)
+        catalog_row = catalog_lookup.get(record.file_id)
         if catalog_row is None:
-            print_warning(f"No catalog entry for {record.gdrive_id} ({record.name})")
+            print_warning(f"No catalog entry for {record.file_id} ({record.name})")
             skipped_count += 1
             continue
 

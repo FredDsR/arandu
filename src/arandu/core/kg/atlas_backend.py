@@ -258,7 +258,7 @@ class AtlasRagConstructor:
                 metadata["_metadata_header"] = header
             documents.append(
                 {
-                    "id": record.gdrive_id,
+                    "id": record.file_id,
                     "text": record.transcription_text,
                     "metadata": metadata,
                 }
@@ -555,7 +555,7 @@ class AtlasRagConstructor:
         logger.info("Graph loaded: %d nodes, %d edges from %s", node_count, edge_count, graph_file)
 
         # Build provenance metadata
-        source_ids = [r.gdrive_id for r in records]
+        source_ids = [r.file_id for r in records]
 
         try:
             import atlas_rag

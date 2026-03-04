@@ -46,14 +46,14 @@ def enrich_with_source_metadata(
 
     if metadata.extraction_confidence >= 0.5:
         logger.info(
-            f"Extracted metadata for {record.gdrive_id}: "
+            f"Extracted metadata for {record.file_id}: "
             f"participant={metadata.participant_name}, "
             f"location={metadata.location}, "
             f"confidence={metadata.extraction_confidence}"
         )
     else:
         logger.debug(
-            f"Low-confidence metadata for {record.gdrive_id}: "
+            f"Low-confidence metadata for {record.file_id}: "
             f"confidence={metadata.extraction_confidence}"
         )
 

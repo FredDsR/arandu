@@ -14,7 +14,7 @@ from arandu.schemas import EnrichedRecord, SourceMetadata
 def sample_record() -> EnrichedRecord:
     """Create a minimal EnrichedRecord for testing."""
     return EnrichedRecord(
-        gdrive_id="test_id_123",
+        file_id="test_id_123",
         name="Glenio_D.Elaine_30-07-2025_BARRA_20.mp4",
         mimeType="video/mp4",
         parents=["parent1"],
@@ -58,12 +58,12 @@ class TestEnrichWithSourceMetadata:
     def test_preserves_existing_fields(self, sample_record: EnrichedRecord) -> None:
         """Enrichment should not modify other record fields."""
         original_text = sample_record.transcription_text
-        original_id = sample_record.gdrive_id
+        original_id = sample_record.file_id
 
         enrich_with_source_metadata(sample_record, {"name": "test.mp3"})
 
         assert sample_record.transcription_text == original_text
-        assert sample_record.gdrive_id == original_id
+        assert sample_record.file_id == original_id
 
     def test_with_custom_extractor(self, sample_record: EnrichedRecord) -> None:
         """Should work with a custom extractor implementation."""

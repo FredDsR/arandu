@@ -84,7 +84,7 @@ def cep_config() -> CEPConfig:
 def sample_transcription() -> EnrichedRecord:
     """Create a sample transcription for testing."""
     return EnrichedRecord(
-        gdrive_id="test123",
+        file_id="test123",
         name="test.mp3",
         mimeType="audio/mpeg",
         parents=["folder"],
@@ -156,7 +156,7 @@ class TestCEPQAGenerator:
         result = generator.generate_qa_pairs(sample_transcription)
 
         assert isinstance(result, QARecordCEP)
-        assert result.source_gdrive_id == "test123"
+        assert result.source_file_id == "test123"
         assert result.source_filename == "test.mp3"
         assert result.model_id == qa_config.model_id
         assert result.provider == qa_config.provider
@@ -234,7 +234,7 @@ class TestCEPQAGenerator:
     ) -> None:
         """Test handling of empty transcription text."""
         empty_transcription = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder"],
@@ -268,7 +268,7 @@ class TestCEPQAGenerator:
     ) -> None:
         """Test handling of very short transcription."""
         short_transcription = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder"],
@@ -527,7 +527,7 @@ class TestQARecordCEP:
         ]
 
         record = QARecordCEP(
-            source_gdrive_id="test123",
+            source_file_id="test123",
             source_filename="test.mp3",
             transcription_text="Test text.",
             qa_pairs=pairs,
@@ -556,7 +556,7 @@ class TestQARecordCEP:
         ]
 
         record = QARecordCEP(
-            source_gdrive_id="test123",
+            source_file_id="test123",
             source_filename="test.mp3",
             transcription_text="Test text.",
             qa_pairs=pairs,
@@ -586,7 +586,7 @@ class TestQARecordCEP:
         ]
 
         record = QARecordCEP(
-            source_gdrive_id="test123",
+            source_file_id="test123",
             source_filename="test.mp3",
             transcription_text="Test text.",
             qa_pairs=pairs,

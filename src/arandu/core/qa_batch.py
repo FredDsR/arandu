@@ -28,7 +28,7 @@ class QAGenerationTask(BaseModel):
     """Task information for QA generation."""
 
     transcription_file: Path
-    gdrive_id: str
+    file_id: str
     filename: str
     output_file: Path
 
@@ -131,15 +131,15 @@ def load_transcription_tasks(
                 logger.info(f"Skipping invalid transcription: {json_file.name}")
                 continue
 
-            gdrive_id = data.get("gdrive_id", "unknown")
+            file_id = data.get("file_id") or data.get("gdrive_id", "unknown")
             filename = data.get("name", json_file.name)
 
-            output_file = output_dir / f"{gdrive_id}{output_suffix}"
+            output_file = output_dir / f"{file_id}{output_suffix}"
 
             tasks.append(
                 QAGenerationTask(
                     transcription_file=json_file,
-                    gdrive_id=gdrive_id,
+                    file_id=file_id,
                     filename=filename,
                     output_file=output_file,
                 )
@@ -240,12 +240,12 @@ def generate_cep_qa_for_transcription(
         cep_config_dict: CEPConfig as dictionary.
 
     Returns:
-        Tuple of (gdrive_id, success, message).
+        Tuple of (file_id, success, message).
     """
     global _worker_cep_generator
 
     try:
-        logger.info(f"Processing (CEP): {task.filename} ({task.gdrive_id})")
+        logger.info(f"Processing (CEP): {task.filename} ({task.file_id})")
 
         # For sequential processing, initialize on first use
         if _worker_cep_generator is None:
@@ -304,15 +304,15 @@ def generate_cep_qa_for_transcription(
             f"Generated {len(qa_record.qa_pairs)} CEP QA pairs for {task.filename} "
             f"(validated: {qa_record.validated_pairs})"
         )
-        return task.gdrive_id, True, "Success"
+        return task.file_id, True, "Success"
 
     except ValueError as e:
         logger.warning(f"Validation error for {task.filename}: {e}")
-        return task.gdrive_id, False, str(e)
+        return task.file_id, False, str(e)
 
     except Exception as e:
         logger.exception(f"Failed to process {task.filename}")
-        return task.gdrive_id, False, str(e)
+        return task.file_id, False, str(e)
 
 
 def run_batch_cep_generation(
@@ -386,7 +386,7 @@ def run_batch_cep_generation(
         return
 
     # Filter out already completed files
-    remaining_tasks = [t for t in all_tasks if not checkpoint.is_completed(t.gdrive_id)]
+    remaining_tasks = [t for t in all_tasks if not checkpoint.is_completed(t.file_id)]
 
     # Update checkpoint with total
     checkpoint.set_total_files(len(all_tasks))
@@ -429,15 +429,15 @@ def run_batch_cep_generation(
         if num_workers == 1:
             # Sequential processing
             for task in remaining_tasks:
-                gdrive_id, success, message = generate_cep_qa_for_transcription(
+                file_id, success, message = generate_cep_qa_for_transcription(
                     task, qa_config_dict, cep_config_dict
                 )
 
                 if success:
-                    checkpoint.mark_completed(gdrive_id)
+                    checkpoint.mark_completed(file_id)
                     logger.info(f"✓ Completed: {task.filename}")
                 else:
-                    checkpoint.mark_failed(gdrive_id, message)
+                    checkpoint.mark_failed(file_id, message)
                     logger.error(f"✗ Failed: {task.filename} - {message}")
 
                 completed, total = checkpoint.get_progress()
@@ -488,18 +488,18 @@ def run_batch_cep_generation(
                     task = pending_futures.pop(completed_future)
 
                     try:
-                        gdrive_id, success, message = completed_future.result()
+                        file_id, success, message = completed_future.result()
 
                         if success:
-                            checkpoint.mark_completed(gdrive_id)
+                            checkpoint.mark_completed(file_id)
                             logger.info(f"✓ Completed: {task.filename}")
                         else:
-                            checkpoint.mark_failed(gdrive_id, message)
+                            checkpoint.mark_failed(file_id, message)
                             logger.error(f"✗ Failed: {task.filename} - {message}")
 
                     except Exception as e:
                         logger.exception(f"Task failed with exception: {task.filename}")
-                        checkpoint.mark_failed(task.gdrive_id, str(e))
+                        checkpoint.mark_failed(task.file_id, str(e))
 
                     completed, total = checkpoint.get_progress()
                     logger.info(f"Progress: {completed}/{total} files")

@@ -30,7 +30,7 @@ The `batch-transcribe` command allows you to:
    ```
 
 3. **Catalog CSV**: A CSV file with Google Drive file metadata containing:
-   - `gdrive_id`: Google Drive file ID
+   - `file_id`: Google Drive file ID
    - `name`: File name
    - `mime_type`: MIME type (e.g., audio/mpeg, video/mp4)
    - `size_bytes`: File size in bytes
@@ -209,7 +209,7 @@ Each transcribed file produces a JSON file with this structure:
 
 ```json
 {
-  "gdrive_id": "1JtKnN2pQGmHEkSPniwES6RmWWp5BtKrU",
+  "file_id": "1JtKnN2pQGmHEkSPniwES6RmWWp5BtKrU",
   "name": "audio.m4a",
   "mimeType": "audio/mpeg",
   "size_bytes": 143657567,
@@ -248,7 +248,7 @@ Each transcribed file produces a JSON file with this structure:
 - `transcription_quality`: Quality scores from heuristic-based validation
 - `is_valid`: Boolean indicating if transcription passes quality threshold
 
-Files are named: `{gdrive_id}_transcription.json`
+Files are named: `{file_id}_transcription.json`
 
 ## Performance Considerations
 

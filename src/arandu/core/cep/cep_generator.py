@@ -94,7 +94,7 @@ class CEPQAGenerator:
                 f"({len(text)} chars < {MIN_CONTEXT_LENGTH})"
             )
 
-        logger.info(f"Generating CEP QA pairs for {transcription.gdrive_id} ({len(text)} chars)")
+        logger.info(f"Generating CEP QA pairs for {transcription.file_id} ({len(text)} chars)")
 
         # Chunk text if too long
         contexts = self._chunk_text(text)
@@ -141,12 +141,12 @@ class CEPQAGenerator:
         validated_count = self._count_validated_pairs(all_pairs)
 
         logger.info(
-            f"Generated {len(all_pairs)} CEP QA pairs for {transcription.gdrive_id} "
+            f"Generated {len(all_pairs)} CEP QA pairs for {transcription.file_id} "
             f"(validated: {validated_count})"
         )
 
         return QARecordCEP(
-            source_gdrive_id=transcription.gdrive_id,
+            source_file_id=transcription.file_id,
             source_filename=transcription.name,
             source_metadata=transcription.source_metadata,
             transcription_text=text,

@@ -293,7 +293,7 @@ class QAPair(BaseModel):
 
 class QARecord(BaseModel):
     """QA dataset record for one document"""
-    source_gdrive_id: str = Field(..., description="Google Drive file ID")
+    source_file_id: str = Field(..., description="Google Drive file ID")
     source_filename: str = Field(..., description="Original filename")
     transcription_text: str = Field(..., description="Full transcription")
     qa_pairs: list[QAPair] = Field(..., description="Generated QA pairs")
