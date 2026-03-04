@@ -23,7 +23,7 @@ Represents a transcription record with enrichment metadata. Extends `InputRecord
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `gdrive_id` | `str` | Yes | Google Drive ID of original media file |
+| `file_id` | `str` | Yes | Unique file identifier (for Drive-backed records, this is the Google Drive file ID) |
 | `name` | `str` | Yes | File name |
 | `mimeType` | `str` | Yes | MIME type of the file |
 | `parents` | `list[str]` | Yes | List of parent folder IDs |
@@ -48,7 +48,7 @@ The `detected_language` field provides the language code directly. There is **no
 **Example**:
 ```json
 {
-  "gdrive_id": "1abc123xyz",
+  "file_id": "1abc123xyz",
   "name": "entrevista_enchente_2023.mp3",
   "mimeType": "audio/mpeg",
   "parents": ["1parent_folder_id"],
@@ -368,7 +368,7 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source_gdrive_id` | `str` | Yes | Google Drive ID of original media file |
+| `source_file_id` | `str` | Yes | Unique identifier of the original media file (e.g. Google Drive file ID) |
 | `source_filename` | `str` | Yes | Original filename |
 | `transcription_text` | `str` | Yes | Full transcription text |
 | `qa_pairs` | `list[QAPairValidated \| QAPairCEP]` | Yes | CEP-enhanced QA pairs (validated or unvalidated) |
@@ -393,7 +393,7 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
 **Example**:
 ```json
 {
-  "source_gdrive_id": "1abc123xyz",
+  "source_file_id": "1abc123xyz",
   "source_filename": "interview_2023.mp3",
   "transcription_text": "O pescador contou que quando o rio sobe...",
   "qa_pairs": [...],
@@ -449,7 +449,7 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 
 class QARecordCEP(BaseModel):
     """Extended QA dataset record with CEP metadata and validation summary."""
-    source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
+    source_file_id: str = Field(..., alias="source_gdrive_id", description="Unique identifier of the original media file")
     source_filename: str = Field(..., description="Original filename")
     transcription_text: str = Field(..., description="Full transcription text")
     qa_pairs: list[QAPairValidated | QAPairCEP] = Field(

@@ -124,7 +124,7 @@ arandu batch-transcribe CATALOG_FILE [OPTIONS]
 - `CATALOG_FILE` - Path to catalog CSV file with Google Drive file metadata
 
 **Required CSV Columns**:
-- `gdrive_id` - Google Drive file ID
+- `file_id` - Google Drive file ID
 - `name` - File name
 - `mime_type` - MIME type
 - `size_bytes` - File size in bytes

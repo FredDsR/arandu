@@ -52,7 +52,7 @@ def sample_results_dir(tmp_path: Path) -> Path:
 
     # Create a sample transcription record
     record = EnrichedRecord(
-        gdrive_id="test123",
+        file_id="test123",
         name="test.mp3",
         mimeType="audio/mpeg",
         parents=["parent_folder"],
@@ -151,7 +151,7 @@ class TestRunReport:
             steps_run=["transcription"],
         )
         record = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["parent"],
@@ -214,7 +214,7 @@ def extended_results_dir(tmp_path: Path) -> Path:
     transcription_meta.save(transcription_dir / "run_metadata.json")
 
     trans_record = EnrichedRecord(
-        gdrive_id="test123",
+        file_id="test123",
         name="audio_sample.mp3",
         mimeType="audio/mpeg",
         parents=["parent_folder"],
@@ -248,7 +248,7 @@ def extended_results_dir(tmp_path: Path) -> Path:
     cep_meta.save(cep_dir / "run_metadata.json")
 
     cep_record = QARecordCEP(
-        source_gdrive_id="gdrive_abc",
+        source_file_id="gdrive_abc",
         source_filename="audio_sample.mp3",
         source_metadata=SourceMetadata(
             participant_name="Maria",

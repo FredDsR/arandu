@@ -123,8 +123,8 @@ CEP QA records are saved as JSON files in the versioned results directory:
 
 ```
 results/<pipeline_id>/cep/outputs/
-├── <gdrive_id_1>_cep_qa.json
-├── <gdrive_id_2>_cep_qa.json
+├── <file_id_1>_cep_qa.json
+├── <file_id_2>_cep_qa.json
 └── cep_checkpoint.json      # For resumption
 ```
 
@@ -132,7 +132,7 @@ results/<pipeline_id>/cep/outputs/
 
 ```json
 {
-  "source_gdrive_id": "1abc123xyz",
+  "source_file_id": "1abc123xyz",
   "source_filename": "interview_2023.mp3",
   "transcription_text": "The flooding was caused by...",
   "qa_pairs": [

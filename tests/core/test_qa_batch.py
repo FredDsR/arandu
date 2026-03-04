@@ -33,12 +33,12 @@ class _ThreadPoolCompat(ThreadPoolExecutor):
 
 
 def create_test_enriched_data(
-    gdrive_id: str = "test123", name: str = "test.mp3", transcription_text: str = "Test"
+    file_id: str = "test123", name: str = "test.mp3", transcription_text: str = "Test"
 ) -> dict:
     """Create a complete EnrichedRecord test data dictionary.
 
     Args:
-        gdrive_id: Google Drive ID.
+        file_id: Unique file identifier.
         name: Filename.
         transcription_text: Transcription text.
 
@@ -46,7 +46,7 @@ def create_test_enriched_data(
         Complete EnrichedRecord data dictionary.
     """
     return {
-        "gdrive_id": gdrive_id,
+        "file_id": file_id,
         "name": name,
         "mimeType": "audio/mpeg",
         "parents": ["folder_id"],
@@ -71,13 +71,13 @@ class TestQAGenerationTask:
 
         task = QAGenerationTask(
             transcription_file=transcription_file,
-            gdrive_id="test123",
+            file_id="test123",
             filename="test.mp3",
             output_file=output_file,
         )
 
         assert task.transcription_file == transcription_file
-        assert task.gdrive_id == "test123"
+        assert task.file_id == "test123"
         assert task.filename == "test.mp3"
         assert task.output_file == output_file
 
@@ -85,14 +85,14 @@ class TestQAGenerationTask:
         """Test that all fields are accessible."""
         task = QAGenerationTask(
             transcription_file=tmp_path / "in.json",
-            gdrive_id="abc",
+            file_id="abc",
             filename="file.mp3",
             output_file=tmp_path / "out.json",
         )
 
         # Access all fields
         assert isinstance(task.transcription_file, Path)
-        assert isinstance(task.gdrive_id, str)
+        assert isinstance(task.file_id, str)
         assert isinstance(task.filename, str)
         assert isinstance(task.output_file, Path)
 
@@ -125,7 +125,7 @@ class TestLoadTranscriptionTasks:
         file1.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="id1",
+                    file_id="id1",
                     name="interview1.mp3",
                     transcription_text="This is a test transcription.",
                 )
@@ -136,7 +136,7 @@ class TestLoadTranscriptionTasks:
         file2.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="id2",
+                    file_id="id2",
                     name="interview2.mp3",
                     transcription_text="Another transcription.",
                 )
@@ -156,7 +156,7 @@ class TestLoadTranscriptionTasks:
 
         # Valid file
         valid = input_dir / "valid_transcription.json"
-        valid.write_text(json.dumps(create_test_enriched_data(gdrive_id="id1", name="test.mp3")))
+        valid.write_text(json.dumps(create_test_enriched_data(file_id="id1", name="test.mp3")))
 
         # Invalid JSON file
         invalid = input_dir / "invalid_transcription.json"
@@ -170,7 +170,7 @@ class TestLoadTranscriptionTasks:
 
         # Should only get the valid transcription file
         assert len(result.tasks) == 1
-        assert result.tasks[0].gdrive_id == "id1"
+        assert result.tasks[0].file_id == "id1"
 
     def test_invalid_json_files(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Test handling of corrupt JSON files."""
@@ -186,8 +186,8 @@ class TestLoadTranscriptionTasks:
         assert len(result.tasks) == 0
         assert "Skipping invalid file" in caplog.text
 
-    def test_gdrive_id_extraction(self, tmp_path: Path) -> None:
-        """Test that gdrive_id is correctly extracted from JSON."""
+    def test_file_id_extraction(self, tmp_path: Path) -> None:
+        """Test that file_id is correctly extracted from JSON."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
@@ -196,7 +196,7 @@ class TestLoadTranscriptionTasks:
         file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="extracted_id_123",
+                    file_id="extracted_id_123",
                     name="test.mp3",
                 )
             )
@@ -205,10 +205,10 @@ class TestLoadTranscriptionTasks:
         result = load_transcription_tasks(input_dir, output_dir)
 
         assert len(result.tasks) == 1
-        assert result.tasks[0].gdrive_id == "extracted_id_123"
+        assert result.tasks[0].file_id == "extracted_id_123"
 
     def test_output_filename_generation(self, tmp_path: Path) -> None:
-        """Test that output filename is {gdrive_id}_cep_qa.json by default."""
+        """Test that output filename is {file_id}_cep_qa.json by default."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
@@ -217,7 +217,7 @@ class TestLoadTranscriptionTasks:
         file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="myid",
+                    file_id="myid",
                     name="original.mp3",
                 )
             )
@@ -235,19 +235,19 @@ class TestLoadTranscriptionTasks:
         input_dir.mkdir()
 
         # Valid transcription (is_valid=True)
-        valid_data = create_test_enriched_data(gdrive_id="valid1", name="valid.mp3")
+        valid_data = create_test_enriched_data(file_id="valid1", name="valid.mp3")
         valid_data["is_valid"] = True
         (input_dir / "valid1_transcription.json").write_text(json.dumps(valid_data))
 
         # Invalid transcription (is_valid=False)
-        invalid_data = create_test_enriched_data(gdrive_id="invalid1", name="invalid.mp3")
+        invalid_data = create_test_enriched_data(file_id="invalid1", name="invalid.mp3")
         invalid_data["is_valid"] = False
         (input_dir / "invalid1_transcription.json").write_text(json.dumps(invalid_data))
 
         result = load_transcription_tasks(input_dir, output_dir)
 
         assert len(result.tasks) == 1
-        assert result.tasks[0].gdrive_id == "valid1"
+        assert result.tasks[0].file_id == "valid1"
 
     def test_includes_unchecked_transcriptions(self, tmp_path: Path) -> None:
         """Test that transcriptions with is_valid=None (unchecked) are included."""
@@ -256,14 +256,14 @@ class TestLoadTranscriptionTasks:
         input_dir.mkdir()
 
         # Unchecked transcription (is_valid=None)
-        unchecked_data = create_test_enriched_data(gdrive_id="unchecked1", name="unchecked.mp3")
+        unchecked_data = create_test_enriched_data(file_id="unchecked1", name="unchecked.mp3")
         unchecked_data["is_valid"] = None
         (input_dir / "unchecked1_transcription.json").write_text(json.dumps(unchecked_data))
 
         result = load_transcription_tasks(input_dir, output_dir)
 
         assert len(result.tasks) == 1
-        assert result.tasks[0].gdrive_id == "unchecked1"
+        assert result.tasks[0].file_id == "unchecked1"
 
     def test_includes_transcriptions_without_is_valid_field(self, tmp_path: Path) -> None:
         """Test that transcriptions missing the is_valid field are included."""
@@ -272,14 +272,14 @@ class TestLoadTranscriptionTasks:
         input_dir.mkdir()
 
         # Transcription without is_valid key at all
-        data = create_test_enriched_data(gdrive_id="no_field", name="old.mp3")
+        data = create_test_enriched_data(file_id="no_field", name="old.mp3")
         data.pop("is_valid", None)
         (input_dir / "no_field_transcription.json").write_text(json.dumps(data))
 
         result = load_transcription_tasks(input_dir, output_dir)
 
         assert len(result.tasks) == 1
-        assert result.tasks[0].gdrive_id == "no_field"
+        assert result.tasks[0].file_id == "no_field"
 
     def test_filters_mixed_validity(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """Test filtering with a mix of valid, invalid, and unchecked transcriptions."""
@@ -289,28 +289,28 @@ class TestLoadTranscriptionTasks:
         input_dir.mkdir()
 
         # is_valid=True
-        d1 = create_test_enriched_data(gdrive_id="ok1", name="ok1.mp3")
+        d1 = create_test_enriched_data(file_id="ok1", name="ok1.mp3")
         d1["is_valid"] = True
         (input_dir / "ok1_transcription.json").write_text(json.dumps(d1))
 
         # is_valid=False
-        d2 = create_test_enriched_data(gdrive_id="bad1", name="bad1.mp3")
+        d2 = create_test_enriched_data(file_id="bad1", name="bad1.mp3")
         d2["is_valid"] = False
         (input_dir / "bad1_transcription.json").write_text(json.dumps(d2))
 
         # is_valid=False
-        d3 = create_test_enriched_data(gdrive_id="bad2", name="bad2.mp3")
+        d3 = create_test_enriched_data(file_id="bad2", name="bad2.mp3")
         d3["is_valid"] = False
         (input_dir / "bad2_transcription.json").write_text(json.dumps(d3))
 
         # is_valid=None (unchecked)
-        d4 = create_test_enriched_data(gdrive_id="unk1", name="unk1.mp3")
+        d4 = create_test_enriched_data(file_id="unk1", name="unk1.mp3")
         d4["is_valid"] = None
         (input_dir / "unk1_transcription.json").write_text(json.dumps(d4))
 
         result = load_transcription_tasks(input_dir, output_dir)
 
-        task_ids = {t.gdrive_id for t in result.tasks}
+        task_ids = {t.file_id for t in result.tasks}
         assert task_ids == {"ok1", "unk1"}
         assert "2 skipped as invalid" in caplog.text
 
@@ -321,7 +321,7 @@ class TestLoadTranscriptionTasks:
         output_dir = tmp_path / "output"
         input_dir.mkdir()
 
-        invalid_data = create_test_enriched_data(gdrive_id="bad1", name="bad.mp3")
+        invalid_data = create_test_enriched_data(file_id="bad1", name="bad.mp3")
         invalid_data["is_valid"] = False
         (input_dir / "bad1_transcription.json").write_text(json.dumps(invalid_data))
 
@@ -340,7 +340,7 @@ class TestLoadTranscriptionTasks:
         file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="myid",
+                    file_id="myid",
                     name="original.mp3",
                 )
             )
@@ -358,14 +358,14 @@ class TestLoadTranscriptionTasks:
         input_dir.mkdir()
 
         # 2 valid, 1 invalid, 1 corrupt JSON = 4 total files found
-        d1 = create_test_enriched_data(gdrive_id="v1", name="v1.mp3")
+        d1 = create_test_enriched_data(file_id="v1", name="v1.mp3")
         d1["is_valid"] = True
         (input_dir / "v1_transcription.json").write_text(json.dumps(d1))
 
-        d2 = create_test_enriched_data(gdrive_id="v2", name="v2.mp3")
+        d2 = create_test_enriched_data(file_id="v2", name="v2.mp3")
         (input_dir / "v2_transcription.json").write_text(json.dumps(d2))
 
-        d3 = create_test_enriched_data(gdrive_id="bad1", name="bad1.mp3")
+        d3 = create_test_enriched_data(file_id="bad1", name="bad1.mp3")
         d3["is_valid"] = False
         (input_dir / "bad1_transcription.json").write_text(json.dumps(d3))
 
@@ -485,7 +485,7 @@ class TestGenerateCEPQAForTranscription:
         input_file.write_text(
             json.dumps(
                 {
-                    "gdrive_id": "cep_test123",
+                    "file_id": "cep_test123",
                     "name": "test.mp3",
                     "mimeType": "audio/mpeg",
                     "parents": ["folder_id"],
@@ -505,7 +505,7 @@ class TestGenerateCEPQAForTranscription:
 
         task = QAGenerationTask(
             transcription_file=input_file,
-            gdrive_id="cep_test123",
+            file_id="cep_test123",
             filename="test.mp3",
             output_file=output_file,
         )
@@ -520,11 +520,11 @@ class TestGenerateCEPQAForTranscription:
             enable_validation=False,
         ).model_dump()
 
-        gdrive_id, success, message = generate_cep_qa_for_transcription(
+        file_id, success, message = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
         )
 
-        assert gdrive_id == "cep_test123"
+        assert file_id == "cep_test123"
         assert success is True
         assert message == "Success"
         assert output_file.exists()
@@ -542,7 +542,7 @@ class TestGenerateCEPQAForTranscription:
         input_file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="short_cep",
+                    file_id="short_cep",
                     name="short.mp3",
                     transcription_text="Short",
                 )
@@ -553,7 +553,7 @@ class TestGenerateCEPQAForTranscription:
 
         task = QAGenerationTask(
             transcription_file=input_file,
-            gdrive_id="short_cep",
+            file_id="short_cep",
             filename="short.mp3",
             output_file=output_file,
         )
@@ -561,11 +561,11 @@ class TestGenerateCEPQAForTranscription:
         qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
         cep_config_dict = CEPConfig(enable_validation=False).model_dump()
 
-        gdrive_id, success, message = generate_cep_qa_for_transcription(
+        file_id, success, message = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
         )
 
-        assert gdrive_id == "short_cep"
+        assert file_id == "short_cep"
         assert success is False
         assert "short" in message.lower() or len(message) > 0
 
@@ -584,7 +584,7 @@ class TestGenerateCEPQAForTranscription:
 
         task = QAGenerationTask(
             transcription_file=input_file,
-            gdrive_id="test_cep",
+            file_id="test_cep",
             filename="test.mp3",
             output_file=output_file,
         )
@@ -592,11 +592,11 @@ class TestGenerateCEPQAForTranscription:
         qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
         cep_config_dict = CEPConfig(enable_validation=False).model_dump()
 
-        gdrive_id, success, message = generate_cep_qa_for_transcription(
+        file_id, success, message = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
         )
 
-        assert gdrive_id == "test_cep"
+        assert file_id == "test_cep"
         assert success is False
         assert len(message) > 0
 
@@ -625,7 +625,7 @@ class TestGenerateCEPQAForTranscription:
         input_file.write_text(
             json.dumps(
                 {
-                    "gdrive_id": "cep_validated",
+                    "file_id": "cep_validated",
                     "name": "test.mp3",
                     "mimeType": "audio/mpeg",
                     "parents": ["folder_id"],
@@ -647,7 +647,7 @@ class TestGenerateCEPQAForTranscription:
 
         task = QAGenerationTask(
             transcription_file=input_file,
-            gdrive_id="cep_validated",
+            file_id="cep_validated",
             filename="test.mp3",
             output_file=output_file,
         )
@@ -664,11 +664,11 @@ class TestGenerateCEPQAForTranscription:
             validator_model_id="llama3.1:8b",
         ).model_dump()
 
-        gdrive_id, success, _ = generate_cep_qa_for_transcription(
+        file_id, success, _ = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
         )
 
-        assert gdrive_id == "cep_validated"
+        assert file_id == "cep_validated"
         assert success is True
         assert output_file.exists()
 
@@ -741,7 +741,7 @@ class TestRunBatchCEPGeneration:
         file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="cep_id1",
+                    file_id="cep_id1",
                     name="test.mp3",
                 )
             )
@@ -785,7 +785,7 @@ class TestRunBatchCEPGeneration:
             file.write_text(
                 json.dumps(
                     create_test_enriched_data(
-                        gdrive_id=f"cep_id{i}",
+                        file_id=f"cep_id{i}",
                         name=f"test{i}.mp3",
                         transcription_text="Test transcription text. " * 20,
                     )
@@ -828,7 +828,7 @@ class TestRunBatchCEPGeneration:
             file.write_text(
                 json.dumps(
                     create_test_enriched_data(
-                        gdrive_id=f"{'valid' if i == 0 else 'invalid'}_cep",
+                        file_id=f"{'valid' if i == 0 else 'invalid'}_cep",
                         name=f"test{i}.mp3",
                     )
                 )
@@ -867,7 +867,7 @@ class TestRunBatchCEPGeneration:
         file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="cep_test",
+                    file_id="cep_test",
                     name="test.mp3",
                     transcription_text="Test transcription text. " * 20,
                 )
@@ -909,7 +909,7 @@ class TestRunBatchCEPGeneration:
             file.write_text(
                 json.dumps(
                     create_test_enriched_data(
-                        gdrive_id=f"cep_id{i}",
+                        file_id=f"cep_id{i}",
                         name=f"test{i}.mp3",
                     )
                 )
@@ -980,7 +980,7 @@ class TestRunBatchCEPGeneration:
             file.write_text(
                 json.dumps(
                     create_test_enriched_data(
-                        gdrive_id=f"cep_id{i}",
+                        file_id=f"cep_id{i}",
                         name=f"test{i}.mp3",
                     )
                 )
@@ -1011,7 +1011,7 @@ class TestRunBatchCEPGeneration:
         file.write_text(
             json.dumps(
                 create_test_enriched_data(
-                    gdrive_id="fail_cep",
+                    file_id="fail_cep",
                     name="fail.mp3",
                     transcription_text="Short",
                 )
@@ -1079,13 +1079,13 @@ class TestRunBatchCEPGeneration:
 
         # Valid transcription
         valid_data = create_test_enriched_data(
-            gdrive_id="ok1", name="ok.mp3", transcription_text="Test text. " * 20
+            file_id="ok1", name="ok.mp3", transcription_text="Test text. " * 20
         )
         valid_data["is_valid"] = True
         (input_dir / "ok1_transcription.json").write_text(json.dumps(valid_data))
 
         # Invalid transcription (should be skipped)
-        bad_data = create_test_enriched_data(gdrive_id="bad1", name="bad.mp3")
+        bad_data = create_test_enriched_data(file_id="bad1", name="bad.mp3")
         bad_data["is_valid"] = False
         (input_dir / "bad1_transcription.json").write_text(json.dumps(bad_data))
 

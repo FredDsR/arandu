@@ -176,7 +176,7 @@ export ARANDU_CEP_ENABLE_VALIDATION=true        # Enable LLM-as-a-Judge
 export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b  # Validator model
 ```
 
-Output: `qa_dataset/cep_qa_<gdrive_id>.json`
+Output: `qa_dataset/cep_qa_<file_id>.json`
 
 ## KG Pipeline (Planned)
 
@@ -284,7 +284,7 @@ Transcription results are saved as JSON files containing:
 
 ```json
 {
-  "gdrive_id": "...",
+  "file_id": "...",
   "name": "audio.mp3",
   "mimeType": "audio/mpeg",
   "size_bytes": 12345678,

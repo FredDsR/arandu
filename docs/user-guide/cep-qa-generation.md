@@ -167,10 +167,10 @@ CEP records are saved as JSON files in `cep_dataset/`:
 
 ```
 cep_dataset/
-├── <gdrive_id_1>_cep_qa.json
-├── <gdrive_id_1>_cep_qa.jsonl   # JSONL export for this record
-├── <gdrive_id_2>_cep_qa.json
-├── <gdrive_id_2>_cep_qa.jsonl   # JSONL export for this record
+├── <file_id_1>_cep_qa.json
+├── <file_id_1>_cep_qa.jsonl   # JSONL export for this record
+├── <file_id_2>_cep_qa.json
+├── <file_id_2>_cep_qa.jsonl   # JSONL export for this record
 └── cep_checkpoint.json          # For resumption
 ```
 
@@ -178,7 +178,7 @@ cep_dataset/
 
 ```json
 {
-  "source_gdrive_id": "1abc123xyz",
+  "source_file_id": "1abc123xyz",
   "source_filename": "interview_2023.mp3",
   "transcription_text": "O pescador contou que quando o rio sobe...",
   "qa_pairs": [

@@ -87,7 +87,7 @@ Convert ethnographic audio and video recordings into structured, timestamped tex
 
 ### 3.2 Data Source
 
-Input files are organized in a **Google Drive catalog** (CSV) containing metadata such as `gdrive_id`, filename, MIME type, byte size, and duration. Only audio and video MIME types are selected for processing.
+Input files are organized in a **Google Drive catalog** (CSV) containing metadata such as `file_id`, filename, MIME type, byte size, and duration. Only audio and video MIME types are selected for processing.
 
 ### 3.3 Speech Recognition
 

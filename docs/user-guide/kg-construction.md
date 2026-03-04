@@ -388,7 +388,7 @@ Resuming from batch 3 (9 chunks already processed)
 ls -la results/*.json
 
 # Verify transcription has content
-cat results/<gdrive_id>.json | jq '.transcription_text | length'
+cat results/<file_id>.json | jq '.transcription_text | length'
 ```
 
 ### Poor Entity Extraction

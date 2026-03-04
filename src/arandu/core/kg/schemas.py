@@ -21,5 +21,5 @@ class KGConstructionResult(BaseModel):
     node_count: int = Field(..., ge=0, description="Number of nodes in the graph")
     edge_count: int = Field(..., ge=0, description="Number of edges in the graph")
     source_record_ids: list[str] = Field(
-        ..., description="gdrive_ids of processed transcription records"
+        ..., description="file_ids of processed transcription records"
     )

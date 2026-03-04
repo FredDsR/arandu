@@ -16,11 +16,11 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-def _make_record(gdrive_id: str = "test123", text: str = "Test transcription.") -> EnrichedRecord:
+def _make_record(file_id: str = "test123", text: str = "Test transcription.") -> EnrichedRecord:
     """Create a minimal EnrichedRecord for testing."""
     return EnrichedRecord.model_validate(
         {
-            "gdrive_id": gdrive_id,
+            "file_id": file_id,
             "name": "test.mp3",
             "mimeType": "audio/mpeg",
             "parents": ["folder"],

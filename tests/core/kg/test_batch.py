@@ -19,14 +19,14 @@ if TYPE_CHECKING:
 
 def _write_transcription(
     directory: Path,
-    gdrive_id: str = "test123",
+    file_id: str = "test123",
     text: str = "Test transcription text.",
     is_valid: bool = True,
 ) -> Path:
     """Write a minimal transcription JSON file."""
     data = {
-        "gdrive_id": gdrive_id,
-        "name": f"{gdrive_id}.mp3",
+        "file_id": file_id,
+        "name": f"{file_id}.mp3",
         "mimeType": "audio/mpeg",
         "parents": ["folder"],
         "webContentLink": "https://drive.google.com/test",
@@ -41,7 +41,7 @@ def _write_transcription(
         "transcription_status": "completed",
         "is_valid": is_valid,
     }
-    filepath = directory / f"{gdrive_id}_transcription.json"
+    filepath = directory / f"{file_id}_transcription.json"
     filepath.write_text(json.dumps(data))
     return filepath
 
@@ -58,7 +58,7 @@ class TestLoadTranscriptionRecords:
 
         records = _load_transcription_records(tmp_path)
         assert len(records) == 2
-        ids = {r.gdrive_id for r in records}
+        ids = {r.file_id for r in records}
         assert ids == {"id1", "id2"}
 
     def test_skips_invalid_records(self, tmp_path: Path) -> None:
@@ -70,7 +70,7 @@ class TestLoadTranscriptionRecords:
 
         records = _load_transcription_records(tmp_path)
         assert len(records) == 1
-        assert records[0].gdrive_id == "valid"
+        assert records[0].file_id == "valid"
 
     def test_empty_directory(self, tmp_path: Path) -> None:
         """Test loading from empty directory returns empty list."""

@@ -204,7 +204,7 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
         reader = csv.DictReader(f)
 
         # Validate required columns
-        required_columns = {"gdrive_id", "name", "mime_type"}
+        required_columns = {"file_id", "name", "mime_type"}
         missing = required_columns - set(reader.fieldnames)
         if missing:
             raise ValueError(f"Missing columns: {missing}")
@@ -619,7 +619,7 @@ processing patterns as transcription.
    └─ Environment variables with ARANDU_QA_ and ARANDU_CEP_ prefixes
 
 2. QAGenerationTask dataclass
-   └─ transcription_file, gdrive_id, filename, output_file
+   └─ transcription_file, file_id, filename, output_file
 
 3. CEP worker initialization (_init_cep_worker)
    └─ Global CEPQAGenerator, initialized once per process

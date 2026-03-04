@@ -46,7 +46,7 @@ def _make_enriched_record(
         overall_score=overall_score,
     )
     return EnrichedRecord(
-        gdrive_id="gdrive_123",
+        file_id="gdrive_123",
         name=name,
         mimeType="audio/mpeg",
         parents=["parent_folder"],
@@ -103,7 +103,7 @@ def _make_cep_record(
         qa_pairs.append(pair)
 
     return QARecordCEP(
-        source_gdrive_id="gdrive_123",
+        source_file_id="gdrive_123",
         source_filename=source_filename,
         source_metadata=source,
         transcription_text="Test transcription text.",
@@ -255,7 +255,7 @@ class TestBuildDataset:
             bloom_level="remember",
         )
         cep_record = QARecordCEP(
-            source_gdrive_id="gdrive_123",
+            source_file_id="gdrive_123",
             source_filename="test.mp3",
             transcription_text="Test.",
             qa_pairs=[qa_pair],
@@ -406,7 +406,7 @@ class TestRunSummaryNewFields:
         )
         # _make_cep_record produces 2 valid pairs; add 1 invalid by building manually
         cep_record = QARecordCEP(
-            source_gdrive_id="gdrive_123",
+            source_file_id="gdrive_123",
             source_filename="test.mp3",
             source_metadata=SourceMetadata(
                 participant_name="Maria", location="Pelotas", recording_date="2024-05-15"

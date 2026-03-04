@@ -175,7 +175,7 @@ class TestGetQADetail:
             bloom_level="remember",
         )
         return QARecordCEP(
-            source_gdrive_id="gid_001",
+            source_file_id="gid_001",
             source_filename="audio.mp3",
             transcription_text="Full transcription text here.",
             qa_pairs=[pair],

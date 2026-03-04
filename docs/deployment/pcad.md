@@ -71,7 +71,7 @@ Ensure your catalog file exists in the `input/` directory:
 ls -la input/catalog.csv
 ```
 
-The catalog should contain columns: `gdrive_id`, `name`, `mime_type`, `size_bytes`, `parents`, `web_content_link`.
+The catalog should contain columns: `file_id`, `name`, `mime_type`, `size_bytes`, `parents`, `web_content_link`.
 
 ---
 

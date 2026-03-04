@@ -15,13 +15,13 @@ if TYPE_CHECKING:
 
 
 class InputRecord(BaseModel):
-    """Schema for input records from Google Drive file metadata.
+    """Schema for input records from file metadata.
 
-    Validates the existence of critical fields like gdrive_id, mimeType and parents
+    Validates the existence of critical fields like file_id, mimeType and parents
     before processing.
     """
 
-    gdrive_id: str = Field(..., description="Google Drive file ID")
+    file_id: str = Field(..., alias="gdrive_id", description="Unique file identifier")
     name: str = Field(..., description="File name")
     mimeType: str = Field(..., description="MIME type of the file")
     parents: list[str] = Field(..., description="List of parent folder IDs")
@@ -355,7 +355,11 @@ class QARecordCEP(BaseModel):
     Contains Bloom-scaffolded QA pairs with optional LLM-as-a-Judge validation.
     """
 
-    source_gdrive_id: str = Field(..., description="Google Drive ID of original media file")
+    model_config = {"populate_by_name": True}
+
+    source_file_id: str = Field(
+        ..., alias="source_gdrive_id", description="Unique ID of original media file"
+    )
     source_filename: str = Field(..., description="Original filename")
     source_metadata: SourceMetadata | None = Field(
         default=None, description="Source interview metadata for provenance tracking"
@@ -447,7 +451,7 @@ class KGMetadata(BaseModel):
     """
 
     graph_id: str = Field(..., description="Unique graph identifier")
-    source_documents: list[str] = Field(..., description="List of source document IDs (gdrive_ids)")
+    source_documents: list[str] = Field(..., description="List of source document IDs (file_ids)")
     model_id: str = Field(..., description="LLM model used for extraction")
     provider: str = Field(..., description="LLM provider")
     language: str = Field(default="pt", description="Language code for extraction (ISO 639-1)")

@@ -95,7 +95,7 @@ class TestDisplayResultPanel:
     def test_display_result_panel(self, mock_console: MagicMock) -> None:
         """Test displaying result panel."""
         record = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder1"],
@@ -121,7 +121,7 @@ class TestDisplayResultPanel:
         """Test displaying result panel with long transcription text."""
         long_text = "This is a very long transcription. " * 50
         record = EnrichedRecord(
-            gdrive_id="test123",
+            file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
             parents=["folder1"],

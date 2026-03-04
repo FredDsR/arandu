@@ -293,7 +293,7 @@ def transcribe_single_file(
             segments = _create_segments_from_result(result)
 
             enriched = EnrichedRecord(
-                gdrive_id=task.file_id,
+                file_id=task.file_id,
                 name=task.name,
                 mimeType=task.mime_type,
                 parents=task.parents,
@@ -373,8 +373,8 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
     """
     tasks: list[TranscriptionTask] = []
 
-    # Required columns
-    required_columns = {"gdrive_id", "name", "mime_type"}
+    # Required columns (accept legacy "gdrive_id" as alias for "file_id")
+    required_columns = {"file_id", "name", "mime_type"}
 
     with open(catalog_file, encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -383,9 +383,19 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
         if reader.fieldnames is None:
             raise ValueError("Catalog file is empty or invalid")
 
-        missing_columns = required_columns - set(reader.fieldnames)
+        columns = set(reader.fieldnames)
+        # Accept legacy "gdrive_id" column as alias for "file_id"
+        has_legacy_id = "gdrive_id" in columns and "file_id" not in columns
+        if has_legacy_id:
+            effective_required = (required_columns - {"file_id"}) | {"gdrive_id"}
+        else:
+            effective_required = required_columns
+
+        missing_columns = effective_required - columns
         if missing_columns:
             raise ValueError(f"Catalog is missing required columns: {', '.join(missing_columns)}")
+
+        id_column = "gdrive_id" if has_legacy_id else "file_id"
 
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
             try:
@@ -396,8 +406,8 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
                     continue
 
                 # Validate required fields are present
-                if not row.get("gdrive_id") or not row.get("name"):
-                    logger.warning(f"Skipping row {row_num}: missing gdrive_id or name")
+                if not row.get(id_column) or not row.get("name"):
+                    logger.warning(f"Skipping row {row_num}: missing file_id or name")
                     continue
 
                 # Parse size_bytes
@@ -422,7 +432,7 @@ def load_catalog(catalog_file: Path) -> list[TranscriptionTask]:
 
                 tasks.append(
                     TranscriptionTask(
-                        file_id=row["gdrive_id"],
+                        file_id=row[id_column],
                         name=row["name"],
                         mime_type=mime_type,
                         size_bytes=size_bytes,

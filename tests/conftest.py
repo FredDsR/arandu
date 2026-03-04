@@ -78,7 +78,7 @@ def sample_enriched_record_data() -> dict:
         Dictionary with all required EnrichedRecord fields.
     """
     return {
-        "gdrive_id": "test123",
+        "file_id": "test123",
         "name": "test.mp3",
         "mimeType": "audio/mpeg",
         "parents": ["parent_folder_id"],
