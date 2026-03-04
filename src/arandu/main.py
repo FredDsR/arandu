@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # Initialize Typer app
 app = typer.Typer(
     name="arandu",
-    help="Automated transcription system for media files using Whisper ASR.",
+    help="Composable pipelines for ethnographic knowledge elicitation.",
     add_completion=False,
     rich_markup_mode="rich",
 )
@@ -158,7 +158,7 @@ def main(
         ),
     ] = None,
 ) -> None:
-    """Arandu: Automated transcription for Google Drive media files."""
+    """Print version and exit."""
     setup_logging()
 
 
@@ -179,8 +179,7 @@ def transcribe(
         typer.Option(
             "--model-id",
             "-m",
-            help="Hugging Face model ID for transcription. "
-            "Can be set via ARANDU_MODEL_ID env var.",
+            help="Hugging Face model ID for transcription. Can be set via ARANDU_MODEL_ID env var.",
         ),
     ] = _config.model_id,
     output: Annotated[
@@ -310,8 +309,7 @@ def drive_transcribe(
         typer.Option(
             "--model-id",
             "-m",
-            help="Hugging Face model ID for transcription. "
-            "Can be set via ARANDU_MODEL_ID env var.",
+            help="Hugging Face model ID for transcription. Can be set via ARANDU_MODEL_ID env var.",
         ),
     ] = _config.model_id,
     credentials: Annotated[
@@ -523,8 +521,7 @@ def batch_transcribe(
         typer.Option(
             "--model-id",
             "-m",
-            help="Hugging Face model ID for transcription. "
-            "Can be set via ARANDU_MODEL_ID env var.",
+            help="Hugging Face model ID for transcription. Can be set via ARANDU_MODEL_ID env var.",
         ),
     ] = _config.model_id,
     credentials: Annotated[
