@@ -851,9 +851,7 @@ class RunMetadata(BaseModel):
     checkpoint_file: str | None = Field(default=None, description="Path to checkpoint file")
 
     # Version info
-    arandu_version: str = Field(
-        ..., alias="gtranscriber_version", description="Arandu version"
-    )
+    arandu_version: str = Field(..., alias="gtranscriber_version", description="Arandu version")
     schema_version: str = Field(default="1.0", description="Schema version for compatibility")
 
     # Optional input source
