@@ -23,7 +23,7 @@ Represents a transcription record with enrichment metadata. Extends `InputRecord
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file_id` | `str` | Yes | Google Drive ID of original media file |
+| `file_id` | `str` | Yes | Unique file identifier (for Drive-backed records, this is the Google Drive file ID) |
 | `name` | `str` | Yes | File name |
 | `mimeType` | `str` | Yes | MIME type of the file |
 | `parents` | `list[str]` | Yes | List of parent folder IDs |
