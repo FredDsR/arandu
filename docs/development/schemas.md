@@ -368,7 +368,7 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source_file_id` | `str` | Yes | Google Drive ID of original media file |
+| `source_file_id` | `str` | Yes | Unique identifier of the original media file (e.g. Google Drive file ID) |
 | `source_filename` | `str` | Yes | Original filename |
 | `transcription_text` | `str` | Yes | Full transcription text |
 | `qa_pairs` | `list[QAPairValidated \| QAPairCEP]` | Yes | CEP-enhanced QA pairs (validated or unvalidated) |
@@ -449,7 +449,7 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 
 class QARecordCEP(BaseModel):
     """Extended QA dataset record with CEP metadata and validation summary."""
-    source_file_id: str = Field(..., description="Google Drive ID of original media file")
+    source_file_id: str = Field(..., alias="source_gdrive_id", description="Unique identifier of the original media file")
     source_filename: str = Field(..., description="Original filename")
     transcription_text: str = Field(..., description="Full transcription text")
     qa_pairs: list[QAPairValidated | QAPairCEP] = Field(
