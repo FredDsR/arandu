@@ -1,6 +1,6 @@
 # CLI Commands Reference
 
-Complete reference for all command-line interface commands in G-Transcriber.
+Complete reference for all command-line interface commands in Arandu.
 
 ## Table of Contents
 
@@ -15,9 +15,9 @@ Complete reference for all command-line interface commands in G-Transcriber.
 
 ## Command Overview
 
-The G-Transcriber CLI is built with [Typer](https://typer.tiangolo.com/) and provides rich terminal output using [Rich](https://rich.readthedocs.io/).
+The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides rich terminal output using [Rich](https://rich.readthedocs.io/).
 
-**Base Command**: `gtranscriber`
+**Base Command**: `arandu`
 
 **Command Categories**:
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
@@ -38,7 +38,7 @@ Transcribe a local audio or video file.
 
 **Usage**:
 ```bash
-gtranscriber transcribe FILE_PATH [OPTIONS]
+arandu transcribe FILE_PATH [OPTIONS]
 ```
 
 **Arguments**:
@@ -57,22 +57,22 @@ gtranscriber transcribe FILE_PATH [OPTIONS]
 **Examples**:
 ```bash
 # Basic transcription
-gtranscriber transcribe audio.mp3
+arandu transcribe audio.mp3
 
 # With custom model
-gtranscriber transcribe audio.mp3 --model-id openai/whisper-large-v3
+arandu transcribe audio.mp3 --model-id openai/whisper-large-v3
 
 # With quantization (reduced VRAM)
-gtranscriber transcribe audio.mp3 --quantize
+arandu transcribe audio.mp3 --quantize
 
 # Force CPU execution
-gtranscriber transcribe audio.mp3 --cpu
+arandu transcribe audio.mp3 --cpu
 
 # Specify language
-gtranscriber transcribe audio.mp3 --language pt
+arandu transcribe audio.mp3 --language pt
 
 # Custom output location
-gtranscriber transcribe audio.mp3 -o results/transcription.json
+arandu transcribe audio.mp3 -o results/transcription.json
 ```
 
 ---
@@ -83,7 +83,7 @@ Transcribe a file from Google Drive. Downloads the file, transcribes it, and upl
 
 **Usage**:
 ```bash
-gtranscriber drive-transcribe FILE_ID [OPTIONS]
+arandu drive-transcribe FILE_ID [OPTIONS]
 ```
 
 **Arguments**:
@@ -103,10 +103,10 @@ gtranscriber drive-transcribe FILE_ID [OPTIONS]
 **Examples**:
 ```bash
 # Basic usage
-gtranscriber drive-transcribe 1abc123xyz --credentials credentials.json
+arandu drive-transcribe 1abc123xyz --credentials credentials.json
 
 # With custom model and quantization
-gtranscriber drive-transcribe 1abc123xyz --model-id openai/whisper-large-v3 --quantize
+arandu drive-transcribe 1abc123xyz --model-id openai/whisper-large-v3 --quantize
 ```
 
 ---
@@ -117,7 +117,7 @@ Batch transcribe audio/video files from a catalog CSV with parallel processing a
 
 **Usage**:
 ```bash
-gtranscriber batch-transcribe CATALOG_FILE [OPTIONS]
+arandu batch-transcribe CATALOG_FILE [OPTIONS]
 ```
 
 **Arguments**:
@@ -150,22 +150,22 @@ gtranscriber batch-transcribe CATALOG_FILE [OPTIONS]
 **Examples**:
 ```bash
 # Basic batch transcription
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 
 # With custom output directory
-gtranscriber batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
+arandu batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
 
 # With quantization and custom model
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
     --model-id openai/whisper-large-v3 \
     --quantize \
     --workers 4
 
 # Resume interrupted job (uses checkpoint automatically)
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 
 # With custom pipeline ID
-gtranscriber batch-transcribe input/catalog.csv --id my-project-001
+arandu batch-transcribe input/catalog.csv --id my-project-001
 ```
 
 ---
@@ -178,7 +178,7 @@ Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with 
 
 **Usage**:
 ```bash
-gtranscriber generate-cep-qa INPUT_DIR [OPTIONS]
+arandu generate-cep-qa INPUT_DIR [OPTIONS]
 ```
 
 **Arguments**:
@@ -206,41 +206,41 @@ gtranscriber generate-cep-qa INPUT_DIR [OPTIONS]
 **Examples**:
 ```bash
 # Basic usage with Ollama
-gtranscriber generate-cep-qa results/ -o qa_dataset/ --workers 4
+arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
 
 # With custom Bloom distribution
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --bloom-dist "remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2" \
     --questions 15
 
 # With OpenAI
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --provider openai \
     --model-id gpt-4o-mini \
     --workers 2
 
 # Without validation (faster)
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --no-validate \
     --workers 4
 
 # With custom validator model
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --validator-model qwen3:14b \
     --questions 12
 
 # Export to JSONL for KGQA training
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --jsonl \
     --questions 20
 
 # English prompts
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --language en \
     --questions 10
 
 # With pipeline ID
-gtranscriber generate-cep-qa results/ --id my-project-001
+arandu generate-cep-qa results/ --id my-project-001
 ```
 
 **Output Structure**:
@@ -261,7 +261,7 @@ Fully refresh Google OAuth2 authentication token. Deletes existing token and ini
 
 **Usage**:
 ```bash
-gtranscriber refresh-auth [OPTIONS]
+arandu refresh-auth [OPTIONS]
 ```
 
 **Options**:
@@ -273,7 +273,7 @@ gtranscriber refresh-auth [OPTIONS]
 
 **Example**:
 ```bash
-gtranscriber refresh-auth --credentials credentials.json --token token.json
+arandu refresh-auth --credentials credentials.json --token token.json
 ```
 
 ---
@@ -284,7 +284,7 @@ Display system information and hardware capabilities.
 
 **Usage**:
 ```bash
-gtranscriber info
+arandu info
 ```
 
 **Output**:
@@ -296,7 +296,7 @@ gtranscriber info
 
 **Example**:
 ```bash
-gtranscriber info
+arandu info
 ```
 
 ---
@@ -307,7 +307,7 @@ List all pipeline runs with status and metadata.
 
 **Usage**:
 ```bash
-gtranscriber list-runs [OPTIONS]
+arandu list-runs [OPTIONS]
 ```
 
 **Options**:
@@ -320,13 +320,13 @@ gtranscriber list-runs [OPTIONS]
 **Examples**:
 ```bash
 # List all runs
-gtranscriber list-runs
+arandu list-runs
 
 # Filter by pipeline type
-gtranscriber list-runs --pipeline transcription
+arandu list-runs --pipeline transcription
 
 # Custom results directory
-gtranscriber list-runs --results-dir /path/to/results
+arandu list-runs --results-dir /path/to/results
 ```
 
 ---
@@ -337,7 +337,7 @@ Display detailed information about a specific run including execution environmen
 
 **Usage**:
 ```bash
-gtranscriber run-info RUN_ID [OPTIONS]
+arandu run-info RUN_ID [OPTIONS]
 ```
 
 **Arguments**:
@@ -353,13 +353,13 @@ gtranscriber run-info RUN_ID [OPTIONS]
 **Examples**:
 ```bash
 # Display specific run
-gtranscriber run-info transcription_20260211_143022
+arandu run-info transcription_20260211_143022
 
 # Display latest transcription run
-gtranscriber run-info latest --pipeline transcription
+arandu run-info latest --pipeline transcription
 
 # Display latest CEP run
-gtranscriber run-info latest --pipeline cep
+arandu run-info latest --pipeline cep
 ```
 
 ---
@@ -370,7 +370,7 @@ Validate existing transcriptions for quality issues (wrong language/script, repe
 
 **Usage**:
 ```bash
-gtranscriber validate-transcriptions INPUT_DIR [OPTIONS]
+arandu validate-transcriptions INPUT_DIR [OPTIONS]
 ```
 
 **Arguments**:
@@ -388,19 +388,19 @@ gtranscriber validate-transcriptions INPUT_DIR [OPTIONS]
 **Examples**:
 ```bash
 # Validate and update in-place
-gtranscriber validate-transcriptions results/
+arandu validate-transcriptions results/
 
 # Validate with custom threshold
-gtranscriber validate-transcriptions results/ --threshold 0.6
+arandu validate-transcriptions results/ --threshold 0.6
 
 # Validate English transcriptions
-gtranscriber validate-transcriptions results/ --language en
+arandu validate-transcriptions results/ --language en
 
 # Report only (no file updates)
-gtranscriber validate-transcriptions results/ --report-only
+arandu validate-transcriptions results/ --report-only
 
 # Save validated files to new directory
-gtranscriber validate-transcriptions results/ --output-dir validated/
+arandu validate-transcriptions results/ --output-dir validated/
 ```
 
 **Quality Checks**:
@@ -417,7 +417,7 @@ Rebuild index.json from existing run directories by scanning all pipeline ID dir
 
 **Usage**:
 ```bash
-gtranscriber rebuild-index [OPTIONS]
+arandu rebuild-index [OPTIONS]
 ```
 
 **Options**:
@@ -428,7 +428,7 @@ gtranscriber rebuild-index [OPTIONS]
 
 **Example**:
 ```bash
-gtranscriber rebuild-index --results-dir /path/to/results
+arandu rebuild-index --results-dir /path/to/results
 ```
 
 ---
@@ -441,27 +441,27 @@ Complete pipeline from transcription to CEP QA generation:
 
 ```bash
 # Step 1: Batch transcribe files
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
     --workers 4 \
     --quantize \
     --id etno-001
 
 # Step 2: Validate transcription quality
-gtranscriber validate-transcriptions results/ \
+arandu validate-transcriptions results/ \
     --threshold 0.6
 
 # Step 3: Generate CEP QA pairs
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --workers 4 \
     --questions 12 \
     --language pt \
     --id etno-001
 
 # Step 4: List all runs
-gtranscriber list-runs
+arandu list-runs
 
 # Step 5: View run details
-gtranscriber run-info latest --pipeline cep
+arandu run-info latest --pipeline cep
 ```
 
 ### Resume Interrupted Job
@@ -470,14 +470,14 @@ All batch commands support automatic checkpointing:
 
 ```bash
 # Start batch transcription
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 
 # If interrupted, resume automatically
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 # Will skip already processed files
 
 # CEP generation also supports resume
-gtranscriber generate-cep-qa results/ --workers 4
+arandu generate-cep-qa results/ --workers 4
 ```
 
 ### Custom LLM Configuration
@@ -486,20 +486,20 @@ Use different LLM providers and models:
 
 ```bash
 # With Ollama (default)
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --provider ollama \
     --model-id qwen3:14b \
     --workers 4
 
 # With OpenAI
 export OPENAI_API_KEY=sk-...
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --provider openai \
     --model-id gpt-4o-mini \
     --workers 2
 
 # With custom OpenAI-compatible endpoint
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
     --provider custom \
     --base-url https://my-vllm-server/v1 \
     --model-id llama3.1:70b
@@ -515,8 +515,8 @@ Command-line arguments override environment variables:
 
 ```bash
 # Config says ollama, but we override to openai
-export GTRANSCRIBER_QA_PROVIDER=ollama
-gtranscriber generate-cep-qa results/ --provider openai
+export ARANDU_QA_PROVIDER=ollama
+arandu generate-cep-qa results/ --provider openai
 ```
 
 ### Environment Variables
@@ -525,22 +525,22 @@ Set defaults via environment instead of CLI:
 
 ```bash
 # Transcription settings
-export GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
-export GTRANSCRIBER_WORKERS=4
-export GTRANSCRIBER_QUANTIZE=true
+export ARANDU_MODEL_ID=openai/whisper-large-v3
+export ARANDU_WORKERS=4
+export ARANDU_QUANTIZE=true
 
 # QA settings
-export GTRANSCRIBER_QA_PROVIDER=ollama
-export GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-export GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
+export ARANDU_QA_PROVIDER=ollama
+export ARANDU_QA_MODEL_ID=qwen3:14b
+export ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 
 # CEP settings
-export GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
-export GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b
+export ARANDU_CEP_ENABLE_VALIDATION=true
+export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
 
 # Now run with defaults
-gtranscriber batch-transcribe input/catalog.csv
-gtranscriber generate-cep-qa results/
+arandu batch-transcribe input/catalog.csv
+arandu generate-cep-qa results/
 ```
 
 ### Pipeline ID Tracking
@@ -551,13 +551,13 @@ Use consistent pipeline IDs across related steps:
 # All steps use same pipeline ID
 PIPELINE_ID="etno-project-001"
 
-gtranscriber batch-transcribe input/catalog.csv --id $PIPELINE_ID
-gtranscriber validate-transcriptions results/ 
-gtranscriber generate-cep-qa results/ --id $PIPELINE_ID
+arandu batch-transcribe input/catalog.csv --id $PIPELINE_ID
+arandu validate-transcriptions results/ 
+arandu generate-cep-qa results/ --id $PIPELINE_ID
 
 # View all runs for this pipeline
-gtranscriber list-runs
-gtranscriber run-info $PIPELINE_ID
+arandu list-runs
+arandu run-info $PIPELINE_ID
 ```
 
 ---
@@ -601,7 +601,7 @@ Test on sample data before processing full corpus:
 ```bash
 # Test on 5 files first
 mkdir samples && cp results/*.json samples/ | head -5
-gtranscriber generate-cep-qa samples/ -o qa_test/
+arandu generate-cep-qa samples/ -o qa_test/
 ```
 
 ### 2. Use Checkpoints
@@ -610,11 +610,11 @@ Checkpoints enable automatic resume:
 
 ```bash
 # Runs create checkpoints automatically
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 # Creates: results/checkpoint.json
 
 # Resume automatically if interrupted
-gtranscriber batch-transcribe input/catalog.csv --workers 4
+arandu batch-transcribe input/catalog.csv --workers 4
 # Skips already processed files
 ```
 
@@ -624,13 +624,13 @@ Use pipeline tracking commands:
 
 ```bash
 # List all runs
-gtranscriber list-runs
+arandu list-runs
 
 # View latest run details
-gtranscriber run-info latest --pipeline transcription
+arandu run-info latest --pipeline transcription
 
 # Check run statistics
-gtranscriber run-info latest --pipeline cep
+arandu run-info latest --pipeline cep
 ```
 
 ### 4. Optimize Workers
@@ -639,10 +639,10 @@ Adjust workers based on available resources:
 
 ```bash
 # CPU-bound tasks: Use available cores
-gtranscriber generate-cep-qa results/ --workers $(nproc)
+arandu generate-cep-qa results/ --workers $(nproc)
 
 # Memory-constrained: Reduce workers
-gtranscriber batch-transcribe catalog.csv --workers 2
+arandu batch-transcribe catalog.csv --workers 2
 ```
 
 ### 5. Validate Quality
@@ -651,10 +651,10 @@ Always validate transcriptions before downstream tasks:
 
 ```bash
 # Validate first
-gtranscriber validate-transcriptions results/ --threshold 0.6
+arandu validate-transcriptions results/ --threshold 0.6
 
 # Then generate QA
-gtranscriber generate-cep-qa results/ --workers 4
+arandu generate-cep-qa results/ --workers 4
 ```
 
 ---

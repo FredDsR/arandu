@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from gtranscriber.core.metadata.extractor import GDriveCatalogExtractor
-from gtranscriber.core.metadata.protocol import MetadataExtractor
-from gtranscriber.schemas import SourceMetadata
+from arandu.core.metadata.extractor import GDriveCatalogExtractor
+from arandu.core.metadata.protocol import MetadataExtractor
+from arandu.schemas import SourceMetadata
 
 
 class TestMetadataExtractorProtocol:

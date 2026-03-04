@@ -1,6 +1,6 @@
 # Related Works
 
-This document surveys the literature relevant to the G-Transcriber pipeline and the Etno-KGC research program. The works are organized along thematic axes that correspond to the pipeline's four phases and its broader interdisciplinary context.
+This document surveys the literature relevant to the Arandu pipeline and the Etno-KGC research program. The works are organized along thematic axes that correspond to the pipeline's four phases and its broader interdisciplinary context.
 
 ---
 
@@ -20,7 +20,7 @@ In the domain of process knowledge, **Gassen et al. (2025)** propose LLM-based c
 
 ## 2. LLM-Assisted Analysis of Interviews and Narratives
 
-A parallel stream investigates LLMs as tools for qualitative analysis of interview and narrative data -- the same data type that G-Transcriber processes.
+A parallel stream investigates LLMs as tools for qualitative analysis of interview and narrative data -- the same data type that Arandu processes.
 
 **De Paoli (2024)** experiments with GPT-3.5-Turbo to perform inductive Thematic Analysis (TA) on semi-structured interviews, applying Braun and Clarke's six-phase framework. Results show the model can partially reproduce main themes, establishing feasibility of LLM-assisted qualitative analysis. **Dai et al. (2023)** formalize this as the "LLM-in-the-loop" paradigm for thematic analysis, where human researchers iteratively refine LLM-generated themes rather than performing manual coding from scratch.
 
@@ -42,7 +42,7 @@ The CEP (Cognitive Elicitation Pipeline) grounds QA generation in Bloom's Revise
 
 ## 4. LLM-as-a-Judge Evaluation Frameworks
 
-G-Transcriber employs LLM-as-a-Judge for both QA validation (Phase 2) and Knowledge Coverage scoring (Phase 4). This paradigm has become a mature evaluation methodology.
+Arandu employs LLM-as-a-Judge for both QA validation (Phase 2) and Knowledge Coverage scoring (Phase 4). This paradigm has become a mature evaluation methodology.
 
 **Zheng et al. (2023)** establish the foundational LLM-as-a-Judge paradigm with MT-Bench and Chatbot Arena, demonstrating that GPT-4 matches human preferences with over 80% agreement. They identify and characterize key biases: position bias, verbosity bias, and self-enhancement bias. **RAGAS (Es et al., 2024)** introduces a reference-free evaluation framework for RAG pipelines assessing faithfulness, answer relevance, and context relevance, becoming a de facto standard in RAG evaluation.
 
@@ -68,9 +68,9 @@ Phase 3 employs AutoSchemaKG for schema-free knowledge graph construction. This 
 
 **Bian (2025)** provides a comprehensive survey examining how LLMs transform knowledge graph construction, analyzing the three-stage pipeline (ontology engineering, knowledge extraction, knowledge fusion) through schema-based and schema-free paradigms. Methods reviewed include ChatIE (extraction as multi-turn dialogue), KGGEN (sequential LLM invocations), and Retrieval-Augmented prompting.
 
-**Bai et al. (2025)** introduce AutoSchemaKG itself -- the framework adopted by G-Transcriber -- which performs autonomous schema induction from unstructured text through an Extract-Define-Canonicalize pipeline. The key innovation is dynamic schema induction under the Open World Assumption: rather than constraining extraction to a fixed ontology, the LLM extracts triples freely and induces the schema from the data, producing a type system that reflects the actual conceptual structure. Event-aware extraction retains over 90% of informational content versus approximately 70% for entity-only approaches.
+**Bai et al. (2025)** introduce AutoSchemaKG itself -- the framework adopted by Arandu -- which performs autonomous schema induction from unstructured text through an Extract-Define-Canonicalize pipeline. The key innovation is dynamic schema induction under the Open World Assumption: rather than constraining extraction to a fixed ontology, the LLM extracts triples freely and induces the schema from the data, producing a type system that reflects the actual conceptual structure. Event-aware extraction retains over 90% of informational content versus approximately 70% for entity-only approaches.
 
-**Ji et al. (2022)** survey knowledge graphs broadly -- representation, acquisition, and applications -- providing the foundational context for KG construction methods. **Meher et al. (2025)** introduce LINK-KG, an LLM-driven approach to coreference-resolved knowledge graphs, addressing the entity resolution challenge that produces "knowledge islands" in document-level KGs -- directly relevant to the horizontal fragmentation observed in G-Transcriber's preliminary results.
+**Ji et al. (2022)** survey knowledge graphs broadly -- representation, acquisition, and applications -- providing the foundational context for KG construction methods. **Meher et al. (2025)** introduce LINK-KG, an LLM-driven approach to coreference-resolved knowledge graphs, addressing the entity resolution challenge that produces "knowledge islands" in document-level KGs -- directly relevant to the horizontal fragmentation observed in Arandu's preliminary results.
 
 **Li et al. (2025)** investigate mitigating LLM hallucinations with knowledge graphs, demonstrating the bidirectional relationship between KGs and LLMs: KGs ground LLM generation, while LLMs construct KGs. This reciprocity underpins the evaluation strategy where LLM-generated QA pairs test LLM-constructed graphs.
 
@@ -84,7 +84,7 @@ The Knowledge Coverage evaluation in Phase 4 tests whether the KG supports quest
 
 **Peng et al. (2024)** survey GraphRAG comprehensively -- downstream tasks, application domains, evaluation methodologies, and industrial use cases. They identify critical evaluation gaps: lack of domain-specific corpora and oversimplified task granularity. Their finding that rich KGs provide gains when balanced to avoid excess noise is relevant to the tradeoff between extraction recall and graph quality.
 
-The application of KGs to oral historical archives is explored by **ACM (2024)** (Proceedings of the 8th International Conference on Information System and Data Mining), which uses LLM-RAG to construct knowledge graphs from oral historical archive resources, extracting time, location, characters, and events to form narrative records -- the closest published methodological parallel to G-Transcriber's interview-to-KG pipeline.
+The application of KGs to oral historical archives is explored by **ACM (2024)** (Proceedings of the 8th International Conference on Information System and Data Mining), which uses LLM-RAG to construct knowledge graphs from oral historical archive resources, extracting time, location, characters, and events to form narrative records -- the closest published methodological parallel to Arandu's interview-to-KG pipeline.
 
 ---
 
@@ -104,17 +104,17 @@ Phase 4's functional evaluation -- using QA pairs as ground truth for KG assessm
 
 Phase 1 relies on Whisper for speech recognition. The ASR quality directly impacts all downstream processing.
 
-**Radford et al. (2023)** introduce Whisper, trained on 680,000 hours of multilingual audio via large-scale weak supervision. The model demonstrates robust performance across languages and acoustic conditions, though quality varies significantly by language and recording environment. For Portuguese-Brazilian ethnographic recordings -- often in noisy field conditions with regional dialectal variation -- the quality validation pipeline implemented in G-Transcriber (script/charset match, repetition detection, segment patterns, content density) addresses known Whisper failure modes including hallucinated loops and language confusion.
+**Radford et al. (2023)** introduce Whisper, trained on 680,000 hours of multilingual audio via large-scale weak supervision. The model demonstrates robust performance across languages and acoustic conditions, though quality varies significantly by language and recording environment. For Portuguese-Brazilian ethnographic recordings -- often in noisy field conditions with regional dialectal variation -- the quality validation pipeline implemented in Arandu (script/charset match, repetition detection, segment patterns, content density) addresses known Whisper failure modes including hallucinated loops and language confusion.
 
 ---
 
 ## 10. Ethnographic Knowledge, AI, and Climate Resilience
 
-The broader research context situates G-Transcriber within the intersection of AI, traditional ecological knowledge, and climate resilience -- a space characterized by a profound evidence gap.
+The broader research context situates Arandu within the intersection of AI, traditional ecological knowledge, and climate resilience -- a space characterized by a profound evidence gap.
 
 ### 10.1 Traditional Ecological Knowledge and Decolonial Frameworks
 
-**Martin et al. (2010)** define Traditional Ecological Knowledge (TEK) as a cumulative body of knowledge, practice, and belief about the relationships of living beings with one another and their environment, evolving by adaptive processes and handed down through generations. This definition grounds what G-Transcriber aims to elicit and structure.
+**Martin et al. (2010)** define Traditional Ecological Knowledge (TEK) as a cumulative body of knowledge, practice, and belief about the relationships of living beings with one another and their environment, evolving by adaptive processes and handed down through generations. This definition grounds what Arandu aims to elicit and structure.
 
 **Carroll et al. (2023)** formalize the **CARE Principles for Indigenous Data Governance** -- Collective Benefit, Authority to Control, Responsibility, and Ethics -- establishing the ethical framework for any AI system processing traditional community knowledge. The Etno-KGC project's commitment to participatory validation through TREC-PAR directly operationalizes these principles.
 
@@ -132,7 +132,7 @@ The topological analysis of the constructed knowledge graph draws on foundationa
 
 ## 11. Positioning: What This Work Adds
 
-The literature review reveals that while each component of G-Transcriber has precedents in isolation, their integration is novel:
+The literature review reveals that while each component of Arandu has precedents in isolation, their integration is novel:
 
 1. **Tacit knowledge elicitation** has been explored in manufacturing (Rank et al., 2025) and organizational contexts (Zuin et al., 2025), but not from ethnographic interviews with climate-affected traditional communities.
 
@@ -144,7 +144,7 @@ The literature review reveals that while each component of G-Transcriber has pre
 
 5. **The ethical-decolonial grounding** -- CARE Principles, participatory validation via TREC-PAR, data sovereignty -- is absent from the KGC and GraphRAG literature, which operates almost exclusively on anglophone, institutionally-produced corpora.
 
-The SLR's evidence gap (Reckziegel & Costa, 2025b) confirms this positioning: the bridges between AI, ancestral knowledge, and climate resilience remain largely unbuilt. G-Transcriber does not merely apply existing techniques to a new domain; it constructs a pipeline where methodological choices at every stage are driven by the epistemological requirements of tacit knowledge in traditional communities.
+The SLR's evidence gap (Reckziegel & Costa, 2025b) confirms this positioning: the bridges between AI, ancestral knowledge, and climate resilience remain largely unbuilt. Arandu does not merely apply existing techniques to a new domain; it constructs a pipeline where methodological choices at every stage are driven by the epistemological requirements of tacit knowledge in traditional communities.
 
 ---
 

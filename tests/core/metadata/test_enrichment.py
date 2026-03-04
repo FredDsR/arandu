@@ -6,8 +6,8 @@ from datetime import datetime
 
 import pytest
 
-from gtranscriber.core.metadata.enrichment import enrich_with_source_metadata
-from gtranscriber.schemas import EnrichedRecord, SourceMetadata
+from arandu.core.metadata.enrichment import enrich_with_source_metadata
+from arandu.schemas import EnrichedRecord, SourceMetadata
 
 
 @pytest.fixture

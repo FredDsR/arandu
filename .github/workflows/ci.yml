@@ -61,7 +61,7 @@ jobs:
 
       - name: Run pytest with coverage
         run: |
-          uv run pytest --cov=gtranscriber --cov-report=term-missing --cov-report=json --cov-fail-under=75
+          uv run pytest --cov=arandu --cov-report=term-missing --cov-report=json --cov-fail-under=75
       
       - name: Extract coverage percentage
         if: always()

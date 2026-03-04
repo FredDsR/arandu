@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.core.judge.criterion import FileCriterion
-from gtranscriber.schemas import CriterionScore
-from gtranscriber.utils.text import GenerateResult
+from arandu.core.judge.criterion import FileCriterion
+from arandu.schemas import CriterionScore
+from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from gtranscriber.core.report.collector import RunReport
-from gtranscriber.core.report.dataset import (
+from arandu.core.report.collector import RunReport
+from arandu.core.report.dataset import (
     QAPairRow,
     ReportDataset,
     RunSummaryRow,
     TranscriptionRow,
     build_dataset,
 )
-from gtranscriber.schemas import (
+from arandu.schemas import (
     EnrichedRecord,
     PipelineMetadata,
     PipelineType,
@@ -244,7 +244,7 @@ class TestBuildDataset:
 
     def test_missing_validation_scores(self) -> None:
         """Test flattening QA pairs without validation."""
-        from gtranscriber.schemas import QAPairCEP
+        from arandu.schemas import QAPairCEP
 
         qa_pair = QAPairCEP(
             question="Test?",

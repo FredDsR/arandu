@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from gtranscriber.schemas import EnrichedRecord
-from gtranscriber.utils.ui import (
+from arandu.schemas import EnrichedRecord
+from arandu.utils.ui import (
     MAX_DISPLAY_FILES,
     _truncate_text,
     create_download_progress,
@@ -91,7 +91,7 @@ class TestCreateProgress:
 class TestDisplayResultPanel:
     """Tests for display_result_panel function."""
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_result_panel(self, mock_console: MagicMock) -> None:
         """Test displaying result panel."""
         record = EnrichedRecord(
@@ -116,7 +116,7 @@ class TestDisplayResultPanel:
         panel_arg = mock_console.print.call_args[0][0]
         assert hasattr(panel_arg, "title")
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_result_panel_long_text(self, mock_console: MagicMock) -> None:
         """Test displaying result panel with long transcription text."""
         long_text = "This is a very long transcription. " * 50
@@ -143,7 +143,7 @@ class TestDisplayResultPanel:
 class TestDisplayConfigTable:
     """Tests for display_config_table function."""
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_config_table(self, mock_console: MagicMock) -> None:
         """Test displaying configuration table."""
         display_config_table(
@@ -158,7 +158,7 @@ class TestDisplayConfigTable:
         table_arg = mock_console.print.call_args[0][0]
         assert hasattr(table_arg, "title")
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_config_table_no_quantization(self, mock_console: MagicMock) -> None:
         """Test displaying config table with quantization disabled."""
         display_config_table(
@@ -174,7 +174,7 @@ class TestDisplayConfigTable:
 class TestDisplayFileList:
     """Tests for display_file_list function."""
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_file_list_few_files(self, mock_console: MagicMock) -> None:
         """Test displaying file list with few files."""
         files = [
@@ -196,7 +196,7 @@ class TestDisplayFileList:
         table_arg = mock_console.print.call_args[0][0]
         assert hasattr(table_arg, "title")
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_file_list_many_files(self, mock_console: MagicMock) -> None:
         """Test displaying file list with many files (more than MAX_DISPLAY_FILES)."""
         files = [
@@ -212,7 +212,7 @@ class TestDisplayFileList:
 
         mock_console.print.assert_called_once()
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_file_list_with_string_size(self, mock_console: MagicMock) -> None:
         """Test displaying file list with size as string."""
         files = [
@@ -227,7 +227,7 @@ class TestDisplayFileList:
 
         mock_console.print.assert_called_once()
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_file_list_missing_fields(self, mock_console: MagicMock) -> None:
         """Test displaying file list with missing fields."""
         files = [
@@ -238,7 +238,7 @@ class TestDisplayFileList:
 
         mock_console.print.assert_called_once()
 
-    @patch("gtranscriber.utils.ui.console")
+    @patch("arandu.utils.ui.console")
     def test_display_file_list_empty(self, mock_console: MagicMock) -> None:
         """Test displaying empty file list."""
         files = []

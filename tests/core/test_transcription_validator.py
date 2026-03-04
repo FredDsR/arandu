@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from gtranscriber.config import TranscriptionQualityConfig
-from gtranscriber.core.transcription_validator import (
+from arandu.config import TranscriptionQualityConfig
+from arandu.core.transcription_validator import (
     TranscriptionValidator,
     validate_enriched_record,
 )
-from gtranscriber.schemas import EnrichedRecord, TranscriptionSegment
+from arandu.schemas import EnrichedRecord, TranscriptionSegment
 
 
 class TestTranscriptionQualityConfig:
@@ -53,9 +53,9 @@ class TestTranscriptionQualityConfig:
 
     def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading from environment variables."""
-        monkeypatch.setenv("GTRANSCRIBER_QUALITY_ENABLED", "false")
-        monkeypatch.setenv("GTRANSCRIBER_QUALITY_QUALITY_THRESHOLD", "0.7")
-        monkeypatch.setenv("GTRANSCRIBER_QUALITY_EXPECTED_LANGUAGE", "en")
+        monkeypatch.setenv("ARANDU_QUALITY_ENABLED", "false")
+        monkeypatch.setenv("ARANDU_QUALITY_QUALITY_THRESHOLD", "0.7")
+        monkeypatch.setenv("ARANDU_QUALITY_EXPECTED_LANGUAGE", "en")
 
         config = TranscriptionQualityConfig()
 

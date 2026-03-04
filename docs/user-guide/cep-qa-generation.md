@@ -51,16 +51,16 @@ sbatch scripts/slurm/cep/sirius.slurm
 
 ```bash
 # Basic usage (validation enabled by default)
-gtranscriber generate-cep-qa results/ --output-dir cep_dataset/
+arandu generate-cep-qa results/ --output-dir cep_dataset/
 
 # Disable validation for faster processing
-gtranscriber generate-cep-qa results/ --no-validate --output-dir cep_dataset/
+arandu generate-cep-qa results/ --no-validate --output-dir cep_dataset/
 
 # Export to JSONL format
-gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 
 # With pipeline ID for tracking
-gtranscriber generate-cep-qa results/ --id etno-project-001
+arandu generate-cep-qa results/ --id etno-project-001
 ```
 
 ## Configuration
@@ -69,23 +69,23 @@ gtranscriber generate-cep-qa results/ --id etno-project-001
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
-| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://ollama:11434/v1` | Ollama API URL |
-| `GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
-| `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
-| `GTRANSCRIBER_QA_WORKERS` | `2` | Parallel workers |
+| `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
+| `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
+| `ARANDU_QA_OLLAMA_URL` | `http://ollama:11434/v1` | Ollama API URL |
+| `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
+| `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
+| `ARANDU_QA_WORKERS` | `2` | Parallel workers |
 
 ### CEP-Specific Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
-| `GTRANSCRIBER_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
-| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model |
-| `GTRANSCRIBER_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
-| `GTRANSCRIBER_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
-| `GTRANSCRIBER_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
+| `ARANDU_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
+| `ARANDU_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
+| `ARANDU_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model |
+| `ARANDU_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
+| `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
+| `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
 
 ### Bloom Distribution
 
@@ -100,7 +100,7 @@ Default distribution allocates questions across cognitive levels:
 
 Customize via CLI:
 ```bash
-gtranscriber generate-cep-qa results/ \
+arandu generate-cep-qa results/ \
   --bloom-dist "remember:0.1,understand:0.2,analyze:0.4,evaluate:0.3"
 ```
 
@@ -108,20 +108,20 @@ gtranscriber generate-cep-qa results/ \
 
 ```bash
 # QA Generation Settings
-GTRANSCRIBER_QA_PROVIDER=ollama
-GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=12
-GTRANSCRIBER_QA_TEMPERATURE=0.7
-GTRANSCRIBER_QA_WORKERS=4
+ARANDU_QA_PROVIDER=ollama
+ARANDU_QA_MODEL_ID=qwen3:14b
+ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
+ARANDU_QA_TEMPERATURE=0.7
+ARANDU_QA_WORKERS=4
 
 # CEP-Specific Settings
-GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
-GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID=qwen3:14b
-GTRANSCRIBER_CEP_LANGUAGE=pt
+ARANDU_CEP_ENABLE_VALIDATION=true
+ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
+ARANDU_CEP_LANGUAGE=pt
 
 # Directories
-GTRANSCRIBER_RESULTS_DIR=./results
-GTRANSCRIBER_CEP_DIR=./cep_dataset
+ARANDU_RESULTS_DIR=./results
+ARANDU_CEP_DIR=./cep_dataset
 ```
 
 ## Usage Examples
@@ -137,7 +137,7 @@ docker compose --profile cep up
 
 ```bash
 # Disable validation for faster processing
-GTRANSCRIBER_CEP_ENABLE_VALIDATION=false docker compose --profile cep up
+ARANDU_CEP_ENABLE_VALIDATION=false docker compose --profile cep up
 ```
 
 ### GPU-Accelerated Ollama
@@ -151,14 +151,14 @@ docker compose --profile cep-gpu up
 
 ```bash
 # Generate QA pairs with English prompts
-GTRANSCRIBER_CEP_LANGUAGE=en docker compose --profile cep up
+ARANDU_CEP_LANGUAGE=en docker compose --profile cep up
 ```
 
 ### Export to JSONL
 
 ```bash
 # Generate and export to JSONL format for training
-gtranscriber generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
 ```
 
 ## Output Format
@@ -314,8 +314,8 @@ The overall score is a weighted average. QA pairs below the threshold (default 0
 ## Programmatic Usage
 
 ```python
-from gtranscriber.schemas import QARecordCEP, QAPairCEP
-from gtranscriber.config import CEPConfig, QAConfig, get_cep_config
+from arandu.schemas import QARecordCEP, QAPairCEP
+from arandu.config import CEPConfig, QAConfig, get_cep_config
 
 # Load existing CEP record
 record = QARecordCEP.load("cep_dataset/1abc123xyz_cep_qa.json")
@@ -353,7 +353,7 @@ print(f"Bloom levels: {cep_config.bloom_levels}")
 
 ```bash
 # Watch CEP generation logs
-docker compose --profile cep logs -f gtranscriber-cep
+docker compose --profile cep logs -f arandu-cep
 
 # Check Ollama status
 docker compose --profile cep logs ollama
@@ -423,8 +423,8 @@ docker compose --profile cep exec ollama ollama list
 ### Low Bloom Calibration Scores
 
 - Ensure model has good reasoning capabilities
-- Try larger model: `GTRANSCRIBER_QA_MODEL_ID=llama3.3:70b`
-- Lower temperature for more consistent output: `GTRANSCRIBER_QA_TEMPERATURE=0.5`
+- Try larger model: `ARANDU_QA_MODEL_ID=llama3.3:70b`
+- Lower temperature for more consistent output: `ARANDU_QA_TEMPERATURE=0.5`
 
 ### Validation Rejecting Most Pairs
 

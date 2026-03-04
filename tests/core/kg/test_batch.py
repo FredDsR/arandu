@@ -9,9 +9,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gtranscriber.config import KGConfig
-from gtranscriber.core.kg.schemas import KGConstructionResult
-from gtranscriber.schemas import KGMetadata
+from arandu.config import KGConfig
+from arandu.core.kg.schemas import KGConstructionResult
+from arandu.schemas import KGMetadata
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -51,7 +51,7 @@ class TestLoadTranscriptionRecords:
 
     def test_loads_valid_records(self, tmp_path: Path) -> None:
         """Test loading valid transcription records."""
-        from gtranscriber.core.kg.batch import _load_transcription_records
+        from arandu.core.kg.batch import _load_transcription_records
 
         _write_transcription(tmp_path, "id1")
         _write_transcription(tmp_path, "id2")
@@ -63,7 +63,7 @@ class TestLoadTranscriptionRecords:
 
     def test_skips_invalid_records(self, tmp_path: Path) -> None:
         """Test that is_valid=False records are skipped."""
-        from gtranscriber.core.kg.batch import _load_transcription_records
+        from arandu.core.kg.batch import _load_transcription_records
 
         _write_transcription(tmp_path, "valid", is_valid=True)
         _write_transcription(tmp_path, "invalid", is_valid=False)
@@ -74,7 +74,7 @@ class TestLoadTranscriptionRecords:
 
     def test_empty_directory(self, tmp_path: Path) -> None:
         """Test loading from empty directory returns empty list."""
-        from gtranscriber.core.kg.batch import _load_transcription_records
+        from arandu.core.kg.batch import _load_transcription_records
 
         records = _load_transcription_records(tmp_path)
         assert records == []
@@ -85,7 +85,7 @@ class TestResolveTranscriptionDir:
 
     def test_returns_dir_with_transcription_files(self, tmp_path: Path) -> None:
         """Test fast path: dir already contains transcription files."""
-        from gtranscriber.core.kg.batch import _resolve_transcription_dir
+        from arandu.core.kg.batch import _resolve_transcription_dir
 
         _write_transcription(tmp_path, "test")
         result = _resolve_transcription_dir(tmp_path)
@@ -93,7 +93,7 @@ class TestResolveTranscriptionDir:
 
     def test_returns_input_dir_when_empty(self, tmp_path: Path) -> None:
         """Test fallback: returns input dir when no files found."""
-        from gtranscriber.core.kg.batch import _resolve_transcription_dir
+        from arandu.core.kg.batch import _resolve_transcription_dir
 
         result = _resolve_transcription_dir(tmp_path)
         assert result == tmp_path
@@ -105,11 +105,11 @@ class TestRunBatchKGConstruction:
     def test_empty_input_completes(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test orchestrator completes gracefully with no input records."""
         mocker.patch(
-            "gtranscriber.core.kg.batch.ResultsConfig",
+            "arandu.core.kg.batch.ResultsConfig",
             return_value=MagicMock(enable_versioning=False),
         )
 
-        from gtranscriber.core.kg.batch import run_batch_kg_construction
+        from arandu.core.kg.batch import run_batch_kg_construction
 
         config = KGConfig()
         output_dir = tmp_path / "output"
@@ -120,7 +120,7 @@ class TestRunBatchKGConstruction:
     def test_processes_records(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test orchestrator dispatches to constructor and tracks results."""
         mocker.patch(
-            "gtranscriber.core.kg.batch.ResultsConfig",
+            "arandu.core.kg.batch.ResultsConfig",
             return_value=MagicMock(enable_versioning=False),
         )
 
@@ -149,11 +149,11 @@ class TestRunBatchKGConstruction:
         mock_constructor = MagicMock()
         mock_constructor.build_graph.return_value = mock_result
         mocker.patch(
-            "gtranscriber.core.kg.batch.create_kg_constructor",
+            "arandu.core.kg.batch.create_kg_constructor",
             return_value=mock_constructor,
         )
 
-        from gtranscriber.core.kg.batch import run_batch_kg_construction
+        from arandu.core.kg.batch import run_batch_kg_construction
 
         config = KGConfig()
         run_batch_kg_construction(input_dir, output_dir, config)
@@ -165,7 +165,7 @@ class TestRunBatchKGConstruction:
     def test_constructor_failure_marks_failed(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test orchestrator handles constructor exceptions gracefully."""
         mocker.patch(
-            "gtranscriber.core.kg.batch.ResultsConfig",
+            "arandu.core.kg.batch.ResultsConfig",
             return_value=MagicMock(enable_versioning=False),
         )
 
@@ -176,11 +176,11 @@ class TestRunBatchKGConstruction:
         mock_constructor = MagicMock()
         mock_constructor.build_graph.side_effect = RuntimeError("LLM error")
         mocker.patch(
-            "gtranscriber.core.kg.batch.create_kg_constructor",
+            "arandu.core.kg.batch.create_kg_constructor",
             return_value=mock_constructor,
         )
 
-        from gtranscriber.core.kg.batch import run_batch_kg_construction
+        from arandu.core.kg.batch import run_batch_kg_construction
 
         config = KGConfig()
         output_dir = tmp_path / "output"

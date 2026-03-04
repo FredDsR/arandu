@@ -9,13 +9,13 @@ from unittest.mock import patch
 
 import pytest
 
-from gtranscriber.config import CEPConfig, QAConfig
-from gtranscriber.core.cep.bloom_scaffolding import (
+from arandu.config import CEPConfig, QAConfig
+from arandu.core.cep.bloom_scaffolding import (
     BloomScaffoldingGenerator,
     LLMResponseError,
 )
-from gtranscriber.schemas import QAPairCEP
-from gtranscriber.utils.text import GenerateResult
+from arandu.schemas import QAPairCEP
+from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture

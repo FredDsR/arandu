@@ -1,4 +1,4 @@
-# G-Transcriber KG Construction Image
+# Arandu KG Construction Image
 # Extends the base image with atlas-rag for knowledge graph construction
 # Multi-stage build for optimized image size using official uv images
 
@@ -45,5 +45,5 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN mkdir -p /app/input /app/results /app/credentials
 
 # Default command
-ENTRYPOINT ["gtranscriber"]
+ENTRYPOINT ["arandu"]
 CMD ["--help"]

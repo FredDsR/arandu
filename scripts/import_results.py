@@ -17,9 +17,9 @@ from typing import Annotated
 
 import typer
 
-from gtranscriber import __version__
-from gtranscriber.core.results_manager import ResultsManager
-from gtranscriber.schemas import (
+from arandu import __version__
+from arandu.core.results_manager import ResultsManager
+from arandu.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
@@ -28,7 +28,7 @@ from gtranscriber.schemas import (
     RunMetadata,
     RunStatus,
 )
-from gtranscriber.utils.logger import print_error, print_info, print_success, print_warning
+from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 app = typer.Typer(help="Import externally produced results into the versioned structure.")
 
@@ -180,7 +180,7 @@ def build_run_metadata(
         failed_items=failed_items,
         output_directory=str(run_dir),
         checkpoint_file=str(run_dir / "checkpoint.json"),
-        gtranscriber_version=__version__,
+        arandu_version=__version__,
         input_source="slurm_import",
     )
 

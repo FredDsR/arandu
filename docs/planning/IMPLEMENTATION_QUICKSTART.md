@@ -18,17 +18,17 @@ Before starting implementation, ensure you have:
 
 ### What's Already Done (P1)
 
-The G-Transcriber transcription pipeline is **complete and working**:
+The Arandu transcription pipeline is **complete and working**:
 - Whisper ASR transcription
 - Batch processing with checkpointing
 - Google Drive integration
 - Docker and SLURM support
 
 **Key existing files**:
-- `src/gtranscriber/main.py` - CLI with commands
-- `src/gtranscriber/config.py` - Pydantic configuration
-- `src/gtranscriber/schemas.py` - Data models (EnrichedRecord, etc.)
-- `src/gtranscriber/core/batch.py` - Batch processing pattern
+- `src/arandu/main.py` - CLI with commands
+- `src/arandu/config.py` - Pydantic configuration
+- `src/arandu/schemas.py` - Data models (EnrichedRecord, etc.)
+- `src/arandu/core/batch.py` - Batch processing pattern
 - `docker-compose.yml` - Docker services
 - `scripts/slurm/` - SLURM job scripts
 
@@ -47,9 +47,9 @@ Three new capabilities:
 **Goal**: Infrastructure setup (LLM client, config, schemas, Docker, SLURM)
 
 **Critical Files to Create**:
-1. `src/gtranscriber/core/llm_client.py` (~100 lines)
-2. Extend `src/gtranscriber/config.py` (add ~100 lines)
-3. Extend `src/gtranscriber/schemas.py` (add ~300 lines)
+1. `src/arandu/core/llm_client.py` (~100 lines)
+2. Extend `src/arandu/config.py` (add ~100 lines)
+3. Extend `src/arandu/schemas.py` (add ~300 lines)
 4. Extend `docker-compose.yml` (add ~120 lines)
 5. Create SLURM scripts in `scripts/slurm/` (3 files, ~80 lines each)
 6. Update `pyproject.toml` dependencies
@@ -59,27 +59,27 @@ Three new capabilities:
 **Goal**: Synthetic QA dataset generation
 
 **Critical Files to Create**:
-1. `src/gtranscriber/core/qa_generator.py` (~400 lines)
-2. `src/gtranscriber/core/qa_batch.py` (~250 lines)
-3. Extend `src/gtranscriber/main.py` (add `generate_qa` command)
+1. `src/arandu/core/qa_generator.py` (~400 lines)
+2. `src/arandu/core/qa_batch.py` (~250 lines)
+3. Extend `src/arandu/main.py` (add `generate_qa` command)
 
 ### Phase 3: KG Construction (Week 3-4)
 
 **Goal**: Knowledge graph construction with AutoSchemaKG
 
 **Critical Files to Create**:
-1. `src/gtranscriber/core/kg_builder.py` (~350 lines)
-2. `src/gtranscriber/core/kg_batch.py` (~300 lines)
-3. Extend `src/gtranscriber/main.py` (add `build_kg` command)
+1. `src/arandu/core/kg_builder.py` (~350 lines)
+2. `src/arandu/core/kg_batch.py` (~300 lines)
+3. Extend `src/arandu/main.py` (add `build_kg` command)
 
 ### Phase 4: Evaluation (Week 5)
 
 **Goal**: Metrics and evaluation
 
 **Critical Files to Create**:
-1. `src/gtranscriber/core/metrics.py` (~500 lines)
-2. `src/gtranscriber/core/evaluator.py` (~350 lines)
-3. Extend `src/gtranscriber/main.py` (add `evaluate` command)
+1. `src/arandu/core/metrics.py` (~500 lines)
+2. `src/arandu/core/evaluator.py` (~350 lines)
+3. Extend `src/arandu/main.py` (add `evaluate` command)
 
 ### Phase 5: Research (Week 6-8)
 
@@ -93,7 +93,7 @@ Three new capabilities:
 
 ### Step 1.1: Create LLM Client
 
-**File**: `src/gtranscriber/core/llm_client.py`
+**File**: `src/arandu/core/llm_client.py`
 
 **What to implement**:
 
@@ -176,7 +176,7 @@ def create_llm_client(provider: LLMProvider, model_id: str, **kwargs) -> LLMClie
 
 ### Step 1.2: Extend Configuration
 
-**File**: `src/gtranscriber/config.py`
+**File**: `src/arandu/config.py`
 
 **What to add** (after existing settings):
 
@@ -274,7 +274,7 @@ def validate_strategies(cls, v: list[str]) -> list[str]:
 
 ### Step 1.3: Extend Schemas
 
-**File**: `src/gtranscriber/schemas.py`
+**File**: `src/arandu/schemas.py`
 
 **What to add** (after existing schemas):
 
@@ -427,61 +427,61 @@ pip install -e .
 
 ```yaml
   # QA Generation Service
-  gtranscriber-qa:
+  arandu-qa:
     extends:
-      service: gtranscriber
-    container_name: gtranscriber-qa-${SLURM_JOB_ID:-local}
+      service: arandu
+    container_name: arandu-qa-${SLURM_JOB_ID:-local}
 
     environment:
-      - GTRANSCRIBER_QA_PROVIDER=${GTRANSCRIBER_QA_PROVIDER:-ollama}
-      - GTRANSCRIBER_QA_MODEL_ID=${GTRANSCRIBER_QA_MODEL_ID:-llama3.1:8b}
-      - GTRANSCRIBER_QA_OLLAMA_URL=${GTRANSCRIBER_QA_OLLAMA_URL:-http://host.docker.internal:11434}
+      - ARANDU_QA_PROVIDER=${ARANDU_QA_PROVIDER:-ollama}
+      - ARANDU_QA_MODEL_ID=${ARANDU_QA_MODEL_ID:-llama3.1:8b}
+      - ARANDU_QA_OLLAMA_URL=${ARANDU_QA_OLLAMA_URL:-http://host.docker.internal:11434}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GTRANSCRIBER_LLM_BASE_URL=${GTRANSCRIBER_LLM_BASE_URL:-}
-      - GTRANSCRIBER_WORKERS=${GTRANSCRIBER_WORKERS:-2}
+      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
+      - ARANDU_WORKERS=${ARANDU_WORKERS:-2}
 
     command: >
       generate-qa
       /app/results
       --output-dir /app/qa_dataset
-      --workers ${GTRANSCRIBER_WORKERS:-2}
+      --workers ${ARANDU_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:rw
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:ro
+      - ${ARANDU_QA_DIR:-./qa_dataset}:/app/qa_dataset:rw
 
     profiles:
       - qa
 
   # KG Construction Service
-  gtranscriber-kg:
+  arandu-kg:
     extends:
-      service: gtranscriber
-    container_name: gtranscriber-kg-${SLURM_JOB_ID:-local}
+      service: arandu
+    container_name: arandu-kg-${SLURM_JOB_ID:-local}
 
     environment:
-      - GTRANSCRIBER_KG_PROVIDER=${GTRANSCRIBER_KG_PROVIDER:-ollama}
-      - GTRANSCRIBER_KG_MODEL_ID=${GTRANSCRIBER_KG_MODEL_ID:-llama3.1:8b}
-      - GTRANSCRIBER_WORKERS=${GTRANSCRIBER_WORKERS:-2}
+      - ARANDU_KG_PROVIDER=${ARANDU_KG_PROVIDER:-ollama}
+      - ARANDU_KG_MODEL_ID=${ARANDU_KG_MODEL_ID:-llama3.1:8b}
+      - ARANDU_WORKERS=${ARANDU_WORKERS:-2}
 
     command: >
       build-kg
       /app/results
       --output-dir /app/knowledge_graphs
-      --workers ${GTRANSCRIBER_WORKERS:-2}
+      --workers ${ARANDU_WORKERS:-2}
 
     volumes:
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:rw
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:ro
+      - ${ARANDU_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:rw
 
     profiles:
       - kg
 
   # Evaluation Service
-  gtranscriber-eval:
+  arandu-eval:
     extends:
-      service: gtranscriber
-    container_name: gtranscriber-eval-${SLURM_JOB_ID:-local}
+      service: arandu
+    container_name: arandu-eval-${SLURM_JOB_ID:-local}
 
     command: >
       evaluate
@@ -491,10 +491,10 @@ pip install -e .
       --output /app/evaluation/report.json
 
     volumes:
-      - ${GTRANSCRIBER_QA_DIR:-./qa_dataset}:/app/qa_dataset:ro
-      - ${GTRANSCRIBER_RESULTS_DIR:-./results}:/app/results:ro
-      - ${GTRANSCRIBER_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:ro
-      - ${GTRANSCRIBER_EVAL_DIR:-./evaluation}:/app/evaluation:rw
+      - ${ARANDU_QA_DIR:-./qa_dataset}:/app/qa_dataset:ro
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:ro
+      - ${ARANDU_KG_DIR:-./knowledge_graphs}:/app/knowledge_graphs:ro
+      - ${ARANDU_EVAL_DIR:-./evaluation}:/app/evaluation:rw
 
     profiles:
       - evaluate
@@ -508,7 +508,7 @@ Create three SLURM job scripts following the pattern of existing scripts.
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-qa
+#SBATCH --job-name=arandu-qa
 #SBATCH --partition=grace
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
@@ -517,22 +517,22 @@ Create three SLURM job scripts following the pattern of existing scripts.
 #SBATCH --error=slurm-%j-qa.err
 
 # Configuration
-export GTRANSCRIBER_QA_PROVIDER="${QA_PROVIDER:-ollama}"
-export GTRANSCRIBER_QA_MODEL_ID="${QA_MODEL:-llama3.1:8b}"
+export ARANDU_QA_PROVIDER="${QA_PROVIDER:-ollama}"
+export ARANDU_QA_MODEL_ID="${QA_MODEL:-llama3.1:8b}"
 export WORKERS="${WORKERS:-4}"
 
 # Source common SLURM logic
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
 
 # Run QA generation
-docker compose -f "$COMPOSE_FILE" --profile qa up gtranscriber-qa --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" --profile qa up arandu-qa --abort-on-container-exit
 ```
 
 **File 2**: `scripts/slurm/run_kg_construction.slurm`
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-kg
+#SBATCH --job-name=arandu-kg
 #SBATCH --partition=grace
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
@@ -541,22 +541,22 @@ docker compose -f "$COMPOSE_FILE" --profile qa up gtranscriber-qa --abort-on-con
 #SBATCH --error=slurm-%j-kg.err
 
 # Configuration
-export GTRANSCRIBER_KG_PROVIDER="${KG_PROVIDER:-ollama}"
-export GTRANSCRIBER_KG_MODEL_ID="${KG_MODEL:-llama3.1:8b}"
+export ARANDU_KG_PROVIDER="${KG_PROVIDER:-ollama}"
+export ARANDU_KG_MODEL_ID="${KG_MODEL:-llama3.1:8b}"
 export WORKERS="${WORKERS:-8}"
 
 # Source common SLURM logic
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
 
 # Run KG construction
-docker compose -f "$COMPOSE_FILE" --profile kg up gtranscriber-kg --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" --profile kg up arandu-kg --abort-on-container-exit
 ```
 
 **File 3**: `scripts/slurm/run_evaluation.slurm`
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-eval
+#SBATCH --job-name=arandu-eval
 #SBATCH --partition=grace
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
@@ -568,7 +568,7 @@ docker compose -f "$COMPOSE_FILE" --profile kg up gtranscriber-kg --abort-on-con
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/job_common.sh"
 
 # Run evaluation
-docker compose -f "$COMPOSE_FILE" --profile evaluate up gtranscriber-eval --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" --profile evaluate up arandu-eval --abort-on-container-exit
 ```
 
 ### Step 1.7: Verification
@@ -577,16 +577,16 @@ After completing Phase 1, verify everything works:
 
 ```bash
 # Test imports
-python -c "from gtranscriber.core.llm_client import LLMProvider, create_llm_client; print('LLM client OK')"
-python -c "from gtranscriber.config import TranscriberConfig; c = TranscriberConfig(); print(f'Config OK: qa_provider={c.qa_provider}')"
-python -c "from gtranscriber.schemas import QAPair, QARecord, KGMetadata, EvaluationReport; print('Schemas OK')"
+python -c "from arandu.core.llm_client import LLMProvider, create_llm_client; print('LLM client OK')"
+python -c "from arandu.config import TranscriberConfig; c = TranscriberConfig(); print(f'Config OK: qa_provider={c.qa_provider}')"
+python -c "from arandu.schemas import QAPair, QARecord, KGMetadata, EvaluationReport; print('Schemas OK')"
 
 # Test Docker builds
-docker compose build gtranscriber-qa
-docker compose build gtranscriber-kg
+docker compose build arandu-qa
+docker compose build arandu-kg
 
 # Test configuration loading
-python -c "from gtranscriber.config import TranscriberConfig; print(TranscriberConfig().model_dump_json(indent=2))"
+python -c "from arandu.config import TranscriberConfig; print(TranscriberConfig().model_dump_json(indent=2))"
 ```
 
 ## 📚 Key Documentation References
@@ -605,16 +605,16 @@ When implementing, refer to these docs:
 When implementing new features, look at existing code for patterns:
 
 **For batch processing**:
-- Study `src/gtranscriber/core/batch.py` - ProcessPoolExecutor pattern
+- Study `src/arandu/core/batch.py` - ProcessPoolExecutor pattern
 
 **For checkpointing**:
-- Study `src/gtranscriber/core/checkpoint.py` - Checkpoint manager
+- Study `src/arandu/core/checkpoint.py` - Checkpoint manager
 
 **For CLI commands**:
-- Study `src/gtranscriber/main.py` - Typer command patterns
+- Study `src/arandu/main.py` - Typer command patterns
 
 **For configuration**:
-- Study `src/gtranscriber/config.py` - Pydantic Settings
+- Study `src/arandu/config.py` - Pydantic Settings
 
 ## ⚠️ Common Pitfalls
 
@@ -622,7 +622,7 @@ When implementing new features, look at existing code for patterns:
 2. **Follow existing patterns** - Don't invent new ways to do things
 3. **Test incrementally** - Test each component as you build it
 4. **Check schemas** - Ensure data models match documentation
-5. **Environment variables** - Use GTRANSCRIBER_ prefix consistently
+5. **Environment variables** - Use ARANDU_ prefix consistently
 
 ## ✅ Phase 1 Completion Checklist
 
@@ -641,7 +641,7 @@ When implementing new features, look at existing code for patterns:
 
 If starting implementation in a new thread, say:
 
-> "I'm implementing the Knowledge Graph Construction Pipeline for G-Transcriber. I've reviewed the documentation in docs/IMPLEMENTATION_PLAN.md and docs/IMPLEMENTATION_QUICKSTART.md. I'm starting with Phase 1: Foundation. Please help me implement [specific component, e.g., 'the LLM client in llm_client.py']."
+> "I'm implementing the Knowledge Graph Construction Pipeline for Arandu. I've reviewed the documentation in docs/IMPLEMENTATION_PLAN.md and docs/IMPLEMENTATION_QUICKSTART.md. I'm starting with Phase 1: Foundation. Please help me implement [specific component, e.g., 'the LLM client in llm_client.py']."
 
 Provide this context:
 - Which phase you're working on

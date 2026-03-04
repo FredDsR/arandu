@@ -10,7 +10,7 @@
 #SBATCH --error=logs/sirius_%x_%j.err
 
 # =============================================================================
-# G-Transcriber SLURM Job Script for PCAD - SIRIUS Partition
+# Arandu SLURM Job Script for PCAD - SIRIUS Partition
 #
 # Partition: sirius
 # GPU: AMD Radeon RX 7900 XT/XTX (21 GB) with ROCm support
@@ -20,7 +20,7 @@
 # Use ROCm for AMD GPU acceleration
 export USE_ROCM=false
 export WORKERS="${WORKERS:-3}"
-export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
+export ARANDU_MODEL_ID="${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}"
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

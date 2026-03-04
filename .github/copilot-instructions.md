@@ -2,7 +2,7 @@
 
 **Read [AGENT.md](../AGENT.md) for comprehensive development guidelines.**
 
-## Project: G-Transcriber
+## Project: Arandu
 
 Python 3.13+ pipeline for ethnographic audio/video processing with Whisper ASR, LLM-based QA generation, and knowledge graph construction.
 
@@ -13,7 +13,7 @@ Python 3.13+ pipeline for ethnographic audio/video processing with Whisper ASR, 
 - **Docstrings**: Google style for all public functions/classes
 - **Git**: Conventional commits and branches
 - **Linting**: Ruff with 100 char line limit
-- **No `print()`**: Use Rich utilities from `gtranscriber.utils.logger`
+- **No `print()`**: Use Rich utilities from `arandu.utils.logger`
 
 ### Technology Stack
 - **CLI**: Typer + Rich
@@ -25,7 +25,7 @@ Python 3.13+ pipeline for ethnographic audio/video processing with Whisper ASR, 
 ### Import Order (isort)
 1. Standard library
 2. Third-party packages
-3. First-party (gtranscriber)
+3. First-party (arandu)
 
 ### Pre-Commit
 ```bash
@@ -34,7 +34,7 @@ uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest
 
 ## Key Patterns
 
-**Configuration**: Pydantic Settings with `GTRANSCRIBER_` env prefix
+**Configuration**: Pydantic Settings with `ARANDU_` env prefix
 **Schemas**: Pydantic models with `@field_validator`
 **CLI**: Typer with `Annotated` types, load defaults from config
 **Error Handling**: Rich console utilities, `typer.Exit(code=1)` for CLI errors

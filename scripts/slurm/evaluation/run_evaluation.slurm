@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-eval
+#SBATCH --job-name=arandu-eval
 #SBATCH --partition=grace
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -9,13 +9,13 @@
 #SBATCH --error=logs/%x_%j.err
 
 # =============================================================================
-# G-Transcriber Evaluation SLURM Job Script
+# Arandu Evaluation SLURM Job Script
 #
 # Evaluates the quality of QA datasets and knowledge graphs.
 # This is a CPU-based job that computes metrics without LLM inference.
 #
 # Required:
-#   - Pipeline results in GTRANSCRIBER_RESULTS_DIR (versioned layout)
+#   - Pipeline results in ARANDU_RESULTS_DIR (versioned layout)
 #   - QA outputs at results/{pipeline_id}/qa/outputs/
 #   - (Optional) KG outputs at results/{pipeline_id}/kg/outputs/
 # =============================================================================
@@ -27,21 +27,21 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
-# Evaluation settings (GTRANSCRIBER_EVAL_ prefix)
-export GTRANSCRIBER_EVAL_METRICS="${EVAL_METRICS:-qa,entity,relation,semantic}"
-export GTRANSCRIBER_EVAL_EMBEDDING_MODEL="${EVAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+# Evaluation settings (ARANDU_EVAL_ prefix)
+export ARANDU_EVAL_METRICS="${EVAL_METRICS:-qa,entity,relation,semantic}"
+export ARANDU_EVAL_EMBEDDING_MODEL="${EVAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
 
 # Directories
-export GTRANSCRIBER_RESULTS_DIR="${GTRANSCRIBER_RESULTS_DIR:-$PROJECT_DIR/results}"
-export GTRANSCRIBER_EVAL_DIR="${GTRANSCRIBER_EVAL_DIR:-$PROJECT_DIR/evaluation}"
-export GTRANSCRIBER_HF_CACHE_DIR="${GTRANSCRIBER_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
+export ARANDU_RESULTS_DIR="${ARANDU_RESULTS_DIR:-$PROJECT_DIR/results}"
+export ARANDU_EVAL_DIR="${ARANDU_EVAL_DIR:-$PROJECT_DIR/evaluation}"
+export ARANDU_HF_CACHE_DIR="${ARANDU_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export PIPELINE_ID="${PIPELINE_ID:-}"
 
 # -----------------------------------------------------------------------------
 # Job Information
 # -----------------------------------------------------------------------------
 echo "=============================================="
-echo "G-Transcriber Evaluation Job Started"
+echo "Arandu Evaluation Job Started"
 echo "=============================================="
 echo "Job ID:        ${SLURM_JOB_ID:-local}"
 echo "Job Name:      ${SLURM_JOB_NAME:-evaluation}"
@@ -50,11 +50,11 @@ echo "CPUs:          ${SLURM_CPUS_PER_TASK:-N/A}"
 echo "Start Time:    $(date)"
 echo "Project Dir:   $PROJECT_DIR"
 echo "=============================================="
-echo "Metrics:       $GTRANSCRIBER_EVAL_METRICS"
-echo "Embed Model:   $GTRANSCRIBER_EVAL_EMBEDDING_MODEL"
-echo "Results Dir:   $GTRANSCRIBER_RESULTS_DIR"
+echo "Metrics:       $ARANDU_EVAL_METRICS"
+echo "Embed Model:   $ARANDU_EVAL_EMBEDDING_MODEL"
+echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "Pipeline ID:   ${PIPELINE_ID:-<auto>}"
-echo "Eval Output:   $GTRANSCRIBER_EVAL_DIR"
+echo "Eval Output:   $ARANDU_EVAL_DIR"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -63,32 +63,32 @@ echo "=============================================="
 cd "$PROJECT_DIR"
 
 # Check results directory exists
-if [ ! -d "$GTRANSCRIBER_RESULTS_DIR" ]; then
-    echo "Error: Results directory not found: $GTRANSCRIBER_RESULTS_DIR"
+if [ ! -d "$ARANDU_RESULTS_DIR" ]; then
+    echo "Error: Results directory not found: $ARANDU_RESULTS_DIR"
     echo "Please run transcription first."
     exit 1
 fi
 
 # Check QA dataset exists inside versioned results layout
-QA_COUNT=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/qa/outputs/qa_*.json" 2>/dev/null | wc -l)
+QA_COUNT=$(find "$ARANDU_RESULTS_DIR" -path "*/qa/outputs/qa_*.json" 2>/dev/null | wc -l)
 if [ "$QA_COUNT" -eq 0 ]; then
-    echo "Error: No QA records found in $GTRANSCRIBER_RESULTS_DIR/*/qa/outputs/"
+    echo "Error: No QA records found in $ARANDU_RESULTS_DIR/*/qa/outputs/"
     echo "Please run QA generation first."
     exit 1
 fi
 echo "Found $QA_COUNT QA record files"
 
 # Check knowledge graph exists inside versioned results layout (optional)
-KG_PATH=$(find "$GTRANSCRIBER_RESULTS_DIR" -path "*/kg/outputs/corpus_graph.graphml" -print -quit 2>/dev/null)
+KG_PATH=$(find "$ARANDU_RESULTS_DIR" -path "*/kg/outputs/corpus_graph.graphml" -print -quit 2>/dev/null)
 if [ -n "$KG_PATH" ]; then
     echo "Found corpus knowledge graph: $KG_PATH"
 else
-    echo "Warning: Corpus graph not found in $GTRANSCRIBER_RESULTS_DIR/*/kg/outputs/"
+    echo "Warning: Corpus graph not found in $ARANDU_RESULTS_DIR/*/kg/outputs/"
     echo "Graph-based metrics will be skipped."
 fi
 
 # Create output directory
-mkdir -p "$GTRANSCRIBER_EVAL_DIR"
+mkdir -p "$ARANDU_EVAL_DIR"
 mkdir -p logs
 
 # -----------------------------------------------------------------------------
@@ -109,13 +109,13 @@ docker volume prune -f 2>/dev/null || true
 
 echo ""
 echo "Building Docker image..."
-docker compose -f "$COMPOSE_FILE" --profile evaluate build gtranscriber-eval
+docker compose -f "$COMPOSE_FILE" --profile evaluate build arandu-eval
 
 echo ""
 echo "Starting evaluation process..."
 echo "=============================================="
 
-docker compose -f "$COMPOSE_FILE" --profile evaluate up gtranscriber-eval --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" --profile evaluate up arandu-eval --abort-on-container-exit
 
 # -----------------------------------------------------------------------------
 # Cleanup
@@ -129,13 +129,13 @@ docker compose -f "$COMPOSE_FILE" --profile evaluate down
 # -----------------------------------------------------------------------------
 echo ""
 echo "=============================================="
-echo "G-Transcriber Evaluation Job Completed"
+echo "Arandu Evaluation Job Completed"
 echo "=============================================="
 echo "End Time:      $(date)"
-echo "Eval Output:   $GTRANSCRIBER_EVAL_DIR"
+echo "Eval Output:   $ARANDU_EVAL_DIR"
 
 # Show report if exists
-REPORT_FILE="$GTRANSCRIBER_EVAL_DIR/report.json"
+REPORT_FILE="$ARANDU_EVAL_DIR/report.json"
 if [ -f "$REPORT_FILE" ]; then
     echo ""
     echo "Evaluation Report Summary:"

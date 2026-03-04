@@ -10,7 +10,7 @@
 #SBATCH --error=logs/cep_sirius_%x_%j.err
 
 # =============================================================================
-# G-Transcriber CEP QA Generation SLURM Job Script - SIRIUS Partition
+# Arandu CEP QA Generation SLURM Job Script - SIRIUS Partition
 #
 # Partition: sirius
 # GPU: AMD Radeon RX 7900 XT/XTX (21 GB)
@@ -18,8 +18,8 @@
 # =============================================================================
 
 # Partition-specific settings
-export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-3}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
+export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-3}"
+export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
 export USE_GPU_OLLAMA=false  # CPU mode - Ollama doesn't support ROCm well
 
 # Source the common CEP script

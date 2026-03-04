@@ -10,7 +10,7 @@
 #SBATCH --error=logs/tupi_%x_%j.err
 
 # =============================================================================
-# G-Transcriber SLURM Job Script for PCAD - TUPI Partition
+# Arandu SLURM Job Script for PCAD - TUPI Partition
 #
 # Partition: tupi
 # GPU: NVIDIA GeForce RTX 4090 (24 GB)
@@ -20,8 +20,8 @@
 # Use the base script with partition-specific settings
 
 export WORKERS="${WORKERS:-4}"
-export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
-export GTRANSCRIBER_QUANTIZE=false  # RTX 4090 has enough VRAM, no need for quantization
+export ARANDU_MODEL_ID="${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}"
+export ARANDU_QUANTIZE=false  # RTX 4090 has enough VRAM, no need for quantization
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

@@ -1,4 +1,4 @@
-# Running G-Transcriber Locally with Docker Compose
+# Running Arandu Locally with Docker Compose
 
 This guide covers how to run the transcription process on your local machine using Docker Compose.
 
@@ -68,7 +68,7 @@ Ensure you have valid credentials:
 ls -la credentials.json token.json
 
 # Refresh token if needed
-gtranscriber info
+arandu info
 ```
 
 ---
@@ -93,7 +93,7 @@ Edit `.env` to customize your setup:
 
 ```bash
 # Whisper model (adjust based on your GPU VRAM)
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
+ARANDU_MODEL_ID=openai/whisper-large-v3
 
 # Number of workers (adjust based on GPU VRAM)
 # 24GB VRAM: 4 workers
@@ -102,7 +102,7 @@ GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3
 WORKERS=4
 
 # Enable quantization (reduces VRAM usage by ~50%)
-GTRANSCRIBER_QUANTIZE=true
+ARANDU_QUANTIZE=true
 
 # Input catalog file
 CATALOG_FILE=catalog.csv
@@ -117,7 +117,7 @@ ls -la input/catalog.csv
 ### 5. Build Docker Image
 
 ```bash
-docker compose --profile gpu build gtranscriber
+docker compose --profile gpu build arandu
 ```
 
 ---
@@ -129,7 +129,7 @@ docker compose --profile gpu build gtranscriber
 Run with NVIDIA GPU acceleration:
 
 ```bash
-docker compose --profile gpu up gtranscriber
+docker compose --profile gpu up arandu
 ```
 
 ### CPU Mode
@@ -137,17 +137,17 @@ docker compose --profile gpu up gtranscriber
 Run on CPU only (slower but works without GPU):
 
 ```bash
-docker compose --profile cpu up gtranscriber-cpu
+docker compose --profile cpu up arandu-cpu
 ```
 
 ### Run in Background (Detached)
 
 ```bash
 # GPU mode
-docker compose --profile gpu up -d gtranscriber
+docker compose --profile gpu up -d arandu
 
 # CPU mode
-docker compose --profile cpu up -d gtranscriber-cpu
+docker compose --profile cpu up -d arandu-cpu
 ```
 
 ### Run with Custom Settings
@@ -156,16 +156,16 @@ Override settings without editing `.env`:
 
 ```bash
 # Use more workers
-WORKERS=6 docker compose --profile gpu up gtranscriber
+WORKERS=6 docker compose --profile gpu up arandu
 
 # Use a different model
-GTRANSCRIBER_MODEL_ID=openai/whisper-large-v3 docker compose --profile gpu up gtranscriber
+ARANDU_MODEL_ID=openai/whisper-large-v3 docker compose --profile gpu up arandu
 
 # Use a different catalog
-CATALOG_FILE=my_subset.csv docker compose --profile gpu up gtranscriber
+CATALOG_FILE=my_subset.csv docker compose --profile gpu up arandu
 
 # Combine multiple overrides
-WORKERS=2 GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gpu up gtranscriber
+WORKERS=2 ARANDU_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gpu up arandu
 ```
 
 ---
@@ -176,10 +176,10 @@ WORKERS=2 GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_MODEL_ID` | `openai/whisper-large-v3` | Whisper model from Hugging Face |
+| `ARANDU_MODEL_ID` | `openai/whisper-large-v3` | Whisper model from Hugging Face |
 | `WORKERS` | `4` | Number of parallel transcription workers |
-| `GTRANSCRIBER_QUANTIZE` | `true` | Enable 8-bit quantization (reduces VRAM) |
-| `GTRANSCRIBER_FORCE_CPU` | `false` | Force CPU execution |
+| `ARANDU_QUANTIZE` | `true` | Enable 8-bit quantization (reduces VRAM) |
+| `ARANDU_FORCE_CPU` | `false` | Force CPU execution |
 | `CATALOG_FILE` | `catalog.csv` | Input catalog filename |
 | `INPUT_DIR` | `./input` | Directory containing catalog |
 | `RESULTS_DIR` | `./results` | Output directory for results |
@@ -253,10 +253,10 @@ docker system prune -a --volumes
 
 ```bash
 # Follow logs in real-time
-docker compose logs -f gtranscriber
+docker compose logs -f arandu
 
 # View last 100 lines
-docker compose logs --tail 100 gtranscriber
+docker compose logs --tail 100 arandu
 ```
 
 ### Check Progress
@@ -331,24 +331,24 @@ docker compose config | grep -A 10 "deploy:"
 
 **Fall back to CPU mode:**
 ```bash
-docker compose --profile cpu up gtranscriber-cpu
+docker compose --profile cpu up arandu-cpu
 ```
 
 ### Out of Memory (OOM) Errors
 
 **Reduce workers:**
 ```bash
-WORKERS=1 docker compose --profile gpu up gtranscriber
+WORKERS=1 docker compose --profile gpu up arandu
 ```
 
 **Enable quantization:**
 ```bash
-GTRANSCRIBER_QUANTIZE=true docker compose --profile gpu up gtranscriber
+ARANDU_QUANTIZE=true docker compose --profile gpu up arandu
 ```
 
 **Use smaller model:**
 ```bash
-GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gpu up gtranscriber
+ARANDU_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gpu up arandu
 ```
 
 ### OAuth Token Expired
@@ -361,10 +361,10 @@ GTRANSCRIBER_MODEL_ID=distil-whisper/distil-large-v3 docker compose --profile gp
 docker compose stop
 
 # Refresh token locally (outside Docker)
-gtranscriber info
+arandu info
 
 # Restart transcription
-docker compose --profile gpu up gtranscriber
+docker compose --profile gpu up arandu
 ```
 
 ### Shared Memory Issues
@@ -381,7 +381,7 @@ shm_size: '32gb'  # Increase from default 16gb
 **Pre-download models:**
 ```bash
 # Download model before running transcription
-docker compose --profile gpu run --rm gtranscriber python -c "
+docker compose --profile gpu run --rm arandu python -c "
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 model_id = 'openai/whisper-large-v3'
 AutoProcessor.from_pretrained(model_id)
@@ -395,13 +395,13 @@ print('Model downloaded successfully')
 The checkpoint system automatically handles resume. Simply restart:
 
 ```bash
-docker compose --profile gpu up gtranscriber
+docker compose --profile gpu up arandu
 ```
 
 To start fresh:
 ```bash
 rm results/checkpoint.json
-docker compose --profile gpu up gtranscriber
+docker compose --profile gpu up arandu
 ```
 
 ---
@@ -412,19 +412,19 @@ docker compose --profile gpu up gtranscriber
 
 ```bash
 # Build image
-docker compose --profile gpu build gtranscriber
+docker compose --profile gpu build arandu
 
 # Run with GPU
-docker compose --profile gpu up gtranscriber
+docker compose --profile gpu up arandu
 
 # Run with CPU
-docker compose --profile cpu up gtranscriber-cpu
+docker compose --profile cpu up arandu-cpu
 
 # Run in background
-docker compose --profile gpu up -d gtranscriber
+docker compose --profile gpu up -d arandu
 
 # View logs
-docker compose logs -f gtranscriber
+docker compose logs -f arandu
 
 # Stop
 docker compose stop
@@ -441,10 +441,10 @@ cp .env.example .env
 # Edit .env as needed
 
 # 2. Build
-docker compose --profile gpu build gtranscriber
+docker compose --profile gpu build arandu
 
 # 3. Run transcription
-docker compose --profile gpu up gtranscriber
+docker compose --profile gpu up arandu
 
 # 4. Check results
 ls results/*_transcription.json | wc -l
@@ -462,7 +462,7 @@ Test with a small subset of files:
 head -6 input/catalog.csv > input/test_catalog.csv
 
 # Run test
-CATALOG_FILE=test_catalog.csv WORKERS=1 docker compose --profile gpu up gtranscriber
+CATALOG_FILE=test_catalog.csv WORKERS=1 docker compose --profile gpu up arandu
 
 # Check results
 ls results/

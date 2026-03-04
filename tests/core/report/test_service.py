@@ -6,15 +6,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gtranscriber.core.report.api_schemas import QAFilterParams, TranscriptionFilterParams
-from gtranscriber.core.report.dataset import (
+from arandu.core.report.api_schemas import QAFilterParams, TranscriptionFilterParams
+from arandu.core.report.dataset import (
     QAPairRow,
     ReportDataset,
     RunSummaryRow,
     TranscriptionRow,
 )
-from gtranscriber.core.report.service import ReportService
-from gtranscriber.schemas import (
+from arandu.core.report.service import ReportService
+from arandu.schemas import (
     ConfigSnapshot,
     QARecordCEP,
 )
@@ -164,7 +164,7 @@ class TestGetQADetail:
 
     def _make_qa_record(self) -> QARecordCEP:
         """Build a minimal QARecordCEP with one QA pair."""
-        from gtranscriber.schemas import QAPairCEP
+        from arandu.schemas import QAPairCEP
 
         pair = QAPairCEP(
             question="What is CEP?",
@@ -389,14 +389,14 @@ class TestExportSingleRunHtml:
 
     def test_export_single_run_html(self, mock_collector: MagicMock) -> None:
         """Returns HTML string containing expected elements."""
-        from gtranscriber.core.report.collector import RunReport
+        from arandu.core.report.collector import RunReport
 
         mock_collector.load_run.return_value = RunReport(pipeline_id="pipe_000")
         svc = ReportService(mock_collector)
 
         html = svc.export_single_run_html("pipe_000")
         assert "<html" in html
-        assert "G-Transcriber" in html
+        assert "Arandu" in html
 
     def test_export_single_run_html_not_found(self, mock_collector: MagicMock) -> None:
         """Raises KeyError when pipeline_id is not found."""

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gtranscriber.utils.console import console, stderr_console
+from arandu.utils.console import console, stderr_console
 
 
 class TestConsoleInstances:

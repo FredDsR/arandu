@@ -1,6 +1,6 @@
 # Knowledge Graph Construction Pipeline - Implementation Plan
 
-**Project**: etno-kgc-preprocessing (G-Transcriber)
+**Project**: etno-kgc-preprocessing (Arandu)
 **Version**: 2.0
 **Date**: 2026-01-14
 **Status**: Planning Complete, Ready for Implementation
@@ -22,7 +22,7 @@
 
 ## Executive Summary
 
-This document outlines the implementation plan for extending the G-Transcriber project to add knowledge graph construction, synthetic QA dataset generation, and evaluation capabilities. The project builds on the completed transcription preprocessing pipeline (P1) and implements three new capabilities (P2 tasks) plus two research initiatives (P3 tasks).
+This document outlines the implementation plan for extending the Arandu project to add knowledge graph construction, synthetic QA dataset generation, and evaluation capabilities. The project builds on the completed transcription preprocessing pipeline (P1) and implements three new capabilities (P2 tasks) plus two research initiatives (P3 tasks).
 
 ### Key Objectives
 
@@ -54,7 +54,7 @@ This document outlines the implementation plan for extending the G-Transcriber p
 
 ### Current State (P1 - Completed)
 
-The G-Transcriber project is a production-grade automated transcription system with:
+The Arandu project is a production-grade automated transcription system with:
 
 - **Batch Processing**: Parallel workers with checkpointing and resume capability
 - **Google Drive Integration**: Download, transcribe, upload workflow
@@ -95,7 +95,7 @@ Transcriptions → [QA Generation] → Synthetic QA Dataset
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    G-Transcriber v2.0                       │
+│                    Arandu v2.0                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
@@ -139,7 +139,7 @@ graph TD
 ### Module Structure
 
 ```
-src/gtranscriber/
+src/arandu/
 ├── main.py                      # CLI entrypoint
 ├── config.py                    # Configuration (extended)
 ├── schemas.py                   # Data models (extended)
@@ -164,12 +164,12 @@ src/gtranscriber/
 ### Infrastructure
 
 **Docker Compose Services**:
-- `gtranscriber` - Original transcription (GPU/CUDA)
-- `gtranscriber-cpu` - CPU-only transcription
-- `gtranscriber-rocm` - AMD GPU support
-- `gtranscriber-qa` - NEW: QA generation
-- `gtranscriber-kg` - NEW: KG construction
-- `gtranscriber-eval` - NEW: Evaluation
+- `arandu` - Original transcription (GPU/CUDA)
+- `arandu-cpu` - CPU-only transcription
+- `arandu-rocm` - AMD GPU support
+- `arandu-qa` - NEW: QA generation
+- `arandu-kg` - NEW: KG construction
+- `arandu-eval` - NEW: Evaluation
 
 **SLURM Scripts**:
 - `scripts/slurm/*.slurm` - Partition-specific scripts (existing)
@@ -217,7 +217,7 @@ qa_strategies: list[str] = ["factual", "conceptual"]
 
 **CLI Usage**:
 ```bash
-gtranscriber generate-qa results/ \
+arandu generate-qa results/ \
     --output-dir qa_dataset \
     --provider ollama \
     --model-id llama3.1:8b \
@@ -229,7 +229,7 @@ gtranscriber generate-qa results/ \
 
 **Docker Deployment**:
 ```bash
-docker compose --profile qa up gtranscriber-qa
+docker compose --profile qa up arandu-qa
 ```
 
 **SLURM Deployment**:
@@ -277,7 +277,7 @@ sbatch scripts/slurm/run_qa_generation.slurm
 
 **CLI Usage**:
 ```bash
-gtranscriber evaluate qa_dataset/ results/ \
+arandu evaluate qa_dataset/ results/ \
     --kg-path knowledge_graphs/corpus_graph.graphml \
     --output evaluation_report.json \
     --metric qa \
@@ -336,7 +336,7 @@ kg_prompt_path: str = "prompts/pt_prompts.json"  # Path to custom prompts
 
 **CLI Usage**:
 ```bash
-gtranscriber build-kg results/ \
+arandu build-kg results/ \
     --output-dir knowledge_graphs \
     --provider ollama \
     --model-id llama3.1:8b \
@@ -347,7 +347,7 @@ gtranscriber build-kg results/ \
 
 **Docker Deployment**:
 ```bash
-docker compose --profile kg up gtranscriber-kg
+docker compose --profile kg up arandu-kg
 ```
 
 **SLURM Deployment**:
@@ -400,14 +400,14 @@ sbatch scripts/slurm/run_kg_construction.slurm
 **CLI Commands** (Future):
 ```bash
 # Index knowledge graph
-gtranscriber index-graphrag knowledge_graphs/corpus_graph.graphml
+arandu index-graphrag knowledge_graphs/corpus_graph.graphml
 
 # Query with natural language
-gtranscriber query-graphrag graphrag_index/ \
+arandu query-graphrag graphrag_index/ \
     --query "What flood events occurred in 2023?"
 
 # Evaluate performance
-gtranscriber evaluate-graphrag graphrag_index/ qa_dataset/ \
+arandu evaluate-graphrag graphrag_index/ qa_dataset/ \
     --output graphrag_evaluation.json
 ```
 
@@ -456,9 +456,9 @@ gtranscriber evaluate-graphrag graphrag_index/ qa_dataset/ \
    No custom KGNode/KGEdge/KGRecord classes needed.
 
 4. **Docker Configuration**
-   - [ ] Add `gtranscriber-qa` service to `docker-compose.yml`
-   - [ ] Add `gtranscriber-kg` service to `docker-compose.yml`
-   - [ ] Add `gtranscriber-eval` service to `docker-compose.yml`
+   - [ ] Add `arandu-qa` service to `docker-compose.yml`
+   - [ ] Add `arandu-kg` service to `docker-compose.yml`
+   - [ ] Add `arandu-eval` service to `docker-compose.yml`
    - [ ] Configure environment variables for each service
    - [ ] Set up volume mounts for new directories
 
@@ -482,13 +482,13 @@ gtranscriber evaluate-graphrag graphrag_index/ qa_dataset/ \
 **Testing**:
 ```bash
 # Test LLM client
-python -c "from gtranscriber.core.llm_client import LLMClient; ..."
+python -c "from arandu.core.llm_client import LLMClient; ..."
 
 # Test configuration
-python -c "from gtranscriber.config import TranscriberConfig; ..."
+python -c "from arandu.config import TranscriberConfig; ..."
 
 # Test schemas
-python -c "from gtranscriber.schemas import QAPair, KGMetadata; ..."
+python -c "from arandu.schemas import QAPair, KGMetadata; ..."
 ```
 
 ### Phase 2: QA Generation (Week 2)
@@ -542,7 +542,7 @@ python -c "from gtranscriber.schemas import QAPair, KGMetadata; ..."
 **Testing Commands**:
 ```bash
 # Local test
-gtranscriber generate-qa results/ -o qa_test/ \
+arandu generate-qa results/ -o qa_test/ \
     --provider ollama \
     --workers 2 \
     --questions 5
@@ -624,7 +624,7 @@ squeue -u $USER
 **Testing Commands**:
 ```bash
 # Local test
-gtranscriber build-kg results/ -o kg_test/ \
+arandu build-kg results/ -o kg_test/ \
     --provider ollama \
     --workers 1 \
     --merge
@@ -696,7 +696,7 @@ sbatch scripts/slurm/run_kg_construction.slurm
 **Testing Commands**:
 ```bash
 # Run evaluation
-gtranscriber evaluate qa_dataset/ results/ \
+arandu evaluate qa_dataset/ results/ \
     --kg-path knowledge_graphs/corpus_graph.graphml \
     --output evaluation_report.json
 
@@ -798,13 +798,13 @@ See [docs/implementation/CLI_REFERENCE.md](docs/implementation/CLI_REFERENCE.md)
 
 ```bash
 # Generate QA dataset
-gtranscriber generate-qa INPUT_DIR [OPTIONS]
+arandu generate-qa INPUT_DIR [OPTIONS]
 
 # Build knowledge graph
-gtranscriber build-kg INPUT_DIR [OPTIONS]
+arandu build-kg INPUT_DIR [OPTIONS]
 
 # Evaluate quality
-gtranscriber evaluate QA_DATASET TRANSCRIPTIONS [OPTIONS]
+arandu evaluate QA_DATASET TRANSCRIPTIONS [OPTIONS]
 ```
 
 ### API Documentation
@@ -831,7 +831,7 @@ cp .env.example .env
 # Edit .env with your settings
 
 # Run commands
-gtranscriber generate-qa results/ -o qa_dataset/
+arandu generate-qa results/ -o qa_dataset/
 ```
 
 ### Docker Deployment
@@ -839,23 +839,23 @@ gtranscriber generate-qa results/ -o qa_dataset/
 **Build**:
 ```bash
 # Build GPU transcription service
-docker compose --profile gpu build gtranscriber
+docker compose --profile gpu build arandu
 
 # Build QA/KG/Eval services (built automatically on first run)
-docker compose --profile qa build gtranscriber-qa
-docker compose --profile kg build gtranscriber-kg
+docker compose --profile qa build arandu-qa
+docker compose --profile kg build arandu-kg
 ```
 
 **Run Services**:
 ```bash
 # QA generation
-docker compose --profile qa up gtranscriber-qa
+docker compose --profile qa up arandu-qa
 
 # KG construction
-docker compose --profile kg up gtranscriber-kg
+docker compose --profile kg up arandu-kg
 
 # Evaluation
-docker compose --profile evaluate up gtranscriber-eval
+docker compose --profile evaluate up arandu-eval
 ```
 
 ### SLURM Deployment (PCAD Cluster)

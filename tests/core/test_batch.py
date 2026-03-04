@@ -13,14 +13,14 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-from gtranscriber.core.batch import (
+from arandu.core.batch import (
     AUDIO_VIDEO_MIME_TYPES,
     _create_segments_from_result,
     _parse_parents_from_string,
     load_catalog,
     transcribe_single_file,
 )
-from gtranscriber.core.results_manager import ResultsManager
+from arandu.core.results_manager import ResultsManager
 
 
 class _ThreadPoolCompat(ThreadPoolExecutor):
@@ -92,10 +92,10 @@ class TestParseParentsFromString:
 class TestWorkerInitialization:
     """Tests for worker initialization."""
 
-    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.WhisperEngine")
     def test_init_worker(self, mock_engine: MagicMock) -> None:
         """Test worker initialization with WhisperEngine."""
-        from gtranscriber.core.batch import _init_worker
+        from arandu.core.batch import _init_worker
 
         _init_worker(
             model_id="openai/whisper-tiny",
@@ -119,7 +119,7 @@ class TestBatchProcessingErrors:
         """Test that NoAudioStreamError can be imported."""
         from pathlib import Path
 
-        from gtranscriber.core.drive import NoAudioStreamError
+        from arandu.core.drive import NoAudioStreamError
 
         error = NoAudioStreamError("test_id", "test.mp4", Path("/tmp/test.mp4"))
         assert error.file_id == "test_id"
@@ -166,7 +166,7 @@ class TestBatchConfig:
 
     def test_batch_config_creation(self, tmp_path: Path) -> None:
         """Test creating BatchConfig instance."""
-        from gtranscriber.core.batch import BatchConfig
+        from arandu.core.batch import BatchConfig
 
         config = BatchConfig(
             catalog_file=tmp_path / "catalog.csv",
@@ -188,8 +188,8 @@ class TestBatchConfig:
 
     def test_batch_config_from_transcriber_config(self, tmp_path: Path) -> None:
         """Test creating BatchConfig from TranscriberConfig."""
-        from gtranscriber.config import TranscriberConfig
-        from gtranscriber.core.batch import BatchConfig
+        from arandu.config import TranscriberConfig
+        from arandu.core.batch import BatchConfig
 
         transcriber_config = TranscriberConfig(
             model_id="openai/whisper-large-v3",
@@ -216,10 +216,10 @@ class TestBatchConfig:
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:
         """Test BatchConfig.from_transcriber_config with None config."""
-        from gtranscriber.core.batch import BatchConfig
+        from arandu.core.batch import BatchConfig
 
         # Mock TranscriberConfig to avoid environment dependency
-        mock_config = mocker.patch("gtranscriber.core.batch.TranscriberConfig")
+        mock_config = mocker.patch("arandu.core.batch.TranscriberConfig")
         mock_config.return_value.model_id = "default-model"
         mock_config.return_value.credentials = "creds.json"
         mock_config.return_value.token = "token.json"
@@ -243,7 +243,7 @@ class TestTranscriptionTask:
 
     def test_transcription_task_creation(self) -> None:
         """Test creating TranscriptionTask instance."""
-        from gtranscriber.core.batch import TranscriptionTask
+        from arandu.core.batch import TranscriptionTask
 
         task = TranscriptionTask(
             file_id="file123",
@@ -263,7 +263,7 @@ class TestTranscriptionTask:
 
     def test_transcription_task_optional_fields(self) -> None:
         """Test TranscriptionTask with optional fields as None."""
-        from gtranscriber.core.batch import TranscriptionTask
+        from arandu.core.batch import TranscriptionTask
 
         task = TranscriptionTask(
             file_id="file123",
@@ -284,42 +284,42 @@ class TestEnsureFloat:
 
     def test_ensure_float_valid_float(self) -> None:
         """Test converting valid float."""
-        from gtranscriber.core.batch import _ensure_float
+        from arandu.core.batch import _ensure_float
 
         result = _ensure_float(3.14, 0.0)
         assert result == 3.14
 
     def test_ensure_float_valid_int(self) -> None:
         """Test converting valid int."""
-        from gtranscriber.core.batch import _ensure_float
+        from arandu.core.batch import _ensure_float
 
         result = _ensure_float(42, 0.0)
         assert result == 42.0
 
     def test_ensure_float_valid_string(self) -> None:
         """Test converting valid string."""
-        from gtranscriber.core.batch import _ensure_float
+        from arandu.core.batch import _ensure_float
 
         result = _ensure_float("123.45", 0.0)
         assert result == 123.45
 
     def test_ensure_float_none_uses_default(self) -> None:
         """Test that None returns default."""
-        from gtranscriber.core.batch import _ensure_float
+        from arandu.core.batch import _ensure_float
 
         result = _ensure_float(None, 99.0)
         assert result == 99.0
 
     def test_ensure_float_invalid_string_uses_default(self) -> None:
         """Test that invalid string returns default."""
-        from gtranscriber.core.batch import _ensure_float
+        from arandu.core.batch import _ensure_float
 
         result = _ensure_float("not a number", 50.0)
         assert result == 50.0
 
     def test_ensure_float_object_uses_default(self) -> None:
         """Test that arbitrary object returns default."""
-        from gtranscriber.core.batch import _ensure_float
+        from arandu.core.batch import _ensure_float
 
         result = _ensure_float(object(), 10.0)
         assert result == 10.0
@@ -328,10 +328,10 @@ class TestEnsureFloat:
 class TestWorkerFunctions:
     """Tests for worker-related functions."""
 
-    @patch("gtranscriber.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.WhisperEngine")
     def test_init_worker_sets_global(self, mock_engine: MagicMock) -> None:
         """Test that _init_worker sets the global engine."""
-        from gtranscriber.core.batch import _init_worker
+        from arandu.core.batch import _init_worker
 
         _init_worker(
             model_id="test-model",
@@ -535,13 +535,13 @@ class TestLoadCatalog:
 class TestTranscribeSingleFile:
     """Tests for transcribe_single_file function."""
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.WhisperEngine")
-    @patch("gtranscriber.core.batch.DriveClient")
-    @patch("gtranscriber.core.batch.create_temp_file")
-    @patch("gtranscriber.core.batch.save_enriched_record")
-    @patch("gtranscriber.core.batch.has_audio_stream")
-    @patch("gtranscriber.core.batch.get_media_duration_ms")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.DriveClient")
+    @patch("arandu.core.batch.create_temp_file")
+    @patch("arandu.core.batch.save_enriched_record")
+    @patch("arandu.core.batch.has_audio_stream")
+    @patch("arandu.core.batch.get_media_duration_ms")
     def test_transcribe_single_file_audio_success(
         self,
         mock_duration: MagicMock,
@@ -553,7 +553,7 @@ class TestTranscribeSingleFile:
         tmp_path: Path,
     ) -> None:
         """Test successful transcription of an audio file."""
-        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+        from arandu.core.batch import BatchConfig, TranscriptionTask
 
         # Setup mocks
         temp_file = tmp_path / "temp.mp3"
@@ -622,10 +622,10 @@ class TestTranscribeSingleFile:
         assert message == "Success"
         mock_save.assert_called_once()
 
-    @patch("gtranscriber.core.batch.WhisperEngine")
-    @patch("gtranscriber.core.batch.DriveClient")
-    @patch("gtranscriber.core.batch.create_temp_file")
-    @patch("gtranscriber.core.batch.has_audio_stream")
+    @patch("arandu.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.DriveClient")
+    @patch("arandu.core.batch.create_temp_file")
+    @patch("arandu.core.batch.has_audio_stream")
     def test_transcribe_single_file_no_audio_stream(
         self,
         mock_has_audio: MagicMock,
@@ -635,7 +635,7 @@ class TestTranscribeSingleFile:
         tmp_path: Path,
     ) -> None:
         """Test transcription fails when file has no audio stream."""
-        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+        from arandu.core.batch import BatchConfig, TranscriptionTask
 
         # Setup mocks
         temp_file = tmp_path / "temp.mp3"
@@ -676,14 +676,14 @@ class TestTranscribeSingleFile:
         assert success is False
         assert "no audio" in message.lower() or "audio stream" in message.lower()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.WhisperEngine")
-    @patch("gtranscriber.core.batch.DriveClient")
-    @patch("gtranscriber.core.batch.create_temp_file")
-    @patch("gtranscriber.core.batch.save_enriched_record")
-    @patch("gtranscriber.core.batch.extract_audio")
-    @patch("gtranscriber.core.batch.requires_audio_extraction")
-    @patch("gtranscriber.core.batch.get_media_duration_ms")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.DriveClient")
+    @patch("arandu.core.batch.create_temp_file")
+    @patch("arandu.core.batch.save_enriched_record")
+    @patch("arandu.core.batch.extract_audio")
+    @patch("arandu.core.batch.requires_audio_extraction")
+    @patch("arandu.core.batch.get_media_duration_ms")
     def test_transcribe_single_file_video_with_extraction(
         self,
         mock_duration: MagicMock,
@@ -696,7 +696,7 @@ class TestTranscribeSingleFile:
         tmp_path: Path,
     ) -> None:
         """Test successful transcription of a video file with audio extraction."""
-        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+        from arandu.core.batch import BatchConfig, TranscriptionTask
 
         # Setup mocks
         temp_video = tmp_path / "temp.mp4"
@@ -770,11 +770,11 @@ class TestTranscribeSingleFile:
         mock_extract.assert_called_once()
         mock_save.assert_called_once()
 
-    @patch("gtranscriber.core.batch.WhisperEngine")
-    @patch("gtranscriber.core.batch.DriveClient")
-    @patch("gtranscriber.core.batch.create_temp_file")
-    @patch("gtranscriber.core.batch.extract_audio")
-    @patch("gtranscriber.core.batch.requires_audio_extraction")
+    @patch("arandu.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.DriveClient")
+    @patch("arandu.core.batch.create_temp_file")
+    @patch("arandu.core.batch.extract_audio")
+    @patch("arandu.core.batch.requires_audio_extraction")
     def test_transcribe_single_file_corrupted_media(
         self,
         mock_requires_extraction: MagicMock,
@@ -785,8 +785,8 @@ class TestTranscribeSingleFile:
         tmp_path: Path,
     ) -> None:
         """Test transcription fails with corrupted media."""
-        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
-        from gtranscriber.core.media import CorruptedMediaError
+        from arandu.core.batch import BatchConfig, TranscriptionTask
+        from arandu.core.media import CorruptedMediaError
 
         # Setup mocks
         temp_file = tmp_path / "temp.mp4"
@@ -828,12 +828,12 @@ class TestTranscribeSingleFile:
         assert success is False
         assert "corrupted" in message.lower() or "corrupt" in message.lower()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.WhisperEngine")
-    @patch("gtranscriber.core.batch.DriveClient")
-    @patch("gtranscriber.core.batch.create_temp_file")
-    @patch("gtranscriber.core.batch.extract_audio")
-    @patch("gtranscriber.core.batch.requires_audio_extraction")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.DriveClient")
+    @patch("arandu.core.batch.create_temp_file")
+    @patch("arandu.core.batch.extract_audio")
+    @patch("arandu.core.batch.requires_audio_extraction")
     def test_transcribe_single_file_audio_extraction_error(
         self,
         mock_requires_extraction: MagicMock,
@@ -844,8 +844,8 @@ class TestTranscribeSingleFile:
         tmp_path: Path,
     ) -> None:
         """Test transcription fails with audio extraction error."""
-        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
-        from gtranscriber.core.media import AudioExtractionError
+        from arandu.core.batch import BatchConfig, TranscriptionTask
+        from arandu.core.media import AudioExtractionError
 
         # Setup mocks
         temp_file = tmp_path / "temp.mp4"
@@ -887,10 +887,10 @@ class TestTranscribeSingleFile:
         assert success is False
         assert "extraction" in message.lower() or "extract" in message.lower()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.WhisperEngine")
-    @patch("gtranscriber.core.batch.DriveClient")
-    @patch("gtranscriber.core.batch.create_temp_file")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.WhisperEngine")
+    @patch("arandu.core.batch.DriveClient")
+    @patch("arandu.core.batch.create_temp_file")
     def test_transcribe_single_file_generic_error(
         self,
         mock_temp_file: MagicMock,
@@ -899,7 +899,7 @@ class TestTranscribeSingleFile:
         tmp_path: Path,
     ) -> None:
         """Test transcription fails with generic error."""
-        from gtranscriber.core.batch import BatchConfig, TranscriptionTask
+        from arandu.core.batch import BatchConfig, TranscriptionTask
 
         # Setup mocks
         temp_file = tmp_path / "temp.mp3"
@@ -946,12 +946,12 @@ class TestRunBatchTranscription:
         self.results_dir = (tmp_path / "results").resolve()
 
         # Mock ResultsConfig to use tmp_path as base directory
-        mock_rc = mocker.patch("gtranscriber.core.batch.ResultsConfig")
+        mock_rc = mocker.patch("arandu.core.batch.ResultsConfig")
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
         # Mock TranscriberConfig for config snapshot
-        mock_tc = mocker.patch("gtranscriber.core.batch.TranscriberConfig")
+        mock_tc = mocker.patch("arandu.core.batch.TranscriberConfig")
         mock_tc.return_value.model_dump.return_value = {"model_id": "test/model"}
 
         # Fix pipeline ID for predictable paths
@@ -959,15 +959,15 @@ class TestRunBatchTranscription:
 
         # Use ThreadPoolExecutor to avoid slow forkserver process spawning.
         # Tests that explicitly @patch ProcessPoolExecutor will override this.
-        mocker.patch("gtranscriber.core.batch.ProcessPoolExecutor", _ThreadPoolCompat)
+        mocker.patch("arandu.core.batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         self.run_dir = self.results_dir / "test_run" / "transcription"
         self.outputs_dir = self.run_dir / "outputs"
         self.versioned_checkpoint = self.run_dir / "checkpoint.json"
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_creates_output_dir(
         self,
         mock_load_catalog: MagicMock,
@@ -975,7 +975,7 @@ class TestRunBatchTranscription:
         tmp_path: Path,
     ) -> None:
         """Test that run_batch_transcription creates output directory."""
-        from gtranscriber.core.batch import BatchConfig, run_batch_transcription
+        from arandu.core.batch import BatchConfig, run_batch_transcription
 
         mock_load_catalog.return_value = []
 
@@ -992,10 +992,10 @@ class TestRunBatchTranscription:
         # Versioned output directory should be created
         assert self.outputs_dir.exists()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.CheckpointManager.is_completed", return_value=True)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.CheckpointManager.is_completed", return_value=True)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_no_remaining_tasks_exits_early(
         self,
         mock_load_catalog: MagicMock,
@@ -1005,7 +1005,7 @@ class TestRunBatchTranscription:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test early exit when no remaining tasks to process."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1040,9 +1040,9 @@ class TestRunBatchTranscription:
         mock_transcribe.assert_not_called()
         assert "already transcribed" in caplog.text.lower()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_sequential_processing(
         self,
         mock_load_catalog: MagicMock,
@@ -1050,7 +1050,7 @@ class TestRunBatchTranscription:
         tmp_path: Path,
     ) -> None:
         """Test sequential processing with single worker."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1096,9 +1096,9 @@ class TestRunBatchTranscription:
 
         assert mock_transcribe.call_count == 2
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_sequential_with_failures(
         self,
         mock_load_catalog: MagicMock,
@@ -1108,7 +1108,7 @@ class TestRunBatchTranscription:
         """Test sequential processing with some failures."""
         import json
 
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1156,9 +1156,9 @@ class TestRunBatchTranscription:
         assert "file1" in checkpoint_data["completed_files"]
         assert "file2" in checkpoint_data["failed_files"]
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_final_summary_logged(
         self,
         mock_load_catalog: MagicMock,
@@ -1167,7 +1167,7 @@ class TestRunBatchTranscription:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test that final summary is logged."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1203,10 +1203,10 @@ class TestRunBatchTranscription:
         assert "Batch transcription completed" in caplog.text
         assert "Success rate:" in caplog.text
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
-    @patch("gtranscriber.core.batch.mp.cpu_count")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
+    @patch("arandu.core.batch.mp.cpu_count")
     def test_run_batch_worker_limiting_cpu_mode(
         self,
         mock_cpu_count: MagicMock,
@@ -1216,7 +1216,7 @@ class TestRunBatchTranscription:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test worker count is limited to CPU count in CPU mode."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1256,10 +1256,10 @@ class TestRunBatchTranscription:
         # Should log warning about worker limiting
         assert "CPUs available" in caplog.text or mock_transcribe.call_count == 5
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
-    @patch("gtranscriber.core.batch.mp.cpu_count")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
+    @patch("arandu.core.batch.mp.cpu_count")
     def test_run_batch_worker_info_gpu_mode(
         self,
         mock_cpu_count: MagicMock,
@@ -1269,7 +1269,7 @@ class TestRunBatchTranscription:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test info is logged when workers > CPU count in GPU mode."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1308,9 +1308,9 @@ class TestRunBatchTranscription:
         # Should log info about GPU processing
         assert "GPU processing" in caplog.text or "workers" in caplog.text.lower()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.transcribe_single_file")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.transcribe_single_file")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_final_summary_with_failures_logged(
         self,
         mock_load_catalog: MagicMock,
@@ -1319,7 +1319,7 @@ class TestRunBatchTranscription:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Test that final summary includes failure details."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1354,9 +1354,9 @@ class TestRunBatchTranscription:
 
         assert "Failed files:" in caplog.text or "Error occurred" in caplog.text
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.ProcessPoolExecutor")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.ProcessPoolExecutor")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_parallel_processing(
         self,
         mock_load_catalog: MagicMock,
@@ -1364,7 +1364,7 @@ class TestRunBatchTranscription:
         tmp_path: Path,
     ) -> None:
         """Test parallel processing with multiple workers."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1397,7 +1397,7 @@ class TestRunBatchTranscription:
         mock_executor_instance.submit.side_effect = mock_futures
 
         # Mock as_completed to return futures in order
-        with patch("gtranscriber.core.batch.as_completed") as mock_as_completed:
+        with patch("arandu.core.batch.as_completed") as mock_as_completed:
             mock_as_completed.return_value = iter(mock_futures)
 
             config = BatchConfig(
@@ -1414,9 +1414,9 @@ class TestRunBatchTranscription:
         # Should have used ProcessPoolExecutor
         mock_executor.assert_called_once()
 
-    @patch("gtranscriber.core.batch._worker_engine", None)
-    @patch("gtranscriber.core.batch.ProcessPoolExecutor")
-    @patch("gtranscriber.core.batch.load_catalog")
+    @patch("arandu.core.batch._worker_engine", None)
+    @patch("arandu.core.batch.ProcessPoolExecutor")
+    @patch("arandu.core.batch.load_catalog")
     def test_run_batch_parallel_with_exception(
         self,
         mock_load_catalog: MagicMock,
@@ -1424,7 +1424,7 @@ class TestRunBatchTranscription:
         tmp_path: Path,
     ) -> None:
         """Test parallel processing handles exceptions from futures."""
-        from gtranscriber.core.batch import (
+        from arandu.core.batch import (
             BatchConfig,
             TranscriptionTask,
             run_batch_transcription,
@@ -1453,7 +1453,7 @@ class TestRunBatchTranscription:
         mock_executor_instance.submit.return_value = mock_future
 
         # Mock as_completed
-        with patch("gtranscriber.core.batch.as_completed") as mock_as_completed:
+        with patch("arandu.core.batch.as_completed") as mock_as_completed:
             mock_as_completed.return_value = iter([mock_future])
 
             config = BatchConfig(

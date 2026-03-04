@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from gtranscriber.config import (
+from arandu.config import (
     CEPConfig,
     EvaluationConfig,
     KGConfig,
@@ -32,8 +32,8 @@ class TestTranscriberConfig:
         """Test default configuration initialization."""
         # Override with the default values to test the actual config defaults
         # (not influenced by .env file)
-        monkeypatch.setenv("GTRANSCRIBER_MODEL_ID", "openai/whisper-large-v3")
-        monkeypatch.setenv("GTRANSCRIBER_WORKERS", "1")
+        monkeypatch.setenv("ARANDU_MODEL_ID", "openai/whisper-large-v3")
+        monkeypatch.setenv("ARANDU_WORKERS", "1")
 
         config = TranscriberConfig()
 
@@ -51,10 +51,10 @@ class TestTranscriberConfig:
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test configuration loading from environment variables."""
-        monkeypatch.setenv("GTRANSCRIBER_MODEL_ID", "custom/model")
-        monkeypatch.setenv("GTRANSCRIBER_LANGUAGE", "en")
-        monkeypatch.setenv("GTRANSCRIBER_FORCE_CPU", "true")
-        monkeypatch.setenv("GTRANSCRIBER_WORKERS", "4")
+        monkeypatch.setenv("ARANDU_MODEL_ID", "custom/model")
+        monkeypatch.setenv("ARANDU_LANGUAGE", "en")
+        monkeypatch.setenv("ARANDU_FORCE_CPU", "true")
+        monkeypatch.setenv("ARANDU_WORKERS", "4")
 
         config = TranscriberConfig()
 
@@ -76,7 +76,7 @@ class TestTranscriberConfig:
     def test_temp_dir_default(self) -> None:
         """Test default temp directory creation."""
         config = TranscriberConfig()
-        assert "gtranscriber" in config.temp_dir
+        assert "arandu" in config.temp_dir
 
     def test_path_fields(self) -> None:
         """Test path configuration fields."""
@@ -155,9 +155,9 @@ class TestQAConfig:
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test QA config loading from environment variables."""
-        monkeypatch.setenv("GTRANSCRIBER_QA_PROVIDER", "openai")
-        monkeypatch.setenv("GTRANSCRIBER_QA_MODEL_ID", "gpt-4")
-        monkeypatch.setenv("GTRANSCRIBER_QA_TEMPERATURE", "0.9")
+        monkeypatch.setenv("ARANDU_QA_PROVIDER", "openai")
+        monkeypatch.setenv("ARANDU_QA_MODEL_ID", "gpt-4")
+        monkeypatch.setenv("ARANDU_QA_TEMPERATURE", "0.9")
 
         config = QAConfig()
 
@@ -189,8 +189,8 @@ class TestKGConfig:
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test KG config loading from environment variables."""
-        monkeypatch.setenv("GTRANSCRIBER_KG_PROVIDER", "openai")
-        monkeypatch.setenv("GTRANSCRIBER_KG_MODEL_ID", "gpt-3.5-turbo")
+        monkeypatch.setenv("ARANDU_KG_PROVIDER", "openai")
+        monkeypatch.setenv("ARANDU_KG_MODEL_ID", "gpt-3.5-turbo")
 
         config = KGConfig()
 
@@ -240,7 +240,7 @@ class TestEvaluationConfig:
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test Evaluation config loading from environment variables."""
-        monkeypatch.setenv("GTRANSCRIBER_EVAL_EMBEDDING_MODEL", "custom-model")
+        monkeypatch.setenv("ARANDU_EVAL_EMBEDDING_MODEL", "custom-model")
 
         config = EvaluationConfig()
 
@@ -262,32 +262,32 @@ class TestConfigEnvPrefix:
     """Test environment variable prefix handling."""
 
     def test_transcriber_prefix(self, monkeypatch: MonkeyPatch) -> None:
-        """Test GTRANSCRIBER_ prefix for TranscriberConfig."""
-        monkeypatch.setenv("GTRANSCRIBER_MODEL_ID", "test-model")
+        """Test ARANDU_ prefix for TranscriberConfig."""
+        monkeypatch.setenv("ARANDU_MODEL_ID", "test-model")
         config = TranscriberConfig()
         assert config.model_id == "test-model"
 
     def test_qa_prefix(self, monkeypatch: MonkeyPatch) -> None:
-        """Test GTRANSCRIBER_QA_ prefix for QAConfig."""
-        monkeypatch.setenv("GTRANSCRIBER_QA_MODEL_ID", "test-qa-model")
+        """Test ARANDU_QA_ prefix for QAConfig."""
+        monkeypatch.setenv("ARANDU_QA_MODEL_ID", "test-qa-model")
         config = QAConfig()
         assert config.model_id == "test-qa-model"
 
     def test_kg_prefix(self, monkeypatch: MonkeyPatch) -> None:
-        """Test GTRANSCRIBER_KG_ prefix for KGConfig."""
-        monkeypatch.setenv("GTRANSCRIBER_KG_MODEL_ID", "test-kg-model")
+        """Test ARANDU_KG_ prefix for KGConfig."""
+        monkeypatch.setenv("ARANDU_KG_MODEL_ID", "test-kg-model")
         config = KGConfig()
         assert config.model_id == "test-kg-model"
 
     def test_eval_prefix(self, monkeypatch: MonkeyPatch) -> None:
-        """Test GTRANSCRIBER_EVAL_ prefix for EvaluationConfig."""
-        monkeypatch.setenv("GTRANSCRIBER_EVAL_EMBEDDING_MODEL", "test-eval-model")
+        """Test ARANDU_EVAL_ prefix for EvaluationConfig."""
+        monkeypatch.setenv("ARANDU_EVAL_EMBEDDING_MODEL", "test-eval-model")
         config = EvaluationConfig()
         assert config.embedding_model == "test-eval-model"
 
     def test_case_insensitive(self, monkeypatch: MonkeyPatch) -> None:
         """Test case insensitivity of environment variables."""
-        monkeypatch.setenv("gtranscriber_model_id", "lowercase-model")
+        monkeypatch.setenv("arandu_model_id", "lowercase-model")
         config = TranscriberConfig()
         assert config.model_id == "lowercase-model"
 
@@ -386,8 +386,8 @@ class TestCEPConfig:
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test CEP config loading from environment variables."""
-        monkeypatch.setenv("GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID", "gpt-4")
-        monkeypatch.setenv("GTRANSCRIBER_CEP_ENABLE_VALIDATION", "false")
+        monkeypatch.setenv("ARANDU_CEP_VALIDATOR_MODEL_ID", "gpt-4")
+        monkeypatch.setenv("ARANDU_CEP_ENABLE_VALIDATION", "false")
 
         config = CEPConfig()
 
@@ -434,7 +434,7 @@ class TestLLMConfig:
 
     def test_base_url_from_env(self, monkeypatch: MonkeyPatch) -> None:
         """Test base URL loaded from environment."""
-        monkeypatch.setenv("GTRANSCRIBER_LLM_BASE_URL", "http://custom-llm.example.com")
+        monkeypatch.setenv("ARANDU_LLM_BASE_URL", "http://custom-llm.example.com")
 
         config = LLMConfig()
 
@@ -465,9 +465,9 @@ class TestConfigHelperFunctions:
     """Tests for configuration helper functions."""
 
     def test_get_default_temp_dir(self) -> None:
-        """Test _get_default_temp_dir returns gtranscriber path."""
+        """Test _get_default_temp_dir returns arandu path."""
         temp_dir = _get_default_temp_dir()
-        assert "gtranscriber" in temp_dir
+        assert "arandu" in temp_dir
 
     def test_get_transcriber_config(self) -> None:
         """Test get_transcriber_config returns TranscriberConfig instance."""

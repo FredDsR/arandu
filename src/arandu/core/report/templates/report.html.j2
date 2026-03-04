@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arandu Pipeline Report</title>
+    {% if plotly_js %}
+    <script>{{ plotly_js | safe }}</script>
+    {% else %}
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    {% endif %}
+    <style>
+    {% include '_styles.css' %}
+    </style>
+</head>
+<body>
+    <h1>Arandu Pipeline Report</h1>
+    <p class="report-subtitle">
+        Cognitive Elicitation Pipeline &mdash; Interactive results dashboard for transcription
+        processing, Bloom-scaffolded QA generation, and LLM-as-a-Judge validation.
+        Select an experiment run below to explore per-run metrics, or use the Compare tab
+        for cross-experiment analysis.
+    </p>
+
+    <!-- Run Selector -->
+    <div id="run-selector-bar">
+        <label for="run-selector">Experiment</label>
+        <select id="run-selector"></select>
+        <button id="btn-export-html" class="export-btn">Export HTML</button>
+    </div>
+
+    <!-- Global Filter Bar -->
+    <div id="filter-bar">
+        <div class="filter-group">
+            <label for="filter-location">Location</label>
+            <select id="filter-location" multiple></select>
+        </div>
+        <div class="filter-group">
+            <label for="filter-participant">Participant</label>
+            <select id="filter-participant" multiple></select>
+        </div>
+        <div class="filter-group">
+            <label for="filter-validity">Validity</label>
+            <select id="filter-validity">
+                <option value="">All</option>
+                <option value="valid">Valid only</option>
+                <option value="invalid">Invalid only</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Min QA Score</label>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <input type="range" id="filter-min-score" min="0" max="1" step="0.05" value="0">
+                <span id="min-score-value">0.00</span>
+            </div>
+        </div>
+        <div class="filter-group">
+            <label>Min Confidence</label>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <input type="range" id="filter-confidence" min="0" max="1" step="0.05" value="0">
+                <span id="confidence-value">0.00</span>
+            </div>
+        </div>
+        <div class="filter-group">
+            <label>Bloom Levels</label>
+            <div id="filter-bloom" class="bloom-toggles"></div>
+        </div>
+        <div class="filter-group">
+            <label for="filter-search">Search</label>
+            <input type="text" id="filter-search" placeholder="filename or participant…">
+        </div>
+        <button id="btn-reset-filters">Reset</button>
+    </div>
+
+    <!-- Summary Stat Cards -->
+    <div id="summary-cards">
+        <div class="stat-card">
+            <h3>Transcriptions</h3>
+            <div class="value" id="card-total-transcriptions">0/0</div>
+            <div class="label">valid / total</div>
+        </div>
+        <div class="stat-card">
+            <h3>QA Pairs</h3>
+            <div class="value" id="card-total-qa">0/0</div>
+            <div class="label">valid / total</div>
+        </div>
+        <div class="stat-card">
+            <h3>Avg Validation Score</h3>
+            <div class="value" id="card-avg-score">N/A</div>
+        </div>
+        <div class="stat-card">
+            <h3>Success Rate</h3>
+            <div class="value" id="card-avg-success">N/A</div>
+        </div>
+        <div class="stat-card">
+            <h3>Avg Transcription Quality</h3>
+            <div class="value" id="card-avg-trans-quality">N/A</div>
+        </div>
+        <div class="stat-card">
+            <h3>HOTS Ratio</h3>
+            <div class="value" id="card-hots-ratio">N/A</div>
+            <div class="label">Analyze + Evaluate</div>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <nav id="tab-nav">
+        <button data-tab="overview" class="active">Overview</button>
+        <button data-tab="qa">QA Analysis</button>
+        <button data-tab="transcriptions">Transcriptions</button>
+        <button data-tab="source">Source Data</button>
+        <button data-tab="config">Configuration</button>
+        <button data-tab="compare">Compare Runs</button>
+    </nav>
+
+    <!-- ==================== Overview Tab ==================== -->
+    <div id="tab-overview" class="tab-panel active">
+        <h2 class="section-title">Pipeline Run Summary</h2>
+        <p class="section-desc">
+            Overview of all pipeline runs discovered in the results directory.
+            Each row shows the pipeline ID, which processing steps were executed,
+            completion status, wall-clock duration, overall success rate, and
+            the number of items processed.
+        </p>
+        <div id="chart-run-summary-table"></div>
+
+        <div class="chart-container" style="margin-bottom: 24px;">
+            <h3 class="chart-title">Data Processing Funnel</h3>
+            <p class="chart-desc">
+                Sankey diagram showing the number of items at each pipeline stage
+                and drop-off rates. Helps identify where data is lost during
+                transcription, quality validation, and QA generation.
+            </p>
+            <div id="chart-funnel"></div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <h3 class="chart-title">Success Rate &amp; Duration</h3>
+                <p class="chart-desc">
+                    Per-run success rate (percentage of items processed without errors)
+                    and total wall-clock processing duration in seconds. Helps identify
+                    runs with anomalous failure rates or processing bottlenecks.
+                </p>
+                <div id="chart-pipeline-overview"></div>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Run Timeline</h3>
+                <p class="chart-desc">
+                    Chronological progression of pipeline runs. Each marker represents a
+                    run plotted by creation date (x-axis) and success rate (y-axis).
+                    Marker size is proportional to the number of items processed.
+                </p>
+                <div id="chart-run-timeline"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== QA Analysis Tab ==================== -->
+    <div id="tab-qa" class="tab-panel">
+        <h2 class="section-title">QA Pair Analysis</h2>
+        <p class="section-desc">
+            Analysis of Bloom-scaffolded question-answer pairs generated by the
+            Cognitive Elicitation Pipeline (CEP). Includes Bloom taxonomy distribution,
+            LLM-as-a-Judge validation score distributions, inter-criterion correlations,
+            and multi-dimensional quality profiling.
+        </p>
+
+        <nav class="sub-tab-nav">
+            <button data-subtab="qa-charts" class="active">Charts</button>
+            <button data-subtab="qa-detail">Detail Table</button>
+            <button data-subtab="qa-alerts">Quality Alerts</button>
+        </nav>
+
+        <div id="subtab-qa-charts" class="sub-tab-panel active">
+            <div class="chart-row">
+                <div class="chart-container">
+                    <h3 class="chart-title">Bloom Taxonomy Distribution</h3>
+                    <p class="chart-desc">
+                        Stacked bar chart showing the count of QA pairs at each Bloom
+                        cognitive level (Remember, Understand, Analyze, Evaluate) per
+                        pipeline run. Reveals the cognitive diversity of the generated dataset.
+                    </p>
+                    <div id="chart-bloom-distribution"></div>
+                </div>
+                <div class="chart-container">
+                    <h3 class="chart-title">Validation Score Distributions</h3>
+                    <p class="chart-desc">
+                        Violin plots of the four LLM-as-a-Judge validation criteria:
+                        <strong>Faithfulness</strong> (grounding in context),
+                        <strong>Bloom Calibration</strong> (cognitive level accuracy),
+                        <strong>Informativeness</strong> (tacit knowledge elicitation), and
+                        <strong>Self-Containedness</strong> (question independence from context).
+                        Violins reveal bimodal distributions that box plots would hide.
+                    </p>
+                    <div id="chart-validation-violins"></div>
+                </div>
+            </div>
+
+            <div class="chart-row">
+                <div class="chart-container">
+                    <h3 class="chart-title">Bloom Level &times; Validation Criterion Heatmap</h3>
+                    <p class="chart-desc">
+                        Mean validation score for each combination of Bloom taxonomy level
+                        (rows) and validation criterion (columns). Cells are annotated with
+                        mean &plusmn; standard deviation. Identifies which cognitive levels
+                        are hardest to validate (e.g., higher-order levels may have lower
+                        Bloom calibration scores).
+                    </p>
+                    <div id="chart-bloom-validation-heatmap"></div>
+                </div>
+                <div class="chart-container">
+                    <h3 class="chart-title">Confidence Score Distribution</h3>
+                    <p class="chart-desc">
+                        Histogram of LLM generation confidence scores across all QA pairs.
+                        High-confidence clusters suggest the model found clear extractive
+                        grounding; low-confidence tails may indicate speculative or
+                        weakly-supported answers.
+                    </p>
+                    <div id="chart-confidence-distribution"></div>
+                </div>
+            </div>
+
+            <div class="chart-row">
+                <div class="chart-container">
+                    <h3 class="chart-title">Multi-hop vs Single-hop Questions</h3>
+                    <p class="chart-desc">
+                        Proportion of QA pairs requiring multi-hop reasoning (connecting
+                        distant text segments) versus single-hop extraction. Multi-hop
+                        questions are more challenging for downstream KG-based QA systems.
+                    </p>
+                    <div id="chart-multihop"></div>
+                </div>
+                <div class="chart-container">
+                    <h3 class="chart-title">Validation Criteria Correlation Matrix</h3>
+                    <p class="chart-desc">
+                        Pearson correlation coefficients between the four validation criteria
+                        and generation confidence. Strong positive correlations suggest
+                        redundant criteria; negative correlations reveal trade-offs
+                        (e.g., informativeness may inversely correlate with faithfulness
+                        for tacit knowledge questions).
+                    </p>
+                    <div id="chart-correlation-heatmap"></div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <h3 class="chart-title">Parallel Coordinates: Multi-dimensional Quality Profile</h3>
+                <p class="chart-desc">
+                    Each line represents a single QA pair, plotted across five quality
+                    dimensions (confidence, faithfulness, Bloom calibration, informativeness,
+                    self-containedness). Lines are colored by Bloom taxonomy level.
+                    Patterns of parallel lines reveal quality clusters; crossing lines
+                    indicate trade-offs between dimensions.
+                </p>
+                <div id="chart-parallel-coordinates"></div>
+            </div>
+        </div>
+
+        <div id="subtab-qa-detail" class="sub-tab-panel">
+            <p class="placeholder-text">QA pair detail table (coming soon)</p>
+        </div>
+
+        <div id="subtab-qa-alerts" class="sub-tab-panel">
+            <p class="placeholder-text">Quality alerts (coming soon)</p>
+        </div>
+    </div>
+
+    <!-- ==================== Transcriptions Tab ==================== -->
+    <div id="tab-transcriptions" class="tab-panel">
+        <h2 class="section-title">Transcription Quality</h2>
+        <p class="section-desc">
+            Quality metrics for ASR transcription outputs. The quality checker evaluates
+            script match (expected language usage), repetition artifacts, segment boundary
+            quality, and content density. The radar chart compares aggregate quality
+            profiles across pipeline runs.
+        </p>
+
+        <nav class="sub-tab-nav">
+            <button data-subtab="trans-charts" class="active">Charts</button>
+            <button data-subtab="trans-detail">Detail Table</button>
+            <button data-subtab="trans-alerts">Quality Alerts</button>
+        </nav>
+
+        <div id="subtab-trans-charts" class="sub-tab-panel active">
+            <div class="chart-container">
+                <h3 class="chart-title">Transcription Quality Score Distributions</h3>
+                <p class="chart-desc">
+                    Histograms for five quality sub-scores: <strong>Overall</strong> (composite),
+                    <strong>Script Match</strong> (correct language/script detection),
+                    <strong>Repetition</strong> (absence of repeated segments),
+                    <strong>Segment Quality</strong> (clean timestamp boundaries), and
+                    <strong>Content Density</strong> (information per unit length).
+                    The sixth panel shows the validity rate (pass/fail against the quality threshold).
+                </p>
+                <div id="chart-transcription-quality"></div>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Quality Radar: Mean Scores by Run</h3>
+                <p class="chart-desc">
+                    Radar (spider) chart comparing mean validation criterion scores and
+                    mean transcription quality across pipeline runs. Each polygon represents
+                    one run; larger area indicates higher overall quality. Useful for
+                    identifying runs with specific quality deficiencies.
+                </p>
+                <div id="chart-quality-radar"></div>
+            </div>
+        </div>
+
+        <div id="subtab-trans-detail" class="sub-tab-panel">
+            <div id="trans-detail-container"></div>
+        </div>
+
+        <div id="subtab-trans-alerts" class="sub-tab-panel">
+            <div id="trans-alerts-container"></div>
+        </div>
+    </div>
+
+    <!-- ==================== Source Data Tab ==================== -->
+    <div id="tab-source" class="tab-panel">
+        <h2 class="section-title">Source Data Provenance</h2>
+        <p class="section-desc">
+            Metadata from the original interview recordings: participant identity,
+            geographic location, recording date. This section helps assess coverage
+            across the research population and identify potential geographic or
+            participant-level biases in the generated dataset.
+        </p>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <h3 class="chart-title">Location &gt; Participant Hierarchy</h3>
+                <p class="chart-desc">
+                    Treemap showing the hierarchical breakdown of source documents by
+                    recording location and participant name. Tile area is proportional
+                    to the number of documents. Reveals geographic concentration and
+                    participant representation balance.
+                </p>
+                <div id="chart-location-treemap"></div>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Participant Breakdown</h3>
+                <p class="chart-desc">
+                    Grouped bar chart showing the number of source documents and
+                    generated QA pairs per participant. Large discrepancies between
+                    document count and QA pair count may indicate variable content
+                    richness across interviews.
+                </p>
+                <div id="chart-participant-breakdown"></div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3 class="chart-title">Validation Scores by Location</h3>
+            <p class="chart-desc">
+                Violin plots of overall validation scores grouped by recording location.
+                Differences across locations may reflect variation in interview content
+                richness, transcription quality, or tacit knowledge density.
+            </p>
+            <div id="chart-location-quality"></div>
+        </div>
+
+        <h3 class="chart-title" style="margin-top:24px;">Document-Level Detail</h3>
+        <p class="chart-desc">
+            Expandable table listing every source document with its metadata, QA pair
+            count, mean validation score, and Bloom level distribution (shown as inline
+            color bars). Click a row to expand and inspect individual QA pairs with
+            their per-criterion scores.
+        </p>
+        <div id="chart-document-table"></div>
+    </div>
+
+    <!-- ==================== Configuration Tab ==================== -->
+    <div id="tab-config" class="tab-panel">
+        <h2>Run Configuration</h2>
+        <p>
+            Full configuration snapshot for the selected pipeline run, including
+            model settings, quality thresholds, Bloom distribution, and hardware info.
+        </p>
+        <div id="config-content"><p class="placeholder-text">Select a run to view its configuration.</p></div>
+    </div>
+
+    <!-- ==================== Compare Runs Tab ==================== -->
+    <div id="tab-compare" class="tab-panel">
+        <h2 class="section-title">Cross-Run Comparison</h2>
+        <p class="section-desc">
+            Side-by-side comparison of two pipeline runs. Select runs from the dropdowns
+            below and click <strong>Compare</strong> to generate overlapping violin plots
+            for each validation criterion and a radar chart comparing mean quality profiles.
+            Useful for evaluating the impact of model changes, prompt tuning, or
+            configuration adjustments between runs.
+        </p>
+
+        <div id="compare-controls">
+            <label for="compare-run-a">Run A:</label>
+            <select id="compare-run-a"></select>
+            <label for="compare-run-b">Run B:</label>
+            <select id="compare-run-b"></select>
+            <button id="btn-compare">Compare</button>
+        </div>
+
+        <div class="chart-container">
+            <h3 class="chart-title">Validation Score Comparison (Violin Plots)</h3>
+            <p class="chart-desc">
+                Overlapping violin plots for each validation criterion, comparing the
+                selected runs. Distribution shape differences reveal systematic quality
+                shifts between runs.
+            </p>
+            <div id="chart-cross-run-comparison"></div>
+        </div>
+        <div class="chart-container">
+            <h3 class="chart-title">Quality Radar Comparison</h3>
+            <p class="chart-desc">
+                Radar chart comparing mean scores across the four validation criteria
+                and transcription quality for the two selected runs. Overlapping
+                polygons highlight dimensions where one run outperforms the other.
+            </p>
+            <div id="chart-compare-radar"></div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Generated by Arandu Report Generator | {{ timestamp }}</p>
+    </footer>
+
+    {% if dataset_json %}
+    <script>window.__EMBEDDED_DATA__ = {{ dataset_json | tojson }};</script>
+    {% endif %}
+
+    <!-- Filter Engine + Chart Builders -->
+    <script>
+    {% include '_filter_engine.js' %}
+    </script>
+</body>
+</html>

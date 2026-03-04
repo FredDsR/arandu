@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import pytest
     from pytest_mock import MockerFixture
 
-from gtranscriber.core.checkpoint import CheckpointManager, CheckpointState
+from arandu.core.checkpoint import CheckpointManager, CheckpointState
 
 
 class TestCheckpointState:

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gtranscriber-qa
+#SBATCH --job-name=arandu-qa
 #SBATCH --partition=tupi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -10,7 +10,7 @@
 #SBATCH --error=logs/qa_tupi_%x_%j.err
 
 # =============================================================================
-# G-Transcriber QA Generation SLURM Job Script - TUPI Partition
+# Arandu QA Generation SLURM Job Script - TUPI Partition
 #
 # Partition: tupi
 # GPU: NVIDIA GeForce RTX 4090 (24 GB)
@@ -18,8 +18,8 @@
 # =============================================================================
 
 # Partition-specific settings
-export GTRANSCRIBER_QA_WORKERS="${GTRANSCRIBER_QA_WORKERS:-4}"
-export GTRANSCRIBER_QA_MODEL_ID="${GTRANSCRIBER_QA_MODEL_ID:-qwen3:14b}"
+export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
+export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
 export USE_GPU_OLLAMA=true
 
 # Source the common QA script

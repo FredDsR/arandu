@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document describes the methodological framework for **G-Transcriber**, a composable pipeline designed to elicit and structure tacit knowledge from ethnographic audio/video interviews with riverine communities affected by critical climate events in southern Brazil.
+This document describes the methodological framework for **Arandu**, a composable pipeline designed to elicit and structure tacit knowledge from ethnographic audio/video interviews with riverine communities affected by critical climate events in southern Brazil.
 
 The methodology integrates four stages: **(1)** automated speech recognition and transcription, **(2)** cognitively-scaffolded question-answer generation grounded in Bloom's Taxonomy, **(3)** knowledge graph construction via entity and relation extraction, and **(4)** evaluation of the knowledge graph using the QA dataset as ground truth. Stages 2 and 3 operate in parallel from the same transcription input, while Stage 4 bridges them by measuring how well the graph captures the knowledge validated by the QA pairs. Each stage is designed as an independent, resumable module, enabling reproducibility and iterative refinement.
 
@@ -740,7 +740,7 @@ Key properties of this architecture:
 
 | Environment | Description | Hardware |
 |-------------|-------------|----------|
-| **Local CLI** | Direct `gtranscriber` invocation | Developer workstation |
+| **Local CLI** | Direct `arandu` invocation | Developer workstation |
 | **Docker Compose** | Multi-service profiles (`cep`, `kg`, `evaluate`) | Server with Docker |
 | **SLURM** | HPC batch jobs with partition-specific scripts | NVIDIA L40S, RTX 4090, AMD |
 

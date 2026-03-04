@@ -163,7 +163,7 @@ Every piece of knowledge must have a single, unambiguous, authoritative represen
 - Extract repeated logic into helper functions or shared modules
 - Use Pydantic base models for common schema patterns
 - Centralize configuration in `BaseSettings` classes
-- Reuse existing utilities from `gtranscriber.utils` before creating new ones
+- Reuse existing utilities from `arandu.utils` before creating new ones
 
 ### SOLID
 
@@ -225,12 +225,12 @@ A module should only talk to its immediate collaborators. Avoid chaining through
 
 1. Standard library
 2. Third-party packages
-3. First-party (gtranscriber)
+3. First-party (arandu)
 
 ### Configuration
 
 - Use `pydantic-settings` with `BaseSettings`
-- All env vars use `GTRANSCRIBER_` prefix
+- All env vars use `ARANDU_` prefix
 - Use `Field()` with descriptions
 
 ### Schemas
@@ -247,13 +247,13 @@ A module should only talk to its immediate collaborators. Avoid chaining through
 
 ### LLM Interactions
 
-- Always use unified `LLMClient` from `gtranscriber.core.llm_client`
+- Always use unified `LLMClient` from `arandu.core.llm_client`
 - Never use provider SDKs (OpenAI, Ollama) directly
 
 ### Error Handling
 
 - Never use `print()` - use Rich console utilities
-- Import from `gtranscriber.utils.logger`: `print_error`, `print_success`, `print_info`, `print_warning`
+- Import from `arandu.utils.logger`: `print_error`, `print_success`, `print_info`, `print_warning`
 - Use `typer.Exit(code=1)` for CLI errors
 
 ### Retry Logic
@@ -296,7 +296,7 @@ uv run ruff format src/
 ```bash
 uv run pytest                              # Run all tests
 uv run pytest tests/core/test_engine.py   # Run specific test
-uv run pytest --cov=gtranscriber          # Run with coverage
+uv run pytest --cov=arandu          # Run with coverage
 ```
 
 ## Common Mistakes to Avoid
@@ -330,7 +330,7 @@ uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest
 
 ```bash
 uv sync
-uv run gtranscriber --help
+uv run arandu --help
 ```
 
 ### Key Standards Summary

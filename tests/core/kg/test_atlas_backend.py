@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gtranscriber.config import KGConfig
-from gtranscriber.schemas import EnrichedRecord, SourceMetadata
+from arandu.config import KGConfig
+from arandu.schemas import EnrichedRecord, SourceMetadata
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -58,7 +58,7 @@ class _StubDatasetProcessor:
 @pytest.fixture
 def _mock_atlas_rag() -> dict[str, MagicMock]:
     """Mock all atlas_rag modules so AtlasRagConstructor can be imported."""
-    import gtranscriber.core.kg.atlas_backend as atlas_backend
+    import arandu.core.kg.atlas_backend as atlas_backend
 
     # Reset the cached enriched processor class so it is rebuilt with the mock
     atlas_backend._MetadataEnrichedProcessorCls = None
@@ -100,7 +100,7 @@ class TestAtlasRagConstructorInit:
 
     def test_default_options(self, _mock_atlas_rag: dict) -> None:
         """Test constructor applies default atlas options."""
-        from gtranscriber.core.kg.atlas_backend import ATLAS_DEFAULTS, AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import ATLAS_DEFAULTS, AtlasRagConstructor
 
         config = KGConfig(backend="atlas")
         constructor = AtlasRagConstructor(config)
@@ -110,7 +110,7 @@ class TestAtlasRagConstructorInit:
 
     def test_backend_options_override(self, _mock_atlas_rag: dict) -> None:
         """Test backend_options override atlas defaults."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(
             backend="atlas",
@@ -129,7 +129,7 @@ class TestPrepareInputData:
 
     def test_creates_json_file(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Test input data is written as expected JSON."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(backend="atlas", language="pt")
         constructor = AtlasRagConstructor(config)
@@ -182,7 +182,7 @@ class TestBuildMetadataHeader:
 
     def test_no_metadata_returns_empty(self, _mock_atlas_rag: dict) -> None:
         """When source_metadata is None, return empty string."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         record = _make_record(text="Texto original.")
         assert record.source_metadata is None
@@ -199,7 +199,7 @@ class TestBuildMetadataHeader:
         _pt_labels: dict[str, str],
     ) -> None:
         """Portuguese metadata header uses Portuguese labels."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         record = _make_record(text="Texto da entrevista.")
         record.source_metadata = SourceMetadata(
@@ -228,7 +228,7 @@ class TestBuildMetadataHeader:
         _en_labels: dict[str, str],
     ) -> None:
         """English metadata header uses English labels."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         record = _make_record(text="Interview text.")
         record.source_metadata = SourceMetadata(
@@ -249,7 +249,7 @@ class TestBuildMetadataHeader:
         _pt_labels: dict[str, str],
     ) -> None:
         """Only non-None fields appear in the header."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         record = _make_record(text="Texto.")
         record.source_metadata = SourceMetadata(participant_name="Ana")
@@ -266,7 +266,7 @@ class TestBuildMetadataHeader:
         _pt_labels: dict[str, str],
     ) -> None:
         """When all SourceMetadata fields are None, return empty string."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         record = _make_record(text="Texto.")
         record.source_metadata = SourceMetadata()
@@ -276,7 +276,7 @@ class TestBuildMetadataHeader:
 
     def test_empty_labels_returns_empty(self, _mock_atlas_rag: dict) -> None:
         """When labels dict is empty (missing file), return empty string."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         record = _make_record(text="Texto.")
         record.source_metadata = SourceMetadata(participant_name="Ana")
@@ -305,7 +305,7 @@ class TestMetadataEnrichedProcessor:
             ],
         )
 
-        from gtranscriber.core.kg.atlas_backend import _get_enriched_processor_cls
+        from arandu.core.kg.atlas_backend import _get_enriched_processor_cls
 
         ProcessorCls = _get_enriched_processor_cls()
 
@@ -336,7 +336,7 @@ class TestMetadataEnrichedProcessor:
 
     def test_no_header_key_passes_through(self, _mock_atlas_rag: dict) -> None:
         """Documents without _metadata_header should pass through unchanged."""
-        from gtranscriber.core.kg.atlas_backend import _get_enriched_processor_cls
+        from arandu.core.kg.atlas_backend import _get_enriched_processor_cls
 
         ProcessorCls = _get_enriched_processor_cls()
 
@@ -365,7 +365,7 @@ class TestLoadMetadataLabels:
 
     def test_loads_configured_language(self, _mock_atlas_rag: dict) -> None:
         """Labels for the configured language are returned."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(language="pt")
         constructor = AtlasRagConstructor(config)
@@ -376,7 +376,7 @@ class TestLoadMetadataLabels:
 
     def test_falls_back_to_english(self, _mock_atlas_rag: dict, tmp_path: Path) -> None:
         """Unknown language falls back to English labels."""
-        from gtranscriber.core.kg import atlas_backend
+        from arandu.core.kg import atlas_backend
 
         labels_file = tmp_path / "metadata_labels.json"
         labels_file.write_text(
@@ -403,7 +403,7 @@ class TestLoadMetadataLabels:
         tmp_path: Path,
     ) -> None:
         """Missing labels file returns empty dict (graceful degradation)."""
-        from gtranscriber.core.kg import atlas_backend
+        from arandu.core.kg import atlas_backend
 
         original = atlas_backend._PROMPTS_DIR
         atlas_backend._PROMPTS_DIR = tmp_path / "nonexistent"
@@ -422,7 +422,7 @@ class TestParseExtractionRecords:
 
     def test_parses_jsonl_file(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Standard JSONL file (one JSON object per line) is parsed correctly."""
-        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+        from arandu.core.kg.atlas_backend import _parse_extraction_records
 
         f = tmp_path / "output.json"
         records = [{"id": f"chunk_{i}", "original_text": f"text {i}"} for i in range(5)]
@@ -437,7 +437,7 @@ class TestParseExtractionRecords:
 
     def test_parses_pretty_printed_file(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Pretty-printed JSON objects (multi-line, concatenated) are parsed."""
-        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+        from arandu.core.kg.atlas_backend import _parse_extraction_records
 
         f = tmp_path / "output.json"
         records = [{"id": f"chunk_{i}", "original_text": f"text {i}"} for i in range(3)]
@@ -453,7 +453,7 @@ class TestParseExtractionRecords:
 
     def test_skips_invalid_records(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Invalid JSON lines are skipped and counted."""
-        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+        from arandu.core.kg.atlas_backend import _parse_extraction_records
 
         f = tmp_path / "output.json"
         f.write_text(
@@ -470,7 +470,7 @@ class TestParseExtractionRecords:
 
     def test_empty_file_returns_empty(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Empty file returns empty list."""
-        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+        from arandu.core.kg.atlas_backend import _parse_extraction_records
 
         f = tmp_path / "output.json"
         f.write_text("")
@@ -484,7 +484,7 @@ class TestParseExtractionRecords:
         self, tmp_path: Path, _mock_atlas_rag: dict
     ) -> None:
         """Pretty-printed JSON with nested arrays/dicts is parsed correctly."""
-        from gtranscriber.core.kg.atlas_backend import _parse_extraction_records
+        from arandu.core.kg.atlas_backend import _parse_extraction_records
 
         f = tmp_path / "output.json"
         record = {
@@ -515,7 +515,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """When atlas_output/kg_extraction/ does not exist, return 0."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(backend_options={"batch_size_triple": 3})
         constructor = AtlasRagConstructor(config)
@@ -528,7 +528,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """When kg_extraction/ exists but has no files, return 0."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         (tmp_path / "atlas_output" / "kg_extraction").mkdir(parents=True)
         config = KGConfig(backend_options={"batch_size_triple": 3})
@@ -542,7 +542,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Count complete batches from JSONL lines."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -564,7 +564,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Partial last batch is trimmed from the output file."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -590,7 +590,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Pretty-printed JSON file counts actual records, not raw lines."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -612,7 +612,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Pretty-printed files are rewritten as JSONL after resume detection."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -638,7 +638,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Records from multiple output files are summed."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -660,7 +660,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Empty extraction output files are removed during resume detection."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -682,7 +682,7 @@ class TestDetectResumeOffset:
         _mock_atlas_rag: dict,
     ) -> None:
         """Invalid JSON records are removed, count based on valid records only."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         kg_dir = tmp_path / "atlas_output" / "kg_extraction"
         kg_dir.mkdir(parents=True)
@@ -711,9 +711,9 @@ class TestBuildLLMClient:
 
     def test_ollama_provider(self, _mock_atlas_rag: dict, mocker: MockerFixture) -> None:
         """Test LLM client construction for Ollama provider."""
-        mock_create = mocker.patch("gtranscriber.core.kg.atlas_backend.create_llm_client")
+        mock_create = mocker.patch("arandu.core.kg.atlas_backend.create_llm_client")
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(provider="ollama", ollama_url="http://localhost:11434/v1")
         constructor = AtlasRagConstructor(config)
@@ -729,9 +729,9 @@ class TestBuildLLMClient:
         self, _mock_atlas_rag: dict, mocker: MockerFixture
     ) -> None:
         """Test custom provider passes base_url to create_llm_client."""
-        mock_create = mocker.patch("gtranscriber.core.kg.atlas_backend.create_llm_client")
+        mock_create = mocker.patch("arandu.core.kg.atlas_backend.create_llm_client")
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(provider="custom", base_url="http://my-api:8000/v1")
         constructor = AtlasRagConstructor(config)
@@ -747,9 +747,9 @@ class TestBuildLLMClient:
         self, _mock_atlas_rag: dict, mocker: MockerFixture
     ) -> None:
         """Test custom provider passes None base_url to create_llm_client."""
-        mock_create = mocker.patch("gtranscriber.core.kg.atlas_backend.create_llm_client")
+        mock_create = mocker.patch("arandu.core.kg.atlas_backend.create_llm_client")
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(provider="custom", base_url=None)
         constructor = AtlasRagConstructor(config)
@@ -771,7 +771,7 @@ class TestInjectConceptPrompts:
             CONCEPT_INSTRUCTIONS,
         )
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(language="pt")
         constructor = AtlasRagConstructor(config)
@@ -785,7 +785,7 @@ class TestInjectConceptPrompts:
             CONCEPT_INSTRUCTIONS,
         )
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(language="en")
         constructor = AtlasRagConstructor(config)
@@ -804,7 +804,7 @@ class TestBuildProcessingConfig:
         """Test ProcessingConfig receives correct field values."""
         from atlas_rag.kg_construction.triple_config import ProcessingConfig
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(
             model_id="qwen3:14b",
@@ -828,7 +828,7 @@ class TestBuildProcessingConfig:
         """Test resume_from is forwarded to ProcessingConfig."""
         from atlas_rag.kg_construction.triple_config import ProcessingConfig
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig()
         constructor = AtlasRagConstructor(config)
@@ -847,7 +847,7 @@ class TestRunPipeline:
 
     def test_all_five_steps_called(self, _mock_atlas_rag: dict) -> None:
         """Test all 5 atlas-rag pipeline steps are called."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(backend_options={"include_concept": True})
         constructor = AtlasRagConstructor(config)
@@ -863,7 +863,7 @@ class TestRunPipeline:
 
     def test_skip_concept_steps(self, _mock_atlas_rag: dict) -> None:
         """Test concept steps are skipped when include_concept=False."""
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(backend_options={"include_concept": False})
         constructor = AtlasRagConstructor(config)
@@ -897,7 +897,7 @@ class TestBuildResult:
         mock_graph.number_of_edges.return_value = 17
         mocker.patch("networkx.read_graphml", return_value=mock_graph)
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(model_id="test-model", provider="ollama", language="pt")
         constructor = AtlasRagConstructor(config)
@@ -920,7 +920,7 @@ class TestBuildResult:
         atlas_output = tmp_path / "atlas_output"
         atlas_output.mkdir(parents=True)
 
-        from gtranscriber.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.core.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig()
         constructor = AtlasRagConstructor(config)

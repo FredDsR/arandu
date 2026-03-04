@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gtranscriber
+#SBATCH --job-name=arandu
 #SBATCH --partition=blaise
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -10,7 +10,7 @@
 #SBATCH --error=logs/%x_%j.err
 
 # =============================================================================
-# G-Transcriber SLURM Job Script for PCAD - BLAISE Partition
+# Arandu SLURM Job Script for PCAD - BLAISE Partition
 #
 # Partition: blaise
 # GPU: 4x Tesla P100 (16 GB each)
@@ -19,7 +19,7 @@
 
 # Use the base script with partition-specific settings
 export WORKERS="${WORKERS:-3}"
-export GTRANSCRIBER_MODEL_ID="${GTRANSCRIBER_MODEL_ID:-openai/whisper-large-v3-turbo}"
+export ARANDU_MODEL_ID="${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}"
 
 # Source the main job script
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/transcription/job_common.sh"

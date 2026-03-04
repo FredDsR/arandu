@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gtranscriber.core.results_manager import ResultsManager
-from gtranscriber.schemas import (
+from arandu.core.results_manager import ResultsManager
+from arandu.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
@@ -127,17 +127,17 @@ class TestConfigSnapshot:
 
         mocker.patch.dict(
             os.environ,
-            {"GTRANSCRIBER_MODEL_ID": "env-model", "OTHER_VAR": "ignored"},
+            {"ARANDU_MODEL_ID": "env-model", "OTHER_VAR": "ignored"},
             clear=False,
         )
 
         config = TestConfig()
-        snapshot = ConfigSnapshot.from_config(config, env_prefix="GTRANSCRIBER_")
+        snapshot = ConfigSnapshot.from_config(config, env_prefix="ARANDU_")
 
         assert snapshot.config_type == "TestConfig"
         assert snapshot.config_values["model_id"] == "test-model"
         assert snapshot.config_values["workers"] == 4
-        assert "GTRANSCRIBER_MODEL_ID" in snapshot.environment_variables
+        assert "ARANDU_MODEL_ID" in snapshot.environment_variables
         assert "OTHER_VAR" not in snapshot.environment_variables
 
 
@@ -164,7 +164,7 @@ class TestRunMetadata:
                 config_values={},
             ),
             output_directory="/path/to/output",
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         assert metadata.run_id == "20260204_143052_local"
@@ -184,7 +184,7 @@ class TestRunMetadata:
             ),
             config=ConfigSnapshot(config_type="Test", config_values={}),
             output_directory="/test",
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         assert metadata.pipeline_id == "test-pipeline"
@@ -205,7 +205,7 @@ class TestRunMetadata:
             ),
             config=ConfigSnapshot(config_type="Test", config_values={}),
             output_directory="/test",
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         assert metadata.duration_seconds == 330.0
@@ -224,7 +224,7 @@ class TestRunMetadata:
             ),
             config=ConfigSnapshot(config_type="Test", config_values={}),
             output_directory="/test",
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         assert metadata.success_rate == 80.0
@@ -240,7 +240,7 @@ class TestRunMetadata:
             ),
             config=ConfigSnapshot(config_type="Test", config_values={"key": "value"}),
             output_directory="/test",
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         save_path = tmp_path / "metadata.json"
@@ -687,7 +687,7 @@ class TestRegisterExternalRun:
             config=ConfigSnapshot(config_type="Test", config_values={}),
             output_directory=str(step_dir),
             checkpoint_file=str(step_dir / "checkpoint.json"),
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION, pipeline_id=pipeline_id)
@@ -724,7 +724,7 @@ class TestRegisterExternalRun:
             config=ConfigSnapshot(config_type="Test", config_values={}),
             output_directory=str(tmp_path / "nonexistent" / "transcription"),
             checkpoint_file="checkpoint.json",
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
@@ -755,7 +755,7 @@ class TestRegisterExternalRun:
             config=ConfigSnapshot(config_type="Test", config_values={}),
             output_directory=str(step_dir),
             checkpoint_file=str(step_dir / "checkpoint.json"),
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
 
         manager = ResultsManager(tmp_path, PipelineType.TRANSCRIPTION)
@@ -840,7 +840,7 @@ def _make_source_pipeline(
             config=ConfigSnapshot(config_type="Test", config_values={"key": "val"}),
             output_directory=str(step_dir),
             checkpoint_file=str(step_dir / "checkpoint.json"),
-            gtranscriber_version="0.1.0",
+            arandu_version="0.1.0",
         )
         metadata.save(step_dir / "run_metadata.json")
 

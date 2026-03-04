@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from gtranscriber.core.report.api_schemas import (
+from arandu.core.report.api_schemas import (
     FunnelData,
     FunnelStage,
     PaginatedResponse,
@@ -14,7 +14,7 @@ from gtranscriber.core.report.api_schemas import (
     TranscriptionDetail,
     TranscriptionFilterParams,
 )
-from gtranscriber.core.report.dataset import QAPairRow, TranscriptionRow
+from arandu.core.report.dataset import QAPairRow, TranscriptionRow
 
 
 class TestPaginatedResponse:

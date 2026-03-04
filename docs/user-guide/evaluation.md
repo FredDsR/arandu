@@ -2,7 +2,7 @@
 
 > **⚠️ STATUS: PLANNED - NOT YET IMPLEMENTED**
 >
-> Evaluation pipeline for assessing QA and KG quality is planned for a future release. The configuration schemas (`EvaluationConfig`, `EvaluationReport`) exist in `src/gtranscriber/config.py` and `src/gtranscriber/schemas.py`, but there are currently:
+> Evaluation pipeline for assessing QA and KG quality is planned for a future release. The configuration schemas (`EvaluationConfig`, `EvaluationReport`) exist in `src/arandu/config.py` and `src/arandu/schemas.py`, but there are currently:
 > - **No CLI commands** for evaluation (no `evaluate` command)
 > - **No pipeline modules** implementing the evaluation logic
 > - **No dependencies** added yet (`scikit-learn`, `sentence-transformers`, `nltk`, `sacrebleu` are not in `pyproject.toml`)
@@ -57,7 +57,7 @@ Evaluate the quality of generated question-answer pairs.
 
 ```bash
 # Evaluate QA quality only
-GTRANSCRIBER_EVALUATION_METRICS=qa docker compose --profile evaluate up
+ARANDU_EVALUATION_METRICS=qa docker compose --profile evaluate up
 ```
 
 ### Using SLURM
@@ -146,10 +146,10 @@ Evaluate the quality of knowledge graphs through entity, relation, and semantic 
 
 ```bash
 # Evaluate graph quality only
-GTRANSCRIBER_EVALUATION_METRICS=entity,relation docker compose --profile evaluate up
+ARANDU_EVALUATION_METRICS=entity,relation docker compose --profile evaluate up
 
 # Include semantic metrics (requires embedding computation)
-GTRANSCRIBER_EVALUATION_METRICS=entity,relation,semantic docker compose --profile evaluate up
+ARANDU_EVALUATION_METRICS=entity,relation,semantic docker compose --profile evaluate up
 ```
 
 ### Using SLURM
@@ -229,10 +229,10 @@ ls -la knowledge_graphs/corpus_graph.graphml
 
 ```bash
 # Use smaller embedding model
-export GTRANSCRIBER_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+export ARANDU_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 
 # Or run entity/relation metrics first (fast)
-GTRANSCRIBER_EVALUATION_METRICS=entity,relation docker compose --profile evaluate up
+ARANDU_EVALUATION_METRICS=entity,relation docker compose --profile evaluate up
 ```
 
 ---
@@ -257,11 +257,11 @@ sbatch scripts/slurm/run_evaluation.slurm
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_EVALUATION_METRICS` | `qa,entity,relation,semantic` | Metrics to compute |
-| `GTRANSCRIBER_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Model for semantic embeddings |
-| `GTRANSCRIBER_QA_DIR` | `./qa_dataset` | QA dataset directory |
-| `GTRANSCRIBER_KG_DIR` | `./knowledge_graphs` | Knowledge graph directory |
-| `GTRANSCRIBER_EVAL_DIR` | `./evaluation` | Output directory |
+| `ARANDU_EVALUATION_METRICS` | `qa,entity,relation,semantic` | Metrics to compute |
+| `ARANDU_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Model for semantic embeddings |
+| `ARANDU_QA_DIR` | `./qa_dataset` | QA dataset directory |
+| `ARANDU_KG_DIR` | `./knowledge_graphs` | Knowledge graph directory |
+| `ARANDU_EVAL_DIR` | `./evaluation` | Output directory |
 
 ### Metric Categories
 
@@ -306,7 +306,7 @@ When running evaluation for only one pipeline, the score reflects available metr
 ## Loading Reports
 
 ```python
-from gtranscriber.schemas import EvaluationReport
+from arandu.schemas import EvaluationReport
 
 # Load evaluation report
 report = EvaluationReport.load("evaluation/report.json")
@@ -329,7 +329,7 @@ if report.relation_metrics:
 ## Creating Custom Reports
 
 ```python
-from gtranscriber.schemas import (
+from arandu.schemas import (
     EvaluationReport,
     EntityCoverageResult,
     RelationMetricsResult,
@@ -376,14 +376,14 @@ kg_report.save("evaluation/kg_report.json")
 
 ```bash
 # Watch evaluation logs
-docker compose --profile evaluate logs -f gtranscriber-eval
+docker compose --profile evaluate logs -f arandu-eval
 ```
 
 ## SLURM Logs
 
 ```bash
 # Monitor job output
-tail -f logs/gtranscriber-eval_<jobid>.out
+tail -f logs/arandu-eval_<jobid>.out
 ```
 
 ---

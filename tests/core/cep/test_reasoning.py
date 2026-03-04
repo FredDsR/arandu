@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from gtranscriber.config import CEPConfig
-from gtranscriber.core.cep.reasoning import ReasoningEnricher
-from gtranscriber.schemas import QAPairCEP
-from gtranscriber.utils.text import GenerateResult
+from arandu.config import CEPConfig
+from arandu.core.cep.reasoning import ReasoningEnricher
+from arandu.schemas import QAPairCEP
+from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture

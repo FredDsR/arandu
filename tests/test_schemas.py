@@ -10,7 +10,7 @@ from pydantic import ValidationError
 if TYPE_CHECKING:
     from pathlib import Path
 
-from gtranscriber.schemas import (
+from arandu.schemas import (
     EntityCoverageResult,
     EvaluationReport,
     GraphConnectivity,

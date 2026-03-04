@@ -45,7 +45,7 @@ The `batch-transcribe` command allows you to:
 Process all audio/video files with a single worker:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv --credentials credentials.json
+arandu batch-transcribe input/catalog.csv --credentials credentials.json
 ```
 
 This will:
@@ -60,7 +60,7 @@ This will:
 Use multiple workers for faster processing:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --workers 4
 ```
@@ -72,7 +72,7 @@ gtranscriber batch-transcribe input/catalog.csv \
 Specify a custom output directory:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --output-dir transcriptions/ \
   --credentials credentials.json \
   --workers 2
@@ -84,13 +84,13 @@ Use a different Whisper model:
 
 ```bash
 # Faster turbo model
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --model-id openai/whisper-large-v3 \
   --credentials credentials.json \
   --workers 4
 
 # Distilled model (smaller, faster)
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --model-id distil-whisper/distil-large-v3 \
   --credentials credentials.json \
   --workers 4
@@ -101,7 +101,7 @@ gtranscriber batch-transcribe input/catalog.csv \
 Use a custom pipeline ID to group related processing steps:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --id etno-project-001 \
   --credentials credentials.json \
   --workers 4
@@ -117,7 +117,7 @@ The pipeline ID:
 Use quantization to reduce VRAM usage:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --quantize \
   --workers 2
@@ -128,7 +128,7 @@ gtranscriber batch-transcribe input/catalog.csv \
 Process on CPU instead of GPU:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --cpu \
   --workers 2
@@ -142,13 +142,13 @@ Specify the transcription language for better accuracy and downstream processing
 
 ```bash
 # Portuguese transcriptions (ETno project)
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --language pt \
   --workers 4
 
 # Spanish transcriptions
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --language es \
   --workers 4
@@ -173,7 +173,7 @@ The batch transcription automatically creates a checkpoint file that tracks:
 If the process is interrupted (Ctrl+C, crash, etc.), simply run the same command again:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --workers 4
 ```
@@ -188,7 +188,7 @@ The system will:
 Specify a custom checkpoint file location:
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --checkpoint my_checkpoint.json \
   --workers 4
@@ -200,7 +200,7 @@ To start over from scratch, delete the checkpoint file:
 
 ```bash
 rm results/checkpoint.json
-gtranscriber batch-transcribe input/catalog.csv --credentials credentials.json
+arandu batch-transcribe input/catalog.csv --credentials credentials.json
 ```
 
 ## Output Format
@@ -383,7 +383,7 @@ The system now validates downloads and audio streams before transcription, so th
 
 ### Processing Specific File Types
 
-Edit `src/gtranscriber/core/batch.py` to modify `AUDIO_VIDEO_MIME_TYPES` set:
+Edit `src/arandu/core/batch.py` to modify `AUDIO_VIDEO_MIME_TYPES` set:
 
 ```python
 AUDIO_VIDEO_MIME_TYPES = {
@@ -412,7 +412,7 @@ engine = WhisperEngine(
 ### Example 1: Small Dataset (< 10 files)
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --workers 1
 ```
@@ -420,7 +420,7 @@ gtranscriber batch-transcribe input/catalog.csv \
 ### Example 2: Medium Dataset (10-100 files)
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --workers 4 \
   --quantize
@@ -430,14 +430,14 @@ gtranscriber batch-transcribe input/catalog.csv \
 
 ```bash
 # Initial run
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --model-id openai/whisper-large-v3 \
   --workers 8 \
   --quantize
 
 # If interrupted, resume:
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --model-id openai/whisper-large-v3 \
   --workers 8 \
@@ -447,7 +447,7 @@ gtranscriber batch-transcribe input/catalog.csv \
 ### Example 4: CPU Only (No GPU)
 
 ```bash
-gtranscriber batch-transcribe input/catalog.csv \
+arandu batch-transcribe input/catalog.csv \
   --credentials credentials.json \
   --cpu \
   --workers 2 \
@@ -460,7 +460,7 @@ For the ETno project with Portuguese transcriptions:
 
 ```bash
 # Transcribe with explicit Portuguese language setting
-gtranscriber batch-transcribe input/etno_catalog.csv \
+arandu batch-transcribe input/etno_catalog.csv \
   --credentials credentials.json \
   --language pt \
   --model-id openai/whisper-large-v3 \

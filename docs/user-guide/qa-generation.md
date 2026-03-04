@@ -41,39 +41,39 @@ sbatch scripts/slurm/run_qa_generation.slurm
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `GTRANSCRIBER_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
-| `GTRANSCRIBER_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
-| `GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
-| `GTRANSCRIBER_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
-| `GTRANSCRIBER_WORKERS` | `2` | Parallel workers |
+| `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
+| `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
+| `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
+| `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
+| `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
+| `ARANDU_WORKERS` | `2` | Parallel workers |
 
 ### CEP-Specific Settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTRANSCRIBER_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
-| `GTRANSCRIBER_CEP_BLOOM_LEVELS` | `remember,understand,analyze,evaluate` | Bloom levels to generate |
-| `GTRANSCRIBER_CEP_VALIDATION_THRESHOLD` | `0.6` | Minimum score to pass validation |
-| `GTRANSCRIBER_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Model for validation |
+| `ARANDU_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
+| `ARANDU_CEP_BLOOM_LEVELS` | `remember,understand,analyze,evaluate` | Bloom levels to generate |
+| `ARANDU_CEP_VALIDATION_THRESHOLD` | `0.6` | Minimum score to pass validation |
+| `ARANDU_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Model for validation |
 
 ### Example .env Configuration
 
 ```bash
 # QA Generation Settings
-GTRANSCRIBER_QA_PROVIDER=ollama
-GTRANSCRIBER_QA_MODEL_ID=qwen3:14b
-GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=15
-GTRANSCRIBER_QA_TEMPERATURE=0.7
-GTRANSCRIBER_WORKERS=4
+ARANDU_QA_PROVIDER=ollama
+ARANDU_QA_MODEL_ID=qwen3:14b
+ARANDU_QA_QUESTIONS_PER_DOCUMENT=15
+ARANDU_QA_TEMPERATURE=0.7
+ARANDU_WORKERS=4
 
 # CEP Settings
-GTRANSCRIBER_CEP_ENABLE_VALIDATION=true
-GTRANSCRIBER_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
+ARANDU_CEP_ENABLE_VALIDATION=true
+ARANDU_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
 
 # Directories
-GTRANSCRIBER_RESULTS_DIR=./results
-GTRANSCRIBER_QA_DIR=./qa_dataset
+ARANDU_RESULTS_DIR=./results
+ARANDU_QA_DIR=./qa_dataset
 ```
 
 ## Usage Examples
@@ -89,22 +89,22 @@ docker compose --profile qa up
 
 ```bash
 # Use different model
-GTRANSCRIBER_QA_MODEL_ID=qwen2.5:14b docker compose --profile qa up
+ARANDU_QA_MODEL_ID=qwen2.5:14b docker compose --profile qa up
 ```
 
 ### More Questions per Document
 
 ```bash
 # Generate 20 QA pairs per document
-GTRANSCRIBER_QA_QUESTIONS_PER_DOCUMENT=20 docker compose --profile qa up
+ARANDU_QA_QUESTIONS_PER_DOCUMENT=20 docker compose --profile qa up
 ```
 
 ### Using OpenAI
 
 ```bash
 # Use OpenAI instead of Ollama
-export GTRANSCRIBER_QA_PROVIDER=openai
-export GTRANSCRIBER_QA_MODEL_ID=gpt-4o-mini
+export ARANDU_QA_PROVIDER=openai
+export ARANDU_QA_MODEL_ID=gpt-4o-mini
 export OPENAI_API_KEY=sk-...
 docker compose --profile qa up
 ```
@@ -173,7 +173,7 @@ results/<pipeline_id>/cep/outputs/
 ## Programmatic Usage
 
 ```python
-from gtranscriber.schemas import QARecordCEP, QAPairCEP
+from arandu.schemas import QARecordCEP, QAPairCEP
 
 # Load existing CEP QA record
 record = QARecordCEP.load("results/pipeline_id/cep/outputs/1abc123xyz_cep_qa.json")
@@ -195,7 +195,7 @@ record.to_jsonl("output.jsonl")
 
 ```bash
 # Watch QA generation logs
-docker compose --profile qa logs -f gtranscriber-qa
+docker compose --profile qa logs -f arandu-qa
 
 # Check Ollama status
 docker compose --profile qa logs ollama
@@ -205,7 +205,7 @@ docker compose --profile qa logs ollama
 
 ```bash
 # Monitor job output
-tail -f logs/gtranscriber-qa_<jobid>.out
+tail -f logs/arandu-qa_<jobid>.out
 
 # Check job status
 squeue -u $USER
@@ -243,7 +243,7 @@ The checkpoint file tracks:
 
 4. **Validation**
    - Enable for production datasets (default)
-   - Disable for quick iteration (`GTRANSCRIBER_CEP_ENABLE_VALIDATION=false`)
+   - Disable for quick iteration (`ARANDU_CEP_ENABLE_VALIDATION=false`)
 
 ## Troubleshooting
 
@@ -259,8 +259,8 @@ docker compose --profile qa exec ollama ollama list
 
 ### Low Quality Questions
 
-- Increase model size: `GTRANSCRIBER_QA_MODEL_ID=llama3.1:70b`
-- Lower temperature: `GTRANSCRIBER_QA_TEMPERATURE=0.5`
+- Increase model size: `ARANDU_QA_MODEL_ID=llama3.1:70b`
+- Lower temperature: `ARANDU_QA_TEMPERATURE=0.5`
 - Ensure transcription quality is good
 
 ### Ollama Connection Refused
