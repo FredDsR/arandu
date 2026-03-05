@@ -10,10 +10,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from arandu.core.metadata.extractor import GDriveCatalogExtractor
+from arandu.metadata.extractor import GDriveCatalogExtractor
 
 if TYPE_CHECKING:
-    from arandu.core.metadata.protocol import MetadataExtractor
+    from arandu.metadata.protocol import MetadataExtractor
     from arandu.shared.schemas import EnrichedRecord
 
 logger = logging.getLogger(__name__)

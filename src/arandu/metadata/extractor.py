@@ -10,7 +10,7 @@ import logging
 import re
 from pathlib import PurePosixPath
 
-from arandu.core.metadata.protocol import MetadataExtractor
+from arandu.metadata.protocol import MetadataExtractor
 from arandu.shared.schemas import SourceMetadata
 
 logger = logging.getLogger(__name__)

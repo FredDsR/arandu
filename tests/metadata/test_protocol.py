@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from arandu.core.metadata.extractor import GDriveCatalogExtractor
-from arandu.core.metadata.protocol import MetadataExtractor
+from arandu.metadata.extractor import GDriveCatalogExtractor
+from arandu.metadata.protocol import MetadataExtractor
 from arandu.shared.schemas import SourceMetadata
 
 

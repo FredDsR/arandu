@@ -1852,8 +1852,8 @@ def enrich_metadata(
     """
     import csv
 
-    from arandu.core.metadata import GDriveCatalogExtractor, enrich_with_source_metadata
     from arandu.core.qa_batch import _resolve_transcription_dir
+    from arandu.metadata import GDriveCatalogExtractor, enrich_with_source_metadata
 
     setup_logging()
 

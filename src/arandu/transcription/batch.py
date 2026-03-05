@@ -319,7 +319,7 @@ def transcribe_single_file(
 
             # Metadata extraction (if catalog row available)
             if task.catalog_row is not None:
-                from arandu.core.metadata.enrichment import enrich_with_source_metadata
+                from arandu.metadata.enrichment import enrich_with_source_metadata
 
                 enrich_with_source_metadata(enriched, task.catalog_row)
 
