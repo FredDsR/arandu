@@ -14,10 +14,8 @@ from arandu.core.report.dataset import (
     TranscriptionRow,
 )
 from arandu.core.report.service import ReportService
-from arandu.schemas import (
-    ConfigSnapshot,
-    QARecordCEP,
-)
+from arandu.qa.schemas import QARecordCEP
+from arandu.shared.schemas import ConfigSnapshot
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -164,7 +162,7 @@ class TestGetQADetail:
 
     def _make_qa_record(self) -> QARecordCEP:
         """Build a minimal QARecordCEP with one QA pair."""
-        from arandu.schemas import QAPairCEP
+        from arandu.qa.schemas import QAPairCEP
 
         pair = QAPairCEP(
             question="What is CEP?",

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from arandu import __version__
-from arandu.schemas import (
+from arandu.shared.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,

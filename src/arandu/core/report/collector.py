@@ -11,13 +11,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from arandu.schemas import (
-    ConfigSnapshot,
-    EnrichedRecord,
-    PipelineMetadata,
-    QARecordCEP,
-    RunMetadata,
-)
+from arandu.qa.schemas import QARecordCEP
+from arandu.shared.schemas import ConfigSnapshot, EnrichedRecord, PipelineMetadata, RunMetadata
 
 logger = logging.getLogger(__name__)
 

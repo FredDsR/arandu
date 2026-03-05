@@ -10,7 +10,7 @@ from arandu.core.transcription_validator import (
     TranscriptionValidator,
     validate_enriched_record,
 )
-from arandu.schemas import EnrichedRecord, TranscriptionSegment
+from arandu.shared.schemas import EnrichedRecord, TranscriptionSegment
 
 
 class TestTranscriptionQualityConfig:

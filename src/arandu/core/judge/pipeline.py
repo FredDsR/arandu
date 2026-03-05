@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from arandu.schemas import CriterionScore, ValidationScore
+from arandu.qa.schemas import CriterionScore, ValidationScore
 
 if TYPE_CHECKING:
     from arandu.core.judge.criterion import JudgeCriterion

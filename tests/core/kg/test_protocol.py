@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — used at runtime in method signatures
+from typing import TYPE_CHECKING
 
 from arandu.core.kg.protocol import KGConstructor
 from arandu.core.kg.schemas import KGConstructionResult
-from arandu.schemas import EnrichedRecord, KGMetadata
+from arandu.kg.schemas import KGMetadata
+
+if TYPE_CHECKING:
+    from arandu.shared.schemas import EnrichedRecord
 
 
 class _DummyConstructor:

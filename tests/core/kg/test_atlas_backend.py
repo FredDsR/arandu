@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arandu.config import KGConfig
-from arandu.schemas import EnrichedRecord, SourceMetadata
+from arandu.shared.schemas import EnrichedRecord, SourceMetadata
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture

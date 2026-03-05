@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from arandu.core.judge.pipeline import JudgePipeline
-from arandu.schemas import CriterionScore, ValidationScore
+from arandu.qa.schemas import CriterionScore, ValidationScore
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture

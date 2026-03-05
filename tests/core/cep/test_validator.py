@@ -9,7 +9,7 @@ import pytest
 
 from arandu.config import CEPConfig, JudgeConfig
 from arandu.core.cep.validator import QAValidator
-from arandu.schemas import QAPairCEP, QAPairValidated, ValidationScore
+from arandu.qa.schemas import QAPairCEP, QAPairValidated, ValidationScore
 from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
@@ -855,7 +855,7 @@ class TestQAValidatorComposableMode:
     ) -> None:
         """Test that validate uses composable pipeline when enabled."""
         from arandu.config import JudgeConfig
-        from arandu.schemas import ValidationScore
+        from arandu.qa.schemas import ValidationScore
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
@@ -974,7 +974,7 @@ class TestCriterionScore:
 
     def test_valid_criterion_score(self) -> None:
         """Test valid criterion score initialization."""
-        from arandu.schemas import CriterionScore
+        from arandu.qa.schemas import CriterionScore
 
         score = CriterionScore(
             criterion_name="faithfulness",
@@ -990,7 +990,7 @@ class TestCriterionScore:
 
     def test_criterion_score_without_optional_fields(self) -> None:
         """Test criterion score with minimal fields."""
-        from arandu.schemas import CriterionScore
+        from arandu.qa.schemas import CriterionScore
 
         score = CriterionScore(
             criterion_name="informativeness",
@@ -1008,7 +1008,7 @@ class TestValidationScoreEnhanced:
 
     def test_validation_score_with_criterion_scores(self) -> None:
         """Test ValidationScore stores individual criterion scores."""
-        from arandu.schemas import CriterionScore, ValidationScore
+        from arandu.qa.schemas import CriterionScore, ValidationScore
 
         criterion_scores = {
             "faithfulness": CriterionScore(

@@ -11,7 +11,7 @@ import pytest
 
 from arandu.config import KGConfig
 from arandu.core.kg.schemas import KGConstructionResult
-from arandu.schemas import KGMetadata
+from arandu.kg.schemas import KGMetadata
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture

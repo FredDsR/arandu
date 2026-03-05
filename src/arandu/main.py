@@ -24,7 +24,6 @@ from arandu.core.transcription_validator import (
     get_quality_issues,
     validate_enriched_record,
 )
-from arandu.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from arandu.shared.hardware import get_device_and_dtype
 from arandu.shared.io import (
     create_temp_file,
@@ -32,6 +31,7 @@ from arandu.shared.io import (
     get_output_filename,
     save_enriched_record,
 )
+from arandu.shared.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from arandu.utils.console import console
 from arandu.utils.logger import (
     print_error,
@@ -965,7 +965,7 @@ def generate_cep_qa(
 
         # Export to JSONL if requested
         if export_jsonl:
-            from arandu.schemas import QARecordCEP
+            from arandu.qa.schemas import QARecordCEP
 
             console.print("\n[cyan]Exporting to JSONL format...[/cyan]")
             for json_file in qa_config.output_dir.glob("*_cep_qa.json"):
@@ -1217,8 +1217,8 @@ def replicate(
     """
     from rich.panel import Panel
 
-    from arandu.schemas import PipelineMetadata
     from arandu.shared.results_manager import ResultsManager
+    from arandu.shared.schemas import PipelineMetadata
 
     try:
         new_id = ResultsManager.replicate_pipeline(
@@ -1322,8 +1322,8 @@ def list_runs(
     """
     from rich.table import Table
 
-    from arandu.schemas import PipelineType
     from arandu.shared.results_manager import ResultsManager
+    from arandu.shared.schemas import PipelineType
 
     # Parse pipeline type if provided
     pipeline_filter = None
@@ -1607,8 +1607,8 @@ def run_info(
     from rich.panel import Panel
     from rich.tree import Tree
 
-    from arandu.schemas import PipelineType, RunMetadata
     from arandu.shared.results_manager import ResultsManager
+    from arandu.shared.schemas import PipelineType, RunMetadata
 
     # Parse pipeline type
     try:
@@ -1749,8 +1749,8 @@ def rebuild_index(
         # Rebuild index in custom results directory
         arandu rebuild-index --results-dir /path/to/results
     """
-    from arandu.schemas import PipelineType, RunMetadata
     from arandu.shared.results_manager import ResultsManager
+    from arandu.shared.schemas import PipelineType, RunMetadata
 
     base_dir = results_dir.resolve()
     if not base_dir.exists():

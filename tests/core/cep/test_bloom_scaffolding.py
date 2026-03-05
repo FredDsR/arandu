@@ -14,7 +14,7 @@ from arandu.core.cep.bloom_scaffolding import (
     BloomScaffoldingGenerator,
     LLMResponseError,
 )
-from arandu.schemas import QAPairCEP
+from arandu.qa.schemas import QAPairCEP
 from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:

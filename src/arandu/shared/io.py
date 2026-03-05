@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arandu.schemas import EnrichedRecord
+    from arandu.shared.schemas import EnrichedRecord
 
 
 def _get_default_temp_dir() -> str:

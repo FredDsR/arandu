@@ -10,13 +10,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from arandu.core.report.collector import ResultsCollector, RunReport
-from arandu.schemas import (
-    EnrichedRecord,
-    PipelineMetadata,
-    PipelineType,
-    QARecordCEP,
-    SourceMetadata,
-)
+from arandu.qa.schemas import QARecordCEP
+from arandu.shared.schemas import EnrichedRecord, PipelineMetadata, PipelineType, SourceMetadata
 from tests.core.report.helpers import make_run_metadata
 
 

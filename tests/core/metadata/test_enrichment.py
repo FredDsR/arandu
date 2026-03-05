@@ -7,7 +7,7 @@ from datetime import datetime
 import pytest
 
 from arandu.core.metadata.enrichment import enrich_with_source_metadata
-from arandu.schemas import EnrichedRecord, SourceMetadata
+from arandu.shared.schemas import EnrichedRecord, SourceMetadata
 
 
 @pytest.fixture

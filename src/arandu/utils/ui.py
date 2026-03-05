@@ -24,7 +24,7 @@ from arandu.utils.console import console
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from arandu.schemas import EnrichedRecord
+    from arandu.shared.schemas import EnrichedRecord
 
 # Constants
 MAX_DISPLAY_FILES = 20  # Maximum number of files to display in file list

@@ -9,7 +9,7 @@ import pytest
 
 from arandu.config import CEPConfig
 from arandu.core.cep.reasoning import ReasoningEnricher
-from arandu.schemas import QAPairCEP
+from arandu.qa.schemas import QAPairCEP
 from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:

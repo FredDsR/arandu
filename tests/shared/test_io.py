@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from arandu.schemas import EnrichedRecord
 from arandu.shared.io import (
     cleanup_temp_files,
     create_temp_file,
@@ -17,6 +16,7 @@ from arandu.shared.io import (
     get_output_filename,
     save_enriched_record,
 )
+from arandu.shared.schemas import EnrichedRecord
 
 
 class TestEnsureTempDir:

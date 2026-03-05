@@ -10,19 +10,16 @@ from pydantic import ValidationError
 if TYPE_CHECKING:
     from pathlib import Path
 
-from arandu.schemas import (
+from arandu.kg.schemas import (
     EntityCoverageResult,
     EvaluationReport,
     GraphConnectivity,
-    InputRecord,
     KGMetadata,
-    QAPair,
-    QAPairCEP,
-    QAPairValidated,
     RelationMetricsResult,
     SemanticQualityResult,
-    TranscriptionSegment,
 )
+from arandu.qa.schemas import QAPair, QAPairCEP, QAPairValidated
+from arandu.shared.schemas import InputRecord, TranscriptionSegment
 
 
 class TestInputRecord:

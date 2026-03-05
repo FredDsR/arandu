@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from arandu.schemas import (
+from arandu.shared.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from arandu.schemas import SourceMetadata
+    from arandu.shared.schemas import SourceMetadata
 
 
 @runtime_checkable

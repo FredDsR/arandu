@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from arandu.core.kg.schemas import KGConstructionResult
-    from arandu.schemas import EnrichedRecord
+    from arandu.shared.schemas import EnrichedRecord
 
 
 @runtime_checkable

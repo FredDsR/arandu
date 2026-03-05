@@ -13,7 +13,7 @@ import unicodedata
 from collections import Counter
 
 from arandu.config import TranscriptionQualityConfig, get_transcription_quality_config
-from arandu.schemas import EnrichedRecord, TranscriptionQualityScore, TranscriptionSegment
+from arandu.shared.schemas import EnrichedRecord, TranscriptionQualityScore, TranscriptionSegment
 
 # Languages that use Latin script
 _LATIN_LANGS = frozenset({"pt", "en", "es", "fr", "de", "it"})

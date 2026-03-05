@@ -19,7 +19,7 @@ import typer
 
 from arandu import __version__
 from arandu.shared.results_manager import ResultsManager
-from arandu.schemas import (
+from arandu.shared.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from arandu.config import KGConfig
-    from arandu.schemas import EnrichedRecord
+    from arandu.shared.schemas import EnrichedRecord
 
 from arandu.core.kg.schemas import KGConstructionResult
 from arandu.shared.llm_client import create_llm_client
@@ -535,7 +535,7 @@ class AtlasRagConstructor:
         """
         import networkx as nx
 
-        from arandu.schemas import KGMetadata
+        from arandu.kg.schemas import KGMetadata
 
         # Find the newest GraphML file produced by atlas-rag
         atlas_output = output_dir / "atlas_output"

@@ -14,7 +14,7 @@ from arandu.core.metadata.extractor import GDriveCatalogExtractor
 
 if TYPE_CHECKING:
     from arandu.core.metadata.protocol import MetadataExtractor
-    from arandu.schemas import EnrichedRecord
+    from arandu.shared.schemas import EnrichedRecord
 
 logger = logging.getLogger(__name__)
 

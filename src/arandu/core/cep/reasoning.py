@@ -13,7 +13,7 @@ from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
-from arandu.schemas import QAPairCEP
+from arandu.qa.schemas import QAPairCEP
 
 if TYPE_CHECKING:
     from arandu.config import CEPConfig

@@ -11,7 +11,7 @@ import logging
 from string import Template
 from typing import TYPE_CHECKING, Any, Protocol
 
-from arandu.schemas import CriterionScore
+from arandu.qa.schemas import CriterionScore
 from arandu.utils.text import strip_markdown_codeblock, validate_score
 
 if TYPE_CHECKING:

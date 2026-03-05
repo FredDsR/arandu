@@ -10,15 +10,13 @@ from arandu.core.report.dataset import (
     TranscriptionRow,
     build_dataset,
 )
-from arandu.schemas import (
+from arandu.qa.schemas import QAPairValidated, QARecordCEP, ValidationScore
+from arandu.shared.schemas import (
     EnrichedRecord,
     PipelineMetadata,
     PipelineType,
-    QAPairValidated,
-    QARecordCEP,
     SourceMetadata,
     TranscriptionQualityScore,
-    ValidationScore,
 )
 from tests.core.report.helpers import make_run_metadata
 
@@ -244,7 +242,7 @@ class TestBuildDataset:
 
     def test_missing_validation_scores(self) -> None:
         """Test flattening QA pairs without validation."""
-        from arandu.schemas import QAPairCEP
+        from arandu.qa.schemas import QAPairCEP
 
         qa_pair = QAPairCEP(
             question="Test?",

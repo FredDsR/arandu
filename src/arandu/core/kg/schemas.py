@@ -6,7 +6,7 @@ from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime
 
 from pydantic import BaseModel, Field
 
-from arandu.schemas import KGMetadata  # noqa: TC001 — Pydantic needs at runtime
+from arandu.kg.schemas import KGMetadata  # noqa: TC001 — Pydantic needs at runtime
 
 
 class KGConstructionResult(BaseModel):

@@ -9,7 +9,8 @@ import pytest
 
 from arandu.config import CEPConfig, QAConfig
 from arandu.core.cep.cep_generator import CEPQAGenerator
-from arandu.schemas import EnrichedRecord, QARecordCEP
+from arandu.qa.schemas import QARecordCEP
+from arandu.shared.schemas import EnrichedRecord
 from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
@@ -505,7 +506,7 @@ class TestQARecordCEP:
 
     def test_bloom_distribution_validation(self) -> None:
         """Test Bloom distribution validation."""
-        from arandu.schemas import QAPairCEP
+        from arandu.qa.schemas import QAPairCEP
 
         pairs = [
             QAPairCEP(
@@ -542,7 +543,7 @@ class TestQARecordCEP:
 
     def test_validation_summary_optional(self) -> None:
         """Test that validation_summary is optional."""
-        from arandu.schemas import QAPairCEP
+        from arandu.qa.schemas import QAPairCEP
 
         pairs = [
             QAPairCEP(
@@ -571,7 +572,7 @@ class TestQARecordCEP:
 
     def test_to_jsonl_with_bloom_level(self) -> None:
         """Test JSONL export includes Bloom level."""
-        from arandu.schemas import QAPairCEP
+        from arandu.qa.schemas import QAPairCEP
 
         pairs = [
             QAPairCEP(

@@ -26,11 +26,11 @@ from arandu.core.media import (
     requires_audio_extraction,
 )
 from arandu.core.transcription_validator import get_quality_issues, validate_enriched_record
-from arandu.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.drive import DriveClient, NoAudioStreamError
 from arandu.shared.io import create_temp_file, save_enriched_record
 from arandu.shared.results_manager import ResultsManager
+from arandu.shared.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
 
 if TYPE_CHECKING:
     from arandu.core.engine import TranscriptionResult

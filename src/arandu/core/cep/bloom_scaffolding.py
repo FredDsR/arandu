@@ -22,11 +22,12 @@ from tenacity import (
     wait_exponential,
 )
 
-from arandu.schemas import QAPairCEP, SourceMetadata
+from arandu.qa.schemas import QAPairCEP
 
 if TYPE_CHECKING:
     from arandu.config import CEPConfig, QAConfig
     from arandu.shared.llm_client import LLMClient
+    from arandu.shared.schemas import SourceMetadata
 
 logger = logging.getLogger(__name__)
 
