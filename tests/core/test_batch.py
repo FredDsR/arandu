@@ -188,8 +188,8 @@ class TestBatchConfig:
 
     def test_batch_config_from_transcriber_config(self, tmp_path: Path) -> None:
         """Test creating BatchConfig from TranscriberConfig."""
-        from arandu.config import TranscriberConfig
         from arandu.core.batch import BatchConfig
+        from arandu.transcription.config import TranscriberConfig
 
         transcriber_config = TranscriberConfig(
             model_id="openai/whisper-large-v3",

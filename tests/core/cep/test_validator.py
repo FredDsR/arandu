@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.config import CEPConfig, JudgeConfig
 from arandu.core.cep.validator import QAValidator
+from arandu.qa.config import CEPConfig, JudgeConfig
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, ValidationScore
 from arandu.utils.text import GenerateResult
 
@@ -810,7 +810,7 @@ class TestQAValidatorComposableMode:
         mocker: MockerFixture,
     ) -> None:
         """Test validator initialization in composable mode."""
-        from arandu.config import JudgeConfig
+        from arandu.qa.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
@@ -833,7 +833,7 @@ class TestQAValidatorComposableMode:
         cep_config: CEPConfig,
     ) -> None:
         """Test validator initialization in legacy mode."""
-        from arandu.config import JudgeConfig
+        from arandu.qa.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
 
@@ -854,7 +854,7 @@ class TestQAValidatorComposableMode:
         mocker: MockerFixture,
     ) -> None:
         """Test that validate uses composable pipeline when enabled."""
-        from arandu.config import JudgeConfig
+        from arandu.qa.config import JudgeConfig
         from arandu.qa.schemas import ValidationScore
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
@@ -895,7 +895,7 @@ class TestQAValidatorComposableMode:
         sample_qa_pair: QAPairCEP,
     ) -> None:
         """Test that validate uses legacy mode when composable disabled."""
-        from arandu.config import JudgeConfig
+        from arandu.qa.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
 
@@ -928,7 +928,7 @@ class TestQAValidatorComposableMode:
         cep_config: CEPConfig,
     ) -> None:
         """Test _get_bloom_level_desc uses loaded prompts in legacy mode."""
-        from arandu.config import JudgeConfig
+        from arandu.qa.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=False, language="pt")
 
@@ -950,7 +950,7 @@ class TestQAValidatorComposableMode:
         mocker: MockerFixture,
     ) -> None:
         """Test _get_bloom_level_desc uses fallback in composable mode."""
-        from arandu.config import JudgeConfig
+        from arandu.qa.config import JudgeConfig
 
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 

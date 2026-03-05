@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from arandu.config import KGConfig
 from arandu.core.kg.schemas import KGConstructionResult
+from arandu.kg.config import KGConfig
 from arandu.kg.schemas import KGMetadata
 
 if TYPE_CHECKING:

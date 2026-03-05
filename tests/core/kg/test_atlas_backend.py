@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arandu.config import KGConfig
+from arandu.kg.config import KGConfig
 from arandu.shared.schemas import EnrichedRecord, SourceMetadata
 
 if TYPE_CHECKING:

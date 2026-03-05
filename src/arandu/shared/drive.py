@@ -27,7 +27,7 @@ from tenacity import (
 )
 
 if TYPE_CHECKING:
-    from arandu.config import TranscriberConfig
+    from arandu.transcription.config import TranscriberConfig
 
 
 class DownloadError(Exception):
@@ -164,7 +164,7 @@ class DriveClient:
         """
         # Load config if not provided
         if config is None:
-            from arandu.config import TranscriberConfig
+            from arandu.transcription.config import TranscriberConfig
 
             config = TranscriberConfig()
 

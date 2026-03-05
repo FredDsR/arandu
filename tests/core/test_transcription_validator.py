@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from arandu.config import TranscriptionQualityConfig
 from arandu.core.transcription_validator import (
     TranscriptionValidator,
     validate_enriched_record,
 )
+from arandu.shared.config import TranscriptionQualityConfig
 from arandu.shared.schemas import EnrichedRecord, TranscriptionSegment
 
 

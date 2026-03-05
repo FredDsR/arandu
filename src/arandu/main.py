@@ -17,13 +17,13 @@ from pydantic import ValidationError
 from rich.table import Table
 
 from arandu import __version__
-from arandu.config import ResultsConfig, TranscriberConfig, TranscriptionQualityConfig
 from arandu.core.engine import WhisperEngine
 from arandu.core.transcription_validator import (
     TranscriptionValidator,
     get_quality_issues,
     validate_enriched_record,
 )
+from arandu.shared.config import ResultsConfig, TranscriptionQualityConfig
 from arandu.shared.hardware import get_device_and_dtype
 from arandu.shared.io import (
     create_temp_file,
@@ -32,6 +32,7 @@ from arandu.shared.io import (
     save_enriched_record,
 )
 from arandu.shared.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
+from arandu.transcription.config import TranscriberConfig
 from arandu.utils.console import console
 from arandu.utils.logger import (
     print_error,
@@ -857,8 +858,8 @@ def generate_cep_qa(
         # Export to JSONL for KGQA training
         arandu generate-cep-qa results/ --jsonl
     """
-    from arandu.config import CEPConfig, QAConfig
     from arandu.core.qa_batch import run_batch_cep_generation
+    from arandu.qa.config import CEPConfig, QAConfig
 
     # Load configs with defaults from environment variables
     qa_config = QAConfig()
@@ -1095,8 +1096,8 @@ def build_kg(
         # Use a specific pipeline ID
         arandu build-kg results/ --id my-pipeline
     """
-    from arandu.config import KGConfig
     from arandu.core.kg.batch import run_batch_kg_construction
+    from arandu.kg.config import KGConfig
 
     # Load config with defaults from environment variables
     kg_config = KGConfig()

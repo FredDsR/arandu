@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 import pytest
 
-from arandu.config import CEPConfig, QAConfig
 from arandu.core.cep.bloom_scaffolding import (
     BloomScaffoldingGenerator,
     LLMResponseError,
 )
+from arandu.qa.config import CEPConfig, QAConfig
 from arandu.qa.schemas import QAPairCEP
 from arandu.utils.text import GenerateResult
 

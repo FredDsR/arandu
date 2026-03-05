@@ -13,7 +13,6 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from arandu.config import CEPConfig, QAConfig
 from arandu.core.qa_batch import (
     QAGenerationTask,
     TaskLoadResult,
@@ -22,6 +21,7 @@ from arandu.core.qa_batch import (
     load_transcription_tasks,
     run_batch_cep_generation,
 )
+from arandu.qa.config import CEPConfig, QAConfig
 from arandu.shared.results_manager import ResultsManager
 
 

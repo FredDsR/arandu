@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from arandu.config import KGConfig
+    from arandu.kg.config import KGConfig
     from arandu.shared.schemas import EnrichedRecord
 
 from arandu.core.kg.schemas import KGConstructionResult

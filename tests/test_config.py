@@ -8,19 +8,12 @@ import pytest
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from arandu.config import (
-    CEPConfig,
-    EvaluationConfig,
-    KGConfig,
-    LLMConfig,
-    QAConfig,
+from arandu.kg.config import KGConfig, get_kg_config
+from arandu.qa.config import CEPConfig, QAConfig, get_cep_config, get_qa_config
+from arandu.shared.config import EvaluationConfig, LLMConfig, get_evaluation_config, get_llm_config
+from arandu.transcription.config import (
     TranscriberConfig,
     _get_default_temp_dir,
-    get_cep_config,
-    get_evaluation_config,
-    get_kg_config,
-    get_llm_config,
-    get_qa_config,
     get_transcriber_config,
 )
 

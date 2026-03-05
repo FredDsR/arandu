@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from arandu.config import KGConfig
 from arandu.core.kg.factory import create_kg_constructor
+from arandu.kg.config import KGConfig
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture

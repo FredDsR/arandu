@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.config import CEPConfig
 from arandu.core.cep.reasoning import ReasoningEnricher
+from arandu.qa.config import CEPConfig
 from arandu.qa.schemas import QAPairCEP
 from arandu.utils.text import GenerateResult
 

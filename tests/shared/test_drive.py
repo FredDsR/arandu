@@ -378,8 +378,8 @@ class TestDriveClientConfiguration:
         tmp_path: Path,
     ) -> None:
         """Test DriveClient initialization with TranscriberConfig object."""
-        from arandu.config import TranscriberConfig
         from arandu.shared.drive import DriveClient
+        from arandu.transcription.config import TranscriberConfig
 
         config = TranscriberConfig(
             credentials="custom_creds.json",
@@ -400,8 +400,8 @@ class TestDriveClientConfiguration:
         tmp_path: Path,
     ) -> None:
         """Test that explicit paths override config values."""
-        from arandu.config import TranscriberConfig
         from arandu.shared.drive import DriveClient
+        from arandu.transcription.config import TranscriberConfig
 
         config = TranscriberConfig(
             credentials="config_creds.json",

@@ -15,8 +15,9 @@ from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime
 
 from pydantic import BaseModel
 
-from arandu.config import CEPConfig, QAConfig, ResultsConfig
+from arandu.qa.config import CEPConfig, QAConfig
 from arandu.shared.checkpoint import CheckpointManager
+from arandu.shared.config import ResultsConfig
 from arandu.shared.llm_client import LLMClient, LLMProvider
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import EnrichedRecord, PipelineType

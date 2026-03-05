@@ -6,8 +6,8 @@ import importlib.util
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arandu.config import KGConfig
     from arandu.core.kg.protocol import KGConstructor
+    from arandu.kg.config import KGConfig
 
 
 def create_kg_constructor(kg_config: KGConfig) -> KGConstructor:

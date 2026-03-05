@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from arandu.config import TranscriberConfig
+    from arandu.transcription.config import TranscriberConfig
 
 
 class DeviceType(StrEnum):
@@ -54,7 +54,7 @@ def get_device_and_dtype(
     """
     # Load config if not provided
     if config is None:
-        from arandu.config import TranscriberConfig
+        from arandu.transcription.config import TranscriberConfig
 
         config = TranscriberConfig()
 
@@ -130,7 +130,7 @@ def get_quantization_config(
     """
     # Load config if not provided
     if config is None:
-        from arandu.config import TranscriberConfig
+        from arandu.transcription.config import TranscriberConfig
 
         config = TranscriberConfig()
 

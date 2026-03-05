@@ -15,13 +15,13 @@ from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
-from arandu.config import get_judge_config
 from arandu.core.judge import JudgePipeline, JudgeRegistry
+from arandu.qa.config import get_judge_config
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, ValidationScore
 from arandu.utils.text import strip_markdown_codeblock, validate_score
 
 if TYPE_CHECKING:
-    from arandu.config import CEPConfig, JudgeConfig
+    from arandu.qa.config import CEPConfig, JudgeConfig
     from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)

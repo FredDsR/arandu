@@ -12,7 +12,7 @@ from __future__ import annotations
 import unicodedata
 from collections import Counter
 
-from arandu.config import TranscriptionQualityConfig, get_transcription_quality_config
+from arandu.shared.config import TranscriptionQualityConfig, get_transcription_quality_config
 from arandu.shared.schemas import EnrichedRecord, TranscriptionQualityScore, TranscriptionSegment
 
 # Languages that use Latin script

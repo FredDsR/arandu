@@ -9,12 +9,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path  # noqa: TC003 — used at runtime for Path operations
+from typing import TYPE_CHECKING
 
-from arandu.config import KGConfig, ResultsConfig
 from arandu.core.kg.factory import create_kg_constructor
 from arandu.shared.checkpoint import CheckpointManager
+from arandu.shared.config import ResultsConfig
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import EnrichedRecord, PipelineType
+
+if TYPE_CHECKING:
+    from arandu.kg.config import KGConfig
 
 logger = logging.getLogger(__name__)
 

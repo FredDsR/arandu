@@ -25,7 +25,7 @@ from tenacity import (
 from arandu.qa.schemas import QAPairCEP
 
 if TYPE_CHECKING:
-    from arandu.config import CEPConfig, QAConfig
+    from arandu.qa.config import CEPConfig, QAConfig
     from arandu.shared.llm_client import LLMClient
     from arandu.shared.schemas import SourceMetadata
 

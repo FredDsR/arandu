@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from arandu.qa.schemas import QAPairCEP
 
 if TYPE_CHECKING:
-    from arandu.config import CEPConfig
+    from arandu.qa.config import CEPConfig
     from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)

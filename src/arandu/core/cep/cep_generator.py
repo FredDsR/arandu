@@ -19,7 +19,7 @@ from arandu.core.cep.validator import QAValidator
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, QARecordCEP
 
 if TYPE_CHECKING:
-    from arandu.config import CEPConfig, QAConfig
+    from arandu.qa.config import CEPConfig, QAConfig
     from arandu.shared.llm_client import LLMClient
     from arandu.shared.schemas import EnrichedRecord
 
