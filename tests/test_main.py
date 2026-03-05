@@ -94,7 +94,7 @@ class TestCreateSegmentsFromResult:
 
     def test_create_segments_with_chunks(self) -> None:
         """Test creating segments from result with chunks."""
-        from arandu.core.engine import TranscriptionResult
+        from arandu.transcription.engine import TranscriptionResult
 
         result = TranscriptionResult(
             text="Test transcription",
@@ -120,7 +120,7 @@ class TestCreateSegmentsFromResult:
 
     def test_create_segments_without_chunks(self) -> None:
         """Test creating segments from result without chunks."""
-        from arandu.core.engine import TranscriptionResult
+        from arandu.transcription.engine import TranscriptionResult
 
         result = TranscriptionResult(
             text="Test transcription",
@@ -138,7 +138,7 @@ class TestCreateSegmentsFromResult:
 
     def test_create_segments_empty_list(self) -> None:
         """Test creating segments from empty segments list."""
-        from arandu.core.engine import TranscriptionResult
+        from arandu.transcription.engine import TranscriptionResult
 
         result = TranscriptionResult(
             text="Test",

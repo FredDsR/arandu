@@ -13,7 +13,7 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from arandu.core.media import (
+from arandu.transcription.media import (
     AudioExtractionError,
     CorruptedMediaError,
     MediaError,
@@ -312,7 +312,7 @@ class TestValidateMediaFile:
 
     def test_validate_media_file_success(self, mocker: MockerFixture) -> None:
         """Test validating a valid media file."""
-        from arandu.core.media import validate_media_file
+        from arandu.transcription.media import validate_media_file
 
         mock_result = Mock()
         mock_result.returncode = 0
@@ -324,7 +324,7 @@ class TestValidateMediaFile:
 
     def test_validate_media_file_moov_atom_not_found(self, mocker: MockerFixture) -> None:
         """Test validation error for missing moov atom."""
-        from arandu.core.media import validate_media_file
+        from arandu.transcription.media import validate_media_file
 
         mock_result = Mock()
         mock_result.returncode = 1
@@ -338,7 +338,7 @@ class TestValidateMediaFile:
 
     def test_validate_media_file_invalid_data(self, mocker: MockerFixture) -> None:
         """Test validation error for invalid data."""
-        from arandu.core.media import validate_media_file
+        from arandu.transcription.media import validate_media_file
 
         mock_result = Mock()
         mock_result.returncode = 1
@@ -352,7 +352,7 @@ class TestValidateMediaFile:
 
     def test_validate_media_file_timeout(self, mocker: MockerFixture) -> None:
         """Test validation timeout handling."""
-        from arandu.core.media import validate_media_file
+        from arandu.transcription.media import validate_media_file
 
         mocker.patch(
             "subprocess.run",
@@ -366,7 +366,7 @@ class TestValidateMediaFile:
 
     def test_validate_media_file_generic_error(self, mocker: MockerFixture) -> None:
         """Test validation with generic ffprobe error."""
-        from arandu.core.media import validate_media_file
+        from arandu.transcription.media import validate_media_file
 
         mock_result = Mock()
         mock_result.returncode = 1
@@ -384,25 +384,25 @@ class TestRequiresAudioExtraction:
 
     def test_requires_extraction_video_mp4(self) -> None:
         """Test that video/mp4 requires extraction."""
-        from arandu.core.media import requires_audio_extraction
+        from arandu.transcription.media import requires_audio_extraction
 
         assert requires_audio_extraction("video/mp4") is True
 
     def test_requires_extraction_video_quicktime(self) -> None:
         """Test that video/quicktime requires extraction."""
-        from arandu.core.media import requires_audio_extraction
+        from arandu.transcription.media import requires_audio_extraction
 
         assert requires_audio_extraction("video/quicktime") is True
 
     def test_no_extraction_audio_mpeg(self) -> None:
         """Test that audio/mpeg does not require extraction."""
-        from arandu.core.media import requires_audio_extraction
+        from arandu.transcription.media import requires_audio_extraction
 
         assert requires_audio_extraction("audio/mpeg") is False
 
     def test_no_extraction_audio_wav(self) -> None:
         """Test that audio/wav does not require extraction."""
-        from arandu.core.media import requires_audio_extraction
+        from arandu.transcription.media import requires_audio_extraction
 
         assert requires_audio_extraction("audio/wav") is False
 
@@ -412,13 +412,13 @@ class TestExtractAudio:
 
     def test_extract_audio_success(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test successful audio extraction."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
         # Mock validate_media_file
-        mocker.patch("arandu.core.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.validate_media_file")
 
         # Mock has_audio_stream
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -441,10 +441,10 @@ class TestExtractAudio:
 
     def test_extract_audio_no_audio_stream(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction when no audio stream is found."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=False)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=False)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -457,10 +457,10 @@ class TestExtractAudio:
 
     def test_extract_audio_timeout(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction timeout handling."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         mocker.patch(
             "subprocess.run",
@@ -478,10 +478,10 @@ class TestExtractAudio:
 
     def test_extract_audio_stereo(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test audio extraction with stereo output."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -504,10 +504,10 @@ class TestExtractAudio:
 
     def test_extract_audio_custom_sample_rate(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test audio extraction with custom sample rate."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -530,10 +530,10 @@ class TestExtractAudio:
 
     def test_extract_audio_moov_atom_error(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error when moov atom is missing."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -551,10 +551,10 @@ class TestExtractAudio:
 
     def test_extract_audio_no_such_file(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error when input file not found."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -572,10 +572,10 @@ class TestExtractAudio:
 
     def test_extract_audio_invalid_data(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error for invalid data."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -593,10 +593,10 @@ class TestExtractAudio:
 
     def test_extract_audio_no_stream_in_file(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error when file doesn't contain any stream."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -616,10 +616,10 @@ class TestExtractAudio:
         self, mocker: MockerFixture, tmp_path: Path
     ) -> None:
         """Test extraction with generic ffmpeg error."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -637,10 +637,10 @@ class TestExtractAudio:
 
     def test_extract_audio_output_not_created(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error when output file is not created."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -658,10 +658,10 @@ class TestExtractAudio:
 
     def test_extract_audio_empty_output(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error when output file is empty."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -683,10 +683,10 @@ class TestExtractAudio:
 
     def test_extract_audio_timeout_cleans_up(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test that timeout cleans up partial output file."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -708,10 +708,10 @@ class TestExtractAudio:
 
     def test_extract_audio_generic_exception(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction with generic unexpected exception."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -734,10 +734,10 @@ class TestExtractAudio:
 
     def test_extract_audio_ffmpeg_empty_stderr(self, mocker: MockerFixture, tmp_path: Path) -> None:
         """Test extraction error with empty stderr."""
-        from arandu.core.media import extract_audio
+        from arandu.transcription.media import extract_audio
 
-        mocker.patch("arandu.core.media.validate_media_file")
-        mocker.patch("arandu.core.media.has_audio_stream", return_value=True)
+        mocker.patch("arandu.transcription.media.validate_media_file")
+        mocker.patch("arandu.transcription.media.has_audio_stream", return_value=True)
 
         input_file = tmp_path / "input.mp4"
         input_file.touch()
@@ -774,7 +774,7 @@ class TestValidateMediaFileUnexpectedError:
 
     def test_validate_media_file_unexpected_exception(self, mocker: MockerFixture) -> None:
         """Test handling of unexpected exceptions in validate_media_file."""
-        from arandu.core.media import validate_media_file
+        from arandu.transcription.media import validate_media_file
 
         mocker.patch(
             "subprocess.run",

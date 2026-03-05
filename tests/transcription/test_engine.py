@@ -10,7 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from arandu.core.engine import TranscriptionResult, WhisperEngine
+from arandu.transcription.engine import TranscriptionResult, WhisperEngine
 
 
 class TestTranscriptionResult:
@@ -57,8 +57,8 @@ class TestTranscriptionResult:
 class TestWhisperEngineInitialization:
     """Tests for WhisperEngine initialization."""
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_default_initialization(
         self,
         mock_quant_config: MagicMock,
@@ -83,8 +83,8 @@ class TestWhisperEngineInitialization:
         assert engine._pipe is None  # Lazy initialization
         mock_device.assert_called_once()
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_custom_initialization(
         self,
         mock_quant_config: MagicMock,
@@ -118,8 +118,8 @@ class TestWhisperEngineInitialization:
         assert engine.pipe_kwargs["chunk_length_s"] == 30
         assert engine.pipe_kwargs["stride_length_s"] == (5, 5)
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_invalid_quantize_bits(
         self,
         mock_quant_config: MagicMock,
@@ -131,8 +131,8 @@ class TestWhisperEngineInitialization:
 
         assert "quantize_bits must be 4 or 8" in str(exc_info.value)
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_valid_quantize_bits_4(
         self,
         mock_quant_config: MagicMock,
@@ -153,8 +153,8 @@ class TestWhisperEngineInitialization:
         engine = WhisperEngine(quantize=True, quantize_bits=4)
         assert engine.quant_config == {"load_in_4bit": True}
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_valid_quantize_bits_8(
         self,
         mock_quant_config: MagicMock,
@@ -179,11 +179,11 @@ class TestWhisperEngineInitialization:
 class TestWhisperEnginePipeline:
     """Tests for pipeline creation and usage."""
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_pipeline_lazy_initialization(
         self,
         mock_quant_config: MagicMock,
@@ -217,9 +217,9 @@ class TestWhisperEnginePipeline:
         mock_processor.from_pretrained.assert_called_once()
         mock_pipeline.assert_called_once()
 
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_model_loading_os_error(
         self,
         mock_quant_config: MagicMock,
@@ -247,9 +247,9 @@ class TestWhisperEnginePipeline:
         assert "Could not download or load the model" in str(exc_info.value)
         assert "openai/whisper-large-v3" in str(exc_info.value)
 
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_model_loading_value_error(
         self,
         mock_quant_config: MagicMock,
@@ -277,9 +277,9 @@ class TestWhisperEnginePipeline:
         assert "Invalid model ID" in str(exc_info.value)
         assert "openai/whisper-large-v3" in str(exc_info.value)
 
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_model_loading_unexpected_error(
         self,
         mock_quant_config: MagicMock,
@@ -308,8 +308,8 @@ class TestWhisperEnginePipeline:
 class TestWhisperEngineConfiguration:
     """Tests for engine configuration handling."""
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_pipe_kwargs_with_chunk_length_only(
         self,
         mock_quant_config: MagicMock,
@@ -332,8 +332,8 @@ class TestWhisperEngineConfiguration:
         assert "chunk_length_s" in engine.pipe_kwargs
         assert "stride_length_s" not in engine.pipe_kwargs
 
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_pipe_kwargs_with_stride_length_only(
         self,
         mock_quant_config: MagicMock,
@@ -361,11 +361,11 @@ class TestWhisperEngineConfiguration:
 class TestWhisperEngineTranscription:
     """Tests for transcription functionality."""
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_transcribe_basic(
         self,
         mock_quant_config: MagicMock,
@@ -420,11 +420,11 @@ class TestWhisperEngineTranscription:
         assert len(result.segments) == 2
         assert result.processing_duration_sec > 0
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_transcribe_no_chunks(
         self,
         mock_quant_config: MagicMock,
@@ -463,11 +463,11 @@ class TestWhisperEngineTranscription:
         assert result.text == "Simple transcription."
         assert result.segments is None
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_transcribe_with_language(
         self,
         mock_quant_config: MagicMock,
@@ -513,11 +513,11 @@ class TestWhisperEngineTranscription:
 class TestWhisperEngineDeviceFallback:
     """Tests for device fallback logic."""
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_device_fallback_to_cpu(
         self,
         mock_quant_config: MagicMock,
@@ -559,11 +559,11 @@ class TestWhisperEngineDeviceFallback:
 class TestWhisperEngineEdgeCases:
     """Tests for edge cases and error handling."""
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_transcribe_empty_chunks(
         self,
         mock_quant_config: MagicMock,
@@ -601,11 +601,11 @@ class TestWhisperEngineEdgeCases:
 
         assert result.segments is None
 
-    @patch("arandu.core.engine.pipeline")
-    @patch("arandu.core.engine.AutoProcessor")
-    @patch("arandu.core.engine.AutoModelForSpeechSeq2Seq")
-    @patch("arandu.core.engine.get_device_and_dtype")
-    @patch("arandu.core.engine.get_quantization_config")
+    @patch("arandu.transcription.engine.pipeline")
+    @patch("arandu.transcription.engine.AutoProcessor")
+    @patch("arandu.transcription.engine.AutoModelForSpeechSeq2Seq")
+    @patch("arandu.transcription.engine.get_device_and_dtype")
+    @patch("arandu.transcription.engine.get_quantization_config")
     def test_transcribe_missing_timestamps(
         self,
         mock_quant_config: MagicMock,

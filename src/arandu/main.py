@@ -17,12 +17,6 @@ from pydantic import ValidationError
 from rich.table import Table
 
 from arandu import __version__
-from arandu.core.engine import WhisperEngine
-from arandu.core.transcription_validator import (
-    TranscriptionValidator,
-    get_quality_issues,
-    validate_enriched_record,
-)
 from arandu.shared.config import ResultsConfig, TranscriptionQualityConfig
 from arandu.shared.hardware import get_device_and_dtype
 from arandu.shared.io import (
@@ -33,6 +27,12 @@ from arandu.shared.io import (
 )
 from arandu.shared.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
 from arandu.transcription.config import TranscriberConfig
+from arandu.transcription.engine import WhisperEngine
+from arandu.transcription.validator import (
+    TranscriptionValidator,
+    get_quality_issues,
+    validate_enriched_record,
+)
 from arandu.utils.console import console
 from arandu.utils.logger import (
     print_error,
@@ -48,7 +48,7 @@ from arandu.utils.ui import (
 )
 
 if TYPE_CHECKING:
-    from arandu.core.engine import TranscriptionResult
+    from arandu.transcription.engine import TranscriptionResult
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -605,7 +605,7 @@ def batch_transcribe(
     all metadata including media duration. Progress is automatically checkpointed,
     allowing interrupted jobs to resume from the last completed file.
     """
-    from arandu.core.batch import BatchConfig, run_batch_transcription
+    from arandu.transcription.batch import BatchConfig, run_batch_transcription
 
     # Validate inputs
     if not credentials.exists():
