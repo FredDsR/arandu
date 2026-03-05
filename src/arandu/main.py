@@ -19,19 +19,19 @@ from rich.table import Table
 from arandu import __version__
 from arandu.config import ResultsConfig, TranscriberConfig, TranscriptionQualityConfig
 from arandu.core.engine import WhisperEngine
-from arandu.core.hardware import get_device_and_dtype
-from arandu.core.io import (
-    create_temp_file,
-    get_mime_type,
-    get_output_filename,
-    save_enriched_record,
-)
 from arandu.core.transcription_validator import (
     TranscriptionValidator,
     get_quality_issues,
     validate_enriched_record,
 )
 from arandu.schemas import EnrichedRecord, InputRecord, TranscriptionSegment
+from arandu.shared.hardware import get_device_and_dtype
+from arandu.shared.io import (
+    create_temp_file,
+    get_mime_type,
+    get_output_filename,
+    save_enriched_record,
+)
 from arandu.utils.console import console
 from arandu.utils.logger import (
     print_error,
@@ -361,7 +361,7 @@ def drive_transcribe(
     Downloads the file, transcribes it, and uploads the result to the same
     Drive folder as the original file.
     """
-    from arandu.core.drive import DriveClient
+    from arandu.shared.drive import DriveClient
 
     # Get hardware configuration
     hw_config = get_device_and_dtype(force_cpu=cpu, quantize=quantize)
@@ -682,7 +682,7 @@ def refresh_auth(
     - Fix authentication issues or permission problems
     - Update token after revoking access in Google Account settings
     """
-    from arandu.core.drive import DriveClient
+    from arandu.shared.drive import DriveClient
 
     # Check if credentials file exists
     if not credentials.exists():
@@ -1217,8 +1217,8 @@ def replicate(
     """
     from rich.panel import Panel
 
-    from arandu.core.results_manager import ResultsManager
     from arandu.schemas import PipelineMetadata
+    from arandu.shared.results_manager import ResultsManager
 
     try:
         new_id = ResultsManager.replicate_pipeline(
@@ -1256,7 +1256,7 @@ def info() -> None:
     """Display system information and hardware capabilities."""
     import torch
 
-    from arandu.core.hardware import get_device_and_dtype
+    from arandu.shared.hardware import get_device_and_dtype
 
     console.print("\n[bold]Arandu System Information[/bold]\n")
 
@@ -1322,8 +1322,8 @@ def list_runs(
     """
     from rich.table import Table
 
-    from arandu.core.results_manager import ResultsManager
     from arandu.schemas import PipelineType
+    from arandu.shared.results_manager import ResultsManager
 
     # Parse pipeline type if provided
     pipeline_filter = None
@@ -1607,8 +1607,8 @@ def run_info(
     from rich.panel import Panel
     from rich.tree import Tree
 
-    from arandu.core.results_manager import ResultsManager
     from arandu.schemas import PipelineType, RunMetadata
+    from arandu.shared.results_manager import ResultsManager
 
     # Parse pipeline type
     try:
@@ -1749,8 +1749,8 @@ def rebuild_index(
         # Rebuild index in custom results directory
         arandu rebuild-index --results-dir /path/to/results
     """
-    from arandu.core.results_manager import ResultsManager
     from arandu.schemas import PipelineType, RunMetadata
+    from arandu.shared.results_manager import ResultsManager
 
     base_dir = results_dir.resolve()
     if not base_dir.exists():

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from arandu.schemas import EnrichedRecord
 
 from arandu.core.kg.schemas import KGConstructionResult
-from arandu.core.llm_client import create_llm_client
+from arandu.shared.llm_client import create_llm_client
 
 logger = logging.getLogger(__name__)
 

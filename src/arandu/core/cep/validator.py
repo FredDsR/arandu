@@ -22,7 +22,7 @@ from arandu.utils.text import strip_markdown_codeblock, validate_score
 
 if TYPE_CHECKING:
     from arandu.config import CEPConfig, JudgeConfig
-    from arandu.core.llm_client import LLMClient
+    from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 

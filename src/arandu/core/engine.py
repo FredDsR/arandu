@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-from arandu.core.hardware import (
+from arandu.shared.hardware import (
     DeviceType,
     HardwareConfig,
     get_device_and_dtype,

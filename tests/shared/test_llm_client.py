@@ -10,7 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from arandu.core.llm_client import (
+from arandu.shared.llm_client import (
     LLMClient,
     LLMProvider,
     create_llm_client,
@@ -23,7 +23,7 @@ class TestLLMClient:
 
     def test_initialization_openai(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with OpenAI provider."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = LLMClient(
             provider=LLMProvider.OPENAI,
@@ -38,7 +38,7 @@ class TestLLMClient:
 
     def test_initialization_ollama_default_api_key(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with Ollama provider and default API key."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = LLMClient(
             provider=LLMProvider.OLLAMA,
@@ -52,7 +52,7 @@ class TestLLMClient:
 
     def test_initialization_ollama_custom_api_key(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with Ollama provider and custom API key."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = LLMClient(
             provider=LLMProvider.OLLAMA,
@@ -67,7 +67,7 @@ class TestLLMClient:
 
     def test_initialization_custom_provider(self, mocker: MockerFixture) -> None:
         """Test LLMClient initialization with custom provider."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = LLMClient(
             provider=LLMProvider.CUSTOM,
@@ -85,7 +85,7 @@ class TestLLMClient:
 
     def test_initialization_custom_base_url_override(self, mocker: MockerFixture) -> None:
         """Test that explicit base_url overrides provider default."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = LLMClient(
             provider=LLMProvider.OLLAMA,
@@ -100,7 +100,7 @@ class TestLLMClient:
 
     def test_is_available_success(self, mocker: MockerFixture) -> None:
         """Test is_available returns True when models.list succeeds."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_client.models.list.return_value = []
         mock_openai.return_value = mock_client
@@ -115,7 +115,7 @@ class TestLLMClient:
 
     def test_is_available_failure(self, mocker: MockerFixture) -> None:
         """Test is_available returns False when models.list fails."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_client.models.list.side_effect = Exception("Connection error")
         mock_openai.return_value = mock_client
@@ -129,7 +129,7 @@ class TestLLMClient:
 
     def test_generate_basic(self, mocker: MockerFixture) -> None:
         """Test basic text generation."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         # Mock the response structure
@@ -164,7 +164,7 @@ class TestLLMClient:
 
     def test_generate_with_system_prompt(self, mocker: MockerFixture) -> None:
         """Test text generation with system prompt."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -198,7 +198,7 @@ class TestLLMClient:
 
     def test_generate_with_custom_temperature(self, mocker: MockerFixture) -> None:
         """Test text generation with custom temperature."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -223,7 +223,7 @@ class TestLLMClient:
 
     def test_generate_with_max_tokens(self, mocker: MockerFixture) -> None:
         """Test text generation with max_tokens limit."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -248,7 +248,7 @@ class TestLLMClient:
 
     def test_generate_with_response_format(self, mocker: MockerFixture) -> None:
         """Test that response_format is passed to API when provided."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -272,7 +272,7 @@ class TestLLMClient:
 
     def test_generate_without_response_format(self, mocker: MockerFixture) -> None:
         """Test that response_format is omitted from API when None."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -296,7 +296,7 @@ class TestLLMClient:
 
     def test_generate_empty_content(self, mocker: MockerFixture) -> None:
         """Test text generation when response content is None."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -323,7 +323,7 @@ class TestLLMClient:
         # Skip retry delays for faster tests
         mocker.patch("tenacity.nap.time.sleep", return_value=None)
 
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         # First two calls fail, third succeeds
@@ -354,7 +354,7 @@ class TestLLMClient:
 
     def test_generate_extracts_thinking(self, mocker: MockerFixture) -> None:
         """Test that generate extracts thinking from <think> tags."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -378,7 +378,7 @@ class TestLLMClient:
 
     def test_generate_no_thinking(self, mocker: MockerFixture) -> None:
         """Test that generate returns thinking=None for non-thinking models."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -402,7 +402,7 @@ class TestLLMClient:
 
     def test_generate_empty_response_with_thinking(self, mocker: MockerFixture) -> None:
         """Test that generate handles None content with thinking extraction."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -426,7 +426,7 @@ class TestLLMClient:
 
     def test_generate_ollama_reasoning_field(self, mocker: MockerFixture) -> None:
         """Test that generate extracts thinking from Ollama's 'reasoning' field."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -450,7 +450,7 @@ class TestLLMClient:
 
     def test_generate_model_extra_reasoning(self, mocker: MockerFixture) -> None:
         """Test that generate extracts thinking from model_extra dict."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -474,7 +474,7 @@ class TestLLMClient:
 
     def test_generate_reasoning_content_takes_precedence(self, mocker: MockerFixture) -> None:
         """Test that reasoning_content takes precedence over reasoning field."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
 
         mock_response = Mock()
@@ -498,7 +498,7 @@ class TestLLMClient:
 
     def test_repr(self, mocker: MockerFixture) -> None:
         """Test string representation of LLMClient."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = LLMClient(
             provider=LLMProvider.OLLAMA,
@@ -518,7 +518,7 @@ class TestCreateLLMClient:
 
     def test_create_with_enum(self, mocker: MockerFixture) -> None:
         """Test creating client with LLMProvider enum."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = create_llm_client(
             provider=LLMProvider.OLLAMA,
@@ -531,7 +531,7 @@ class TestCreateLLMClient:
 
     def test_create_with_string_lowercase(self, mocker: MockerFixture) -> None:
         """Test creating client with lowercase string provider."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = create_llm_client(
             provider="ollama",
@@ -543,7 +543,7 @@ class TestCreateLLMClient:
 
     def test_create_with_string_uppercase(self, mocker: MockerFixture) -> None:
         """Test creating client with uppercase string provider."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = create_llm_client(
             provider="OPENAI",
@@ -556,7 +556,7 @@ class TestCreateLLMClient:
 
     def test_create_with_invalid_string(self, mocker: MockerFixture) -> None:
         """Test creating client with invalid string provider raises ValueError."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         with pytest.raises(ValueError) as exc_info:
             create_llm_client(
@@ -569,7 +569,7 @@ class TestCreateLLMClient:
 
     def test_create_with_all_parameters(self, mocker: MockerFixture) -> None:
         """Test creating client with all parameters."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = create_llm_client(
             provider="custom",

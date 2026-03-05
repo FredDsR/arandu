@@ -16,10 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from arandu.config import ResultsConfig, TranscriberConfig
-from arandu.core.checkpoint import CheckpointManager
-from arandu.core.drive import DriveClient, NoAudioStreamError
 from arandu.core.engine import WhisperEngine
-from arandu.core.io import create_temp_file, save_enriched_record
 from arandu.core.media import (
     AudioExtractionError,
     CorruptedMediaError,
@@ -28,9 +25,12 @@ from arandu.core.media import (
     has_audio_stream,
     requires_audio_extraction,
 )
-from arandu.core.results_manager import ResultsManager
 from arandu.core.transcription_validator import get_quality_issues, validate_enriched_record
 from arandu.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
+from arandu.shared.checkpoint import CheckpointManager
+from arandu.shared.drive import DriveClient, NoAudioStreamError
+from arandu.shared.io import create_temp_file, save_enriched_record
+from arandu.shared.results_manager import ResultsManager
 
 if TYPE_CHECKING:
     from arandu.core.engine import TranscriptionResult

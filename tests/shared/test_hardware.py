@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from arandu.config import TranscriberConfig
-from arandu.core.hardware import (
+from arandu.shared.hardware import (
     DeviceType,
     HardwareConfig,
     get_device_and_dtype,

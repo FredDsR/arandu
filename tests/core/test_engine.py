@@ -67,7 +67,7 @@ class TestWhisperEngineInitialization:
         """Test WhisperEngine initialization with defaults."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -93,7 +93,7 @@ class TestWhisperEngineInitialization:
         """Test WhisperEngine with custom parameters."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cuda:0",
@@ -141,7 +141,7 @@ class TestWhisperEngineInitialization:
         """Test valid quantize_bits=4."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -163,7 +163,7 @@ class TestWhisperEngineInitialization:
         """Test valid quantize_bits=8."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -195,7 +195,7 @@ class TestWhisperEnginePipeline:
         """Test that pipeline is initialized lazily."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -229,7 +229,7 @@ class TestWhisperEnginePipeline:
         """Test handling of OSError during model loading."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -259,7 +259,7 @@ class TestWhisperEnginePipeline:
         """Test handling of ValueError during model loading."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -289,7 +289,7 @@ class TestWhisperEnginePipeline:
         """Test handling of unexpected errors during model loading."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -318,7 +318,7 @@ class TestWhisperEngineConfiguration:
         """Test pipe_kwargs when only chunk_length_s is specified."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -342,7 +342,7 @@ class TestWhisperEngineConfiguration:
         """Test pipe_kwargs when only stride_length_s is specified."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -378,7 +378,7 @@ class TestWhisperEngineTranscription:
         """Test basic transcription."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -437,7 +437,7 @@ class TestWhisperEngineTranscription:
         """Test transcription without chunks."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -480,7 +480,7 @@ class TestWhisperEngineTranscription:
         """Test transcription with specified language."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -529,7 +529,7 @@ class TestWhisperEngineDeviceFallback:
         """Test fallback to CPU when device placement fails."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         # Initially try CUDA
         mock_device.return_value = HardwareConfig(
@@ -576,7 +576,7 @@ class TestWhisperEngineEdgeCases:
         """Test transcription with empty chunks list."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",
@@ -618,7 +618,7 @@ class TestWhisperEngineEdgeCases:
         """Test transcription with missing timestamp data."""
         import torch
 
-        from arandu.core.hardware import DeviceType, HardwareConfig
+        from arandu.shared.hardware import DeviceType, HardwareConfig
 
         mock_device.return_value = HardwareConfig(
             device="cpu",

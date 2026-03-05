@@ -22,7 +22,7 @@ from arandu.core.qa_batch import (
     load_transcription_tasks,
     run_batch_cep_generation,
 )
-from arandu.core.results_manager import ResultsManager
+from arandu.shared.results_manager import ResultsManager
 
 
 class _ThreadPoolCompat(ThreadPoolExecutor):
@@ -383,7 +383,7 @@ class TestInitCEPWorker:
 
     def test_init_cep_worker_without_validation(self, mocker: MockerFixture) -> None:
         """Test CEP worker initialization without validation enabled."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_openai.return_value = mock_client
 
@@ -421,7 +421,7 @@ class TestInitCEPWorker:
 
     def test_init_cep_worker_with_validation(self, mocker: MockerFixture) -> None:
         """Test CEP worker initialization with validation enabled."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_openai.return_value = mock_client
 
@@ -465,7 +465,7 @@ class TestGenerateCEPQAForTranscription:
 
     def test_generate_cep_qa_success(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test successful CEP QA generation."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -531,7 +531,7 @@ class TestGenerateCEPQAForTranscription:
 
     def test_generate_cep_qa_validation_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test CEP QA generation with validation error (too short transcription)."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         # Reset global state
         import arandu.core.qa_batch as qa_batch_module
@@ -571,7 +571,7 @@ class TestGenerateCEPQAForTranscription:
 
     def test_generate_cep_qa_generic_exception(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test CEP QA generation with generic exception (file not found)."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         # Reset global state
         import arandu.core.qa_batch as qa_batch_module
@@ -604,7 +604,7 @@ class TestGenerateCEPQAForTranscription:
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:
         """Test CEP QA generation with validation enabled."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -694,7 +694,7 @@ class TestRunBatchCEPGeneration:
 
     def test_run_batch_cep_creates_output_dir(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that output directory is created for CEP batch."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
@@ -712,7 +712,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test early exit when no transcription files found for CEP."""
         caplog.set_level("INFO")
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
@@ -730,7 +730,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test early exit when all CEP files already completed."""
         caplog.set_level("INFO")
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
@@ -764,7 +764,7 @@ class TestRunBatchCEPGeneration:
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:
         """Test CEP sequential processing with single worker."""
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -809,7 +809,7 @@ class TestRunBatchCEPGeneration:
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:
         """Test CEP sequential processing with failures."""
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         # Mock generate to succeed for one, fail for another
         mock_gen = mocker.patch("arandu.core.qa_batch.generate_cep_qa_for_transcription")
@@ -848,7 +848,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test that CEP final summary is logged."""
         caplog.set_level("INFO")
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -929,7 +929,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test that invalid transcription files are skipped during CEP task loading."""
         caplog.set_level("WARNING")
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
@@ -1000,7 +1000,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test CEP final summary includes failure information."""
         caplog.set_level("INFO")
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
@@ -1031,7 +1031,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test CEP final summary when total is zero."""
         caplog.set_level("INFO")
-        mocker.patch("arandu.core.llm_client.OpenAI")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
 
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "cep_output"
@@ -1062,7 +1062,7 @@ class TestRunBatchCEPGeneration:
     ) -> None:
         """Test that the final summary includes skipped invalid count."""
         caplog.set_level("INFO")
-        mock_openai = mocker.patch("arandu.core.llm_client.OpenAI")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
         mock_client = Mock()
         mock_response = Mock()
         mock_response.choices = [Mock()]

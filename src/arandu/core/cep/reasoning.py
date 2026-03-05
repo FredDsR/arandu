@@ -17,7 +17,7 @@ from arandu.schemas import QAPairCEP
 
 if TYPE_CHECKING:
     from arandu.config import CEPConfig
-    from arandu.core.llm_client import LLMClient
+    from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 

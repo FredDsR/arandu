@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from arandu.core.results_manager import ResultsManager
 from arandu.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,
@@ -20,6 +19,7 @@ from arandu.schemas import (
     RunMetadata,
     RunStatus,
 )
+from arandu.shared.results_manager import ResultsManager
 
 if TYPE_CHECKING:
     from pathlib import Path

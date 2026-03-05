@@ -18,7 +18,7 @@ from typing import Annotated
 import typer
 
 from arandu import __version__
-from arandu.core.results_manager import ResultsManager
+from arandu.shared.results_manager import ResultsManager
 from arandu.schemas import (
     ConfigSnapshot,
     ExecutionEnvironment,

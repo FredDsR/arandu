@@ -11,10 +11,10 @@ import logging
 from pathlib import Path  # noqa: TC003 — used at runtime for Path operations
 
 from arandu.config import KGConfig, ResultsConfig
-from arandu.core.checkpoint import CheckpointManager
 from arandu.core.kg.factory import create_kg_constructor
-from arandu.core.results_manager import ResultsManager
 from arandu.schemas import EnrichedRecord, PipelineType
+from arandu.shared.checkpoint import CheckpointManager
+from arandu.shared.results_manager import ResultsManager
 
 logger = logging.getLogger(__name__)
 

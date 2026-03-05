@@ -20,7 +20,7 @@ from arandu.core.batch import (
     load_catalog,
     transcribe_single_file,
 )
-from arandu.core.results_manager import ResultsManager
+from arandu.shared.results_manager import ResultsManager
 
 
 class _ThreadPoolCompat(ThreadPoolExecutor):
@@ -119,7 +119,7 @@ class TestBatchProcessingErrors:
         """Test that NoAudioStreamError can be imported."""
         from pathlib import Path
 
-        from arandu.core.drive import NoAudioStreamError
+        from arandu.shared.drive import NoAudioStreamError
 
         error = NoAudioStreamError("test_id", "test.mp4", Path("/tmp/test.mp4"))
         assert error.file_id == "test_id"

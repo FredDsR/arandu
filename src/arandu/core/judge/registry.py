@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 from arandu.core.judge.criterion import FileCriterion, JudgeCriterion
 
 if TYPE_CHECKING:
-    from arandu.core.llm_client import LLMClient
+    from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
