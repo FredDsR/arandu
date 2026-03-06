@@ -190,6 +190,8 @@ pyrightconfig.json
 results*/*
 !results*/.gitkeep
 
+input/*
+!input/.gitkeep
 # Checkpoint files (can be committed if you want to track progress)
 # Uncomment the line below to ignore checkpoint files:
 # *.checkpoint.json
