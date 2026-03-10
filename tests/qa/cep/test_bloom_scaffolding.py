@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from arandu.core.cep.bloom_scaffolding import (
+from arandu.qa.cep.bloom_scaffolding import (
     BloomScaffoldingGenerator,
     LLMResponseError,
 )

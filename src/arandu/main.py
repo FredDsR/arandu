@@ -858,7 +858,7 @@ def generate_cep_qa(
         # Export to JSONL for KGQA training
         arandu generate-cep-qa results/ --jsonl
     """
-    from arandu.core.qa_batch import run_batch_cep_generation
+    from arandu.qa.batch import run_batch_cep_generation
     from arandu.qa.config import CEPConfig, QAConfig
 
     # Load configs with defaults from environment variables
@@ -1852,8 +1852,8 @@ def enrich_metadata(
     """
     import csv
 
-    from arandu.core.qa_batch import _resolve_transcription_dir
     from arandu.metadata import GDriveCatalogExtractor, enrich_with_source_metadata
+    from arandu.qa.batch import _resolve_transcription_dir
 
     setup_logging()
 

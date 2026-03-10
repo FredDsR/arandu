@@ -13,9 +13,9 @@ import re
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from arandu.core.cep.bloom_scaffolding import BloomScaffoldingGenerator
-from arandu.core.cep.reasoning import ReasoningEnricher
-from arandu.core.cep.validator import QAValidator
+from arandu.qa.cep.bloom_scaffolding import BloomScaffoldingGenerator
+from arandu.qa.cep.reasoning import ReasoningEnricher
+from arandu.qa.cep.validator import QAValidator
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, QARecordCEP
 
 if TYPE_CHECKING:

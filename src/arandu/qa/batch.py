@@ -186,7 +186,7 @@ def _init_cep_worker(
     """
     global _worker_cep_generator
 
-    from arandu.core.cep import CEPQAGenerator
+    from arandu.qa.cep import CEPQAGenerator
 
     # Reconstruct configs
     qa_config = QAConfig(**qa_config_dict)
@@ -250,7 +250,7 @@ def generate_cep_qa_for_transcription(
 
         # For sequential processing, initialize on first use
         if _worker_cep_generator is None:
-            from arandu.core.cep import CEPQAGenerator
+            from arandu.qa.cep import CEPQAGenerator
 
             qa_config = QAConfig(**qa_config_dict)
             cep_config = CEPConfig(**cep_config_dict)

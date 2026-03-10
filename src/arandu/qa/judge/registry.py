@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from arandu.core.judge.criterion import FileCriterion, JudgeCriterion
+from arandu.qa.judge.criterion import FileCriterion, JudgeCriterion
 
 if TYPE_CHECKING:
     from arandu.shared.llm_client import LLMClient

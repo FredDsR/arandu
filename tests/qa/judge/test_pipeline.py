@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.core.judge.pipeline import JudgePipeline
+from arandu.qa.judge.pipeline import JudgePipeline
 from arandu.qa.schemas import CriterionScore, ValidationScore
 
 if TYPE_CHECKING:

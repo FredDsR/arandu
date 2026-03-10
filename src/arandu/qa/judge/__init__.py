@@ -13,8 +13,8 @@ Key components:
 
 from __future__ import annotations
 
-from arandu.core.judge.criterion import JudgeCriterion
-from arandu.core.judge.pipeline import JudgePipeline
-from arandu.core.judge.registry import JudgeRegistry
+from arandu.qa.judge.criterion import JudgeCriterion
+from arandu.qa.judge.pipeline import JudgePipeline
+from arandu.qa.judge.registry import JudgeRegistry
 
 __all__ = ["JudgeCriterion", "JudgePipeline", "JudgeRegistry"]

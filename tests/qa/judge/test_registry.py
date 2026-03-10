@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.core.judge.criterion import FileCriterion
-from arandu.core.judge.registry import JudgeRegistry
+from arandu.qa.judge.criterion import FileCriterion
+from arandu.qa.judge.registry import JudgeRegistry
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -15,8 +15,8 @@ from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
-from arandu.core.judge import JudgePipeline, JudgeRegistry
 from arandu.qa.config import get_judge_config
+from arandu.qa.judge import JudgePipeline, JudgeRegistry
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, ValidationScore
 from arandu.utils.text import strip_markdown_codeblock, validate_score
 

@@ -13,7 +13,7 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-from arandu.core.qa_batch import (
+from arandu.qa.batch import (
     QAGenerationTask,
     TaskLoadResult,
     _init_cep_worker,
@@ -388,12 +388,12 @@ class TestInitCEPWorker:
         mock_openai.return_value = mock_client
 
         # Mock CEPQAGenerator
-        mock_cep_generator_class = mocker.patch("arandu.core.cep.CEPQAGenerator")
+        mock_cep_generator_class = mocker.patch("arandu.qa.cep.CEPQAGenerator")
         mock_cep_generator = Mock()
         mock_cep_generator_class.return_value = mock_cep_generator
 
         # Reset global state
-        import arandu.core.qa_batch as qa_batch_module
+        import arandu.qa.batch as qa_batch_module
 
         qa_batch_module._worker_cep_generator = None
 
@@ -426,12 +426,12 @@ class TestInitCEPWorker:
         mock_openai.return_value = mock_client
 
         # Mock CEPQAGenerator
-        mock_cep_generator_class = mocker.patch("arandu.core.cep.CEPQAGenerator")
+        mock_cep_generator_class = mocker.patch("arandu.qa.cep.CEPQAGenerator")
         mock_cep_generator = Mock()
         mock_cep_generator_class.return_value = mock_cep_generator
 
         # Reset global state
-        import arandu.core.qa_batch as qa_batch_module
+        import arandu.qa.batch as qa_batch_module
 
         qa_batch_module._worker_cep_generator = None
 
@@ -477,7 +477,7 @@ class TestGenerateCEPQAForTranscription:
         mock_openai.return_value = mock_client
 
         # Reset global state
-        import arandu.core.qa_batch as qa_batch_module
+        import arandu.qa.batch as qa_batch_module
 
         qa_batch_module._worker_cep_generator = None
 
@@ -534,7 +534,7 @@ class TestGenerateCEPQAForTranscription:
         mocker.patch("arandu.shared.llm_client.OpenAI")
 
         # Reset global state
-        import arandu.core.qa_batch as qa_batch_module
+        import arandu.qa.batch as qa_batch_module
 
         qa_batch_module._worker_cep_generator = None
 
@@ -574,7 +574,7 @@ class TestGenerateCEPQAForTranscription:
         mocker.patch("arandu.shared.llm_client.OpenAI")
 
         # Reset global state
-        import arandu.core.qa_batch as qa_batch_module
+        import arandu.qa.batch as qa_batch_module
 
         qa_batch_module._worker_cep_generator = None
 
@@ -617,7 +617,7 @@ class TestGenerateCEPQAForTranscription:
         mock_openai.return_value = mock_client
 
         # Reset global state
-        import arandu.core.qa_batch as qa_batch_module
+        import arandu.qa.batch as qa_batch_module
 
         qa_batch_module._worker_cep_generator = None
 
@@ -681,12 +681,12 @@ class TestRunBatchCEPGeneration:
         """Configure versioned results for CEP batch tests."""
         self.results_dir = (tmp_path / "results").resolve()
 
-        mock_rc = mocker.patch("arandu.core.qa_batch.ResultsConfig")
+        mock_rc = mocker.patch("arandu.qa.batch.ResultsConfig")
         mock_rc.return_value.enable_versioning = True
         mock_rc.return_value.base_dir = tmp_path / "results"
 
         mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
-        mocker.patch("arandu.core.qa_batch.ProcessPoolExecutor", _ThreadPoolCompat)
+        mocker.patch("arandu.qa.batch.ProcessPoolExecutor", _ThreadPoolCompat)
 
         self.run_dir = self.results_dir / "test_run" / "cep"
         self.outputs_dir = self.run_dir / "outputs"
@@ -749,7 +749,7 @@ class TestRunBatchCEPGeneration:
 
         # Mock checkpoint to report file as already completed
         mocker.patch(
-            "arandu.core.qa_batch.CheckpointManager.is_completed",
+            "arandu.qa.batch.CheckpointManager.is_completed",
             return_value=True,
         )
 
@@ -812,7 +812,7 @@ class TestRunBatchCEPGeneration:
         mocker.patch("arandu.shared.llm_client.OpenAI")
 
         # Mock generate to succeed for one, fail for another
-        mock_gen = mocker.patch("arandu.core.qa_batch.generate_cep_qa_for_transcription")
+        mock_gen = mocker.patch("arandu.qa.batch.generate_cep_qa_for_transcription")
         mock_gen.side_effect = [
             ("valid_cep", True, "Success"),
             ("invalid_cep", False, "Too short"),
@@ -893,10 +893,10 @@ class TestRunBatchCEPGeneration:
         caplog.set_level("INFO")
 
         # Mock cpu_count to return small number
-        mocker.patch("arandu.core.qa_batch.mp.cpu_count", return_value=2)
+        mocker.patch("arandu.qa.batch.mp.cpu_count", return_value=2)
 
         # Mock generate to succeed
-        mock_gen = mocker.patch("arandu.core.qa_batch.generate_cep_qa_for_transcription")
+        mock_gen = mocker.patch("arandu.qa.batch.generate_cep_qa_for_transcription")
         mock_gen.return_value = ("id1", True, "Success")
 
         input_dir = tmp_path / "input"
@@ -953,7 +953,7 @@ class TestRunBatchCEPGeneration:
         """Test CEP parallel processing handles future.result() exceptions."""
         caplog.set_level("INFO")
 
-        mock_executor_class = mocker.patch("arandu.core.qa_batch.ProcessPoolExecutor")
+        mock_executor_class = mocker.patch("arandu.qa.batch.ProcessPoolExecutor")
         mock_executor = Mock()
         mock_executor.__enter__ = Mock(return_value=mock_executor)
         mock_executor.__exit__ = Mock(return_value=False)
@@ -964,7 +964,7 @@ class TestRunBatchCEPGeneration:
         mock_executor.submit.return_value = mock_future1
 
         mocker.patch(
-            "arandu.core.qa_batch.as_completed",
+            "arandu.qa.batch.as_completed",
             return_value=iter([mock_future1]),
         )
 

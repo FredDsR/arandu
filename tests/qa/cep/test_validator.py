@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.core.cep.validator import QAValidator
+from arandu.qa.cep.validator import QAValidator
 from arandu.qa.config import CEPConfig, JudgeConfig
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, ValidationScore
 from arandu.utils.text import GenerateResult
@@ -815,8 +815,8 @@ class TestQAValidatorComposableMode:
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock the judge pipeline initialization
-        mocker.patch("arandu.core.cep.validator.JudgeRegistry")
-        mocker.patch("arandu.core.cep.validator.JudgePipeline")
+        mocker.patch("arandu.qa.cep.validator.JudgeRegistry")
+        mocker.patch("arandu.qa.cep.validator.JudgePipeline")
 
         validator = QAValidator(
             validator_client=mock_llm_client,
@@ -860,8 +860,8 @@ class TestQAValidatorComposableMode:
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock the judge pipeline
-        mocker.patch("arandu.core.cep.validator.JudgeRegistry")
-        mock_pipeline_class = mocker.patch("arandu.core.cep.validator.JudgePipeline")
+        mocker.patch("arandu.qa.cep.validator.JudgeRegistry")
+        mock_pipeline_class = mocker.patch("arandu.qa.cep.validator.JudgePipeline")
 
         # Mock the pipeline evaluate method
         mock_pipeline = mocker.MagicMock()
@@ -955,8 +955,8 @@ class TestQAValidatorComposableMode:
         judge_config = JudgeConfig(use_composable_pipeline=True, language="pt")
 
         # Mock to avoid loading actual prompts
-        mocker.patch("arandu.core.cep.validator.JudgeRegistry")
-        mocker.patch("arandu.core.cep.validator.JudgePipeline")
+        mocker.patch("arandu.qa.cep.validator.JudgeRegistry")
+        mocker.patch("arandu.qa.cep.validator.JudgePipeline")
 
         validator = QAValidator(
             validator_client=mock_llm_client,

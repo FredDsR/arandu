@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.core.judge.criterion import FileCriterion
+from arandu.qa.judge.criterion import FileCriterion
 from arandu.qa.schemas import CriterionScore
 from arandu.utils.text import GenerateResult
 

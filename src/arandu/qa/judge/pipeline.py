@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from arandu.qa.schemas import CriterionScore, ValidationScore
 
 if TYPE_CHECKING:
-    from arandu.core.judge.criterion import JudgeCriterion
+    from arandu.qa.judge.criterion import JudgeCriterion
 
 logger = logging.getLogger(__name__)
 
