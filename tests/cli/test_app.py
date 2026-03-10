@@ -1,10 +1,10 @@
-"""Tests for main CLI module helper functions."""
+"""Tests for CLI module helper functions."""
 
 from __future__ import annotations
 
 import pytest
 
-from arandu.main import (
+from arandu.cli._helpers import (
     _create_segments_from_result,
     _ensure_float,
     _safe_int_conversion,
@@ -161,7 +161,7 @@ class TestMainModuleImports:
 
     def test_import_main_functions(self) -> None:
         """Test that main functions can be imported."""
-        from arandu.main import info, main, transcribe
+        from arandu.cli.app import info, main, transcribe
 
         assert callable(main)
         assert callable(transcribe)
@@ -169,7 +169,7 @@ class TestMainModuleImports:
 
     def test_import_version_callback(self) -> None:
         """Test importing version callback."""
-        from arandu.main import version_callback
+        from arandu.cli.app import version_callback
 
         assert callable(version_callback)
 
@@ -177,7 +177,7 @@ class TestMainModuleImports:
         """Test version callback with True value."""
         import typer
 
-        from arandu.main import version_callback
+        from arandu.cli.app import version_callback
 
         with pytest.raises(typer.Exit) as exc_info:
             version_callback(True)
@@ -185,7 +185,7 @@ class TestMainModuleImports:
 
     def test_version_callback_with_false(self) -> None:
         """Test version callback with False value does nothing."""
-        from arandu.main import version_callback
+        from arandu.cli.app import version_callback
 
         # Should return None and not raise any exception
         result = version_callback(False)
@@ -193,14 +193,14 @@ class TestMainModuleImports:
 
     def test_setup_logging(self) -> None:
         """Test setup_logging function."""
-        from arandu.main import setup_logging
+        from arandu.utils.logger import setup_logging
 
         # Should execute without errors
         setup_logging()
 
     def test_main_function(self) -> None:
         """Test main callback function."""
-        from arandu.main import main
+        from arandu.cli.app import main
 
         # Should execute without errors
         main()
@@ -220,13 +220,13 @@ class TestReportCommandDeprecation:
 
         from typer.testing import CliRunner
 
-        from arandu.main import app
+        from arandu.cli.app import app
 
         runner = CliRunner()
 
         # Patch print_warning and the heavy imports to avoid filesystem access
         with (
-            patch("arandu.main.print_warning") as mock_warn,
+            patch("arandu.cli.report.print_warning") as mock_warn,
             patch("arandu.report.ResultsCollector") as mock_collector_cls,
         ):
             mock_collector = MagicMock()
