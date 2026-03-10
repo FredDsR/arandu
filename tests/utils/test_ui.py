@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from arandu.schemas import EnrichedRecord
+from arandu.shared.schemas import EnrichedRecord
 from arandu.utils.ui import (
     MAX_DISPLAY_FILES,
     _truncate_text,

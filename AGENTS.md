@@ -143,7 +143,7 @@ def function_name(arg1: type, arg2: type) -> return_type:
 - All public functions MUST have return type annotations (`ANN201`)
 - All private functions MUST have return type annotations (`ANN202`)
 
-**Exception**: CLI command functions in `main.py` are exempt.
+**Exception**: CLI command functions in `cli/*.py` are exempt.
 
 **Patterns**:
 
@@ -205,10 +205,10 @@ Favor composing objects with well-defined interfaces over building deep inherita
 
 Keep distinct responsibilities in distinct modules. Each layer of the system should handle its own concern without leaking into others.
 
-- CLI layer: argument parsing, user interaction, output formatting
-- Core layer: business logic, pipeline orchestration, LLM interactions
-- Schema layer: data validation, serialization, model definitions
-- Utils layer: cross-cutting concerns (logging, file helpers, retry logic)
+- CLI layer (`cli/`): argument parsing, user interaction, output formatting
+- Domain layers (`transcription/`, `qa/`, `kg/`, `report/`, `metadata/`): business logic, pipeline orchestration, LLM interactions
+- Shared layer (`shared/`): cross-domain contracts, configuration, schemas, LLM client
+- Utils layer (`utils/`): cross-cutting concerns (logging, file helpers, retry logic)
 
 ### Law of Demeter (Principle of Least Knowledge)
 
@@ -247,7 +247,7 @@ A module should only talk to its immediate collaborators. Avoid chaining through
 
 ### LLM Interactions
 
-- Always use unified `LLMClient` from `arandu.core.llm_client`
+- Always use unified `LLMClient` from `arandu.shared.llm_client`
 - Never use provider SDKs (OpenAI, Ollama) directly
 
 ### Error Handling
@@ -295,7 +295,7 @@ uv run ruff format src/
 
 ```bash
 uv run pytest                              # Run all tests
-uv run pytest tests/core/test_engine.py   # Run specific test
+uv run pytest tests/transcription/test_engine.py   # Run specific test
 uv run pytest --cov=arandu          # Run with coverage
 ```
 
