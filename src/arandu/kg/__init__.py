@@ -10,10 +10,10 @@ Public API:
     - run_batch_kg_construction: Batch orchestrator with results tracking.
 """
 
-from arandu.core.kg.batch import run_batch_kg_construction
-from arandu.core.kg.factory import create_kg_constructor
-from arandu.core.kg.protocol import KGConstructor
-from arandu.core.kg.schemas import KGConstructionResult
+from arandu.kg.batch import run_batch_kg_construction
+from arandu.kg.factory import create_kg_constructor
+from arandu.kg.protocol import KGConstructor
+from arandu.kg.schemas import KGConstructionResult
 
 __all__ = [
     "KGConstructionResult",

@@ -6,8 +6,8 @@ import importlib.util
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arandu.core.kg.protocol import KGConstructor
     from arandu.kg.config import KGConfig
+    from arandu.kg.protocol import KGConstructor
 
 
 def create_kg_constructor(kg_config: KGConfig) -> KGConstructor:
@@ -34,7 +34,7 @@ def create_kg_constructor(kg_config: KGConfig) -> KGConstructor:
                 "atlas-rag is required for the 'atlas' backend. "
                 "Install it with: uv pip install atlas-rag"
             )
-        from arandu.core.kg.atlas_backend import AtlasRagConstructor
+        from arandu.kg.atlas_backend import AtlasRagConstructor
 
         return AtlasRagConstructor(kg_config)
 

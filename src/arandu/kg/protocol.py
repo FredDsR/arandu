@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from arandu.core.kg.schemas import KGConstructionResult
+    from arandu.kg.schemas import KGConstructionResult
     from arandu.shared.schemas import EnrichedRecord
 
 

@@ -1096,7 +1096,7 @@ def build_kg(
         # Use a specific pipeline ID
         arandu build-kg results/ --id my-pipeline
     """
-    from arandu.core.kg.batch import run_batch_kg_construction
+    from arandu.kg.batch import run_batch_kg_construction
     from arandu.kg.config import KGConfig
 
     # Load config with defaults from environment variables

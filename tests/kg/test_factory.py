@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from arandu.core.kg.factory import create_kg_constructor
 from arandu.kg.config import KGConfig
+from arandu.kg.factory import create_kg_constructor
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -27,7 +27,7 @@ class TestCreateKGConstructor:
         # Ensure find_spec reports atlas_rag as available
         mocker.patch("importlib.util.find_spec", return_value=MagicMock())
         mocker.patch(
-            "arandu.core.kg.atlas_backend.AtlasRagConstructor",
+            "arandu.kg.atlas_backend.AtlasRagConstructor",
             mock_cls,
         )
 

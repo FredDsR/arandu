@@ -179,3 +179,19 @@ class EvaluationReport(BaseModel):
     def load(cls, path: str | Path) -> EvaluationReport:
         """Load evaluation report from JSON file."""
         return cls.model_validate_json(Path(path).read_text())
+
+
+class KGConstructionResult(BaseModel):
+    """Framework-agnostic result of a knowledge graph construction run.
+
+    Returned by every ``KGConstructor.build_graph()`` implementation so that
+    the orchestrator and CLI layer never depend on backend internals.
+    """
+
+    graph_file: Path = Field(..., description="Path to the output GraphML file")
+    metadata: KGMetadata = Field(..., description="Provenance sidecar metadata")
+    node_count: int = Field(..., ge=0, description="Number of nodes in the graph")
+    edge_count: int = Field(..., ge=0, description="Number of edges in the graph")
+    source_record_ids: list[str] = Field(
+        ..., description="file_ids of processed transcription records"
+    )
