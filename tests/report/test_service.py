@@ -6,15 +6,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from arandu.core.report.api_schemas import QAFilterParams, TranscriptionFilterParams
-from arandu.core.report.dataset import (
+from arandu.qa.schemas import QARecordCEP
+from arandu.report.dataset import (
     QAPairRow,
     ReportDataset,
     RunSummaryRow,
     TranscriptionRow,
 )
-from arandu.core.report.service import ReportService
-from arandu.qa.schemas import QARecordCEP
+from arandu.report.schemas import QAFilterParams, TranscriptionFilterParams
+from arandu.report.service import ReportService
 from arandu.shared.schemas import ConfigSnapshot
 
 # ---------------------------------------------------------------------------
@@ -387,7 +387,7 @@ class TestExportSingleRunHtml:
 
     def test_export_single_run_html(self, mock_collector: MagicMock) -> None:
         """Returns HTML string containing expected elements."""
-        from arandu.core.report.collector import RunReport
+        from arandu.report.collector import RunReport
 
         mock_collector.load_run.return_value = RunReport(pipeline_id="pipe_000")
         svc = ReportService(mock_collector)

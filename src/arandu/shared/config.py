@@ -91,8 +91,7 @@ class EvaluationConfig(BaseSettings):
         for metric in v:
             if metric not in valid_metrics:
                 raise ValueError(
-                    f"Invalid evaluation metric: {metric!r}. "
-                    f"Must be one of {sorted(valid_metrics)}"
+                    f"Invalid evaluation metric: {metric!r}. Must be one of {sorted(valid_metrics)}"
                 )
         return v
 

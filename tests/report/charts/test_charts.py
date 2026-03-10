@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from arandu.core.report.api_schemas import FunnelData, FunnelStage
-from arandu.core.report.charts import (
-    _empty_figure,
-    _pearson_r,
+from arandu.report.charts import (
     create_bloom_distribution_chart,
     create_bloom_validation_heatmap,
     create_confidence_distribution_chart,
@@ -24,7 +21,10 @@ from arandu.core.report.charts import (
     create_transcription_quality_chart,
     create_validation_scores_chart,
 )
-from arandu.core.report.dataset import QAPairRow, RunSummaryRow, TranscriptionRow
+from arandu.report.charts._helpers import _empty_figure
+from arandu.report.charts.validation import _pearson_r
+from arandu.report.dataset import QAPairRow, RunSummaryRow, TranscriptionRow
+from arandu.report.schemas import FunnelData, FunnelStage
 
 
 def _make_qa_pair(

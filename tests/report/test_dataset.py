@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from arandu.core.report.collector import RunReport
-from arandu.core.report.dataset import (
+from arandu.qa.schemas import QAPairValidated, QARecordCEP, ValidationScore
+from arandu.report.collector import RunReport
+from arandu.report.dataset import (
     QAPairRow,
     ReportDataset,
     RunSummaryRow,
     TranscriptionRow,
     build_dataset,
 )
-from arandu.qa.schemas import QAPairValidated, QARecordCEP, ValidationScore
 from arandu.shared.schemas import (
     EnrichedRecord,
     PipelineMetadata,
@@ -18,7 +18,7 @@ from arandu.shared.schemas import (
     SourceMetadata,
     TranscriptionQualityScore,
 )
-from tests.core.report.helpers import make_run_metadata
+from tests.report.helpers import make_run_metadata
 
 
 def _make_enriched_record(

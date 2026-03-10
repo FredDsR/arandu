@@ -227,7 +227,7 @@ class TestReportCommandDeprecation:
         # Patch print_warning and the heavy imports to avoid filesystem access
         with (
             patch("arandu.main.print_warning") as mock_warn,
-            patch("arandu.core.report.ResultsCollector") as mock_collector_cls,
+            patch("arandu.report.ResultsCollector") as mock_collector_cls,
         ):
             mock_collector = MagicMock()
             mock_collector.load_all_runs.return_value = []

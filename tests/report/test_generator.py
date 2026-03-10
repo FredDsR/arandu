@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 if TYPE_CHECKING:
     from pathlib import Path
 
-from arandu.core.report.collector import RunReport
-from arandu.core.report.dataset import (
+from arandu.report.collector import RunReport
+from arandu.report.dataset import (
     ReportDataset,
 )
-from arandu.core.report.generator import generate_html_report
+from arandu.report.generator import generate_html_report
 
 
 def _make_minimal_reports() -> list[RunReport]:
@@ -23,7 +23,7 @@ def _make_minimal_reports() -> list[RunReport]:
 class TestGenerateHtmlReport:
     """Tests for generate_html_report function."""
 
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_creates_file(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Test that an HTML file is created at the output path."""
         mock_build.return_value = ReportDataset(generated_at="2025-01-01T00:00:00Z")
@@ -34,7 +34,7 @@ class TestGenerateHtmlReport:
         assert output.exists()
         assert output.stat().st_size > 0
 
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_contains_run_selector(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Test that output HTML contains the run selector for API-driven loading."""
         mock_build.return_value = ReportDataset(generated_at="2025-01-01T00:00:00Z")
@@ -46,7 +46,7 @@ class TestGenerateHtmlReport:
         assert "run-selector" in html
         assert "/api/runs" in html
 
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_contains_template_structure(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Test that output HTML contains key template elements."""
         mock_build.return_value = ReportDataset(generated_at="2025-01-01T00:00:00Z")
@@ -74,7 +74,7 @@ class TestGenerateHtmlReport:
         assert "filter-min-score" in html
         assert "filter-search" in html
 
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_cdn_fallback_without_self_contained(
         self, mock_build: MagicMock, tmp_path: Path
     ) -> None:
@@ -88,7 +88,7 @@ class TestGenerateHtmlReport:
         assert "cdn.plot.ly/plotly-latest.min.js" in html
 
     @patch("plotly.offline.get_plotlyjs", return_value="/* mock plotly.js */")
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_self_contained_embeds_plotly(
         self, mock_build: MagicMock, mock_plotly: MagicMock, tmp_path: Path
     ) -> None:
@@ -102,7 +102,7 @@ class TestGenerateHtmlReport:
         assert "/* mock plotly.js */" in html
         assert "cdn.plot.ly" not in html
 
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_creates_parent_directories(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Test that parent directories are created if they don't exist."""
         mock_build.return_value = ReportDataset(generated_at="2025-01-01T00:00:00Z")
@@ -113,7 +113,7 @@ class TestGenerateHtmlReport:
         assert output.exists()
         assert output.parent.exists()
 
-    @patch("arandu.core.report.generator.build_dataset")
+    @patch("arandu.report.generator.build_dataset")
     def test_contains_timestamp(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Test that the generated report contains a timestamp."""
         mock_build.return_value = ReportDataset(generated_at="2025-01-01T00:00:00Z")

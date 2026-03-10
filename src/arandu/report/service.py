@@ -12,16 +12,6 @@ import logging
 from io import StringIO
 from typing import TYPE_CHECKING
 
-from .api_schemas import (
-    FunnelData,
-    FunnelStage,
-    PaginatedResponse,
-    QAFilterParams,
-    QAPairDetail,
-    RunConfigResponse,
-    TranscriptionDetail,
-    TranscriptionFilterParams,
-)
 from .dataset import (
     QAPairRow,
     ReportDataset,
@@ -30,6 +20,16 @@ from .dataset import (
     build_dataset,
     build_qa_rows,
     build_transcription_rows,
+)
+from .schemas import (
+    FunnelData,
+    FunnelStage,
+    PaginatedResponse,
+    QAFilterParams,
+    QAPairDetail,
+    RunConfigResponse,
+    TranscriptionDetail,
+    TranscriptionFilterParams,
 )
 
 if TYPE_CHECKING:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from arandu.core.report.style import (
+from arandu.report.charts.style import (
     CATEGORICAL_COLORS,
     CRITERION_COLORS,
     WONG_PALETTE,

@@ -7,20 +7,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from arandu.core.report.api import create_app, get_report_service
-from arandu.core.report.api_schemas import (
+from arandu.report.api import create_app, get_report_service
+from arandu.report.dataset import (
+    QAPairRow,
+    RunSummaryRow,
+    TranscriptionRow,
+)
+from arandu.report.schemas import (
     FunnelData,
     FunnelStage,
     PaginatedResponse,
     QAPairDetail,
     TranscriptionDetail,
 )
-from arandu.core.report.dataset import (
-    QAPairRow,
-    RunSummaryRow,
-    TranscriptionRow,
-)
-from arandu.core.report.service import ReportService
+from arandu.report.service import ReportService
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -90,7 +90,7 @@ class TestGetRunConfigEndpoint:
 
     def test_get_run_config_endpoint(self, client: object, mock_service: MagicMock) -> None:
         """GET /api/runs/{id}/config returns config."""
-        from arandu.core.report.api_schemas import RunConfigResponse
+        from arandu.report.schemas import RunConfigResponse
 
         mock_service.get_run_config.return_value = RunConfigResponse(pipeline_id="pipe_001")
         resp = client.get("/api/runs/pipe_001/config")

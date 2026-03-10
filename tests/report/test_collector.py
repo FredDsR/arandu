@@ -9,10 +9,10 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from arandu.core.report.collector import ResultsCollector, RunReport
 from arandu.qa.schemas import QARecordCEP
+from arandu.report.collector import ResultsCollector, RunReport
 from arandu.shared.schemas import EnrichedRecord, PipelineMetadata, PipelineType, SourceMetadata
-from tests.core.report.helpers import make_run_metadata
+from tests.report.helpers import make_run_metadata
 
 
 @pytest.fixture

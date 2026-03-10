@@ -1965,10 +1965,10 @@ def report(
         # Custom output path
         arandu report --output ./reports/dashboard.html
     """
-    from arandu.core.report import ResultsCollector
-    from arandu.core.report.dataset import build_dataset
-    from arandu.core.report.exporter import export_charts_as_png
-    from arandu.core.report.generator import generate_html_report
+    from arandu.report import ResultsCollector
+    from arandu.report.dataset import build_dataset
+    from arandu.report.exporter import export_charts_as_png
+    from arandu.report.generator import generate_html_report
 
     print_warning(
         "The 'report' command is deprecated and will be removed in a future version. "
@@ -2068,8 +2068,8 @@ def serve_report(
 
     import uvicorn
 
-    from arandu.core.report.api import create_app
-    from arandu.core.report.collector import ResultsCollector
+    from arandu.report.api import create_app
+    from arandu.report.collector import ResultsCollector
 
     setup_logging()
 
@@ -2085,8 +2085,8 @@ def serve_report(
     # Override the dependency so all handlers use the correct results_dir.
     # The service instance is cached so the lazy-loaded dataset is reused
     # across requests instead of re-reading the filesystem on every call.
-    from arandu.core.report.api import get_report_service
-    from arandu.core.report.service import ReportService
+    from arandu.report.api import get_report_service
+    from arandu.report.service import ReportService
 
     _cached_service: ReportService | None = None
 

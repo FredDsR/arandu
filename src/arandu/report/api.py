@@ -187,7 +187,7 @@ def list_qa_pairs(
     Returns:
         PaginatedResponse[QAPairRow] as a dict.
     """
-    from .api_schemas import QAFilterParams
+    from .schemas import QAFilterParams
 
     try:
         filters = QAFilterParams(
@@ -280,7 +280,7 @@ def list_transcriptions(
     Returns:
         PaginatedResponse[TranscriptionRow] as a dict.
     """
-    from .api_schemas import TranscriptionFilterParams
+    from .schemas import TranscriptionFilterParams
 
     try:
         filters = TranscriptionFilterParams(
