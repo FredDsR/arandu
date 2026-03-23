@@ -6,11 +6,11 @@ Current project implementation status and completed work.
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| **Phase 1** | ✅ Complete | Foundation (Transcription Pipeline) |
-| **Phase 2** | ✅ Complete | QA Generation Pipeline |
-| **Phase 3** | 🔲 Pending | Knowledge Graph Construction |
-| **Phase 4** | 🔲 Pending | Evaluation Pipeline |
-| **Phase 5** | 🔲 Pending | Research (GraphRAG Integration) |
+| **Phase 1** | ✅ Complete | Transcription Pipeline |
+| **Phase 2** | ✅ Complete | CEP QA Generation Pipeline |
+| **Phase 3** | ⚠️ Code Complete | Knowledge Graph Construction (no successful end-to-end run) |
+| **Phase 4** | 🔲 Not Started | Multi-Stage Evaluation — judge refactor + RAG ([#79](https://github.com/FredDsR/etno-kgc-preprocessing/issues/79), [#80](https://github.com/FredDsR/etno-kgc-preprocessing/issues/80)) |
+| **Phase 5** | 🔲 Not Started | Writing, Human Evaluation & Publication |
 
 ---
 
@@ -25,18 +25,25 @@ Current project implementation status and completed work.
    - Checkpoint and resume capability
    - Google Drive integration
 
-2. **Core Components**
-   - [core/media.py](../../src/arandu/core/media.py) - Media duration extraction with FFprobe
-   - [core/checkpoint.py](../../src/arandu/core/checkpoint.py) - Checkpoint system for resumption
-   - [core/batch.py](../../src/arandu/core/batch.py) - Batch processing orchestrator
-   - [core/engine.py](../../src/arandu/core/engine.py) - Whisper engine wrapper
+2. **Components**
+   - `transcription/engine.py` — Whisper ASR wrapper with quantization and device auto-detection
+   - `transcription/batch.py` — Batch processing orchestrator with ProcessPoolExecutor
+   - `transcription/media.py` — Media duration extraction with FFprobe
+   - `transcription/validator.py` — Heuristic quality validation (script match, repetition, segment, content density)
+   - `shared/checkpoint.py` — Checkpoint system for resumption
+   - `shared/drive.py` — Google Drive integration
 
 3. **Features**
    - Multiple model support (any Hugging Face Whisper model)
    - 8-bit quantization for reduced VRAM
    - GPU/CPU/ROCm support
-   - Media duration extraction
    - Structured JSON output with metadata
+
+### Run History
+
+| Run | Files | Status |
+|-----|-------|--------|
+| `20260124_084730_087491_slurm_tupi` | 353/354 (99.7%) | Complete |
 
 ### Usage
 
@@ -52,29 +59,39 @@ arandu batch-transcribe input/catalog.csv --workers 4 --quantize
 
 ### What Was Implemented
 
-1. **CEP QA Generator** ([core/cep/](../../src/arandu/core/cep/))
+1. **CEP QA Generator** (`qa/cep/`)
    - Bloom's Taxonomy cognitive scaffolding (remember, understand, analyze, evaluate)
    - Configurable Bloom level distribution
    - Scaffolding context (lower-level QA pairs inform higher levels)
-   - LLM-as-a-Judge validation with faithfulness, Bloom calibration, informativeness scores
    - Reasoning trace generation for multi-hop questions
    - Context chunking for long transcriptions
 
-2. **Batch Orchestrator** ([core/qa_batch.py](../../src/arandu/core/qa_batch.py))
+2. **Judge Pipeline** (`qa/judge/` — will move to `shared/judge/` in Phase B)
+   - Protocol-based `JudgeCriterion` interface
+   - Composable `JudgePipeline` with weighted criteria (to be renamed `JudgeStep`; see [ROADMAP.md](ROADMAP.md) Phase B)
+   - `JudgeRegistry` for criterion factory and caching
+   - Criteria: faithfulness (30%), Bloom calibration (25%), informativeness (25%), self-containedness (20%)
+
+3. **Batch Orchestrator** (`qa/batch.py`)
    - Parallel processing with ProcessPoolExecutor
    - Global worker pattern for connection pooling
    - Checkpoint integration
-   - Versioned results layout
 
-3. **CLI Command** (`generate-cep-qa`)
+4. **CLI Command** (`generate-cep-qa`)
    - LLM provider selection (Ollama, OpenAI, custom)
-   - Configurable Bloom levels, validation, and workers
-   - Progress tracking
+   - `--validate` flag will be removed — judge becomes a separate command (see [ROADMAP.md](ROADMAP.md) Phase B)
 
-4. **Data Schemas**
-   - `QAPairCEP` - Bloom-calibrated question-answer pair
-   - `QARecordCEP` - Complete CEP QA dataset with Bloom distribution and validation summary
-   - JSONL export for KGQA training
+### Run History
+
+| Run | Records | Status |
+|-----|---------|--------|
+| `test-cep-01` | 241/309 (78%) | Complete |
+
+### Known Issues
+
+- Weighted average threshold (0.6) masks per-criterion failures — individual thresholds needed
+- Self-containedness prompt misses place references without names
+- 3 bad transcription records with repetition loops (see TO-DO.md)
 
 ### Usage
 
@@ -82,91 +99,138 @@ arandu batch-transcribe input/catalog.csv --workers 4 --quantize
 arandu generate-cep-qa results/ -o qa_dataset/ --workers 4 --questions 12
 ```
 
-### Test Coverage
-
-- Unit tests: ~85% coverage
-- Integration tests for LLM client
-- Pydantic validation tests
-- CEP generator and batch processing tests
-
 ---
 
-## Phase 3: Knowledge Graph Construction 🔲
+## Phase 3: Knowledge Graph Construction ⚠️
 
-**Status**: Pending
+**Code completed**: 2026-02 | **No successful end-to-end run** | Tracked in [#78](https://github.com/FredDsR/etno-kgc-preprocessing/issues/78)
 
-### Planned Implementation
+### What Was Implemented
 
-1. **KG Builder** using AutoSchemaKG
-   - Entity extraction (PERSON, LOCATION, ORGANIZATION, EVENT, DATE, CONCEPT)
-   - Relation extraction
-   - Dynamic schema induction
-   - Multilingual support (Portuguese primary)
+1. **Atlas Backend** (`kg/atlas_backend.py`)
+   - AutoSchemaKG integration via atlas-rag package
+   - Protocol-based `KGConstructor` interface with factory pattern
+   - Portuguese extraction prompts
+   - Triple extraction → CSV conversion → concept generation → GraphML export
 
-2. **Graph Management**
-   - Per-document graphs
-   - Corpus-level merged graph
-   - GraphML export (NetworkX-compatible)
+2. **Batch Orchestrator** (`kg/batch.py`)
+   - Parallel processing with resume support
+   - Per-document + corpus-level graph merging
 
 3. **CLI Command** (`build-kg`)
 
-### Reference
+### Run History
 
-See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed specifications.
+| Run | Status | Issue |
+|-----|--------|-------|
+| `test-kg-01` | Failed (0/309) | JSON parse error on startup |
+| `test-kg-02` | Stuck mid-pipeline | Triple extraction complete (309 docs). Concept generation reached 6,256/13,383 nodes before SLURM timeout (24h). No GraphML output. |
 
----
+### Blocking Issues
 
-## Phase 4: Evaluation Pipeline 🔲
+- **#77**: Concept generation not resumable — SLURM kill loses all progress. Detailed design exists for resume wrapper.
+- **Language bug**: `language='pt'` not passed to `generate_concept_csv_temp()`, so concept generation runs with English prompts on Portuguese text. `test-kg-02` concept output shows English conceptualizations.
 
-**Status**: Pending
+### What's Needed
 
-### Planned Implementation
-
-1. **QA Metrics**
-   - Exact Match (EM)
-   - Token-level F1
-   - BLEU score
-
-2. **KG Metrics**
-   - Entity coverage and density
-   - Relation density and connectivity
-   - Semantic coherence
-
-3. **CLI Command** (`evaluate`)
-
-### Reference
-
-See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed specifications.
+1. Implement #77 (resumable concept generation + language fix)
+2. Complete a successful run producing a GraphML file
+3. Manually inspect graph quality (Portuguese entities/relations)
 
 ---
 
-## Phase 5: Research 🔲
+## Phase 4: Multi-Stage Evaluation 🔲
 
-**Status**: Pending
+**Status**: Not started — design agreed (2026-03-23), see [ROADMAP.md](ROADMAP.md)
 
-### Planned Research
+### Redesigned Architecture
 
-1. **GraphRAG Integration**
-   - Microsoft GraphRAG framework evaluation
-   - Community detection for context retrieval
+The evaluation pipeline has been redesigned from the original plan (which used EM/F1/BLEU metrics). The new design uses the **same composable judge pipeline** across all domains.
 
-2. **Framework Comparison**
-   - AutoSchemaKG vs alternatives
-   - Performance benchmarks
+**Core idea**: evaluation = retrieve + judge. No traditional QA metrics — the judge module scores retriever answers using the same criteria architecture as QA validation.
+
+### Planned Components
+
+1. **Judge module refactor** — move from `qa/judge/` to `shared/judge/`
+   - `JudgeCriterion` (protocol — heuristic or LLM-based)
+   - `JudgeStep` (runs N criteria with individual thresholds, renamed from current `JudgePipeline`)
+   - `JudgePipeline` (multi-stage: chains steps with filtering between them)
+
+2. **Retriever module** — protocol-based with pluggable implementations
+   - BM25 baseline (sparse retrieval over transcriptions)
+   - GraphRAG (retrieval over constructed KG)
+
+3. **CLI commands** (each atomic, no model co-loading):
+   - `arandu judge transcription` — heuristic filter → LLM judge
+   - `arandu judge qa` — multi-criterion LLM judge → human-comparable judge
+   - `arandu retrieve` — run retrievers against QA questions
+   - `arandu judge answers` — judge retriever answer quality
+
+### Key Design Decisions
+
+- **Judge is cross-domain** — same module validates transcriptions, QA pairs, and retriever answers
+- **Heuristics are criteria** — implement `JudgeCriterion` protocol, no special treatment
+- **Individual thresholds** — per-criterion minimums replace weighted average
+- **Separate commands** — generator generates, judge judges (remove `--validate` flag from `generate-cep-qa`)
+- **No EM/F1/BLEU** — judge-based evaluation throughout
 
 ---
 
-## Development Guidelines
+## Phase 5: Writing, Human Evaluation & Publication 🔲
 
-For contributing to any phase, see [AGENT.md](../../AGENT.md).
+**Status**: Not started — see [ROADMAP.md](ROADMAP.md) Phase D for detailed chapter mapping
 
-### Quick Reference
+### Dissertation (Monography)
 
-```bash
-# Run all quality checks before committing
-uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest
+| Chapter | Source Material | Can Start |
+|---------|---------------|-----------|
+| 1. Introdução | SLR evidence gap, `related-works.md` §10-11, CARE Principles | Now |
+| 2. Referencial Teórico | `related-works.md` (45+ refs, 11 sections) → consolidate into narrative | Now |
+| 3. Metodologia | `methodology.md` (62K chars, near-complete draft) — §6 needs rewrite for judge-based eval | Now (except eval section) |
+| 4. Resultados e Discussão | Transcription + CEP data exist; KG blocked on Phase 3 run; RAG blocked on Phase 4 | Partially |
+| 5. Conclusão | — | Last |
+
+### Human Evaluation
+
+Design annotation protocol → recruit specialists → evaluation sessions → Cohen's kappa (LLM vs human). Blocked on Phase 4 (human-comparable judge criterion).
+
+### Articles
+
+- Consolidate 2025/2 article with new experiments
+- Bloom taxonomy for cognitive-calibrated QA generation (standalone topic)
+- Conference submissions
+
+---
+
+## Current Architecture
+
+```
+src/arandu/
+├── cli/              – app.py, transcribe.py, qa.py, kg.py, report.py, manage.py
+├── transcription/    – engine, batch, validator, media, config, schemas
+├── qa/               – cep/, judge/, batch, config, schemas
+├── kg/               – atlas_backend, batch, config, schemas, prompts/
+├── report/           – api, service, collector, dataset, generator, exporter, charts/
+├── metadata/         – enricher, schemas
+├── shared/           – config, schemas, llm_client, checkpoint, hardware, io, drive
+└── utils/            – console, logger
 ```
 
+Entry point: `arandu.cli.app:app` (pyproject.toml)
+
 ---
 
-**Last Updated**: 2026-02-01
+## Open Issues (non-frontend)
+
+| # | Title | Type | Priority |
+|---|-------|------|----------|
+| [#78](https://github.com/FredDsR/etno-kgc-preprocessing/issues/78) | Phase A: Unblock KG | enhancement | Critical |
+| [#79](https://github.com/FredDsR/etno-kgc-preprocessing/issues/79) | Phase B: Judge refactor | enhancement | High |
+| [#80](https://github.com/FredDsR/etno-kgc-preprocessing/issues/80) | Phase C: RAG evaluation | enhancement | High |
+| [#77](https://github.com/FredDsR/etno-kgc-preprocessing/issues/77) | Resumable concept generation + language bug fix | enhancement | Critical (blocks #78) |
+| [#35](https://github.com/FredDsR/etno-kgc-preprocessing/issues/35) | Extract `generate_structured()` to LLMClient | refactor | Part of #79 |
+| ~~[#75](https://github.com/FredDsR/etno-kgc-preprocessing/issues/75)~~ | ~~Concept gen resume~~ | — | Closed (superseded by #77) |
+
+---
+
+**Last Updated**: 2026-03-23

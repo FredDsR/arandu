@@ -1,5 +1,10 @@
 # Implementation Quick-Start Guide
 
+> **ARCHIVED (2026-03-23)**: This document reflects the original plan from January 2026.
+> File paths referencing `core/`, `main.py`, and `schemas.py` are outdated — the codebase
+> was reorganized into pipeline-centric packages in March 2026.
+> See [ROADMAP.md](ROADMAP.md) for the current plan.
+
 **For starting implementation in a new thread or session**
 
 This guide provides everything needed to start implementing the Knowledge Graph Construction Pipeline from scratch.

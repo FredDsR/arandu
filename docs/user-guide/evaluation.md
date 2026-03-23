@@ -1,13 +1,15 @@
 # Evaluation Guide
 
-> **⚠️ STATUS: PLANNED - NOT YET IMPLEMENTED**
+> **OUTDATED (2026-03-23)**: The evaluation approach has been redesigned. This document
+> describes the original plan based on EM/F1/BLEU metrics, which has been replaced by a
+> judge-based evaluation using the composable multi-stage judge pipeline.
 >
-> Evaluation pipeline for assessing QA and KG quality is planned for a future release. The configuration schemas (`EvaluationConfig`, `EvaluationReport`) exist in `src/arandu/config.py` and `src/arandu/schemas.py`, but there are currently:
-> - **No CLI commands** for evaluation (no `evaluate` command)
-> - **No pipeline modules** implementing the evaluation logic
-> - **No dependencies** added yet (`scikit-learn`, `sentence-transformers`, `nltk`, `sacrebleu` are not in `pyproject.toml`)
+> See [ROADMAP.md](../../docs/planning/ROADMAP.md) Phase C for the current evaluation design.
 >
-> This documentation describes the **planned functionality** and serves as a specification for future implementation.
+> **What changed**: Evaluation no longer uses traditional QA metrics (EM, F1, BLEU).
+> Instead, retriever answers are scored by the same `JudgePipeline` used for QA validation.
+> The evaluation experiment compares retrieval strategies (BM25 vs GraphRAG) using CEP QA
+> pairs as the benchmark dataset.
 
 ---
 

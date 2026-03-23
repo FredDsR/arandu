@@ -1,9 +1,15 @@
 # Knowledge Graph Construction Pipeline - Implementation Plan
 
+> **ARCHIVED (2026-03-23)**: This document reflects the original plan from January 2026.
+> The project architecture has since been reorganized (March 2026) and the evaluation
+> approach redesigned. File paths referencing `core/` and `main.py` are outdated.
+> See [ROADMAP.md](ROADMAP.md) for the current plan and [PHASE_STATUS.md](PHASE_STATUS.md)
+> for current status.
+
 **Project**: etno-kgc-preprocessing (Arandu)
 **Version**: 2.0
 **Date**: 2026-01-14
-**Status**: Planning Complete, Ready for Implementation
+**Status**: Archived — see ROADMAP.md
 
 ## Table of Contents
 
