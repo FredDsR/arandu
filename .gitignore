@@ -211,3 +211,6 @@ logs/
 cache/
 coverage.json
 test_report_manual.py
+
+.claude/
+.agents/
