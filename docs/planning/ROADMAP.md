@@ -92,12 +92,14 @@ flowchart TD
 1. **Implement #77** — resumable concept generation wrapper + `language='pt'` bug fix
 2. **Run KG pipeline to completion** — resume or fresh run with Portuguese prompts
 3. **Inspect output quality** — are Portuguese entities/relations sensible? Knowledge islands?
-4. **Close #75** — superseded by #77
+4. **Analyze predicate explosion** — check for semantic duplicates in predicates (e.g., "lutar"/"combater"/"brigar" as separate predicates). AutoSchemaKG's conceptualization step should canonicalize these, but the language bug may have broken it. (Feedback: Joel, midway seminar)
+5. **Close #75** — superseded by #77
 
 ### Success Criteria
 
 - A `corpus_graph.graphml` file exists with meaningful Portuguese entities and relations
 - Concept generation can survive SLURM timeouts and resume
+- Predicate space is reasonable (no massive explosion of semantically equivalent predicates)
 
 ---
 
@@ -189,14 +191,20 @@ The evaluation IS the experiment:
 
 Evaluation does **not** use EM, F1, or BLEU. The judge module scores retriever answers with the same criteria used for QA validation (faithfulness, informativeness, etc.). This is consistent — judge all the way down.
 
+### Non-answerable Questions Experiment
+
+Generate a subset of questions whose answers are **not** present in the KG, to test whether the retriever falls back to parametric knowledge or correctly abstains. This detects hallucination at the retrieval level and validates that the evaluation measures graph coverage, not LLM memorization. (Feedback: Luciana, midway seminar)
+
 ### Tasks
 
 1. Define retriever protocol
 2. Implement BM25 baseline retriever
 3. Implement GraphRAG retriever (using Phase A graph)
-4. Implement `arandu retrieve` CLI command
-5. Implement `arandu judge answers` CLI command (reuses Phase B judge)
-6. Run experiments, collect results
+4. Design non-answerable question subset (questions the KG cannot answer)
+5. Implement `arandu retrieve` CLI command
+6. Implement `arandu judge answers` CLI command (reuses Phase B judge)
+7. Run experiments, collect results
+8. Analyze: separate graph quality limitations from retrieval tool limitations (Feedback: Joel, midway seminar)
 
 ---
 
@@ -231,6 +239,8 @@ Literature review organized by thematic axes. `docs/related-works.md` (45+ refer
 | LLM-as-a-Judge evaluation | `related-works.md` §4 | Phase 2 (Judge) |
 | Self-containedness and decontextualization | `related-works.md` §5 | Phase 2 (CEP) |
 | KG construction from text with LLMs | `related-works.md` §6 | Phase 3 |
+| Value of KGs as knowledge distillation | Argue independently of RAG performance (Feedback: Joel) | Phase 3 / Discussion |
+| Predicate explosion in triple extraction | Known KGC problem — does AutoSchemaKG's conceptualization handle it? (Feedback: Joel) | Phase 3 |
 | GraphRAG and graph-based retrieval | `related-works.md` §7 | Phase 4 (Eval) |
 | QA-based KG evaluation | `related-works.md` §8 | Phase 4 (Eval) |
 | ASR quality and Whisper | `related-works.md` §9 | Phase 1 |
@@ -265,7 +275,11 @@ Experiment results, analysis, human evaluation findings.
 | CEP QA results (241/309 records, Bloom distribution, judge scores) | Nothing — data exists |
 | KG construction results (graph structure, Portuguese entities/relations) | Phase A (no graph yet) |
 | RAG evaluation (BM25 vs GraphRAG comparison) | Phase C |
+| Non-answerable questions (parametric knowledge detection) | Phase C |
 | Human evaluation (kappa analysis, LLM vs specialist agreement) | Phase D human eval sessions |
+| Graph value argument (knowledge distillation independent of RAG) | Phase A (graph must exist) |
+| Predicate explosion analysis (semantic duplicates in predicates) | Phase A (graph must exist) |
+| Technique vs data limitations discussion | All above |
 | Discussion (Bloom-stratified depth profiling, tacit knowledge layers) | All above |
 
 **Can start**: transcription and CEP results sections now. Rest blocked.
@@ -333,6 +347,22 @@ Each pipeline step is an atomic CLI command. No model co-loading. Pipeline orche
 | Heuristic/judge module unification | Solved by making heuristics into criteria |
 | Backwards compatibility for `--validate` flag | Clean break, minimal codebase |
 | EM/F1/BLEU evaluation metrics | Replaced by judge-based evaluation |
+
+---
+
+## Midway Seminar Feedback
+
+Feedback from Luciana and Joel incorporated into the roadmap:
+
+| Feedback | Who | Addressed In |
+|----------|-----|-------------|
+| Validate QA ground truth with humans, measure concordance | Luciana | Phase D: Human eval with specialists (Cohen's kappa) |
+| BM25 baseline — is RAG without graph sufficient? | Luciana | Phase C: BM25 vs GraphRAG comparison |
+| Non-answerable questions to detect parametric knowledge use | Luciana | Phase C: Non-answerable questions experiment |
+| Argue the value of the graph itself (knowledge distillation) | Joel | Chapter 2 + Chapter 4 discussion |
+| Separate graph quality limitations from retrieval tool limitations | Joel | Phase C task 8 + Chapter 4 discussion |
+| Predicate explosion — does AutoSchemaKG handle it? | Joel | Phase A task 4 (inspect graph) + Chapter 4 |
+| Distinguish technique limitations from data limitations | Joel | Chapter 4 discussion |
 
 ---
 
