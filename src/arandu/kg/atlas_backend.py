@@ -208,10 +208,11 @@ class AtlasRagConstructor:
         # Step 3: Create LLM generator using unified LLMClient
         if self._llm_client is None:
             self._llm_client = self._build_llm_client()
+        generation_config = self._build_generation_config()
         model = LLMGenerator(
             self._llm_client.client,
             self._config.model_id,
-            temperature=self._config.temperature,
+            default_config=generation_config,
         )
 
         # Step 4: Detect resume offset and build ProcessingConfig
@@ -443,6 +444,19 @@ class AtlasRagConstructor:
             model_id=self._config.model_id,
             base_url=self._config.base_url
             or (self._config.ollama_url if self._config.provider == "ollama" else None),
+        )
+
+    def _build_generation_config(self) -> Any:
+        """Build an atlas-rag ``GenerationConfig`` from KGConfig settings.
+
+        Returns:
+            A ``GenerationConfig`` instance with temperature from KGConfig.
+        """
+        from atlas_rag.llm_generator.generation_config import GenerationConfig
+
+        return GenerationConfig(
+            temperature=self._config.temperature,
+            max_tokens=self._opts["max_new_tokens"],
         )
 
     def _build_processing_config(
