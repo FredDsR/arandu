@@ -104,13 +104,17 @@ echo "Cleaning up any orphan containers from previous runs..."
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
 
 echo ""
-echo "Pruning Docker build cache, unused images, and volumes to free disk space..."
+echo "Pruning all unused Docker data (images, containers, volumes, build cache)..."
+docker system prune -af --volumes 2>/dev/null || true
 docker builder prune -af 2>/dev/null || true
-docker image prune -af 2>/dev/null || true
-docker volume prune -f 2>/dev/null || true
 
 echo ""
-echo "Cleaning up unused Ollama models to free disk space..."
+echo "Cleaning up partial Ollama downloads and unused models..."
+# Remove partial/interrupted model downloads (blobs/sha256-*-partial)
+find "$OLLAMA_MODELS_DIR" -name "*-partial" -delete 2>/dev/null || true
+# Remove orphaned temp files left by interrupted pulls
+find "$OLLAMA_MODELS_DIR" -name "*.tmp" -delete 2>/dev/null || true
+
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE" 2>/dev/null || true
 OLLAMA_UP=false
 for i in {1..30}; do
@@ -134,6 +138,21 @@ if [ "$OLLAMA_UP" = true ]; then
             docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama rm "$model" 2>/dev/null || true
         fi
     done
+    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down 2>/dev/null || true
+fi
+
+# Fail fast if disk space is critically low (need ~15 GB for build + model)
+# Check Docker's storage partition, not the project directory
+MIN_DISK_GB=${MIN_DISK_GB:-15}
+DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "/var/lib/docker")
+AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ')
+AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
+echo "Docker storage: $DOCKER_ROOT"
+echo "Available disk space: ${AVAIL_GB} GB (minimum: ${MIN_DISK_GB} GB)"
+if [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
+    echo "ERROR: Not enough disk space on Docker partition (${AVAIL_GB} GB < ${MIN_DISK_GB} GB). Aborting."
+    echo "Tip: manually run 'docker system prune -af --volumes' on the node."
+    exit 1
 fi
 
 echo ""

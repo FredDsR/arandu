@@ -7,6 +7,7 @@ is only required when the ``atlas`` backend is actually selected.
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 from pathlib import Path
@@ -207,10 +208,11 @@ class AtlasRagConstructor:
         # Step 3: Create LLM generator using unified LLMClient
         if self._llm_client is None:
             self._llm_client = self._build_llm_client()
+        generation_config = self._build_generation_config()
         model = LLMGenerator(
             self._llm_client.client,
             self._config.model_id,
-            temperature=self._config.temperature,
+            default_config=generation_config,
         )
 
         # Step 4: Detect resume offset and build ProcessingConfig
@@ -223,7 +225,7 @@ class AtlasRagConstructor:
 
         # Step 5: Run atlas-rag extraction pipeline
         extractor = KnowledgeGraphExtractor(model, processing_config)
-        self._run_pipeline(extractor)
+        self._run_pipeline(extractor, output_dir)
 
         # Step 6: Load graph and build result
         return self._build_result(records, output_dir)
@@ -444,6 +446,19 @@ class AtlasRagConstructor:
             or (self._config.ollama_url if self._config.provider == "ollama" else None),
         )
 
+    def _build_generation_config(self) -> Any:
+        """Build an atlas-rag ``GenerationConfig`` from KGConfig settings.
+
+        Returns:
+            A ``GenerationConfig`` instance with temperature from KGConfig.
+        """
+        from atlas_rag.llm_generator.generation_config import GenerationConfig
+
+        return GenerationConfig(
+            temperature=self._config.temperature,
+            max_tokens=self._opts["max_new_tokens"],
+        )
+
     def _build_processing_config(
         self,
         input_dir: Path,
@@ -482,7 +497,7 @@ class AtlasRagConstructor:
             resume_from=resume_from,
         )
 
-    def _run_pipeline(self, extractor: Any) -> None:
+    def _run_pipeline(self, extractor: Any, output_dir: Path) -> None:
         """Run the atlas-rag extraction pipeline steps.
 
         Temporarily replaces atlas-rag's ``DatasetProcessor`` with a subclass
@@ -491,6 +506,7 @@ class AtlasRagConstructor:
 
         Args:
             extractor: A ``KnowledgeGraphExtractor`` instance.
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
         """
         from atlas_rag.kg_construction import triple_extraction
 
@@ -508,16 +524,258 @@ class AtlasRagConstructor:
         extractor.convert_json_to_csv()
 
         if self._opts["include_concept"]:
-            logger.info("Generating concept CSV (temporary)...")
-            extractor.generate_concept_csv_temp(
-                batch_size=self._opts["batch_size_concept"],
-            )
-            logger.info("Creating final concept CSV...")
+            self._run_concept_generation_with_resume(extractor, output_dir)
             extractor.create_concept_csv()
 
         logger.info("Converting to GraphML...")
         extractor.convert_to_graphml()
         logger.info("Atlas-rag pipeline completed")
+
+    # ------------------------------------------------------------------
+    # Resumable concept generation
+    # ------------------------------------------------------------------
+
+    _VALID_NODE_TYPES = frozenset({"event", "entity", "relation"})
+
+    def _run_concept_generation_with_resume(
+        self,
+        extractor: Any,
+        output_dir: Path,
+    ) -> None:
+        """Run concept generation with resume support.
+
+        Wraps ``extractor.generate_concept_csv_temp()`` so that progress
+        survives interruptions (e.g. SLURM timeouts).  A cumulative
+        ``concept_completed.csv`` file grows across failures.  On each
+        resume, already-conceptualized nodes are excluded from the input.
+
+        Args:
+            extractor: A ``KnowledgeGraphExtractor`` instance.
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Raises:
+            FileNotFoundError: If the missing_concepts CSV does not exist.
+        """
+        atlas_output = output_dir / "atlas_output"
+        concepts_dir = atlas_output / "concepts"
+        triples_dir = atlas_output / "triples_csv"
+
+        # Step 0: Locate missing_concepts CSV (input)
+        missing_csvs = sorted(triples_dir.glob("missing_concepts*_from_json.csv"))
+        if not missing_csvs:
+            raise FileNotFoundError(
+                f"No missing_concepts CSV found in {triples_dir}. "
+                "Triple extraction + convert_json_to_csv must run first."
+            )
+        missing_csv = missing_csvs[0]
+
+        concepts_dir.mkdir(parents=True, exist_ok=True)
+        shard_file = concepts_dir / "concept_shard_0.csv"
+        accumulator = concepts_dir / "concept_completed.csv"
+        backup_file = missing_csv.with_suffix(missing_csv.suffix + ".bak")
+
+        # Step 2: Restore backup if dirty state from previous crash
+        if backup_file.exists():
+            logger.info("Restoring input CSV from backup: %s", backup_file)
+            backup_file.replace(missing_csv)
+
+        # Step 3: Absorb leftover shard from interrupted run
+        if shard_file.exists():
+            valid_rows = self._read_valid_concept_rows(shard_file)
+            if valid_rows:
+                self._append_to_accumulator(accumulator, valid_rows)
+                logger.info(
+                    "Absorbed %d rows from interrupted shard into accumulator",
+                    len(valid_rows),
+                )
+            shard_file.unlink()
+
+        # Step 4: Read completed node names
+        completed_nodes = self._read_completed_nodes(accumulator)
+
+        # Step 5: Backup input CSV
+        logger.info("Backing up input CSV: %s -> %s", missing_csv, backup_file)
+        missing_csv_content = missing_csv.read_text()
+        backup_file.write_text(missing_csv_content)
+
+        # Step 6: Trim input CSV to exclude completed nodes
+        remaining = self._trim_input_csv(missing_csv, completed_nodes)
+
+        # Step 7: If all nodes are done, skip generation
+        if remaining == 0:
+            logger.info("All concept nodes already completed, skipping generation")
+            self._restore_and_finalize(
+                missing_csv, backup_file, accumulator, shard_file, concepts_dir
+            )
+            return
+
+        # Step 8: Run concept generation
+        logger.info(
+            "Generating concepts for %d remaining nodes (%d already completed)",
+            remaining,
+            len(completed_nodes),
+        )
+        extractor.generate_concept_csv_temp(
+            batch_size=self._opts["batch_size_concept"],
+            language=self._config.language,
+        )
+
+        # Step 9: Absorb new shard output
+        if shard_file.exists():
+            valid_rows = self._read_valid_concept_rows(shard_file)
+            if valid_rows:
+                self._append_to_accumulator(accumulator, valid_rows)
+                logger.info("Absorbed %d new concept rows", len(valid_rows))
+            shard_file.unlink()
+
+        # Steps 11-13: Restore input, finalize accumulator
+        self._restore_and_finalize(missing_csv, backup_file, accumulator, shard_file, concepts_dir)
+
+    def _read_valid_concept_rows(self, csv_path: Path) -> list[list[str]]:
+        """Read and validate rows from a concept CSV file.
+
+        Each valid row has exactly 3 non-empty columns with column 2
+        being one of ``event``, ``entity``, ``relation`` (lowercase).
+
+        Args:
+            csv_path: Path to a concept CSV file.
+
+        Returns:
+            List of valid [node, description, node_type] rows.
+        """
+        valid: list[list[str]] = []
+        try:
+            with csv_path.open(newline="") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) == 3 and all(cell.strip() for cell in row):
+                        if row[2].strip().lower() in self._VALID_NODE_TYPES:
+                            valid.append([cell.strip() for cell in row])
+                        else:
+                            logger.debug("Dropping row with invalid node_type: %s", row)
+                    else:
+                        logger.debug("Dropping malformed concept row: %s", row)
+        except (OSError, csv.Error) as exc:
+            logger.warning("Failed to read concept CSV %s: %s", csv_path, exc)
+        return valid
+
+    def _append_to_accumulator(
+        self,
+        accumulator: Path,
+        rows: list[list[str]],
+    ) -> None:
+        """Append rows to the accumulator CSV, deduplicating by node name.
+
+        Deduplication is case-sensitive on column 0 (node name). On
+        conflict, the latest entry wins.
+
+        Args:
+            accumulator: Path to ``concept_completed.csv``.
+            rows: Validated concept rows to append.
+        """
+        existing: dict[str, list[str]] = {}
+        if accumulator.exists():
+            with accumulator.open(newline="") as f:
+                for row in csv.reader(f):
+                    if len(row) == 3:
+                        existing[row[0]] = row
+
+        for row in rows:
+            existing[row[0]] = row
+
+        with accumulator.open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(existing.values())
+
+    def _read_completed_nodes(self, accumulator: Path) -> set[str]:
+        """Read completed node names from the accumulator.
+
+        Args:
+            accumulator: Path to ``concept_completed.csv``.
+
+        Returns:
+            Set of completed node names (column 0, case-sensitive).
+        """
+        if not accumulator.exists():
+            return set()
+
+        nodes: set[str] = set()
+        with accumulator.open(newline="") as f:
+            for row in csv.reader(f):
+                if len(row) >= 1 and row[0].strip():
+                    nodes.add(row[0].strip())
+        return nodes
+
+    def _trim_input_csv(self, csv_path: Path, completed: set[str]) -> int:
+        """Rewrite input CSV excluding already-completed nodes.
+
+        Reads all rows, filters out nodes in ``completed``, and rewrites
+        the file.  The first row is treated as a header if present.
+
+        Args:
+            csv_path: Path to the missing_concepts CSV.
+            completed: Node names to exclude.
+
+        Returns:
+            Number of remaining data rows (excluding header).
+        """
+        with csv_path.open(newline="") as f:
+            all_rows = list(csv.reader(f))
+
+        if not all_rows:
+            return 0
+
+        header = all_rows[0]
+        data_rows = [row for row in all_rows[1:] if row and row[0] not in completed]
+
+        with csv_path.open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(data_rows)
+
+        if completed:
+            logger.info(
+                "Trimmed input CSV: %d -> %d rows (%d already completed)",
+                len(all_rows) - 1,
+                len(data_rows),
+                len(all_rows) - 1 - len(data_rows),
+            )
+        return len(data_rows)
+
+    def _restore_and_finalize(
+        self,
+        missing_csv: Path,
+        backup_file: Path,
+        accumulator: Path,
+        shard_file: Path,
+        concepts_dir: Path,
+    ) -> None:
+        """Restore input CSV and rename accumulator to final shard.
+
+        Args:
+            missing_csv: Original input CSV path.
+            backup_file: Backup of original input.
+            accumulator: Cumulative concept CSV.
+            shard_file: Expected final shard path.
+            concepts_dir: Concepts output directory.
+        """
+        # Step 11: Restore original input from backup
+        if backup_file.exists():
+            backup_file.replace(missing_csv)
+            logger.info("Restored original input CSV from backup")
+
+        # Step 12: Rename accumulator to concept_shard_0.csv
+        if accumulator.exists():
+            accumulator.replace(shard_file)
+            logger.info("Finalized concept output: %s", shard_file)
+
+        # Step 13: Guard — only concept_shard_0.csv should exist
+        csv_files = [f for f in concepts_dir.glob("*.csv") if f.name != "concept_shard_0.csv"]
+        if csv_files:
+            logger.warning(
+                "Unexpected CSV files in concepts/: %s",
+                [f.name for f in csv_files],
+            )
 
     def _build_result(
         self,
