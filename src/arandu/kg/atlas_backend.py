@@ -390,10 +390,14 @@ class AtlasRagConstructor:
                 last_lines = [ln for ln in last_file.read_text().strip().split("\n") if ln.strip()]
                 records_in_previous = total_records - len(last_lines)
                 keep = expected_records - records_in_previous
-                last_file.write_text("\n".join(last_lines[:keep]) + "\n")
 
-                trimmed = len(last_lines) - keep
-                logger.info("Trimmed %d partial records from %s", trimmed, last_file)
+                if keep <= 0:
+                    logger.info("Removing fully-partial extraction file %s", last_file)
+                    last_file.unlink()
+                else:
+                    last_file.write_text("\n".join(last_lines[:keep]) + "\n")
+                    trimmed = len(last_lines) - keep
+                    logger.info("Trimmed %d partial records from %s", trimmed, last_file)
 
         if completed_batches > 0:
             logger.info(
