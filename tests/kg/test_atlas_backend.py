@@ -845,15 +845,25 @@ class TestBuildProcessingConfig:
 class TestRunPipeline:
     """Tests for _run_pipeline."""
 
-    def test_all_five_steps_called(self, _mock_atlas_rag: dict) -> None:
+    @staticmethod
+    def _setup_missing_csv(output_dir: Path) -> Path:
+        """Create a minimal missing_concepts CSV so resume wrapper works."""
+        triples_dir = output_dir / "atlas_output" / "triples_csv"
+        triples_dir.mkdir(parents=True, exist_ok=True)
+        csv_file = triples_dir / "missing_concepts_test_from_json.csv"
+        csv_file.write_text("node,description,node_type\nfoo,bar,entity\n")
+        return csv_file
+
+    def test_all_five_steps_called(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Test all 5 atlas-rag pipeline steps are called."""
         from arandu.kg.atlas_backend import AtlasRagConstructor
 
         config = KGConfig(backend_options={"include_concept": True})
         constructor = AtlasRagConstructor(config)
 
+        self._setup_missing_csv(tmp_path)
         mock_extractor = MagicMock()
-        constructor._run_pipeline(mock_extractor)
+        constructor._run_pipeline(mock_extractor, tmp_path)
 
         mock_extractor.run_extraction.assert_called_once()
         mock_extractor.convert_json_to_csv.assert_called_once()
@@ -861,7 +871,7 @@ class TestRunPipeline:
         mock_extractor.create_concept_csv.assert_called_once()
         mock_extractor.convert_to_graphml.assert_called_once()
 
-    def test_skip_concept_steps(self, _mock_atlas_rag: dict) -> None:
+    def test_skip_concept_steps(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """Test concept steps are skipped when include_concept=False."""
         from arandu.kg.atlas_backend import AtlasRagConstructor
 
@@ -869,13 +879,380 @@ class TestRunPipeline:
         constructor = AtlasRagConstructor(config)
 
         mock_extractor = MagicMock()
-        constructor._run_pipeline(mock_extractor)
+        constructor._run_pipeline(mock_extractor, tmp_path)
 
         mock_extractor.run_extraction.assert_called_once()
         mock_extractor.convert_json_to_csv.assert_called_once()
         mock_extractor.generate_concept_csv_temp.assert_not_called()
         mock_extractor.create_concept_csv.assert_not_called()
         mock_extractor.convert_to_graphml.assert_called_once()
+
+
+class TestResumableConceptGeneration:
+    """Tests for _run_concept_generation_with_resume."""
+
+    @staticmethod
+    def _setup_dirs(output_dir: Path) -> tuple[Path, Path, Path]:
+        """Create atlas_output directory structure and a missing_concepts CSV.
+
+        Returns:
+            Tuple of (missing_csv, concepts_dir, triples_dir).
+        """
+        triples_dir = output_dir / "atlas_output" / "triples_csv"
+        concepts_dir = output_dir / "atlas_output" / "concepts"
+        triples_dir.mkdir(parents=True, exist_ok=True)
+        concepts_dir.mkdir(parents=True, exist_ok=True)
+
+        missing_csv = triples_dir / "missing_concepts_test_from_json.csv"
+        missing_csv.write_text(
+            "node,description,node_type\n"
+            "Rio Guaíba,grande rio do sul,entity\n"
+            "enchente,evento climático,event\n"
+            "afeta,relação causal,relation\n"
+        )
+        return missing_csv, concepts_dir, triples_dir
+
+    def test_fresh_run(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Fresh run with no prior data — generation runs normally."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+
+        mock_extractor = MagicMock()
+        # Simulate atlas-rag writing a shard
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river in southern Brazil,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_called_once_with(
+            batch_size=16,
+            language="pt",
+        )
+        # Final output should be concept_shard_0.csv
+        assert shard.exists()
+        # Backup should be cleaned up
+        assert not missing_csv.with_suffix(".csv.bak").exists()
+
+    def test_full_resume_all_completed(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """All nodes already in accumulator — generation is skipped."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        # Pre-populate accumulator with all nodes
+        accumulator = concepts_dir / "concept_completed.csv"
+        accumulator.write_text(
+            "Rio Guaíba,large river in southern Brazil,entity\n"
+            "enchente,climatic event,event\n"
+            "afeta,causal relation,relation\n"
+        )
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_not_called()
+        # Accumulator should be renamed to shard
+        shard = concepts_dir / "concept_shard_0.csv"
+        assert shard.exists()
+        assert not accumulator.exists()
+
+    def test_partial_resume(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Leftover shard absorbed, generation runs with trimmed input."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        # Simulate interrupted shard with 1 completed node
+        leftover_shard = concepts_dir / "concept_shard_0.csv"
+        leftover_shard.write_text("Rio Guaíba,large river in southern Brazil,entity\n")
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text("enchente,climatic event,event\nafeta,causal relation,relation\n")
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_called_once()
+        assert shard.exists()
+        # Should contain all 3 nodes (1 from leftover + 2 from new run)
+        import csv
+
+        with shard.open(newline="") as f:
+            rows = list(csv.reader(f))
+        assert len(rows) == 3
+
+    def test_corrupted_rows_dropped(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Malformed rows in leftover shard are dropped, valid ones kept."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        # Leftover shard with corrupted rows
+        leftover_shard = concepts_dir / "concept_shard_0.csv"
+        leftover_shard.write_text(
+            "Rio Guaíba,large river in southern Brazil,entity\n"
+            "bad_row_only_two_cols,missing\n"
+            ",,\n"
+            "enchente,climatic event,INVALID_TYPE\n"
+            "afeta,causal relation,relation\n"
+        )
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text("enchente,climatic event,event\n")
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        assert shard.exists()
+        import csv
+
+        with shard.open(newline="") as f:
+            rows = list(csv.reader(f))
+        node_names = {row[0] for row in rows}
+        # Valid rows: Rio Guaíba (entity) and afeta (relation) from leftover
+        # Plus enchente (event) from new run
+        assert "Rio Guaíba" in node_names
+        assert "afeta" in node_names
+        assert "enchente" in node_names
+
+    def test_backup_restore_on_dirty_state(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Backup file from previous crash is restored before proceeding."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        # Simulate dirty state: input was trimmed, backup exists
+        original_content = missing_csv.read_text()
+        backup = missing_csv.with_suffix(".csv.bak")
+        backup.write_text(original_content)
+        # Overwrite input with trimmed version
+        missing_csv.write_text("node,description,node_type\nenchente,evento climático,event\n")
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        # Input should be restored to original (all 3 nodes)
+        restored = missing_csv.read_text()
+        assert "Rio Guaíba" in restored
+        assert "enchente" in restored
+        assert "afeta" in restored
+
+    def test_multiple_successive_failures(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Accumulator grows correctly across 2 interruptions."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+
+        shard = concepts_dir / "concept_shard_0.csv"
+        accumulator = concepts_dir / "concept_completed.csv"
+
+        # --- Failure 1: only 1 node completed, then "crash" ---
+        mock_ext1 = MagicMock()
+
+        def write_shard_1(**kwargs: Any) -> None:
+            shard.write_text("Rio Guaíba,large river,entity\n")
+
+        mock_ext1.generate_concept_csv_temp.side_effect = write_shard_1
+        constructor._run_concept_generation_with_resume(mock_ext1, tmp_path)
+
+        # After first run, shard should have 1 node
+        assert shard.exists()
+
+        # Simulate crash: rename shard back to look like interrupted state
+        # (In real life, the shard would be a leftover from atlas-rag being killed)
+        # For the next resume, we need a leftover shard_0 and an accumulator
+        # The finalize step already renamed accumulator -> shard_0
+        # So simulate the atlas-rag crash by putting a new partial shard
+        # while the previous result is now in concept_shard_0.csv
+        # We need to set up for a second resume: put shard content into accumulator
+        # and create a new leftover shard
+        import csv
+
+        with shard.open(newline="") as f:
+            rows_after_first = list(csv.reader(f))
+        accumulator.write_text("")
+        with accumulator.open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(rows_after_first)
+        shard.unlink()
+
+        # Simulate a second partial shard from interrupted run
+        shard.write_text("enchente,climatic event,event\n")
+
+        # --- Failure 2: second node completed ---
+        mock_ext2 = MagicMock()
+
+        def write_shard_2(**kwargs: Any) -> None:
+            shard.write_text("afeta,causal relation,relation\n")
+
+        mock_ext2.generate_concept_csv_temp.side_effect = write_shard_2
+        constructor._run_concept_generation_with_resume(mock_ext2, tmp_path)
+
+        # Final shard should have all 3 nodes
+        assert shard.exists()
+        with shard.open(newline="") as f:
+            final_rows = list(csv.reader(f))
+        assert len(final_rows) == 3
+        node_names = {row[0] for row in final_rows}
+        assert node_names == {"Rio Guaíba", "enchente", "afeta"}
+
+    def test_empty_input_csv(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Header-only input CSV — no nodes to process, completes immediately."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _, concepts_dir, triples_dir = self._setup_dirs(tmp_path)
+        # Overwrite with header-only
+        missing_csv = sorted(triples_dir.glob("missing_concepts*_from_json.csv"))[0]
+        missing_csv.write_text("node,description,node_type\n")
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_not_called()
+        # concept_shard_0.csv must exist so downstream create_concept_csv() has valid input
+        assert (concepts_dir / "concept_shard_0.csv").exists()
+
+    def test_merge_guard(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """After resume completes, only concept_shard_0.csv exists in concepts/."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        csv_files = list(concepts_dir.glob("*.csv"))
+        assert len(csv_files) == 1
+        assert csv_files[0].name == "concept_shard_0.csv"
+
+    def test_empty_shard_leftover(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Empty/header-only shard leftover — no rows absorbed, generation proceeds."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        # Empty shard from crash right after atlas-rag opened the file
+        leftover_shard = concepts_dir / "concept_shard_0.csv"
+        leftover_shard.write_text("")
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_called_once()
+        assert shard.exists()
+
+    def test_missing_input_csv(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Missing missing_concepts CSV raises FileNotFoundError."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        # Create output structure but no missing_concepts CSV
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        triples_dir.mkdir(parents=True, exist_ok=True)
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        with pytest.raises(FileNotFoundError, match="No missing_concepts CSV found"):
+            constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+    def test_language_kwarg_passed(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Verify language=self._config.language is passed to generate_concept_csv_temp."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _ = self._setup_dirs(tmp_path)
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text("Rio Guaíba,large river,entity\n")
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        call_kwargs = mock_extractor.generate_concept_csv_temp.call_args[1]
+        assert call_kwargs["language"] == "pt"
 
 
 class TestBuildResult:
