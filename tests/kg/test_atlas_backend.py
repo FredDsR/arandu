@@ -1145,7 +1145,7 @@ class TestResumableConceptGeneration:
         """Header-only input CSV — no nodes to process, completes immediately."""
         from arandu.kg.atlas_backend import AtlasRagConstructor
 
-        _, _concepts_dir, triples_dir = self._setup_dirs(tmp_path)
+        _, concepts_dir, triples_dir = self._setup_dirs(tmp_path)
         # Overwrite with header-only
         missing_csv = sorted(triples_dir.glob("missing_concepts*_from_json.csv"))[0]
         missing_csv.write_text("node,description,node_type\n")
@@ -1157,6 +1157,8 @@ class TestResumableConceptGeneration:
         constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
 
         mock_extractor.generate_concept_csv_temp.assert_not_called()
+        # concept_shard_0.csv must exist so downstream create_concept_csv() has valid input
+        assert (concepts_dir / "concept_shard_0.csv").exists()
 
     def test_merge_guard(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
         """After resume completes, only concept_shard_0.csv exists in concepts/."""

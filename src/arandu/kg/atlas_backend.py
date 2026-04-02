@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -599,8 +600,7 @@ class AtlasRagConstructor:
 
         # Step 5: Backup input CSV
         logger.info("Backing up input CSV: %s -> %s", missing_csv, backup_file)
-        missing_csv_content = missing_csv.read_text()
-        backup_file.write_text(missing_csv_content)
+        shutil.copy2(missing_csv, backup_file)
 
         # Step 6: Trim input CSV to exclude completed nodes
         remaining = self._trim_input_csv(missing_csv, completed_nodes)
@@ -611,6 +611,10 @@ class AtlasRagConstructor:
             self._restore_and_finalize(
                 missing_csv, backup_file, accumulator, shard_file, concepts_dir
             )
+            # Ensure concept_shard_0.csv exists so downstream create_concept_csv()
+            # has a valid input even when there were zero remaining nodes.
+            if not shard_file.exists():
+                shard_file.write_text("")
             return
 
         # Step 8: Run concept generation
@@ -654,7 +658,9 @@ class AtlasRagConstructor:
                 for row in reader:
                     if len(row) == 3 and all(cell.strip() for cell in row):
                         if row[2].strip().lower() in self._VALID_NODE_TYPES:
-                            valid.append([cell.strip() for cell in row])
+                            stripped = [cell.strip() for cell in row]
+                            stripped[2] = stripped[2].lower()
+                            valid.append(stripped)
                         else:
                             logger.debug("Dropping row with invalid node_type: %s", row)
                     else:
