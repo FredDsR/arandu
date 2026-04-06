@@ -71,7 +71,7 @@ class TranscriptionSegment(BaseModel):
 class TranscriptionQualityScore(BaseModel):
     """Quality scores for transcription validation.
 
-    Distinct from ValidationScore (LLM-as-a-Judge for QA pairs).
+    Distinct from JudgePipelineResult (LLM-as-a-Judge for QA pairs).
     This evaluates Whisper transcription output quality using heuristics.
     """
 

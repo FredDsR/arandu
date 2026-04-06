@@ -252,23 +252,15 @@ class CEPQAGenerator:
 
     @staticmethod
     def _get_criterion_score(validation: object, criterion: str) -> float:
-        """Extract a criterion score from either validation result type.
-
-        Handles both ``JudgePipelineResult`` (new) and ``ValidationScore``
-        (legacy) transparently.
+        """Extract a criterion score from a JudgePipelineResult.
 
         Args:
-            validation: A JudgePipelineResult or ValidationScore.
+            validation: A JudgePipelineResult.
             criterion: Criterion name (e.g. ``"faithfulness"``).
 
         Returns:
             Score value, or 0.0 if unavailable.
         """
-        # Legacy ValidationScore: direct float attributes
-        if hasattr(validation, criterion):
-            return float(getattr(validation, criterion))
-
-        # New JudgePipelineResult: nested in stage_results
         stage_results = getattr(validation, "stage_results", None)
         if stage_results:
             stage = stage_results.get("cep_validation")

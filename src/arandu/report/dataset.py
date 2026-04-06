@@ -271,13 +271,10 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
 
 
 def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:
-    """Extract flat criterion scores from a validation result.
-
-    Handles both ``JudgePipelineResult`` (new) and ``ValidationScore`` (legacy)
-    objects transparently.
+    """Extract flat criterion scores from a JudgePipelineResult.
 
     Args:
-        validation: A JudgePipelineResult, ValidationScore, or None.
+        validation: A JudgePipelineResult or None.
 
     Returns:
         Dict mapping criterion names (and ``overall_score``) to floats.
@@ -289,17 +286,6 @@ def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:
     if validation is None:
         return empty
 
-    # Legacy ValidationScore: has direct float attributes
-    if hasattr(validation, "faithfulness"):
-        return {
-            "faithfulness": validation.faithfulness,
-            "bloom_calibration": validation.bloom_calibration,
-            "informativeness": validation.informativeness,
-            "self_containedness": validation.self_containedness,
-            "overall_score": validation.overall_score,
-        }
-
-    # New JudgePipelineResult: extract from stage_results
     stage_results = getattr(validation, "stage_results", None)
     if stage_results is None:
         return empty

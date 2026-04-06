@@ -51,12 +51,10 @@ _TEXT_PREVIEW_CHARS: int = 500
 
 
 def _extract_rationale(validation: Any) -> str | None:
-    """Extract combined rationale from a validation result.
-
-    Handles both ``JudgePipelineResult`` (new) and ``ValidationScore`` (legacy).
+    """Extract combined rationale from a JudgePipelineResult.
 
     Args:
-        validation: A JudgePipelineResult, ValidationScore, or None.
+        validation: A JudgePipelineResult or None.
 
     Returns:
         Combined rationale string, or None.
@@ -64,11 +62,6 @@ def _extract_rationale(validation: Any) -> str | None:
     if validation is None:
         return None
 
-    # Legacy ValidationScore: has judge_rationale attribute
-    if hasattr(validation, "judge_rationale"):
-        return validation.judge_rationale
-
-    # New JudgePipelineResult: combine criterion rationales
     stage_results = getattr(validation, "stage_results", None)
     if stage_results is None:
         return None
