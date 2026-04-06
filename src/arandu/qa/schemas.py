@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from arandu.shared.judge.schemas import JudgePipelineResult  # noqa: TC001
 from arandu.shared.schemas import BloomLevel, SourceMetadata  # noqa: TC001
 
 if TYPE_CHECKING:
@@ -104,9 +105,9 @@ class QAPairCEP(QAPair):
 class CriterionScore(BaseModel):
     """Score for a single evaluation criterion.
 
-    Returned by individual JudgeCriterion evaluations in the composable
-    judge pipeline. Each criterion is evaluated independently to avoid
-    reasoning overlap (G-Eval approach).
+    .. deprecated::
+        Use ``arandu.shared.judge.schemas.CriterionScore`` instead.
+        Kept for backward compatibility with ``qa.judge`` and ``qa.cep.validator``.
     """
 
     criterion_name: str = Field(..., description="Name of the criterion (e.g., 'faithfulness')")
@@ -123,8 +124,9 @@ class CriterionScore(BaseModel):
 class ValidationScore(BaseModel):
     """LLM-as-a-Judge validation scores for a QA pair.
 
-    Evaluates faithfulness (grounding), Bloom calibration, and informativeness.
-    Enhanced to support composable judge pipeline with per-criterion scores.
+    .. deprecated::
+        Use ``arandu.shared.judge.schemas.JudgePipelineResult`` instead.
+        Kept for backward compatibility with ``qa.judge`` and ``qa.cep.validator``.
     """
 
     faithfulness: float = Field(
@@ -171,12 +173,15 @@ class ValidationScore(BaseModel):
 
 
 class QAPairValidated(QAPairCEP):
-    """QA pair with LLM-as-a-Judge validation results."""
+    """QA pair with LLM-as-a-Judge validation results.
 
-    validation: ValidationScore | None = Field(
-        None, description="LLM-as-a-Judge validation results"
-    )
-    is_valid: bool = Field(default=True, description="Whether pair passes validation threshold")
+    The ``validation`` field accepts either the new ``JudgePipelineResult``
+    (from ``shared.judge``) or the legacy ``ValidationScore`` for backward
+    compatibility during the migration period.
+    """
+
+    validation: JudgePipelineResult | ValidationScore | None = None
+    is_valid: bool = True
 
 
 class QARecordCEP(BaseModel):

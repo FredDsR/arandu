@@ -14,8 +14,8 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from arandu.qa.cep.bloom_scaffolding import BloomScaffoldingGenerator
+from arandu.qa.cep.judge import QAJudge
 from arandu.qa.cep.reasoning import ReasoningEnricher
-from arandu.qa.cep.validator import QAValidator
 from arandu.qa.schemas import QAPairCEP, QAPairValidated, QARecordCEP
 
 if TYPE_CHECKING:
@@ -64,9 +64,9 @@ class CEPQAGenerator:
         self._reasoning_enricher = ReasoningEnricher(llm_client, cep_config)
 
         # Initialize Module III: Validation (if enabled)
-        self._validator: QAValidator | None = None
+        self._validator: QAJudge | None = None
         if cep_config.enable_validation and validator_client:
-            self._validator = QAValidator(validator_client, cep_config)
+            self._validator = QAJudge(validator_client, cep_config)
 
         logger.info(
             f"CEPQAGenerator initialized - "
@@ -237,16 +237,45 @@ class CEPQAGenerator:
             return None
 
         n = len(validated_pairs)
-        return {
-            "avg_faithfulness": sum(p.validation.faithfulness for p in validated_pairs) / n,
-            "avg_bloom_calibration": sum(p.validation.bloom_calibration for p in validated_pairs)
-            / n,
-            "avg_informativeness": sum(p.validation.informativeness for p in validated_pairs) / n,
-            "avg_self_containedness": sum(p.validation.self_containedness for p in validated_pairs)
-            / n,
-            "avg_overall_score": sum(p.validation.overall_score for p in validated_pairs) / n,
-            "validation_pass_rate": sum(1 for p in validated_pairs if p.is_valid) / n,
-        }
+        criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
+
+        summary: dict[str, float] = {}
+        for criterion in criteria:
+            total = 0.0
+            for p in validated_pairs:
+                total += self._get_criterion_score(p.validation, criterion)
+            summary[f"avg_{criterion}"] = total / n
+
+        summary["validation_pass_rate"] = sum(1 for p in validated_pairs if p.is_valid) / n
+
+        return summary
+
+    @staticmethod
+    def _get_criterion_score(validation: object, criterion: str) -> float:
+        """Extract a criterion score from either validation result type.
+
+        Handles both ``JudgePipelineResult`` (new) and ``ValidationScore``
+        (legacy) transparently.
+
+        Args:
+            validation: A JudgePipelineResult or ValidationScore.
+            criterion: Criterion name (e.g. ``"faithfulness"``).
+
+        Returns:
+            Score value, or 0.0 if unavailable.
+        """
+        # Legacy ValidationScore: direct float attributes
+        if hasattr(validation, criterion):
+            return float(getattr(validation, criterion))
+
+        # New JudgePipelineResult: nested in stage_results
+        stage_results = getattr(validation, "stage_results", None)
+        if stage_results:
+            stage = stage_results.get("cep_validation")
+            if stage and criterion in stage.criterion_scores:
+                return stage.criterion_scores[criterion].score
+
+        return 0.0
 
     def _count_validated_pairs(
         self,

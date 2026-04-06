@@ -10,7 +10,7 @@ from __future__ import annotations
 import csv
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .dataset import (
     QAPairRow,
@@ -48,6 +48,38 @@ _THRESHOLD_FIELDS: dict[str, list[str]] = {
     ],
 }
 _TEXT_PREVIEW_CHARS: int = 500
+
+
+def _extract_rationale(validation: Any) -> str | None:
+    """Extract combined rationale from a validation result.
+
+    Handles both ``JudgePipelineResult`` (new) and ``ValidationScore`` (legacy).
+
+    Args:
+        validation: A JudgePipelineResult, ValidationScore, or None.
+
+    Returns:
+        Combined rationale string, or None.
+    """
+    if validation is None:
+        return None
+
+    # Legacy ValidationScore: has judge_rationale attribute
+    if hasattr(validation, "judge_rationale"):
+        return validation.judge_rationale
+
+    # New JudgePipelineResult: combine criterion rationales
+    stage_results = getattr(validation, "stage_results", None)
+    if stage_results is None:
+        return None
+
+    parts: list[str] = []
+    for _stage_name, step_result in stage_results.items():
+        for crit_name, cs in step_result.criterion_scores.items():
+            if cs.rationale:
+                parts.append(f"{crit_name}: {cs.rationale}")
+
+    return "\n".join(parts) if parts else None
 
 
 class ReportService:
@@ -254,7 +286,7 @@ class ReportService:
             context=(record.transcription_text or "")[:_TEXT_PREVIEW_CHARS],
             reasoning_trace=getattr(qa_pair, "reasoning_trace", None),
             tacit_inference=getattr(qa_pair, "tacit_inference", None),
-            validation_rationale=validation.judge_rationale if validation else None,
+            validation_rationale=_extract_rationale(validation),
             generation_thinking=getattr(qa_pair, "generation_thinking", None),
         )
 

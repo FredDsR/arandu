@@ -12,12 +12,14 @@ Modules:
 
 from arandu.qa.cep.bloom_scaffolding import BloomScaffoldingGenerator
 from arandu.qa.cep.generator import CEPQAGenerator
+from arandu.qa.cep.judge import QAJudge
 from arandu.qa.cep.reasoning import ReasoningEnricher
 from arandu.qa.cep.validator import QAValidator
 
 __all__ = [
     "BloomScaffoldingGenerator",
     "CEPQAGenerator",
+    "QAJudge",
     "QAValidator",
     "ReasoningEnricher",
 ]
