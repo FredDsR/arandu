@@ -10,6 +10,7 @@ import pytest
 from arandu.qa.cep.judge import QAJudge
 from arandu.qa.config import CEPConfig, JudgeConfig
 from arandu.qa.schemas import QAPairCEP, QAPairValidated
+from arandu.shared.judge.judge import BaseJudge
 from arandu.shared.judge.schemas import (
     CriterionScore,
     JudgePipelineResult,
@@ -95,12 +96,6 @@ def judge_config() -> JudgeConfig:
     """Create a JudgeConfig for testing."""
     return JudgeConfig(
         language="pt",
-        thresholds={
-            "faithfulness": 0.7,
-            "bloom_calibration": 0.6,
-            "informativeness": 0.6,
-            "self_containedness": 0.6,
-        },
     )
 
 
@@ -110,7 +105,7 @@ def sample_qa_pair() -> QAPairCEP:
     return QAPairCEP(
         question="Por que o pescador guarda o barco?",
         answer="Para evitar perda durante enchentes.",
-        context="Se o rio sobe rápido, guardo o barco para evitar perda.",
+        context="Se o rio sobe rapido, guardo o barco para evitar perda.",
         question_type="conceptual",
         confidence=0.9,
         bloom_level="analyze",
@@ -156,6 +151,24 @@ class TestQAJudgeInit:
 
         assert judge.judge_config is not None
         assert judge.judge_config.language == "pt"
+
+    def test_is_base_judge_subclass(
+        self,
+        mock_llm_client: Any,
+        cep_config: CEPConfig,
+        judge_config: JudgeConfig,
+        mocker: MockerFixture,
+    ) -> None:
+        """Test that QAJudge is a BaseJudge subclass."""
+        mocker.patch("arandu.qa.cep.judge.JudgeCriterionFactory")
+
+        judge = QAJudge(
+            validator_client=mock_llm_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+        assert isinstance(judge, BaseJudge)
 
 
 class TestQAJudgeValidate:
@@ -272,7 +285,7 @@ class TestQAJudgeValidate:
         judge_config: JudgeConfig,
         mocker: MockerFixture,
     ) -> None:
-        """Test that all QAPairCEP fields are preserved through validate()."""
+        """Test that all QAPairCEP fields are preserved."""
         mocker.patch("arandu.qa.cep.judge.JudgeCriterionFactory")
 
         pair = QAPairCEP(
@@ -341,7 +354,7 @@ class TestSelfContainednessOverride:
         judge_config: JudgeConfig,
         mocker: MockerFixture,
     ) -> None:
-        """Test that self_containedness is forced to 1.0 for remember level."""
+        """Test self_containedness is forced to 1.0 for remember."""
         mocker.patch("arandu.qa.cep.judge.JudgeCriterionFactory")
 
         remember_pair = QAPairCEP(
@@ -379,7 +392,7 @@ class TestSelfContainednessOverride:
         sample_qa_pair: QAPairCEP,
         mocker: MockerFixture,
     ) -> None:
-        """Test that self_containedness is NOT forced for non-remember levels."""
+        """Test self_containedness is NOT forced for non-remember."""
         mocker.patch("arandu.qa.cep.judge.JudgeCriterionFactory")
 
         judge = QAJudge(
@@ -437,7 +450,7 @@ class TestQAPairValidatedSchema:
         assert pair.is_valid is False
 
     def test_pair_serialization_roundtrip(self) -> None:
-        """Test that QAPairValidated serializes and deserializes correctly."""
+        """Test QAPairValidated serializes and deserializes."""
         result = _make_pipeline_result()
         pair = QAPairValidated(
             question="Test?",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -30,16 +31,18 @@ def prompts_dir(tmp_path: Path) -> Path:
     base_dir = tmp_path / "criteria"
 
     # Create all four CEP criteria
-    for criterion_name in [
-        "faithfulness",
-        "bloom_calibration",
-        "informativeness",
-        "self_containedness",
+    for criterion_name, threshold in [
+        ("faithfulness", 0.7),
+        ("bloom_calibration", 0.6),
+        ("informativeness", 0.6),
+        ("self_containedness", 0.6),
     ]:
         criterion_dir = base_dir / criterion_name / "pt"
         criterion_dir.mkdir(parents=True)
         (criterion_dir / "rubric.md").write_text(f"{criterion_name} rubric")
         (criterion_dir / "prompt.md").write_text(f"{criterion_name} prompt")
+        config_file = base_dir / criterion_name / "config.json"
+        config_file.write_text(json.dumps({"threshold": threshold}))
 
     return base_dir
 
@@ -113,41 +116,23 @@ class TestJudgeCriterionFactory:
         with pytest.raises(FileNotFoundError):
             factory.get_criterion("nonexistent")
 
-    def test_get_criteria_cep_validation(
+    def test_get_criterion_threshold(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test getting CEP validation criterion set."""
+        """Test that criterion loaded via factory has correct threshold."""
         factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
         )
 
-        criteria = factory.get_criteria("cep_validation")
+        criterion = factory.get_criterion("faithfulness")
+        assert criterion.threshold == 0.7
 
-        assert len(criteria) == 4
-        criterion_names = [c.name for c in criteria]
-        assert "faithfulness" in criterion_names
-        assert "bloom_calibration" in criterion_names
-        assert "informativeness" in criterion_names
-        assert "self_containedness" in criterion_names
-
-    def test_get_criteria_unknown_set(
-        self,
-        mock_llm_client: Any,
-        prompts_dir: Path,
-    ) -> None:
-        """Test getting unknown criterion set raises error."""
-        factory = JudgeCriterionFactory(
-            llm_client=mock_llm_client,
-            language="pt",
-            prompts_dir=prompts_dir,
-        )
-
-        with pytest.raises(ValueError, match="Unknown criterion set"):
-            factory.get_criteria("nonexistent_set")
+        criterion2 = factory.get_criterion("bloom_calibration")
+        assert criterion2.threshold == 0.6
 
     def test_register_custom_criterion(
         self,
@@ -192,7 +177,7 @@ class TestJudgeCriterionFactory:
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test temperature and max_tokens are passed to created criteria."""
+        """Test temperature and max_tokens are passed to criteria."""
         factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",

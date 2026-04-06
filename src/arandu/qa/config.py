@@ -323,16 +323,6 @@ class JudgeConfig(BaseSettings):
         ),
     )
 
-    thresholds: dict[str, float] = Field(
-        default={
-            "faithfulness": 0.7,
-            "bloom_calibration": 0.6,
-            "informativeness": 0.6,
-            "self_containedness": 0.6,
-        },
-        description="Per-criterion minimum scores for validation pass/fail.",
-    )
-
     @field_validator("language")
     @classmethod
     def validate_language(cls, v: str) -> str:

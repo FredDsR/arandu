@@ -1,14 +1,14 @@
 """Criterion factory for managing available judge criteria.
 
 The factory maps criterion names to their implementations and allows
-different pipeline steps to request specific criteria combinations.
+different pipeline steps to request specific criteria by name.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from arandu.shared.judge.criterion import FileCriterion, JudgeCriterion
 
@@ -26,20 +26,10 @@ DEFAULT_JUDGE_PROMPTS_DIR = (
 class JudgeCriterionFactory:
     """Factory for managing evaluation criteria.
 
-    Allows different pipeline steps to request specific criteria combinations
+    Allows different pipeline steps to request specific criteria by name
     (e.g., CEP uses faithfulness + bloom_calibration + informativeness +
     self_containedness; KG might use factual_accuracy + completeness).
     """
-
-    # Predefined criterion sets for different pipeline steps
-    CRITERION_SETS: ClassVar[dict[str, list[str]]] = {
-        "cep_validation": [
-            "faithfulness",
-            "bloom_calibration",
-            "informativeness",
-            "self_containedness",
-        ],
-    }
 
     def __init__(
         self,
@@ -54,7 +44,8 @@ class JudgeCriterionFactory:
         Args:
             llm_client: LLM client for criterion evaluation.
             language: Language code for prompts (e.g., "pt", "en").
-            prompts_dir: Base directory for criterion prompts. If None, uses default.
+            prompts_dir: Base directory for criterion prompts.
+                If None, uses default.
             temperature: Temperature for LLM evaluation.
             max_tokens: Maximum tokens for criterion responses.
         """
@@ -99,33 +90,12 @@ class JudgeCriterionFactory:
 
         return criterion
 
-    def get_criteria(self, criterion_set: str) -> list[JudgeCriterion]:
-        """Get multiple criteria for a pipeline step.
-
-        Args:
-            criterion_set: Name of predefined criterion set (e.g., "cep_validation").
-
-        Returns:
-            List of JudgeCriterion instances.
-
-        Raises:
-            ValueError: If criterion set is not defined.
-            FileNotFoundError: If any criterion files don't exist.
-        """
-        if criterion_set not in self.CRITERION_SETS:
-            raise ValueError(
-                f"Unknown criterion set: {criterion_set!r}. "
-                f"Available sets: {sorted(self.CRITERION_SETS.keys())}"
-            )
-
-        criterion_names = self.CRITERION_SETS[criterion_set]
-        return [self.get_criterion(name) for name in criterion_names]
-
     def register_custom_criterion(self, criterion: JudgeCriterion) -> None:
         """Register a custom criterion implementation.
 
         Args:
-            criterion: Custom criterion instance implementing JudgeCriterion protocol.
+            criterion: Custom criterion instance implementing
+                JudgeCriterion protocol.
         """
         self._criteria[criterion.name] = criterion
         logger.info(f"Registered custom criterion '{criterion.name}'")

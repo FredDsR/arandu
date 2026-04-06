@@ -6,6 +6,7 @@ between 0.0 and 1.0 with optional rationale.
 
 from __future__ import annotations
 
+import json
 import logging
 from string import Template
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -46,6 +47,7 @@ class JudgeCriterion(Protocol):
     """
 
     name: str
+    threshold: float
 
     def evaluate(self, **kwargs: Any) -> CriterionScore:
         """Evaluate content against this criterion.
@@ -94,6 +96,10 @@ class FileCriterion:
         criterion_dir = prompts_dir / name / language
         self.rubric, self.prompt_template = self._load_criterion_files(criterion_dir)
 
+        # Load threshold from config.json at criterion level (not per-language)
+        config_file = prompts_dir / name / "config.json"
+        self.threshold = self._load_threshold(config_file)
+
         logger.debug(f"Loaded criterion '{name}' for language '{language}'")
 
     def _load_criterion_files(self, criterion_dir: Path) -> tuple[str, str]:
@@ -121,6 +127,31 @@ class FileCriterion:
 
         return rubric, prompt_template
 
+    @staticmethod
+    def _load_threshold(config_file: Path) -> float:
+        """Load threshold from a criterion config.json file.
+
+        Args:
+            config_file: Path to the config.json file.
+
+        Returns:
+            Threshold value as a float.
+
+        Raises:
+            FileNotFoundError: If config.json does not exist.
+            KeyError: If the 'threshold' key is missing.
+        """
+        if not config_file.exists():
+            raise FileNotFoundError(f"Criterion config.json not found: {config_file}")
+
+        with open(config_file, encoding="utf-8") as f:
+            config = json.load(f)
+
+        if "threshold" not in config:
+            raise KeyError(f"'threshold' key missing in {config_file}")
+
+        return float(config["threshold"])
+
     def evaluate(self, **kwargs: Any) -> CriterionScore:
         """Evaluate content against this criterion.
 
@@ -144,7 +175,7 @@ class FileCriterion:
 
             return CriterionScore(
                 score=score,
-                threshold=0.0,
+                threshold=self.threshold,
                 rationale=response.rationale,
                 thinking=None,
             )
@@ -153,7 +184,7 @@ class FileCriterion:
             logger.warning(f"Criterion '{self.name}' structured output failed: {e}")
             return CriterionScore(
                 score=0.5,
-                threshold=0.0,
+                threshold=self.threshold,
                 rationale=f"Evaluation failed: {e}",
                 thinking=None,
             )
@@ -162,7 +193,7 @@ class FileCriterion:
             logger.warning(f"Criterion '{self.name}' evaluation failed: {e}")
             return CriterionScore(
                 score=0.5,
-                threshold=0.0,
+                threshold=self.threshold,
                 rationale=f"Evaluation failed: {e}",
                 thinking=None,
             )

@@ -14,11 +14,20 @@ from typing import TYPE_CHECKING
 
 from arandu.qa.config import get_judge_config
 from arandu.qa.schemas import QAPairCEP, QAPairValidated
-from arandu.shared.judge import JudgeCriterionFactory, JudgePipeline, JudgeStage, JudgeStep
+from arandu.shared.judge import (
+    BaseJudge,
+    JudgeCriterionFactory,
+    JudgePipeline,
+    JudgeStage,
+    JudgeStep,
+)
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, JudgeConfig
-    from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult
+    from arandu.shared.judge.schemas import (
+        CriterionScore,
+        JudgePipelineResult,
+    )
     from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -29,7 +38,7 @@ _VALIDATION_PROMPTS_DIR = (
 )
 
 
-class QAJudge:
+class QAJudge(BaseJudge):
     """Validate QA pairs using a composable shared judge pipeline.
 
     Replaces the legacy QAValidator with a single-stage filter pipeline
@@ -37,7 +46,7 @@ class QAJudge:
 
     Evaluates each QA pair on four criteria:
     - Faithfulness: Is the answer grounded in the context?
-    - Bloom Calibration: Does the question match the proposed cognitive level?
+    - Bloom Calibration: Does the question match the proposed level?
     - Informativeness: Does the answer reveal non-obvious knowledge?
     - Self-Containedness: Is the question understandable without context?
     """
@@ -53,16 +62,25 @@ class QAJudge:
         Args:
             validator_client: LLM client for judge evaluation.
             cep_config: CEP configuration.
-            judge_config: Judge pipeline configuration. If None, loads from env.
+            judge_config: Judge pipeline configuration.
+                If None, loads from env.
         """
         self.validator_client = validator_client
         self.cep_config = cep_config
         self.judge_config = judge_config or get_judge_config()
 
-        self._pipeline = self._build_pipeline()
+        self._factory = JudgeCriterionFactory(
+            llm_client=self.validator_client,
+            language=self.judge_config.language,
+            temperature=self.judge_config.temperature,
+            max_tokens=self.judge_config.max_tokens,
+        )
+
+        super().__init__()  # calls _build_pipeline()
 
         logger.info(
-            f"QAJudge initialized with {validator_client.provider.value}/"
+            f"QAJudge initialized with "
+            f"{validator_client.provider.value}/"
             f"{validator_client.model_id}"
         )
 
@@ -72,18 +90,14 @@ class QAJudge:
         Returns:
             Configured JudgePipeline with one filter stage.
         """
-        factory = JudgeCriterionFactory(
-            llm_client=self.validator_client,
-            language=self.judge_config.language,
-            temperature=self.judge_config.temperature,
-            max_tokens=self.judge_config.max_tokens,
-        )
-
-        criteria = factory.get_criteria("cep_validation")
-
         step = JudgeStep(
-            criteria=criteria,
-            thresholds=self.judge_config.thresholds,
+            criteria=[
+                "faithfulness",
+                "bloom_calibration",
+                "informativeness",
+                "self_containedness",
+            ],
+            factory=self._factory,
         )
 
         stage = JudgeStage(name="cep_validation", step=step, mode="filter")
@@ -115,7 +129,7 @@ class QAJudge:
                 bloom_level_desc=bloom_level_desc,
             )
 
-            # Safety net: force self_containedness=1.0 for remember level
+            # Safety net: force self_containedness=1.0 for remember
             if qa_pair.bloom_level == "remember":
                 self._force_self_containedness(result)
 
@@ -150,10 +164,10 @@ class QAJudge:
         return [self.validate(pair, context) for pair in qa_pairs]
 
     def _force_self_containedness(self, result: JudgePipelineResult) -> None:
-        """Force self_containedness score to 1.0 for remember-level pairs.
+        """Force self_containedness score to 1.0 for remember pairs.
 
-        Remember-level questions are inherently self-contained because they
-        ask for direct recall of facts stated in the text.
+        Remember-level questions are inherently self-contained because
+        they ask for direct recall of facts stated in the text.
 
         Args:
             result: Pipeline result to modify in-place.

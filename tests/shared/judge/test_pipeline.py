@@ -12,12 +12,17 @@ from arandu.shared.judge.step import JudgeStep
 class _StubCriterion:
     """Stub criterion that returns a fixed score."""
 
-    def __init__(self, name: str, score: float) -> None:
+    def __init__(self, name: str, score: float, threshold: float = 0.0) -> None:
         self.name = name
+        self.threshold = threshold
         self._score = score
 
     def evaluate(self, **kwargs: Any) -> CriterionScore:
-        return CriterionScore(score=self._score, threshold=0.0, rationale=f"{self.name} stub")
+        return CriterionScore(
+            score=self._score,
+            threshold=0.0,
+            rationale=f"{self.name} stub",
+        )
 
 
 def _make_stage(
@@ -27,8 +32,8 @@ def _make_stage(
     mode: str = "score",
 ) -> JudgeStage:
     """Build a JudgeStage with a single stub criterion."""
-    criterion = _StubCriterion(name, score)
-    step = JudgeStep(criteria=[criterion], thresholds={name: threshold})
+    criterion = _StubCriterion(name, score, threshold=threshold)
+    step = JudgeStep(criteria=[criterion])
     return JudgeStage(name=name, step=step, mode=mode)
 
 
@@ -46,12 +51,22 @@ class TestJudgePipeline:
         assert "s1" in result.stage_results
         assert "s2" in result.stage_results
 
-    def test_filter_failure_skips_subsequent_non_always_stages(self) -> None:
+    def test_filter_failure_skips_subsequent_non_always(self) -> None:
         pipeline = JudgePipeline(
             stages=[
                 _make_stage("gate", score=0.3, threshold=0.7, mode="filter"),
-                _make_stage("skipped_score", score=0.9, threshold=0.5, mode="score"),
-                _make_stage("skipped_filter", score=0.9, threshold=0.5, mode="filter"),
+                _make_stage(
+                    "skipped_score",
+                    score=0.9,
+                    threshold=0.5,
+                    mode="score",
+                ),
+                _make_stage(
+                    "skipped_filter",
+                    score=0.9,
+                    threshold=0.5,
+                    mode="filter",
+                ),
             ]
         )
         result = pipeline.evaluate()
@@ -90,6 +105,7 @@ class TestJudgePipeline:
     def test_kwargs_forwarded_to_stages(self) -> None:
         class _CaptureCriterion:
             name = "capture"
+            threshold = 0.5
 
             def __init__(self) -> None:
                 self.received_kwargs: dict[str, Any] = {}
@@ -99,12 +115,15 @@ class TestJudgePipeline:
                 return CriterionScore(score=1.0, threshold=0.0, rationale="ok")
 
         criterion = _CaptureCriterion()
-        step = JudgeStep(criteria=[criterion], thresholds={"capture": 0.5})
+        step = JudgeStep(criteria=[criterion])
         stage = JudgeStage(name="cap", step=step, mode="score")
 
         pipeline = JudgePipeline(stages=[stage])
         pipeline.evaluate(context="ctx", question="q")
-        assert criterion.received_kwargs == {"context": "ctx", "question": "q"}
+        assert criterion.received_kwargs == {
+            "context": "ctx",
+            "question": "q",
+        }
 
     def test_empty_pipeline_passes(self) -> None:
         pipeline = JudgePipeline(stages=[])
