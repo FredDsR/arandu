@@ -1,0 +1,47 @@
+---
+title: Arandu
+description: Composable pipelines for audio/video transcription, QA generation, and knowledge graph construction.
+template: splash
+hero:
+  tagline: Composable pipelines for transcription, QA generation, and knowledge graph construction — designed for ethnographic media collections and climate-impact research.
+  actions:
+    - text: Get Started
+      link: /arandu/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/FredDsR/arandu
+      icon: external
+      variant: minimal
+---
+
+## What is Arandu?
+
+**Arandu** (Guarani: *ara* = time + *endu* = to hear/feel — *"wisdom through perceiving time"*) is a research pipeline for processing ethnographic media collections.
+
+It combines audio/video **transcription**, cognitively-scaffolded **QA generation**, and **knowledge graph construction** into composable, checkpoint-resilient pipelines.
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 🎙️ **Transcription** | Whisper-based transcription with Google Drive integration, parallel workers, and automatic quality validation |
+| 🧠 **CEP QA Generation** | Bloom's Taxonomy-scaffolded QA pairs with LLM-as-a-Judge validation |
+| 🕸️ **KG Construction** | AutoSchemaKG-powered entity and relation extraction with GraphML export |
+| ✅ **Evaluation** | Retrieval-strategy benchmarking using CEP QA pairs as ground truth |
+
+## Quick Start
+
+```bash
+# Install
+git clone https://github.com/FredDsR/arandu.git && cd arandu
+uv sync
+
+# Transcribe a file
+arandu transcribe audio.mp3
+
+# Generate QA pairs
+arandu generate-cep-qa results/
+```
+
+See the [Getting Started guide](/arandu/getting-started/) for full setup instructions.
