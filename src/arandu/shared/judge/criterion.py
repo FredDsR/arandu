@@ -1,0 +1,184 @@
+"""Base criterion protocol and implementations for LLM-as-a-Judge evaluation.
+
+Each criterion evaluates a single aspect of generated content, returning a score
+between 0.0 and 1.0 with optional rationale.
+"""
+
+from __future__ import annotations
+
+import logging
+from string import Template
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+from pydantic import BaseModel
+
+from arandu.shared.judge.schemas import CriterionScore
+from arandu.shared.llm_client import StructuredOutputError
+from arandu.utils.text import validate_score
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from arandu.shared.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
+
+
+class CriterionResponse(BaseModel):
+    """Structured response from an LLM criterion evaluation.
+
+    Attributes:
+        score: Numeric score between 0.0 and 1.0.
+        rationale: Explanation of the score.
+    """
+
+    score: float
+    rationale: str
+
+
+@runtime_checkable
+class JudgeCriterion(Protocol):
+    """Protocol for individual evaluation criteria.
+
+    Each criterion evaluates a single aspect of generated content using
+    an LLM judge. This design follows G-Eval's approach of one criterion
+    per LLM call to avoid reasoning overlap.
+    """
+
+    name: str
+
+    def evaluate(self, **kwargs: Any) -> CriterionScore:
+        """Evaluate content against this criterion.
+
+        Args:
+            **kwargs: Domain-specific evaluation parameters.
+
+        Returns:
+            CriterionScore with score, rationale, and optional thinking trace.
+        """
+        ...
+
+
+class FileCriterion:
+    """File-based criterion implementation.
+
+    Loads criterion configuration (rubric, prompt template) from files.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        prompts_dir: Path,
+        language: str,
+        llm_client: LLMClient,
+        temperature: float = 0.3,
+        max_tokens: int = 2048,
+    ) -> None:
+        """Initialize file-based criterion.
+
+        Args:
+            name: Criterion name (e.g., "faithfulness").
+            prompts_dir: Base directory for criterion prompts.
+            language: Language code (e.g., "pt", "en").
+            llm_client: LLM client for evaluation.
+            temperature: Temperature for LLM generation.
+            max_tokens: Maximum tokens for response.
+        """
+        self.name = name
+        self.language = language
+        self.llm_client = llm_client
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+
+        # Load criterion configuration
+        criterion_dir = prompts_dir / name / language
+        self.rubric, self.prompt_template = self._load_criterion_files(criterion_dir)
+
+        logger.debug(f"Loaded criterion '{name}' for language '{language}'")
+
+    def _load_criterion_files(self, criterion_dir: Path) -> tuple[str, str]:
+        """Load rubric and prompt template from files.
+
+        Args:
+            criterion_dir: Directory containing criterion files.
+
+        Returns:
+            Tuple of (rubric, prompt_template).
+
+        Raises:
+            FileNotFoundError: If criterion files don't exist.
+        """
+        rubric_file = criterion_dir / "rubric.md"
+        prompt_file = criterion_dir / "prompt.md"
+
+        if not rubric_file.exists():
+            raise FileNotFoundError(f"Rubric file not found: {rubric_file}")
+        if not prompt_file.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+
+        rubric = rubric_file.read_text(encoding="utf-8")
+        prompt_template = prompt_file.read_text(encoding="utf-8")
+
+        return rubric, prompt_template
+
+    def evaluate(self, **kwargs: Any) -> CriterionScore:
+        """Evaluate content against this criterion.
+
+        Args:
+            **kwargs: Domain-specific evaluation parameters (e.g., context,
+                question, answer).
+
+        Returns:
+            CriterionScore with score, rationale, and optional thinking trace.
+        """
+        try:
+            prompt = self._build_prompt(**kwargs)
+
+            response = self.llm_client.generate_structured(
+                prompt=prompt,
+                response_model=CriterionResponse,
+                temperature=self.temperature,
+            )
+
+            score = validate_score(response.score)
+
+            return CriterionScore(
+                score=score,
+                threshold=0.0,
+                rationale=response.rationale,
+                thinking=None,
+            )
+
+        except StructuredOutputError as e:
+            logger.warning(f"Criterion '{self.name}' structured output failed: {e}")
+            return CriterionScore(
+                score=0.5,
+                threshold=0.0,
+                rationale=f"Evaluation failed: {e}",
+                thinking=None,
+            )
+
+        except Exception as e:
+            logger.warning(f"Criterion '{self.name}' evaluation failed: {e}")
+            return CriterionScore(
+                score=0.5,
+                threshold=0.0,
+                rationale=f"Evaluation failed: {e}",
+                thinking=None,
+            )
+
+    def _build_prompt(self, **kwargs: Any) -> str:
+        """Build evaluation prompt from template.
+
+        Args:
+            **kwargs: Parameters for template substitution.
+
+        Returns:
+            Formatted prompt string.
+        """
+        template = Template(self.prompt_template)
+        params = {
+            "rubric": self.rubric,
+            **kwargs,
+        }
+        return template.safe_substitute(params)
