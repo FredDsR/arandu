@@ -64,7 +64,7 @@ class JudgeCriterion(Protocol):
 class FileCriterion:
     """File-based criterion implementation.
 
-    Loads criterion configuration (rubric, prompt template) from files.
+    Loads criterion configuration (prompt template) from a single file per language.
     """
 
     def __init__(
@@ -92,9 +92,9 @@ class FileCriterion:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
-        # Load criterion configuration
+        # Load prompt template (rubric is already inlined)
         criterion_dir = prompts_dir / name / language
-        self.rubric, self.prompt_template = self._load_criterion_files(criterion_dir)
+        self.prompt_template = self._load_prompt_template(criterion_dir)
 
         # Load threshold from config.json at criterion level (not per-language)
         config_file = prompts_dir / name / "config.json"
@@ -102,30 +102,24 @@ class FileCriterion:
 
         logger.debug(f"Loaded criterion '{name}' for language '{language}'")
 
-    def _load_criterion_files(self, criterion_dir: Path) -> tuple[str, str]:
-        """Load rubric and prompt template from files.
+    def _load_prompt_template(self, criterion_dir: Path) -> str:
+        """Load prompt template from file.
 
         Args:
-            criterion_dir: Directory containing criterion files.
+            criterion_dir: Directory containing the prompt file.
 
         Returns:
-            Tuple of (rubric, prompt_template).
+            Prompt template string.
 
         Raises:
-            FileNotFoundError: If criterion files don't exist.
+            FileNotFoundError: If prompt file doesn't exist.
         """
-        rubric_file = criterion_dir / "rubric.md"
         prompt_file = criterion_dir / "prompt.md"
 
-        if not rubric_file.exists():
-            raise FileNotFoundError(f"Rubric file not found: {rubric_file}")
         if not prompt_file.exists():
             raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
 
-        rubric = rubric_file.read_text(encoding="utf-8")
-        prompt_template = prompt_file.read_text(encoding="utf-8")
-
-        return rubric, prompt_template
+        return prompt_file.read_text(encoding="utf-8")
 
     @staticmethod
     def _load_threshold(config_file: Path) -> float:
@@ -208,8 +202,4 @@ class FileCriterion:
             Formatted prompt string.
         """
         template = Template(self.prompt_template)
-        params = {
-            "rubric": self.rubric,
-            **kwargs,
-        }
-        return template.safe_substitute(params)
+        return template.safe_substitute(**kwargs)

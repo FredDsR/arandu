@@ -39,7 +39,6 @@ def prompts_dir(tmp_path: Path) -> Path:
     ]:
         criterion_dir = base_dir / criterion_name / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text(f"{criterion_name} rubric")
         (criterion_dir / "prompt.md").write_text(f"{criterion_name} prompt")
         config_file = base_dir / criterion_name / "config.json"
         config_file.write_text(json.dumps({"threshold": threshold}))

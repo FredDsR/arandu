@@ -33,14 +33,10 @@ def prompts_dir(tmp_path: Path) -> Path:
     faithfulness_dir = base_dir / "faithfulness" / "pt"
     faithfulness_dir.mkdir(parents=True)
 
-    # Create rubric file
-    rubric_file = faithfulness_dir / "rubric.md"
-    rubric_file.write_text("Rubric content here")
-
-    # Create prompt template file
+    # Create prompt template file (rubric is already inlined)
     prompt_file = faithfulness_dir / "prompt.md"
     prompt_file.write_text(
-        "Context: $context\nQuestion: $question\nAnswer: $answer\nRubric: $rubric\n"
+        "Context: $context\nQuestion: $question\nAnswer: $answer\nRubric content here\n"
     )
 
     # Create config.json at criterion level (not per-language)
@@ -69,7 +65,7 @@ class TestFileCriterion:
         assert criterion.name == "faithfulness"
         assert criterion.language == "pt"
         assert criterion.llm_client == mock_llm_client
-        assert "Rubric content here" in criterion.rubric
+        assert "Rubric content here" in criterion.prompt_template
         assert "$context" in criterion.prompt_template
 
     def test_threshold_loaded_from_config(
@@ -86,23 +82,6 @@ class TestFileCriterion:
         )
         assert criterion.threshold == 0.7
 
-    def test_initialization_missing_rubric(
-        self,
-        mock_llm_client: Any,
-        tmp_path: Path,
-    ) -> None:
-        """Test that FileNotFoundError is raised for missing rubric."""
-        criterion_dir = tmp_path / "criteria" / "test" / "pt"
-        criterion_dir.mkdir(parents=True)
-
-        with pytest.raises(FileNotFoundError, match="Rubric file not found"):
-            FileCriterion(
-                name="test",
-                prompts_dir=tmp_path / "criteria",
-                language="pt",
-                llm_client=mock_llm_client,
-            )
-
     def test_initialization_missing_prompt(
         self,
         mock_llm_client: Any,
@@ -111,7 +90,6 @@ class TestFileCriterion:
         """Test that FileNotFoundError is raised for missing prompt."""
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text("Rubric")
 
         with pytest.raises(FileNotFoundError, match="Prompt file not found"):
             FileCriterion(
@@ -129,7 +107,6 @@ class TestFileCriterion:
         """Test that missing config.json raises FileNotFoundError."""
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text("Rubric")
         (criterion_dir / "prompt.md").write_text("Prompt")
 
         with pytest.raises(FileNotFoundError, match=r"config\.json"):
@@ -148,7 +125,6 @@ class TestFileCriterion:
         """Test that missing threshold key in config.json raises KeyError."""
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text("Rubric")
         (criterion_dir / "prompt.md").write_text("Prompt")
         config_file = tmp_path / "criteria" / "test" / "config.json"
         config_file.write_text(json.dumps({"other_key": 42}))
@@ -226,7 +202,7 @@ class TestFileCriterion:
         assert "Context: Context" in prompt
         assert "Question: Q?" in prompt
         assert "Answer: A." in prompt
-        assert "Rubric: Rubric content here" in prompt
+        assert "Rubric content here" in prompt
 
     def test_evaluate_handles_structured_output_error(
         self,
@@ -339,7 +315,6 @@ class TestFileCriterion:
         # Create criterion with extra params in template
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text("Rubric")
         (criterion_dir / "prompt.md").write_text(
             "Context: $context\nQuestion: $question\nAnswer: $answer\nExtra: $extra_param\n"
         )
