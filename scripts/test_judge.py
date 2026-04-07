@@ -45,6 +45,7 @@ def main() -> None:
     parser.add_argument("--cep-dir", type=Path, default=DEFAULT_CEP_DIR, help="CEP outputs dir")
     parser.add_argument("--files", type=int, default=2, help="Number of QA files to sample")
     parser.add_argument("--pairs", type=int, default=2, help="Max pairs per file")
+    parser.add_argument("--output", type=Path, default=None, help="Save results as JSON")
     args = parser.parse_args()
 
     # Resolve base URL
@@ -76,10 +77,21 @@ def main() -> None:
     )
 
     # Evaluate
+    all_results: list[dict] = []
+
     for qa_file in qa_files:
         data = json.loads(qa_file.read_text())
-        context = data.get("context", "")
-        pairs = data.get("qa_pairs", [])[: args.pairs]
+        context = data.get("transcription_text") or data.get("context", "")
+        all_pairs = data.get("qa_pairs", [])
+
+        # Sample one pair per Bloom level for diversity
+        seen_levels: set[str] = set()
+        pairs: list[dict] = []
+        for p in all_pairs:
+            level = p.get("bloom_level", "")
+            if level not in seen_levels and len(pairs) < args.pairs:
+                pairs.append(p)
+                seen_levels.add(level)
 
         console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
 
@@ -99,19 +111,15 @@ def main() -> None:
                     for name, cs in stage_result.criterion_scores.items():
                         if cs.error:
                             table.add_row(
-                                name,
-                                "—",
-                                f"{cs.threshold:.2f}",
-                                "[red]ERR[/red]",
-                                cs.error[:40],
+                                name, "—", f"{cs.threshold:.2f}",
+                                "[red]ERR[/red]", cs.error[:40],
                             )
                         else:
                             status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
                             table.add_row(
                                 name,
                                 f"{cs.score:.2f}" if cs.score is not None else "—",
-                                f"{cs.threshold:.2f}",
-                                status,
+                                f"{cs.threshold:.2f}", status,
                                 (cs.rationale or "")[:40],
                             )
 
@@ -119,6 +127,20 @@ def main() -> None:
             console.print(f"  Bloom: {qa.bloom_level}  |  Valid: {result.is_valid}")
             console.print(table)
             console.print()
+
+            all_results.append({
+                "file": qa_file.name,
+                "question": qa.question,
+                "answer": qa.answer,
+                "bloom_level": qa.bloom_level,
+                "is_valid": result.is_valid,
+                "validation": result.validation.model_dump() if result.validation else None,
+            })
+
+    # Save JSON results
+    if args.output:
+        args.output.write_text(json.dumps(all_results, indent=2, ensure_ascii=False))
+        console.print(f"Results saved to [bold]{args.output}[/bold]")
 
 
 if __name__ == "__main__":
