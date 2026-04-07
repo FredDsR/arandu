@@ -6,19 +6,16 @@ CJK characters when Latin script is expected for Portuguese.
 
 from __future__ import annotations
 
-import logging
 import unicodedata
 from typing import Any
 
-from arandu.shared.judge.schemas import CriterionScore
-
-logger = logging.getLogger(__name__)
+from arandu.shared.judge.criterion import HeuristicCriterion
 
 # Languages that use Latin script
 _LATIN_LANGS = frozenset({"pt", "en", "es", "fr", "de", "it"})
 
 
-class ScriptMatchCriterion:
+class ScriptMatchCriterion(HeuristicCriterion):
     """Evaluate whether transcription text uses the expected character set.
 
     Uses unicodedata.name() for robust script detection rather than
@@ -30,6 +27,9 @@ class ScriptMatchCriterion:
         threshold: Minimum score to pass.
         max_non_latin_ratio: Maximum ratio of non-Latin characters before penalising.
     """
+
+    name: str = "script_match"
+    threshold: float = 0.6
 
     def __init__(
         self,
@@ -44,38 +44,24 @@ class ScriptMatchCriterion:
             max_non_latin_ratio: Maximum ratio of non-Latin characters
                 for Latin-script languages.
         """
-        self.name: str = "script_match"
-        self.threshold: float = threshold
+        self.threshold = threshold
         self.max_non_latin_ratio = max_non_latin_ratio
 
-    def evaluate(self, **kwargs: Any) -> CriterionScore:
-        """Evaluate whether text uses the expected character set.
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Check whether text uses the expected character set.
 
         Args:
             **kwargs: Must contain ``text`` (str). Optionally
                 ``expected_language`` (str, default ``"pt"``).
 
         Returns:
-            CriterionScore with score 0.0-1.0 and rationale.
+            Tuple of (score, rationale).
         """
-        try:
-            text: str = kwargs["text"]
-            expected_language: str = kwargs.get("expected_language", "pt")
-            score, issues = self._check_script_match(text, expected_language)
-            rationale = "; ".join(issues) if issues else "Text uses expected character set."
-            return CriterionScore(
-                score=score,
-                threshold=self.threshold,
-                rationale=rationale,
-            )
-        except Exception as e:
-            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
-            return CriterionScore(
-                score=None,
-                threshold=self.threshold,
-                rationale="",
-                error=str(e),
-            )
+        text: str = kwargs["text"]
+        expected_language: str = kwargs.get("expected_language", "pt")
+        score, issues = self._check_script_match(text, expected_language)
+        rationale = "; ".join(issues) if issues else "Text uses expected character set."
+        return score, rationale
 
     def _check_script_match(self, text: str, expected_lang: str) -> tuple[float, list[str]]:
         """Check if text uses expected character set.

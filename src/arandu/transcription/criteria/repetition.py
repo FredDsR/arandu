@@ -6,16 +6,13 @@ a common Whisper failure mode (e.g., "Obrigada" repeated 30 times).
 
 from __future__ import annotations
 
-import logging
 from collections import Counter
 from typing import Any
 
-from arandu.shared.judge.schemas import CriterionScore
-
-logger = logging.getLogger(__name__)
+from arandu.shared.judge.criterion import HeuristicCriterion
 
 
-class RepetitionCriterion:
+class RepetitionCriterion(HeuristicCriterion):
     """Evaluate whether transcription text contains excessive repetition.
 
     Scores based on the WORST repetition ratio found, not by counting
@@ -28,6 +25,9 @@ class RepetitionCriterion:
         max_word_repetition_ratio: Maximum ratio of most repeated word.
         max_phrase_repetition_count: Maximum allowed repetitions of same phrase.
     """
+
+    name: str = "repetition"
+    threshold: float = 0.5
 
     def __init__(
         self,
@@ -43,37 +43,23 @@ class RepetitionCriterion:
             max_word_repetition_ratio: Maximum ratio of most repeated word.
             max_phrase_repetition_count: Maximum allowed repetitions of same phrase.
         """
-        self.name: str = "repetition"
-        self.threshold: float = threshold
+        self.threshold = threshold
         self.max_word_repetition_ratio = max_word_repetition_ratio
         self.max_phrase_repetition_count = max_phrase_repetition_count
 
-    def evaluate(self, **kwargs: Any) -> CriterionScore:
-        """Evaluate whether text contains excessive repetition.
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Check whether text contains excessive repetition.
 
         Args:
             **kwargs: Must contain ``text`` (str).
 
         Returns:
-            CriterionScore with score 0.0-1.0 and rationale.
+            Tuple of (score, rationale).
         """
-        try:
-            text: str = kwargs["text"]
-            score, issues = self._check_repetition(text)
-            rationale = "; ".join(issues) if issues else "No excessive repetition detected."
-            return CriterionScore(
-                score=score,
-                threshold=self.threshold,
-                rationale=rationale,
-            )
-        except Exception as e:
-            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
-            return CriterionScore(
-                score=None,
-                threshold=self.threshold,
-                rationale="",
-                error=str(e),
-            )
+        text: str = kwargs["text"]
+        score, issues = self._check_repetition(text)
+        rationale = "; ".join(issues) if issues else "No excessive repetition detected."
+        return score, rationale
 
     def _check_repetition(self, text: str) -> tuple[float, list[str]]:
         """Detect repeated words and phrases.

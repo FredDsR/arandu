@@ -6,15 +6,12 @@ transcriptions, which indicate Whisper hallucination or truncation.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-from arandu.shared.judge.schemas import CriterionScore
-
-logger = logging.getLogger(__name__)
+from arandu.shared.judge.criterion import HeuristicCriterion
 
 
-class ContentDensityCriterion:
+class ContentDensityCriterion(HeuristicCriterion):
     """Evaluate whether transcription has a reasonable words-per-minute ratio.
 
     Guards against duration_ms=None (InputRecord allows it). When duration
@@ -26,6 +23,9 @@ class ContentDensityCriterion:
         min_words_per_minute: Minimum words per minute threshold.
         max_words_per_minute: Maximum words per minute threshold.
     """
+
+    name: str = "content_density"
+    threshold: float = 0.4
 
     def __init__(
         self,
@@ -41,39 +41,25 @@ class ContentDensityCriterion:
             min_words_per_minute: Minimum words per minute threshold.
             max_words_per_minute: Maximum words per minute threshold.
         """
-        self.name: str = "content_density"
-        self.threshold: float = threshold
+        self.threshold = threshold
         self.min_words_per_minute = min_words_per_minute
         self.max_words_per_minute = max_words_per_minute
 
-    def evaluate(self, **kwargs: Any) -> CriterionScore:
-        """Evaluate content density of transcription text.
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Check content density of transcription text.
 
         Args:
             **kwargs: Must contain ``text`` (str) and ``duration_ms``
                 (int | None).
 
         Returns:
-            CriterionScore with score 0.0-1.0 and rationale.
+            Tuple of (score, rationale).
         """
-        try:
-            text: str = kwargs["text"]
-            duration_ms: int | None = kwargs["duration_ms"]
-            score, issues = self._check_content_density(text, duration_ms)
-            rationale = "; ".join(issues) if issues else "Content density is within normal range."
-            return CriterionScore(
-                score=score,
-                threshold=self.threshold,
-                rationale=rationale,
-            )
-        except Exception as e:
-            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
-            return CriterionScore(
-                score=None,
-                threshold=self.threshold,
-                rationale="",
-                error=str(e),
-            )
+        text: str = kwargs["text"]
+        duration_ms: int | None = kwargs["duration_ms"]
+        score, issues = self._check_content_density(text, duration_ms)
+        rationale = "; ".join(issues) if issues else "Content density is within normal range."
+        return score, rationale
 
     def _check_content_density(self, text: str, duration_ms: int | None) -> tuple[float, list[str]]:
         """Check words per minute ratio.

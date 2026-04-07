@@ -6,18 +6,16 @@ intervals (Whisper hallucination) and empty segments.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
+from arandu.shared.judge.criterion import HeuristicCriterion
 from arandu.shared.judge.schemas import CriterionScore
 
 if TYPE_CHECKING:
     from arandu.shared.schemas import TranscriptionSegment
 
-logger = logging.getLogger(__name__)
 
-
-class SegmentQualityCriterion:
+class SegmentQualityCriterion(HeuristicCriterion):
     """Evaluate transcription segment patterns for anomalies.
 
     Detects suspicious patterns like many consecutive segments with
@@ -30,6 +28,9 @@ class SegmentQualityCriterion:
         suspicious_uniform_intervals: Number of consecutive uniform intervals to flag.
         uniform_interval_tolerance: Tolerance for detecting uniform 1-second intervals.
     """
+
+    name: str = "segment_quality"
+    threshold: float = 0.4
 
     def __init__(
         self,
@@ -49,8 +50,7 @@ class SegmentQualityCriterion:
             uniform_interval_tolerance: Tolerance (seconds) for detecting uniform
                 1-second intervals.
         """
-        self.name: str = "segment_quality"
-        self.threshold: float = threshold
+        self.threshold = threshold
         self.max_empty_segment_ratio = max_empty_segment_ratio
         self.suspicious_uniform_intervals = suspicious_uniform_intervals
         self.uniform_interval_tolerance = uniform_interval_tolerance
@@ -58,37 +58,37 @@ class SegmentQualityCriterion:
     def evaluate(self, **kwargs: Any) -> CriterionScore:
         """Evaluate segment patterns for anomalies.
 
+        Overrides the base evaluate to handle the empty-segments edge case
+        before delegating to _check.
+
         Args:
             **kwargs: Must contain ``segments`` (list of TranscriptionSegment).
 
         Returns:
             CriterionScore with score 0.0-1.0 and rationale.
         """
-        try:
-            segments: list[TranscriptionSegment] = kwargs["segments"]
-
-            if not segments:
-                return CriterionScore(
-                    score=0.5,
-                    threshold=self.threshold,
-                    rationale="No segments available for analysis.",
-                )
-
-            score, issues = self._check_segment_patterns(segments)
-            rationale = "; ".join(issues) if issues else "Segment patterns are within normal range."
+        segments: list[TranscriptionSegment] = kwargs.get("segments", [])
+        if not segments:
             return CriterionScore(
-                score=score,
+                score=0.5,
                 threshold=self.threshold,
-                rationale=rationale,
+                rationale="No segments available for analysis.",
             )
-        except Exception as e:
-            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
-            return CriterionScore(
-                score=None,
-                threshold=self.threshold,
-                rationale="",
-                error=str(e),
-            )
+        return super().evaluate(**kwargs)
+
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Check segment patterns for anomalies.
+
+        Args:
+            **kwargs: Must contain ``segments`` (list of TranscriptionSegment).
+
+        Returns:
+            Tuple of (score, rationale).
+        """
+        segments: list[TranscriptionSegment] = kwargs["segments"]
+        score, issues = self._check_segment_patterns(segments)
+        rationale = "; ".join(issues) if issues else "Segment patterns are within normal range."
+        return score, rationale
 
     def _check_segment_patterns(
         self, segments: list[TranscriptionSegment]
