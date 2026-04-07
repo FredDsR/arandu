@@ -1,13 +1,14 @@
-"""Tests for judge registry module."""
+"""Tests for shared judge criterion factory module."""
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.qa.judge.criterion import FileCriterion
-from arandu.qa.judge.registry import JudgeRegistry
+from arandu.shared.judge.criterion import FileCriterion
+from arandu.shared.judge.factory import JudgeCriterionFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,38 +31,39 @@ def prompts_dir(tmp_path: Path) -> Path:
     base_dir = tmp_path / "criteria"
 
     # Create all four CEP criteria
-    for criterion_name in [
-        "faithfulness",
-        "bloom_calibration",
-        "informativeness",
-        "self_containedness",
+    for criterion_name, threshold in [
+        ("faithfulness", 0.7),
+        ("bloom_calibration", 0.6),
+        ("informativeness", 0.6),
+        ("self_containedness", 0.6),
     ]:
         criterion_dir = base_dir / criterion_name / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text(f"{criterion_name} rubric")
         (criterion_dir / "prompt.md").write_text(f"{criterion_name} prompt")
+        config_file = base_dir / criterion_name / "config.json"
+        config_file.write_text(json.dumps({"threshold": threshold}))
 
     return base_dir
 
 
-class TestJudgeRegistry:
-    """Tests for JudgeRegistry class."""
+class TestJudgeCriterionFactory:
+    """Tests for JudgeCriterionFactory class."""
 
     def test_initialization(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test registry initialization."""
-        registry = JudgeRegistry(
+        """Test factory initialization."""
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
         )
 
-        assert registry.llm_client == mock_llm_client
-        assert registry.language == "pt"
-        assert registry.prompts_dir == prompts_dir
+        assert factory.llm_client == mock_llm_client
+        assert factory.language == "pt"
+        assert factory.prompts_dir == prompts_dir
 
     def test_get_criterion_creates_new(
         self,
@@ -69,13 +71,13 @@ class TestJudgeRegistry:
         prompts_dir: Path,
     ) -> None:
         """Test getting criterion creates new FileCriterion."""
-        registry = JudgeRegistry(
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
         )
 
-        criterion = registry.get_criterion("faithfulness")
+        criterion = factory.get_criterion("faithfulness")
 
         assert isinstance(criterion, FileCriterion)
         assert criterion.name == "faithfulness"
@@ -87,14 +89,14 @@ class TestJudgeRegistry:
         prompts_dir: Path,
     ) -> None:
         """Test getting same criterion returns cached instance."""
-        registry = JudgeRegistry(
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
         )
 
-        criterion1 = registry.get_criterion("faithfulness")
-        criterion2 = registry.get_criterion("faithfulness")
+        criterion1 = factory.get_criterion("faithfulness")
+        criterion2 = factory.get_criterion("faithfulness")
 
         assert criterion1 is criterion2  # Same object
 
@@ -104,50 +106,32 @@ class TestJudgeRegistry:
         tmp_path: Path,
     ) -> None:
         """Test getting criterion with missing files raises error."""
-        registry = JudgeRegistry(
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=tmp_path,
         )
 
         with pytest.raises(FileNotFoundError):
-            registry.get_criterion("nonexistent")
+            factory.get_criterion("nonexistent")
 
-    def test_get_criteria_cep_validation(
+    def test_get_criterion_threshold(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test getting CEP validation criterion set."""
-        registry = JudgeRegistry(
+        """Test that criterion loaded via factory has correct threshold."""
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
         )
 
-        criteria = registry.get_criteria("cep_validation")
+        criterion = factory.get_criterion("faithfulness")
+        assert criterion.threshold == 0.7
 
-        assert len(criteria) == 4
-        criterion_names = [c.name for c in criteria]
-        assert "faithfulness" in criterion_names
-        assert "bloom_calibration" in criterion_names
-        assert "informativeness" in criterion_names
-        assert "self_containedness" in criterion_names
-
-    def test_get_criteria_unknown_set(
-        self,
-        mock_llm_client: Any,
-        prompts_dir: Path,
-    ) -> None:
-        """Test getting unknown criterion set raises error."""
-        registry = JudgeRegistry(
-            llm_client=mock_llm_client,
-            language="pt",
-            prompts_dir=prompts_dir,
-        )
-
-        with pytest.raises(ValueError, match="Unknown criterion set"):
-            registry.get_criteria("nonexistent_set")
+        criterion2 = factory.get_criterion("bloom_calibration")
+        assert criterion2.threshold == 0.6
 
     def test_register_custom_criterion(
         self,
@@ -156,7 +140,7 @@ class TestJudgeRegistry:
         mocker: MockerFixture,
     ) -> None:
         """Test registering custom criterion implementation."""
-        registry = JudgeRegistry(
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -166,10 +150,10 @@ class TestJudgeRegistry:
         custom_criterion = mocker.MagicMock()
         custom_criterion.name = "custom_metric"
 
-        registry.register_custom_criterion(custom_criterion)
+        factory.register_custom_criterion(custom_criterion)
 
         # Verify it's registered
-        retrieved = registry.get_criterion("custom_metric")
+        retrieved = factory.get_criterion("custom_metric")
         assert retrieved is custom_criterion
 
     def test_default_prompts_dir(
@@ -177,23 +161,23 @@ class TestJudgeRegistry:
         mock_llm_client: Any,
     ) -> None:
         """Test default prompts directory is set correctly."""
-        registry = JudgeRegistry(
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
         )
 
         # Should have default path to repo prompts/judge/criteria
-        assert "prompts" in str(registry.prompts_dir)
-        assert "judge" in str(registry.prompts_dir)
-        assert "criteria" in str(registry.prompts_dir)
+        assert "prompts" in str(factory.prompts_dir)
+        assert "judge" in str(factory.prompts_dir)
+        assert "criteria" in str(factory.prompts_dir)
 
     def test_temperature_and_max_tokens_passed_to_criteria(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test temperature and max_tokens are passed to created criteria."""
-        registry = JudgeRegistry(
+        """Test temperature and max_tokens are passed to criteria."""
+        factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -201,7 +185,7 @@ class TestJudgeRegistry:
             max_tokens=4096,
         )
 
-        criterion = registry.get_criterion("faithfulness")
+        criterion = factory.get_criterion("faithfulness")
 
         assert isinstance(criterion, FileCriterion)
         assert criterion.temperature == 0.5

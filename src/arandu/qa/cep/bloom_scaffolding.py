@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +22,7 @@ from tenacity import (
 )
 
 from arandu.qa.schemas import QAPairCEP
+from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, QAConfig
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CEP_PROMPTS_DIR = Path(__file__).parents[4] / "prompts" / "qa" / "cep"
+DEFAULT_CEP_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep"
 
 BLOOM_HIERARCHY: list[str] = [
     "remember",

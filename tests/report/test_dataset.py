@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from arandu.qa.schemas import QAPairValidated, QARecordCEP, ValidationScore
+from arandu.qa.schemas import QAPairValidated, QARecordCEP
 from arandu.report.collector import RunReport
 from arandu.report.dataset import (
     QAPairRow,
@@ -11,6 +11,7 @@ from arandu.report.dataset import (
     TranscriptionRow,
     build_dataset,
 )
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
 from arandu.shared.schemas import (
     EnrichedRecord,
     PipelineMetadata,
@@ -62,6 +63,34 @@ def _make_enriched_record(
     )
 
 
+def _make_judge_result(
+    faithfulness: float = 0.9,
+    bloom_calibration: float = 0.85,
+    informativeness: float = 0.75,
+    self_containedness: float = 0.95,
+    threshold: float = 0.6,
+) -> JudgePipelineResult:
+    """Build a JudgePipelineResult with given criterion scores."""
+    scores = {
+        "faithfulness": CriterionScore(score=faithfulness, threshold=threshold, rationale="ok"),
+        "bloom_calibration": CriterionScore(
+            score=bloom_calibration, threshold=threshold, rationale="ok"
+        ),
+        "informativeness": CriterionScore(
+            score=informativeness, threshold=threshold, rationale="ok"
+        ),
+        "self_containedness": CriterionScore(
+            score=self_containedness, threshold=threshold, rationale="ok"
+        ),
+    }
+    step = JudgeStepResult(criterion_scores=scores)
+    passed = all(cs.passed for cs in scores.values())
+    return JudgePipelineResult(
+        stage_results={"cep_validation": step},
+        passed=passed,
+    )
+
+
 def _make_cep_record(
     source_filename: str = "test.mp3",
     participant: str | None = "Maria",
@@ -79,12 +108,11 @@ def _make_cep_record(
 
     qa_pairs = []
     for i in range(num_pairs):
-        validation = ValidationScore(
+        validation = _make_judge_result(
             faithfulness=0.9 - i * 0.1,
             bloom_calibration=0.85,
             informativeness=0.75,
             self_containedness=0.95,
-            overall_score=0.86,
         )
         pair = QAPairValidated(
             question=f"Question {i}?",
@@ -191,7 +219,7 @@ class TestBuildDataset:
         assert qa.bloom_calibration == 0.85
         assert qa.informativeness == 0.75
         assert qa.self_containedness == 0.95
-        assert qa.overall_score == 0.86
+        assert qa.overall_score == 0.8625
         assert qa.model_id == "gpt-4o"
         assert qa.validator_model_id == "gpt-4o-mini"
         assert qa.provider == "openai"
@@ -393,12 +421,12 @@ class TestRunSummaryNewFields:
             question_type="factual",
             confidence=0.5,
             bloom_level="remember",
-            validation=ValidationScore(
+            validation=_make_judge_result(
                 faithfulness=0.3,
                 bloom_calibration=0.3,
                 informativeness=0.3,
                 self_containedness=0.3,
-                overall_score=0.3,
+                threshold=0.6,
             ),
             is_valid=False,
         )
@@ -418,12 +446,11 @@ class TestRunSummaryNewFields:
                     question_type="factual",
                     confidence=0.9,
                     bloom_level="analyze",
-                    validation=ValidationScore(
+                    validation=_make_judge_result(
                         faithfulness=0.9,
                         bloom_calibration=0.85,
                         informativeness=0.75,
                         self_containedness=0.95,
-                        overall_score=0.86,
                     ),
                     is_valid=True,
                 ),
@@ -434,12 +461,11 @@ class TestRunSummaryNewFields:
                     question_type="factual",
                     confidence=0.85,
                     bloom_level="analyze",
-                    validation=ValidationScore(
+                    validation=_make_judge_result(
                         faithfulness=0.8,
                         bloom_calibration=0.85,
                         informativeness=0.75,
                         self_containedness=0.95,
-                        overall_score=0.84,
                     ),
                     is_valid=True,
                 ),

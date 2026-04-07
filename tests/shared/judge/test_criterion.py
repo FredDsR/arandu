@@ -1,4 +1,4 @@
-"""Tests for judge criterion module."""
+"""Tests for shared judge criterion module."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.qa.judge.criterion import FileCriterion
-from arandu.qa.schemas import CriterionScore
-from arandu.utils.text import GenerateResult
+from arandu.shared.judge.criterion import CriterionResponse, FileCriterion
+from arandu.shared.judge.schemas import CriterionScore
+from arandu.shared.llm_client import StructuredOutputError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,15 +33,15 @@ def prompts_dir(tmp_path: Path) -> Path:
     faithfulness_dir = base_dir / "faithfulness" / "pt"
     faithfulness_dir.mkdir(parents=True)
 
-    # Create rubric file
-    rubric_file = faithfulness_dir / "rubric.md"
-    rubric_file.write_text("Rubric content here")
-
-    # Create prompt template file
+    # Create prompt template file (rubric is already inlined)
     prompt_file = faithfulness_dir / "prompt.md"
     prompt_file.write_text(
-        "Context: $context\nQuestion: $question\nAnswer: $answer\nRubric: $rubric\n"
+        "Context: $context\nQuestion: $question\nAnswer: $answer\nRubric content here\n"
     )
+
+    # Create config.json at criterion level (not per-language)
+    config_file = base_dir / "faithfulness" / "config.json"
+    config_file.write_text(json.dumps({"threshold": 0.7}))
 
     return base_dir
 
@@ -65,25 +65,22 @@ class TestFileCriterion:
         assert criterion.name == "faithfulness"
         assert criterion.language == "pt"
         assert criterion.llm_client == mock_llm_client
-        assert "Rubric content here" in criterion.rubric
+        assert "Rubric content here" in criterion.prompt_template
         assert "$context" in criterion.prompt_template
 
-    def test_initialization_missing_rubric(
+    def test_threshold_loaded_from_config(
         self,
         mock_llm_client: Any,
-        tmp_path: Path,
+        prompts_dir: Path,
     ) -> None:
-        """Test that FileNotFoundError is raised for missing rubric."""
-        criterion_dir = tmp_path / "criteria" / "test" / "pt"
-        criterion_dir.mkdir(parents=True)
-
-        with pytest.raises(FileNotFoundError, match="Rubric file not found"):
-            FileCriterion(
-                name="test",
-                prompts_dir=tmp_path / "criteria",
-                language="pt",
-                llm_client=mock_llm_client,
-            )
+        """Test that threshold is loaded from config.json."""
+        criterion = FileCriterion(
+            name="faithfulness",
+            prompts_dir=prompts_dir,
+            language="pt",
+            llm_client=mock_llm_client,
+        )
+        assert criterion.threshold == 0.7
 
     def test_initialization_missing_prompt(
         self,
@@ -93,9 +90,46 @@ class TestFileCriterion:
         """Test that FileNotFoundError is raised for missing prompt."""
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text("Rubric")
 
         with pytest.raises(FileNotFoundError, match="Prompt file not found"):
+            FileCriterion(
+                name="test",
+                prompts_dir=tmp_path / "criteria",
+                language="pt",
+                llm_client=mock_llm_client,
+            )
+
+    def test_missing_config_json_raises(
+        self,
+        mock_llm_client: Any,
+        tmp_path: Path,
+    ) -> None:
+        """Test that missing config.json raises FileNotFoundError."""
+        criterion_dir = tmp_path / "criteria" / "test" / "pt"
+        criterion_dir.mkdir(parents=True)
+        (criterion_dir / "prompt.md").write_text("Prompt")
+
+        with pytest.raises(FileNotFoundError, match=r"config\.json"):
+            FileCriterion(
+                name="test",
+                prompts_dir=tmp_path / "criteria",
+                language="pt",
+                llm_client=mock_llm_client,
+            )
+
+    def test_missing_threshold_key_raises(
+        self,
+        mock_llm_client: Any,
+        tmp_path: Path,
+    ) -> None:
+        """Test that missing threshold key in config.json raises KeyError."""
+        criterion_dir = tmp_path / "criteria" / "test" / "pt"
+        criterion_dir.mkdir(parents=True)
+        (criterion_dir / "prompt.md").write_text("Prompt")
+        config_file = tmp_path / "criteria" / "test" / "config.json"
+        config_file.write_text(json.dumps({"other_key": 42}))
+
+        with pytest.raises(KeyError, match="threshold"):
             FileCriterion(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
@@ -109,8 +143,8 @@ class TestFileCriterion:
         prompts_dir: Path,
     ) -> None:
         """Test successful evaluation."""
-        mock_llm_client.generate.return_value = GenerateResult(
-            content=json.dumps({"score": 0.8, "rationale": "Good quality"})
+        mock_llm_client.generate_structured.return_value = CriterionResponse(
+            score=0.8, rationale="Good quality"
         )
 
         criterion = FileCriterion(
@@ -129,25 +163,55 @@ class TestFileCriterion:
         )
 
         assert isinstance(result, CriterionScore)
-        assert result.criterion_name == "faithfulness"
         assert result.score == 0.8
+        assert result.threshold == 0.7
         assert result.rationale == "Good quality"
 
         # Verify LLM was called with correct params
-        mock_llm_client.generate.assert_called_once()
-        call_kwargs = mock_llm_client.generate.call_args.kwargs
+        mock_llm_client.generate_structured.assert_called_once()
+        call_kwargs = mock_llm_client.generate_structured.call_args.kwargs
         assert call_kwargs["temperature"] == 0.3
-        assert call_kwargs["max_tokens"] == 1024
+        assert call_kwargs["response_model"] is CriterionResponse
 
-    def test_evaluate_with_thinking(
+    def test_evaluate_builds_prompt_with_kwargs(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test evaluation stores thinking trace."""
-        mock_llm_client.generate.return_value = GenerateResult(
-            content=json.dumps({"score": 0.7, "rationale": "Decent"}),
-            thinking="Internal reasoning process",
+        """Test that evaluate passes kwargs to prompt building."""
+        mock_llm_client.generate_structured.return_value = CriterionResponse(
+            score=0.7, rationale="Decent"
+        )
+
+        criterion = FileCriterion(
+            name="faithfulness",
+            prompts_dir=prompts_dir,
+            language="pt",
+            llm_client=mock_llm_client,
+        )
+
+        criterion.evaluate(
+            context="Context",
+            question="Q?",
+            answer="A.",
+        )
+
+        # Check that prompt was built with kwargs
+        call_args = mock_llm_client.generate_structured.call_args
+        prompt = call_args.kwargs["prompt"]
+        assert "Context: Context" in prompt
+        assert "Question: Q?" in prompt
+        assert "Answer: A." in prompt
+        assert "Rubric content here" in prompt
+
+    def test_evaluate_handles_structured_output_error(
+        self,
+        mock_llm_client: Any,
+        prompts_dir: Path,
+    ) -> None:
+        """Test that StructuredOutputError returns neutral score."""
+        mock_llm_client.generate_structured.side_effect = StructuredOutputError(
+            "Failed to parse JSON"
         )
 
         criterion = FileCriterion(
@@ -163,17 +227,19 @@ class TestFileCriterion:
             answer="A.",
         )
 
-        assert result.thinking == "Internal reasoning process"
+        assert result.score is None
+        assert result.threshold == 0.7
+        assert result.error is not None
+        assert "Failed to parse JSON" in result.error
+        assert result.passed is False
 
-    def test_evaluate_handles_markdown_response(
+    def test_evaluate_handles_generic_error(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test parsing response wrapped in markdown code block."""
-        mock_llm_client.generate.return_value = GenerateResult(
-            content='```json\n{"score": 0.9, "rationale": "Excellent"}\n```'
-        )
+        """Test that generic errors populate error field with None score."""
+        mock_llm_client.generate_structured.side_effect = Exception("LLM error")
 
         criterion = FileCriterion(
             name="faithfulness",
@@ -188,56 +254,11 @@ class TestFileCriterion:
             answer="A.",
         )
 
-        assert result.score == 0.9
-        assert result.rationale == "Excellent"
-
-    def test_evaluate_handles_invalid_json(
-        self,
-        mock_llm_client: Any,
-        prompts_dir: Path,
-    ) -> None:
-        """Test that invalid JSON returns default score."""
-        mock_llm_client.generate.return_value = GenerateResult(content="not valid json")
-
-        criterion = FileCriterion(
-            name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
-            llm_client=mock_llm_client,
-        )
-
-        result = criterion.evaluate(
-            context="Context",
-            question="Q?",
-            answer="A.",
-        )
-
-        assert result.score == 0.5  # Default
-        assert "Failed to parse" in result.rationale
-
-    def test_evaluate_handles_llm_error(
-        self,
-        mock_llm_client: Any,
-        prompts_dir: Path,
-    ) -> None:
-        """Test that LLM errors return default score."""
-        mock_llm_client.generate.side_effect = Exception("LLM error")
-
-        criterion = FileCriterion(
-            name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
-            llm_client=mock_llm_client,
-        )
-
-        result = criterion.evaluate(
-            context="Context",
-            question="Q?",
-            answer="A.",
-        )
-
-        assert result.score == 0.5  # Default
-        assert "Evaluation failed" in result.rationale
+        assert result.score is None
+        assert result.threshold == 0.7
+        assert result.error is not None
+        assert "LLM error" in result.error
+        assert result.passed is False
 
     def test_evaluate_clamps_scores(
         self,
@@ -245,8 +266,8 @@ class TestFileCriterion:
         prompts_dir: Path,
     ) -> None:
         """Test that scores outside [0, 1] are clamped."""
-        mock_llm_client.generate.return_value = GenerateResult(
-            content=json.dumps({"score": 1.5, "rationale": "Too high"})
+        mock_llm_client.generate_structured.return_value = CriterionResponse(
+            score=1.5, rationale="Too high"
         )
 
         criterion = FileCriterion(
@@ -264,6 +285,31 @@ class TestFileCriterion:
 
         assert result.score == 1.0  # Clamped
 
+    def test_evaluate_clamps_negative_scores(
+        self,
+        mock_llm_client: Any,
+        prompts_dir: Path,
+    ) -> None:
+        """Test that negative scores are clamped to 0."""
+        mock_llm_client.generate_structured.return_value = CriterionResponse(
+            score=-0.5, rationale="Too low"
+        )
+
+        criterion = FileCriterion(
+            name="faithfulness",
+            prompts_dir=prompts_dir,
+            language="pt",
+            llm_client=mock_llm_client,
+        )
+
+        result = criterion.evaluate(
+            context="Context",
+            question="Q?",
+            answer="A.",
+        )
+
+        assert result.score == 0.0  # Clamped
+
     def test_evaluate_with_extra_params(
         self,
         mock_llm_client: Any,
@@ -273,13 +319,14 @@ class TestFileCriterion:
         # Create criterion with extra params in template
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
-        (criterion_dir / "rubric.md").write_text("Rubric")
         (criterion_dir / "prompt.md").write_text(
             "Context: $context\nQuestion: $question\nAnswer: $answer\nExtra: $extra_param\n"
         )
+        config_file = tmp_path / "criteria" / "test" / "config.json"
+        config_file.write_text(json.dumps({"threshold": 0.5}))
 
-        mock_llm_client.generate.return_value = GenerateResult(
-            content=json.dumps({"score": 0.6, "rationale": "OK"})
+        mock_llm_client.generate_structured.return_value = CriterionResponse(
+            score=0.6, rationale="OK"
         )
 
         criterion = FileCriterion(
@@ -297,28 +344,6 @@ class TestFileCriterion:
         )
 
         # Check that prompt was built with extra param
-        call_args = mock_llm_client.generate.call_args
+        call_args = mock_llm_client.generate_structured.call_args
         prompt = call_args.kwargs["prompt"]
         assert "Extra: custom_value" in prompt
-
-    def test_validate_score_with_invalid_types(
-        self,
-        mock_llm_client: Any,
-        prompts_dir: Path,
-    ) -> None:
-        """Test _validate_score handles various invalid input types."""
-        criterion = FileCriterion(
-            name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
-            llm_client=mock_llm_client,
-        )
-
-        assert criterion._validate_score(None) == 0.5
-        assert criterion._validate_score("not_a_number") == 0.5
-        assert criterion._validate_score([1, 2, 3]) == 0.5
-
-        # Valid types
-        assert criterion._validate_score(0.7) == 0.7
-        assert criterion._validate_score(1) == 1.0
-        assert criterion._validate_score(0) == 0.0

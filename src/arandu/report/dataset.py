@@ -7,7 +7,7 @@ JSON serialization and client-side JavaScript consumption.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -270,6 +270,41 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
         transcription_rows.append(row)
 
 
+def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:
+    """Extract flat criterion scores from a JudgePipelineResult.
+
+    Args:
+        validation: A JudgePipelineResult or None.
+
+    Returns:
+        Dict mapping criterion names (and ``overall_score``) to floats.
+    """
+    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
+    empty: dict[str, float | None] = dict.fromkeys(criteria)
+    empty["overall_score"] = None
+
+    if validation is None:
+        return empty
+
+    stage_results = getattr(validation, "stage_results", None)
+    if stage_results is None:
+        return empty
+
+    stage = stage_results.get("cep_validation")
+    if stage is None:
+        return empty
+
+    scores: dict[str, float | None] = {}
+    for name in criteria:
+        cs = stage.criterion_scores.get(name)
+        scores[name] = cs.score if cs else None
+
+    available = [v for v in scores.values() if v is not None]
+    scores["overall_score"] = sum(available) / len(available) if available else None
+
+    return scores
+
+
 def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
     """Extract QA pair rows from a RunReport.
 
@@ -282,6 +317,7 @@ def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
 
         for file_idx, qa_pair in enumerate(cep_record.qa_pairs):
             validation = getattr(qa_pair, "validation", None)
+            scores = _extract_criterion_scores(validation)
 
             row = QAPairRow(
                 pipeline_id=report.pipeline_id,
@@ -293,11 +329,11 @@ def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
                 is_multi_hop=getattr(qa_pair, "is_multi_hop", False),
                 hop_count=getattr(qa_pair, "hop_count", None),
                 confidence=getattr(qa_pair, "confidence", None),
-                faithfulness=validation.faithfulness if validation else None,
-                bloom_calibration=validation.bloom_calibration if validation else None,
-                informativeness=validation.informativeness if validation else None,
-                self_containedness=validation.self_containedness if validation else None,
-                overall_score=validation.overall_score if validation else None,
+                faithfulness=scores.get("faithfulness"),
+                bloom_calibration=scores.get("bloom_calibration"),
+                informativeness=scores.get("informativeness"),
+                self_containedness=scores.get("self_containedness"),
+                overall_score=scores.get("overall_score"),
                 model_id=cep_record.model_id,
                 validator_model_id=cep_record.validator_model_id,
                 provider=cep_record.provider,

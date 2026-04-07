@@ -9,7 +9,8 @@ import pytest
 
 from arandu.qa.cep.generator import CEPQAGenerator
 from arandu.qa.config import CEPConfig, QAConfig
-from arandu.qa.schemas import QARecordCEP
+from arandu.qa.schemas import QAPairValidated, QARecordCEP
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
 from arandu.shared.schemas import EnrichedRecord
 from arandu.utils.text import GenerateResult
 
@@ -189,12 +190,40 @@ class TestCEPQAGenerator:
         mock_validator_client: Any,
         qa_config: QAConfig,
         sample_transcription: EnrichedRecord,
+        mocker: MockerFixture,
     ) -> None:
         """Test generation with validation enabled."""
         cep_config = CEPConfig(
             enable_validation=True,
             validation_threshold=0.6,
         )
+
+        # Mock QAJudge so it doesn't try to load criterion prompt files
+        def _mock_validate_batch(pairs: list[Any], context: str) -> list[QAPairValidated]:
+            step_result = JudgeStepResult(
+                criterion_scores={
+                    "faithfulness": CriterionScore(score=0.9, threshold=0.7, rationale="OK"),
+                    "bloom_calibration": CriterionScore(score=0.8, threshold=0.6, rationale="OK"),
+                    "informativeness": CriterionScore(score=0.7, threshold=0.6, rationale="OK"),
+                    "self_containedness": CriterionScore(score=0.9, threshold=0.6, rationale="OK"),
+                }
+            )
+            pipeline_result = JudgePipelineResult(
+                stage_results={"cep_validation": step_result},
+                passed=True,
+            )
+            return [
+                QAPairValidated(
+                    **p.model_dump(),
+                    validation=pipeline_result,
+                    is_valid=True,
+                )
+                for p in pairs
+            ]
+
+        mock_judge = mocker.MagicMock()
+        mock_judge.validate_batch.side_effect = _mock_validate_batch
+        mocker.patch("arandu.qa.cep.generator.QAJudge", return_value=mock_judge)
 
         generator = CEPQAGenerator(
             llm_client=mock_llm_client,
@@ -206,8 +235,8 @@ class TestCEPQAGenerator:
         result = generator.generate_qa_pairs(sample_transcription)
 
         assert result.validation_summary is not None
-        # Validator should have been called
-        assert mock_validator_client.generate.called
+        # Judge should have been called via validate_batch
+        assert mock_judge.validate_batch.called
 
     def test_generate_qa_pairs_without_validation(
         self,
@@ -481,12 +510,40 @@ class TestValidationSummary:
         mock_validator_client: Any,
         qa_config: QAConfig,
         sample_transcription: EnrichedRecord,
+        mocker: MockerFixture,
     ) -> None:
         """Test that validation summary includes avg_self_containedness."""
         cep_config = CEPConfig(
             enable_validation=True,
             validation_threshold=0.6,
         )
+
+        # Mock QAJudge to return JudgePipelineResult
+        def _mock_validate_batch(pairs: list[Any], context: str) -> list[QAPairValidated]:
+            step_result = JudgeStepResult(
+                criterion_scores={
+                    "faithfulness": CriterionScore(score=0.9, threshold=0.7, rationale="OK"),
+                    "bloom_calibration": CriterionScore(score=0.8, threshold=0.6, rationale="OK"),
+                    "informativeness": CriterionScore(score=0.7, threshold=0.6, rationale="OK"),
+                    "self_containedness": CriterionScore(score=0.9, threshold=0.6, rationale="OK"),
+                }
+            )
+            pipeline_result = JudgePipelineResult(
+                stage_results={"cep_validation": step_result},
+                passed=True,
+            )
+            return [
+                QAPairValidated(
+                    **p.model_dump(),
+                    validation=pipeline_result,
+                    is_valid=True,
+                )
+                for p in pairs
+            ]
+
+        mock_judge = mocker.MagicMock()
+        mock_judge.validate_batch.side_effect = _mock_validate_batch
+        mocker.patch("arandu.qa.cep.generator.QAJudge", return_value=mock_judge)
 
         generator = CEPQAGenerator(
             llm_client=mock_llm_client,

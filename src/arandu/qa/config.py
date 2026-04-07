@@ -300,15 +300,6 @@ class JudgeConfig(BaseSettings):
         extra="ignore",
     )
 
-    # Enable composable judge pipeline
-    use_composable_pipeline: bool = Field(
-        default=True,
-        description=(
-            "Use composable G-Eval-style judge pipeline (one criterion per LLM call). "
-            "When False, falls back to legacy single-call validation."
-        ),
-    )
-
     # Language for criterion prompts
     language: str = Field(
         default="pt",

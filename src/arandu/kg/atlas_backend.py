@@ -11,15 +11,17 @@ import csv
 import json
 import logging
 import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from arandu.kg.config import KGConfig
     from arandu.shared.schemas import EnrichedRecord
 
 from arandu.kg.schemas import KGConstructionResult
 from arandu.shared.llm_client import create_llm_client
+from arandu.utils.paths import get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +106,7 @@ ATLAS_DEFAULTS: dict[str, Any] = {
 }
 
 # Path to atlas-rag prompt files relative to the project root
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts" / "kg" / "atlas"
+_PROMPTS_DIR = get_project_root() / "prompts" / "kg" / "atlas"
 
 # Lazy reference — populated on first use by _get_enriched_processor_cls()
 _MetadataEnrichedProcessorCls: type | None = None

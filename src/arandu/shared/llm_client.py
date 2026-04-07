@@ -6,16 +6,24 @@ the OpenAI SDK's base_url parameter.
 
 from __future__ import annotations
 
+import json
 import logging
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar
 
 from openai import OpenAI
+from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from arandu.utils.text import GenerateResult, extract_thinking
+from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
+
+T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
+
+
+class StructuredOutputError(Exception):
+    """Raised when structured output parsing fails after all retries."""
 
 
 class LLMProvider(Enum):
@@ -202,6 +210,79 @@ class LLMClient:
             )
 
         return GenerateResult(content=result.content, thinking=thinking)
+
+    def generate_structured(
+        self,
+        prompt: str,
+        response_model: type[T],
+        *,
+        system_prompt: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+        max_retries: int = 2,
+    ) -> T:
+        """Generate structured output and parse it into a Pydantic model.
+
+        Calls the LLM with JSON response format, strips any markdown code-block
+        wrappers, and validates the result against ``response_model``. Retries
+        on JSON decode or Pydantic validation errors up to ``max_retries`` times.
+
+        Args:
+            prompt: The user prompt to send to the model.
+            response_model: Pydantic model class to validate the response against.
+            system_prompt: Optional system prompt to set context.
+            temperature: Sampling temperature (0.0-2.0). Defaults to 0.3.
+            max_tokens: Maximum tokens for the response. If None, uses model default.
+            max_retries: Number of additional attempts after the first failure.
+                Defaults to 2 (3 total attempts).
+
+        Returns:
+            An instance of ``response_model`` populated from the LLM response.
+
+        Raises:
+            StructuredOutputError: If all attempts fail to produce valid output.
+        """
+        attempts = 1 + max(max_retries, 0)
+        last_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            result = self.generate(
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                system_prompt=system_prompt,
+                response_format={"type": "json_object"},
+            )
+
+            raw = strip_markdown_codeblock(result.content)
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                logger.warning(
+                    "Structured output attempt %d/%d: JSON decode error: %s",
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                continue
+
+            try:
+                return response_model.model_validate(data)
+            except ValidationError as exc:
+                last_error = exc
+                logger.warning(
+                    "Structured output attempt %d/%d: validation error: %s",
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                continue
+
+        raise StructuredOutputError(
+            f"Failed to parse structured output after {attempts} attempt(s): {last_error}"
+        )
 
     def __repr__(self) -> str:
         """Return string representation of the client."""

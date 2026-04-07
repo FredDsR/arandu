@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from arandu.shared.judge.schemas import JudgePipelineResult  # noqa: TC001
 from arandu.shared.schemas import BloomLevel, SourceMetadata  # noqa: TC001
 
 if TYPE_CHECKING:
@@ -101,82 +102,15 @@ class QAPairCEP(QAPair):
         return self
 
 
-class CriterionScore(BaseModel):
-    """Score for a single evaluation criterion.
-
-    Returned by individual JudgeCriterion evaluations in the composable
-    judge pipeline. Each criterion is evaluated independently to avoid
-    reasoning overlap (G-Eval approach).
-    """
-
-    criterion_name: str = Field(..., description="Name of the criterion (e.g., 'faithfulness')")
-    score: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Score for this criterion in [0.0, 1.0]",
-    )
-    rationale: str | None = Field(None, description="Judge's reasoning for this criterion score")
-    thinking: str | None = Field(None, description="Internal thinking trace for this criterion")
-
-
-class ValidationScore(BaseModel):
-    """LLM-as-a-Judge validation scores for a QA pair.
-
-    Evaluates faithfulness (grounding), Bloom calibration, and informativeness.
-    Enhanced to support composable judge pipeline with per-criterion scores.
-    """
-
-    faithfulness: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Is answer grounded in context (1.0) or hallucinated (0.0)?",
-    )
-    bloom_calibration: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Does question match the proposed cognitive level?",
-    )
-    informativeness: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Does answer reveal non-obvious/tacit knowledge?",
-    )
-    self_containedness: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Is the question self-contained and understandable without "
-            "the original context (1.0) or context-dependent (0.0)? "
-            "Remember-level questions are exempt (auto 1.0)."
-        ),
-    )
-    overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
-    judge_rationale: str | None = Field(None, description="Judge model's reasoning for the scores")
-    judge_thinking: str | None = Field(
-        None,
-        description="Internal thinking trace from the judge model.",
-    )
-    criterion_scores: dict[str, CriterionScore] | None = Field(
-        None,
-        description=(
-            "Individual criterion scores from composable judge pipeline. "
-            "Available when using new judge framework."
-        ),
-    )
-
-
 class QAPairValidated(QAPairCEP):
-    """QA pair with LLM-as-a-Judge validation results."""
+    """QA pair with LLM-as-a-Judge validation results.
 
-    validation: ValidationScore | None = Field(
-        None, description="LLM-as-a-Judge validation results"
-    )
-    is_valid: bool = Field(default=True, description="Whether pair passes validation threshold")
+    The ``validation`` field holds a ``JudgePipelineResult`` from the shared
+    judge module (``arandu.shared.judge``).
+    """
+
+    validation: JudgePipelineResult | None = None
+    is_valid: bool = True
 
 
 class QARecordCEP(BaseModel):
