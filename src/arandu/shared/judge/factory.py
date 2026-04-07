@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from arandu.shared.judge.criterion import FileCriterion, JudgeCriterion
+from arandu.shared.judge.criterion import JudgeCriterion, LLMCriterion
 from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
@@ -74,8 +74,8 @@ class JudgeCriterionFactory:
         if name in self._criteria:
             return self._criteria[name]
 
-        # Create new file-based criterion
-        criterion = FileCriterion(
+        # Create new LLM-based criterion from prompt files
+        criterion = LLMCriterion(
             name=name,
             prompts_dir=self.prompts_dir,
             language=self.language,

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.shared.judge.criterion import FileCriterion
+from arandu.shared.judge.criterion import LLMCriterion
 from arandu.shared.judge.factory import JudgeCriterionFactory
 
 if TYPE_CHECKING:
@@ -70,7 +70,7 @@ class TestJudgeCriterionFactory:
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test getting criterion creates new FileCriterion."""
+        """Test getting criterion creates new LLMCriterion."""
         factory = JudgeCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
@@ -79,7 +79,7 @@ class TestJudgeCriterionFactory:
 
         criterion = factory.get_criterion("faithfulness")
 
-        assert isinstance(criterion, FileCriterion)
+        assert isinstance(criterion, LLMCriterion)
         assert criterion.name == "faithfulness"
         assert criterion.language == "pt"
 
@@ -187,6 +187,6 @@ class TestJudgeCriterionFactory:
 
         criterion = factory.get_criterion("faithfulness")
 
-        assert isinstance(criterion, FileCriterion)
+        assert isinstance(criterion, LLMCriterion)
         assert criterion.temperature == 0.5
         assert criterion.max_tokens == 4096

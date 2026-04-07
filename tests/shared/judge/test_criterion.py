@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.shared.judge.criterion import CriterionResponse, FileCriterion
+from arandu.shared.judge.criterion import CriterionResponse, HeuristicCriterion, LLMCriterion
 from arandu.shared.judge.schemas import CriterionScore
 from arandu.shared.llm_client import StructuredOutputError
 
@@ -46,8 +46,8 @@ def prompts_dir(tmp_path: Path) -> Path:
     return base_dir
 
 
-class TestFileCriterion:
-    """Tests for FileCriterion class."""
+class TestLLMCriterion:
+    """Tests for LLMCriterion class."""
 
     def test_initialization(
         self,
@@ -55,7 +55,7 @@ class TestFileCriterion:
         prompts_dir: Path,
     ) -> None:
         """Test criterion initialization loads files."""
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -74,7 +74,7 @@ class TestFileCriterion:
         prompts_dir: Path,
     ) -> None:
         """Test that threshold is loaded from config.json."""
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -92,7 +92,7 @@ class TestFileCriterion:
         criterion_dir.mkdir(parents=True)
 
         with pytest.raises(FileNotFoundError, match="Prompt file not found"):
-            FileCriterion(
+            LLMCriterion(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
                 language="pt",
@@ -110,7 +110,7 @@ class TestFileCriterion:
         (criterion_dir / "prompt.md").write_text("Prompt")
 
         with pytest.raises(FileNotFoundError, match=r"config\.json"):
-            FileCriterion(
+            LLMCriterion(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
                 language="pt",
@@ -130,7 +130,7 @@ class TestFileCriterion:
         config_file.write_text(json.dumps({"other_key": 42}))
 
         with pytest.raises(KeyError, match="threshold"):
-            FileCriterion(
+            LLMCriterion(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
                 language="pt",
@@ -147,7 +147,7 @@ class TestFileCriterion:
             score=0.8, rationale="Good quality"
         )
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -183,7 +183,7 @@ class TestFileCriterion:
             score=0.7, rationale="Decent"
         )
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -214,7 +214,7 @@ class TestFileCriterion:
             "Failed to parse JSON"
         )
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -241,7 +241,7 @@ class TestFileCriterion:
         """Test that generic errors populate error field with None score."""
         mock_llm_client.generate_structured.side_effect = Exception("LLM error")
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -270,7 +270,7 @@ class TestFileCriterion:
             score=1.5, rationale="Too high"
         )
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -295,7 +295,7 @@ class TestFileCriterion:
             score=-0.5, rationale="Too low"
         )
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -329,7 +329,7 @@ class TestFileCriterion:
             score=0.6, rationale="OK"
         )
 
-        criterion = FileCriterion(
+        criterion = LLMCriterion(
             name="test",
             prompts_dir=tmp_path / "criteria",
             language="pt",
@@ -347,3 +347,79 @@ class TestFileCriterion:
         call_args = mock_llm_client.generate_structured.call_args
         prompt = call_args.kwargs["prompt"]
         assert "Extra: custom_value" in prompt
+
+
+class _DummyHeuristicCriterion(HeuristicCriterion):
+    """Concrete subclass for testing the abstract base class."""
+
+    name = "dummy"
+    threshold = 0.5
+
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Return score based on kwargs."""
+        value: float = kwargs["value"]
+        return value, f"Got value {value}"
+
+
+class _FailingHeuristicCriterion(HeuristicCriterion):
+    """Concrete subclass that always raises in _check."""
+
+    name = "failing"
+    threshold = 0.5
+
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Always raise."""
+        msg = "intentional failure"
+        raise ValueError(msg)
+
+
+class TestHeuristicCriterion:
+    """Tests for HeuristicCriterion abstract base class."""
+
+    def test_satisfies_judge_criterion_protocol(self) -> None:
+        """Test that HeuristicCriterion subclass satisfies JudgeCriterion."""
+        from arandu.shared.judge.criterion import JudgeCriterion
+
+        criterion = _DummyHeuristicCriterion()
+        assert isinstance(criterion, JudgeCriterion)
+
+    def test_evaluate_returns_criterion_score(self) -> None:
+        """Test that evaluate returns a CriterionScore."""
+        criterion = _DummyHeuristicCriterion()
+        result = criterion.evaluate(value=0.8)
+
+        assert isinstance(result, CriterionScore)
+        assert result.score == 0.8
+        assert result.threshold == 0.5
+        assert result.rationale == "Got value 0.8"
+        assert result.error is None
+        assert result.passed is True
+
+    def test_evaluate_below_threshold_does_not_pass(self) -> None:
+        """Test that score below threshold does not pass."""
+        criterion = _DummyHeuristicCriterion()
+        result = criterion.evaluate(value=0.3)
+
+        assert result.score == 0.3
+        assert result.passed is False
+
+    def test_evaluate_wraps_exception_as_error(self) -> None:
+        """Test that exceptions are caught and returned as error CriterionScore."""
+        criterion = _FailingHeuristicCriterion()
+        result = criterion.evaluate()
+
+        assert result.score is None
+        assert result.error is not None
+        assert "intentional failure" in result.error
+        assert result.passed is False
+
+    def test_name_and_threshold_from_class_attrs(self) -> None:
+        """Test that name and threshold are set from class attributes."""
+        criterion = _DummyHeuristicCriterion()
+        assert criterion.name == "dummy"
+        assert criterion.threshold == 0.5
+
+    def test_cannot_instantiate_abstract(self) -> None:
+        """Test that HeuristicCriterion cannot be instantiated directly."""
+        with pytest.raises(TypeError, match="abstract method"):
+            HeuristicCriterion()  # type: ignore[abstract]

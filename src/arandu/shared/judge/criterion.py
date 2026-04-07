@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from abc import ABC, abstractmethod
 from string import Template
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -61,10 +62,63 @@ class JudgeCriterion(Protocol):
         ...
 
 
-class FileCriterion:
-    """File-based criterion implementation.
+class HeuristicCriterion(ABC):
+    """Base class for heuristic criteria that don't need an LLM.
 
-    Loads criterion configuration (prompt template) from a single file per language.
+    Subclasses implement ``_check(**kwargs)`` with the evaluation logic.
+    The base class handles error wrapping and CriterionScore construction.
+
+    Attributes:
+        name: Criterion identifier.
+        threshold: Minimum score to pass.
+    """
+
+    name: str
+    threshold: float
+
+    def evaluate(self, **kwargs: Any) -> CriterionScore:
+        """Evaluate using the heuristic check.
+
+        Args:
+            **kwargs: Domain-specific evaluation parameters.
+
+        Returns:
+            CriterionScore with score and rationale.
+        """
+        try:
+            score, rationale = self._check(**kwargs)
+            return CriterionScore(
+                score=score,
+                threshold=self.threshold,
+                rationale=rationale,
+            )
+        except Exception as e:
+            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
+            return CriterionScore(
+                score=None,
+                threshold=self.threshold,
+                rationale="",
+                error=str(e),
+            )
+
+    @abstractmethod
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Run the heuristic check.
+
+        Args:
+            **kwargs: Domain-specific parameters.
+
+        Returns:
+            Tuple of (score, rationale).
+        """
+        ...
+
+
+class LLMCriterion:
+    """File-based LLM criterion implementation.
+
+    Loads criterion configuration (prompt template) from a single file per language
+    and evaluates using an LLM client.
     """
 
     def __init__(
