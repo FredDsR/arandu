@@ -85,7 +85,6 @@ class JudgeStep:
 
         for criterion in self._criteria:
             score = criterion.evaluate(**kwargs)
-            score.threshold = criterion.threshold
-            scores[criterion.name] = score
+            scores[criterion.name] = score.model_copy(update={"threshold": criterion.threshold})
 
         return JudgeStepResult(criterion_scores=scores)

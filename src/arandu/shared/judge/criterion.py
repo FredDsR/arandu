@@ -163,6 +163,7 @@ class FileCriterion:
                 prompt=prompt,
                 response_model=CriterionResponse,
                 temperature=self.temperature,
+                max_tokens=self.max_tokens,
             )
 
             score = validate_score(response.score)

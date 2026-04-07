@@ -218,6 +218,7 @@ class LLMClient:
         *,
         system_prompt: str | None = None,
         temperature: float = 0.3,
+        max_tokens: int | None = None,
         max_retries: int = 2,
     ) -> T:
         """Generate structured output and parse it into a Pydantic model.
@@ -231,6 +232,7 @@ class LLMClient:
             response_model: Pydantic model class to validate the response against.
             system_prompt: Optional system prompt to set context.
             temperature: Sampling temperature (0.0-2.0). Defaults to 0.3.
+            max_tokens: Maximum tokens for the response. If None, uses model default.
             max_retries: Number of additional attempts after the first failure.
                 Defaults to 2 (3 total attempts).
 
@@ -240,13 +242,14 @@ class LLMClient:
         Raises:
             StructuredOutputError: If all attempts fail to produce valid output.
         """
-        attempts = 1 + max_retries
+        attempts = 1 + max(max_retries, 0)
         last_error: Exception | None = None
 
         for attempt in range(1, attempts + 1):
             result = self.generate(
                 prompt,
                 temperature=temperature,
+                max_tokens=max_tokens,
                 system_prompt=system_prompt,
                 response_format={"type": "json_object"},
             )
