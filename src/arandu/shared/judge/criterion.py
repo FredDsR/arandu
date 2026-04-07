@@ -10,12 +10,11 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from string import Template
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from arandu.shared.judge.schemas import CriterionScore
-from arandu.shared.llm_client import StructuredOutputError
 from arandu.utils.text import validate_score
 
 if TYPE_CHECKING:
@@ -38,35 +37,12 @@ class CriterionResponse(BaseModel):
     rationale: str
 
 
-@runtime_checkable
-class JudgeCriterion(Protocol):
-    """Protocol for individual evaluation criteria.
+class JudgeCriterion(ABC):
+    """Base class for all evaluation criteria.
 
-    Each criterion evaluates a single aspect of generated content using
-    an LLM judge. This design follows G-Eval's approach of one criterion
-    per LLM call to avoid reasoning overlap.
-    """
-
-    name: str
-    threshold: float
-
-    def evaluate(self, **kwargs: Any) -> CriterionScore:
-        """Evaluate content against this criterion.
-
-        Args:
-            **kwargs: Domain-specific evaluation parameters.
-
-        Returns:
-            CriterionScore with score, rationale, and optional thinking trace.
-        """
-        ...
-
-
-class HeuristicCriterion(ABC):
-    """Base class for heuristic criteria that don't need an LLM.
-
-    Subclasses implement ``_check(**kwargs)`` with the evaluation logic.
-    The base class handles error wrapping and CriterionScore construction.
+    Provides error-handling wrapper around ``_evaluate_impl()``.
+    Subclasses implement the actual evaluation logic via
+    ``HeuristicCriterion`` or ``LLMCriterion``.
 
     Attributes:
         name: Criterion identifier.
@@ -77,21 +53,19 @@ class HeuristicCriterion(ABC):
     threshold: float
 
     def evaluate(self, **kwargs: Any) -> CriterionScore:
-        """Evaluate using the heuristic check.
+        """Evaluate content against this criterion.
+
+        Delegates to ``_evaluate_impl()`` and wraps errors into
+        a ``CriterionScore`` with ``score=None`` and ``error`` set.
 
         Args:
             **kwargs: Domain-specific evaluation parameters.
 
         Returns:
-            CriterionScore with score and rationale.
+            CriterionScore with score, rationale, and optional error.
         """
         try:
-            score, rationale = self._check(**kwargs)
-            return CriterionScore(
-                score=score,
-                threshold=self.threshold,
-                rationale=rationale,
-            )
+            return self._evaluate_impl(**kwargs)
         except Exception as e:
             logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
             return CriterionScore(
@@ -100,6 +74,34 @@ class HeuristicCriterion(ABC):
                 rationale="",
                 error=str(e),
             )
+
+    @abstractmethod
+    def _evaluate_impl(self, **kwargs: Any) -> CriterionScore:
+        """Run the actual evaluation logic.
+
+        Args:
+            **kwargs: Domain-specific parameters.
+
+        Returns:
+            CriterionScore with score and rationale.
+        """
+        ...
+
+
+class HeuristicCriterion(JudgeCriterion):
+    """Base for heuristic criteria that don't need an LLM.
+
+    Subclasses implement ``_check(**kwargs)`` returning a score and rationale.
+    """
+
+    def _evaluate_impl(self, **kwargs: Any) -> CriterionScore:
+        """Run heuristic check and wrap result."""
+        score, rationale = self._check(**kwargs)
+        return CriterionScore(
+            score=score,
+            threshold=self.threshold,
+            rationale=rationale,
+        )
 
     @abstractmethod
     def _check(self, **kwargs: Any) -> tuple[float, str]:
@@ -114,7 +116,7 @@ class HeuristicCriterion(ABC):
         ...
 
 
-class LLMCriterion:
+class LLMCriterion(JudgeCriterion):
     """File-based LLM criterion implementation.
 
     Loads criterion configuration (prompt template) from a single file per language
@@ -200,52 +202,30 @@ class LLMCriterion:
 
         return float(config["threshold"])
 
-    def evaluate(self, **kwargs: Any) -> CriterionScore:
-        """Evaluate content against this criterion.
+    def _evaluate_impl(self, **kwargs: Any) -> CriterionScore:
+        """Call LLM with structured output and return scored result.
 
         Args:
             **kwargs: Domain-specific evaluation parameters (e.g., context,
                 question, answer).
 
         Returns:
-            CriterionScore with score, rationale, and optional thinking trace.
+            CriterionScore with score and rationale from LLM.
         """
-        try:
-            prompt = self._build_prompt(**kwargs)
+        prompt = self._build_prompt(**kwargs)
 
-            response = self.llm_client.generate_structured(
-                prompt=prompt,
-                response_model=CriterionResponse,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
+        response = self.llm_client.generate_structured(
+            prompt=prompt,
+            response_model=CriterionResponse,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
 
-            score = validate_score(response.score)
-
-            return CriterionScore(
-                score=score,
-                threshold=self.threshold,
-                rationale=response.rationale,
-                thinking=None,
-            )
-
-        except StructuredOutputError as e:
-            logger.warning("Criterion '%s' structured output failed: %s", self.name, e)
-            return CriterionScore(
-                score=None,
-                threshold=self.threshold,
-                rationale="",
-                error=str(e),
-            )
-
-        except Exception as e:
-            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
-            return CriterionScore(
-                score=None,
-                threshold=self.threshold,
-                rationale="",
-                error=str(e),
-            )
+        return CriterionScore(
+            score=validate_score(response.score),
+            threshold=self.threshold,
+            rationale=response.rationale,
+        )
 
     def _build_prompt(self, **kwargs: Any) -> str:
         """Build evaluation prompt from template.

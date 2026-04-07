@@ -1,6 +1,10 @@
 """Shared judge module for multi-stage evaluation with per-criterion thresholds."""
 
-from arandu.shared.judge.criterion import HeuristicCriterion, JudgeCriterion, LLMCriterion
+from arandu.shared.judge.criterion import (
+    HeuristicCriterion,
+    JudgeCriterion,
+    LLMCriterion,
+)
 from arandu.shared.judge.factory import JudgeCriterionFactory
 from arandu.shared.judge.judge import BaseJudge
 from arandu.shared.judge.pipeline import JudgePipeline, JudgeStage
