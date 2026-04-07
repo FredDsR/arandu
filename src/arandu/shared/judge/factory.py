@@ -7,20 +7,20 @@ different pipeline steps to request specific criteria by name.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from arandu.shared.judge.criterion import FileCriterion, JudgeCriterion
+from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
 # Default prompts directory (repo_root/prompts/judge/criteria)
-DEFAULT_JUDGE_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "judge" / "criteria"
-)
+DEFAULT_JUDGE_PROMPTS_DIR = get_project_root() / "prompts" / "judge" / "criteria"
 
 
 class JudgeCriterionFactory:

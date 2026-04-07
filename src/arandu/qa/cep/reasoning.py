@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, Any
 
 from arandu.qa.schemas import QAPairCEP
+from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig
@@ -22,9 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Default prompts directory (repo_root/prompts/qa/cep)
-DEFAULT_CEP_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "cep"
-)
+DEFAULT_CEP_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep"
 
 # Bloom levels that benefit from reasoning traces
 REASONING_LEVELS = {"analyze", "evaluate", "create"}

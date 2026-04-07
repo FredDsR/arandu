@@ -9,18 +9,17 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from arandu.qa.config import get_judge_config
 from arandu.qa.schemas import QAPairCEP, QAPairValidated
 from arandu.shared.judge import (
     BaseJudge,
-    JudgeCriterionFactory,
     JudgePipeline,
     JudgeStage,
     JudgeStep,
 )
+from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, JudgeConfig
@@ -33,9 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Bloom level descriptions fallback file
-_VALIDATION_PROMPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / "prompts" / "qa" / "cep" / "validation"
-)
+_VALIDATION_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep" / "validation"
 
 
 class QAJudge(BaseJudge):
@@ -65,23 +62,14 @@ class QAJudge(BaseJudge):
             judge_config: Judge pipeline configuration.
                 If None, loads from env.
         """
-        self.validator_client = validator_client
         self.cep_config = cep_config
         self.judge_config = judge_config or get_judge_config()
 
-        self._factory = JudgeCriterionFactory(
-            llm_client=self.validator_client,
+        super().__init__(
+            llm_client=validator_client,
             language=self.judge_config.language,
             temperature=self.judge_config.temperature,
             max_tokens=self.judge_config.max_tokens,
-        )
-
-        super().__init__()  # calls _build_pipeline()
-
-        logger.info(
-            f"QAJudge initialized with "
-            f"{validator_client.provider.value}/"
-            f"{validator_client.model_id}"
         )
 
     def _build_pipeline(self) -> JudgePipeline:
