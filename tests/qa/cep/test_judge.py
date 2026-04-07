@@ -361,17 +361,17 @@ class TestQAJudgeBatch:
         assert all(r.is_valid for r in results)
 
 
-class TestSelfContainednessOverride:
-    """Tests for self_containedness forcing on remember-level pairs."""
+class TestRememberLevelPipeline:
+    """Tests for remember-level pipeline (no self_containedness)."""
 
-    def test_forces_self_containedness_for_remember(
+    def test_remember_skips_self_containedness(
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
         judge_config: JudgeConfig,
         mocker: MockerFixture,
     ) -> None:
-        """Test self_containedness is forced to 1.0 for remember."""
+        """Remember-level pairs use a pipeline without self_containedness."""
         mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
 
         remember_pair = QAPairCEP(
@@ -389,19 +389,41 @@ class TestSelfContainednessOverride:
             judge_config=judge_config,
         )
 
-        # Pipeline returns low self_containedness
-        judge._pipeline = MagicMock()
-        judge._pipeline.evaluate.return_value = _make_pipeline_result(
-            self_containedness=0.2,
+        # Mock the remember pipeline (3 criteria, no self_containedness)
+        remember_result = JudgePipelineResult(
+            stage_results={
+                "cep_validation": JudgeStepResult(
+                    criterion_scores={
+                        "faithfulness": CriterionScore(
+                            score=0.9,
+                            threshold=0.7,
+                            rationale="OK",
+                        ),
+                        "bloom_calibration": CriterionScore(
+                            score=0.8,
+                            threshold=0.6,
+                            rationale="OK",
+                        ),
+                        "informativeness": CriterionScore(
+                            score=0.7,
+                            threshold=0.6,
+                            rationale="OK",
+                        ),
+                    }
+                )
+            },
+            passed=True,
         )
+        judge._remember_pipeline = MagicMock()
+        judge._remember_pipeline.evaluate.return_value = remember_result
 
         result = judge.validate(remember_pair, "context")
 
-        # Safety net forces 1.0 for remember level
         stage = result.validation.stage_results["cep_validation"]
-        assert stage.criterion_scores["self_containedness"].score == 1.0
+        assert "self_containedness" not in stage.criterion_scores
+        judge._remember_pipeline.evaluate.assert_called_once()
 
-    def test_does_not_force_self_containedness_for_analyze(
+    def test_non_remember_includes_self_containedness(
         self,
         mock_llm_client: Any,
         cep_config: CEPConfig,
@@ -409,7 +431,7 @@ class TestSelfContainednessOverride:
         sample_qa_pair: QAPairCEP,
         mocker: MockerFixture,
     ) -> None:
-        """Test self_containedness is NOT forced for non-remember."""
+        """Non-remember pairs use the default pipeline with self_containedness."""
         mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
 
         judge = QAJudge(
@@ -426,6 +448,7 @@ class TestSelfContainednessOverride:
         result = judge.validate(sample_qa_pair, "context")
 
         stage = result.validation.stage_results["cep_validation"]
+        assert "self_containedness" in stage.criterion_scores
         assert stage.criterion_scores["self_containedness"].score == 0.3
 
 

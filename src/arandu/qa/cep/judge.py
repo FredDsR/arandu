@@ -23,10 +23,7 @@ from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, JudgeConfig
-    from arandu.shared.judge.schemas import (
-        CriterionScore,
-        JudgePipelineResult,
-    )
+    from arandu.shared.judge.schemas import JudgePipelineResult
     from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -73,24 +70,37 @@ class QAJudge(BaseJudge):
         )
 
     def _build_pipeline(self) -> JudgePipeline:
-        """Build a single-stage filter pipeline for CEP validation.
+        """Build evaluation pipelines for CEP validation.
+
+        Creates two pipelines: one with all criteria (default) and one
+        without self_containedness (for remember-level pairs, which are
+        inherently self-contained).
 
         Returns:
-            Configured JudgePipeline with one filter stage.
+            Default JudgePipeline with all four criteria.
         """
-        step = JudgeStep(
-            criteria=[
-                "faithfulness",
-                "bloom_calibration",
-                "informativeness",
-                "self_containedness",
-            ],
-            factory=self._factory,
+        all_criteria = [
+            "faithfulness",
+            "bloom_calibration",
+            "informativeness",
+            "self_containedness",
+        ]
+        remember_criteria = [
+            "faithfulness",
+            "bloom_calibration",
+            "informativeness",
+        ]
+
+        default_step = JudgeStep(criteria=all_criteria, factory=self._factory)
+        remember_step = JudgeStep(criteria=remember_criteria, factory=self._factory)
+
+        self._remember_pipeline = JudgePipeline(
+            stages=[JudgeStage(name="cep_validation", step=remember_step, mode="filter")]
         )
 
-        stage = JudgeStage(name="cep_validation", step=step, mode="filter")
-
-        return JudgePipeline(stages=[stage])
+        return JudgePipeline(
+            stages=[JudgeStage(name="cep_validation", step=default_step, mode="filter")]
+        )
 
     def validate(
         self,
@@ -109,17 +119,17 @@ class QAJudge(BaseJudge):
         try:
             bloom_level_desc = self._get_bloom_level_desc(qa_pair.bloom_level)
 
-            result: JudgePipelineResult = self._pipeline.evaluate(
+            pipeline = (
+                self._remember_pipeline if qa_pair.bloom_level == "remember" else self._pipeline
+            )
+
+            result: JudgePipelineResult = pipeline.evaluate(
                 context=context,
                 question=qa_pair.question,
                 answer=qa_pair.answer,
                 bloom_level=qa_pair.bloom_level,
                 bloom_level_desc=bloom_level_desc,
             )
-
-            # Safety net: force self_containedness=1.0 for remember
-            if qa_pair.bloom_level == "remember":
-                self._force_self_containedness(result)
 
             return QAPairValidated(
                 **qa_pair.model_dump(),
@@ -150,23 +160,6 @@ class QAJudge(BaseJudge):
             List of validated QA pairs.
         """
         return [self.validate(pair, context) for pair in qa_pairs]
-
-    def _force_self_containedness(self, result: JudgePipelineResult) -> None:
-        """Force self_containedness score to 1.0 for remember pairs.
-
-        Remember-level questions are inherently self-contained because
-        they ask for direct recall of facts stated in the text.
-
-        Args:
-            result: Pipeline result to modify in-place.
-        """
-        stage_result = result.stage_results.get("cep_validation")
-        if stage_result is None:
-            return
-
-        sc: CriterionScore | None = stage_result.criterion_scores.get("self_containedness")
-        if sc is not None:
-            sc.score = 1.0
 
     def _get_bloom_level_desc(self, bloom_level: str) -> str:
         """Get human-readable Bloom level description.
