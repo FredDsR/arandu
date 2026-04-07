@@ -111,10 +111,6 @@ class CEPConfig(BaseSettings):
         default=True,
         description="Enable reasoning trace generation for answers",
     )
-    enable_validation: bool = Field(
-        default=True,
-        description="Enable LLM-as-a-Judge validation (requires additional LLM calls)",
-    )
 
     # Module I - Bloom Scaffolding settings
     bloom_levels: list[str] = Field(
@@ -163,31 +159,7 @@ class CEPConfig(BaseSettings):
         ),
     )
 
-    # Module III - LLM-as-a-Judge validation settings
-    validator_provider: str = Field(
-        default="ollama",
-        description="LLM provider for validation: openai, ollama, custom",
-    )
-    validator_model_id: str = Field(
-        default="qwen3:14b",
-        description="Model ID for LLM-as-a-Judge validation",
-    )
-    validator_temperature: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="Temperature for validator (low for consistent evaluation)",
-    )
-    validator_max_tokens: int = Field(
-        default=2048,
-        ge=128,
-        le=8192,
-        description=(
-            "Maximum tokens for validation responses. "
-            "Increase for thinking models (Qwen3, DeepSeek-R1) whose <think> "
-            "blocks consume tokens before the JSON output."
-        ),
-    )
+    # Scoring weights for judge evaluation
     validation_threshold: float = Field(
         default=0.6,
         ge=0.0,

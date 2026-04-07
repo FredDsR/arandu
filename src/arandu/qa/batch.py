@@ -171,8 +171,6 @@ def _init_cep_worker(
     model_id: str,
     qa_config_dict: dict,
     cep_config_dict: dict,
-    validator_provider: str | None,
-    validator_model_id: str | None,
 ) -> None:
     """Initialize CEP worker process with generator instance.
 
@@ -181,8 +179,6 @@ def _init_cep_worker(
         model_id: Model identifier.
         qa_config_dict: QAConfig as dictionary.
         cep_config_dict: CEPConfig as dictionary.
-        validator_provider: Validator LLM provider (if validation enabled).
-        validator_model_id: Validator model identifier (if validation enabled).
     """
     global _worker_cep_generator
 
@@ -204,25 +200,11 @@ def _init_cep_worker(
         base_url=base_url,
     )
 
-    # Create validator client if validation is enabled
-    validator_client = None
-    if cep_config.enable_validation and validator_provider and validator_model_id:
-        validator_base_url = base_url
-        if validator_provider == "ollama":
-            validator_base_url = qa_config.ollama_url
-
-        validator_client = LLMClient(
-            provider=LLMProvider(validator_provider),
-            model_id=validator_model_id,
-            base_url=validator_base_url,
-        )
-
     # Create CEP generator
     _worker_cep_generator = CEPQAGenerator(
         llm_client=llm_client,
         qa_config=qa_config,
         cep_config=cep_config,
-        validator_client=validator_client,
     )
 
     logger.info(f"CEP worker initialized with {provider}/{model_id}")
@@ -267,26 +249,10 @@ def generate_cep_qa_for_transcription(
                 base_url=base_url,
             )
 
-            # Create validator client if enabled
-            validator_client = None
-            if cep_config.enable_validation:
-                # Choose validator base URL based on validator provider
-                if cep_config.validator_provider == LLMProvider.OLLAMA.value:
-                    validator_base_url = qa_config.ollama_url
-                else:
-                    validator_base_url = qa_config.base_url
-
-                validator_client = LLMClient(
-                    provider=LLMProvider(cep_config.validator_provider),
-                    model_id=cep_config.validator_model_id,
-                    base_url=validator_base_url,
-                )
-
             _worker_cep_generator = CEPQAGenerator(
                 llm_client=llm_client,
                 qa_config=qa_config,
                 cep_config=cep_config,
-                validator_client=validator_client,
             )
 
         # Load transcription
@@ -301,10 +267,7 @@ def generate_cep_qa_for_transcription(
         task.output_file.parent.mkdir(parents=True, exist_ok=True)
         qa_record.save(task.output_file)
 
-        logger.info(
-            f"Generated {len(qa_record.qa_pairs)} CEP QA pairs for {task.filename} "
-            f"(validated: {qa_record.validated_pairs})"
-        )
+        logger.info(f"Generated {len(qa_record.qa_pairs)} CEP QA pairs for {task.filename}")
         return task.file_id, True, "Success"
 
     except ValueError as e:
@@ -420,10 +383,6 @@ def run_batch_cep_generation(
     qa_config_dict = qa_config.model_dump()
     cep_config_dict = cep_config.model_dump()
 
-    # Validator info for worker initialization
-    validator_provider = cep_config.validator_provider if cep_config.enable_validation else None
-    validator_model_id = cep_config.validator_model_id if cep_config.enable_validation else None
-
     error_message: str | None = None
     try:
         # Process files
@@ -460,8 +419,6 @@ def run_batch_cep_generation(
                     qa_config.model_id,
                     qa_config_dict,
                     cep_config_dict,
-                    validator_provider,
-                    validator_model_id,
                 ),
             ) as executor:
                 # Batched submission

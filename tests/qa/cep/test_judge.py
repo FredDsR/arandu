@@ -81,7 +81,6 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
 def cep_config() -> CEPConfig:
     """Create a CEP config for testing."""
     return CEPConfig(
-        enable_validation=True,
         validation_threshold=0.6,
         faithfulness_weight=0.30,
         bloom_calibration_weight=0.25,

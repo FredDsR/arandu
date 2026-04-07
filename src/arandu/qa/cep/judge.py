@@ -36,7 +36,7 @@ _VALIDATION_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep" / "valid
 class QAJudge(BaseJudge):
     """Validate QA pairs using a composable shared judge pipeline.
 
-    Replaces the legacy QAValidator with a single-stage filter pipeline
+    Uses a single-stage filter pipeline
     backed by ``LLMCriterionFactory`` and ``JudgePipeline``.
 
     Evaluates each QA pair on four criteria:
