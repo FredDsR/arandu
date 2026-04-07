@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_JUDGE_PROMPTS_DIR = get_project_root() / "prompts" / "judge" / "criteria"
 
 
-class JudgeCriterionFactory:
+class LLMCriterionFactory:
     """Factory for managing evaluation criteria.
 
     Allows different pipeline steps to request specific criteria by name
@@ -56,7 +56,7 @@ class JudgeCriterionFactory:
         self.max_tokens = max_tokens
         self._criteria: dict[str, JudgeCriterion] = {}
 
-        logger.info(f"JudgeCriterionFactory initialized with language={language}")
+        logger.info(f"LLMCriterionFactory initialized with language={language}")
 
     def get_criterion(self, name: str) -> JudgeCriterion:
         """Get or create a criterion by name.

@@ -7,7 +7,7 @@ from arandu.shared.judge.criterion import (
     LLMCriterion,
     LLMCriterionConfig,
 )
-from arandu.shared.judge.factory import JudgeCriterionFactory
+from arandu.shared.judge.factory import LLMCriterionFactory
 from arandu.shared.judge.judge import BaseJudge
 from arandu.shared.judge.pipeline import JudgePipeline, JudgeStage
 from arandu.shared.judge.schemas import (
@@ -24,7 +24,6 @@ __all__ = [
     "CriterionScore",
     "HeuristicCriterion",
     "JudgeCriterion",
-    "JudgeCriterionFactory",
     "JudgePipeline",
     "JudgePipelineResult",
     "JudgeStage",
@@ -32,5 +31,6 @@ __all__ = [
     "JudgeStepResult",
     "LLMCriterion",
     "LLMCriterionConfig",
+    "LLMCriterionFactory",
     "StageMode",
 ]

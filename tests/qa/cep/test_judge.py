@@ -123,7 +123,7 @@ class TestQAJudgeInit:
         mocker: MockerFixture,
     ) -> None:
         """Test judge initializes with pipeline."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -141,7 +141,7 @@ class TestQAJudgeInit:
         mocker: MockerFixture,
     ) -> None:
         """Test judge loads default config when none provided."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -159,7 +159,7 @@ class TestQAJudgeInit:
         mocker: MockerFixture,
     ) -> None:
         """Test that QAJudge is a BaseJudge subclass."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -177,7 +177,7 @@ class TestQAJudgeInit:
         mocker: MockerFixture,
     ) -> None:
         """Test that QAJudge no longer stores validator_client directly."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -200,7 +200,7 @@ class TestQAJudgeValidate:
         mocker: MockerFixture,
     ) -> None:
         """Test that validate returns a QAPairValidated with scores."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -231,7 +231,7 @@ class TestQAJudgeValidate:
         mocker: MockerFixture,
     ) -> None:
         """Test that is_valid reflects pipeline pass status."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -254,7 +254,7 @@ class TestQAJudgeValidate:
         mocker: MockerFixture,
     ) -> None:
         """Test that is_valid is False when pipeline rejects."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -279,7 +279,7 @@ class TestQAJudgeValidate:
         mocker: MockerFixture,
     ) -> None:
         """Test that errors result in unvalidated pair."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -303,7 +303,7 @@ class TestQAJudgeValidate:
         mocker: MockerFixture,
     ) -> None:
         """Test that all QAPairCEP fields are preserved."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         pair = QAPairCEP(
             question="Q?",
@@ -342,7 +342,7 @@ class TestQAJudgeBatch:
         mocker: MockerFixture,
     ) -> None:
         """Test batch validation of multiple QA pairs."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
@@ -372,7 +372,7 @@ class TestRememberLevelPipeline:
         mocker: MockerFixture,
     ) -> None:
         """Remember-level pairs use a pipeline without self_containedness."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         remember_pair = QAPairCEP(
             question="Quem mencionou algo no texto?",
@@ -432,7 +432,7 @@ class TestRememberLevelPipeline:
         mocker: MockerFixture,
     ) -> None:
         """Non-remember pairs use the default pipeline with self_containedness."""
-        mocker.patch("arandu.shared.judge.judge.JudgeCriterionFactory")
+        mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
             validator_client=mock_llm_client,
