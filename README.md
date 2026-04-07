@@ -5,6 +5,8 @@
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
+📖 **[Documentation](https://FredDsR.github.io/arandu/)**
+
 Composable pipelines for ethnographic knowledge elicitation: transcription, QA generation, and knowledge graph construction.
 
 ## About the Name
