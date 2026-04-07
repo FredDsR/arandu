@@ -3,19 +3,6 @@ title: Evaluation
 description: Evaluate the quality of QA datasets and knowledge graphs using targeted metrics.
 ---
 
-> **OUTDATED (2026-03-23)**: The evaluation approach has been redesigned. This document
-> describes the original plan based on EM/F1/BLEU metrics, which has been replaced by a
-> judge-based evaluation using the composable multi-stage judge pipeline.
->
-> See the project roadmap Phase C for the current evaluation design.
->
-> **What changed**: Evaluation no longer uses traditional QA metrics (EM, F1, BLEU).
-> Instead, retriever answers are scored by the same `JudgePipeline` used for QA validation.
-> The evaluation experiment compares retrieval strategies (BM25 vs GraphRAG) using CEP QA
-> pairs as the benchmark dataset.
-
----
-
 Evaluate the quality of QA datasets and knowledge graphs using targeted metrics for each pipeline.
 
 ## Overview
@@ -68,7 +55,7 @@ ARANDU_EVALUATION_METRICS=qa docker compose --profile evaluate up
 ### Using SLURM
 
 ```bash
-EVAL_METRICS=qa sbatch scripts/slurm/run_evaluation.slurm
+EVAL_METRICS=qa sbatch scripts/slurm/evaluation/run_evaluation.slurm
 ```
 
 ## QA Output
@@ -160,7 +147,7 @@ ARANDU_EVALUATION_METRICS=entity,relation,semantic docker compose --profile eval
 ### Using SLURM
 
 ```bash
-EVAL_METRICS=entity,relation,semantic sbatch scripts/slurm/run_evaluation.slurm
+EVAL_METRICS=entity,relation,semantic sbatch scripts/slurm/evaluation/run_evaluation.slurm
 ```
 
 ## KG Output
@@ -253,7 +240,7 @@ Run both QA and KG evaluation together.
 docker compose --profile evaluate up
 
 # Or via SLURM
-sbatch scripts/slurm/run_evaluation.slurm
+sbatch scripts/slurm/evaluation/run_evaluation.slurm
 ```
 
 ## Configuration
@@ -416,4 +403,4 @@ tail -f logs/arandu-eval_<jobid>.out
 
 ---
 
-**See also**: [QA Generation](qa-generation) | [KG Construction](kg-construction) | [Configuration](../../configuration)
+**See also**: [QA Generation](/guides/qa-generation/) | [KG Construction](/guides/kg-construction/) | [Configuration](/configuration/)

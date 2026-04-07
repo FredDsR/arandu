@@ -603,7 +603,7 @@ Test on sample data before processing full corpus:
 
 ```bash
 # Test on 5 files first
-mkdir samples && cp results/*.json samples/ | head -5
+mkdir samples && ls results/*.json | head -5 | xargs -I {} cp {} samples/
 arandu generate-cep-qa samples/ -o qa_test/
 ```
 

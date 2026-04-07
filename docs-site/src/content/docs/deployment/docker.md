@@ -81,7 +81,7 @@ arandu info
 ### 1. Clone/Navigate to Project
 
 ```bash
-cd /path/to/etno-kgc-preprocessing
+cd /path/to/arandu
 ```
 
 ### 2. Create Environment File

@@ -34,7 +34,7 @@ docker compose --profile kg up
 ### Using SLURM
 
 ```bash
-sbatch scripts/slurm/run_kg_construction.slurm
+sbatch scripts/slurm/kg/tupi.slurm
 ```
 
 ## Configuration
@@ -423,4 +423,4 @@ docker compose --profile kg up
 
 ---
 
-**See also**: [QA Generation](qa-generation) | [Evaluation](evaluation) | [Configuration](../../configuration)
+**See also**: [QA Generation](/guides/qa-generation/) | [Evaluation](/guides/evaluation/) | [Configuration](/configuration/)

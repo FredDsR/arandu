@@ -157,12 +157,12 @@ arandu batch-transcribe input/catalog.csv \
   --workers 4
 ```
 
-**Important for KG Construction**: The `--language` option sets both `detected_language` and `metadata.lang` in the output JSON. The `metadata.lang` field is **critical** for AutoSchemaKG to route extraction to the correct language-specific prompts during knowledge graph construction.
+**Important for downstream processing**: The `--language` option ensures transcription runs with the specified language and the output includes `detected_language` for language-aware consumers like the KG construction pipeline.
 
 If language is not specified, Whisper will auto-detect, but it's recommended to set it explicitly for:
 - Better transcription accuracy
 - Consistent language metadata for downstream processing
-- Proper routing in multilingual KG construction
+- More predictable routing in multilingual KG construction
 
 ## Checkpoint and Resume
 
@@ -261,7 +261,7 @@ Files are named: `{file_id}_transcription.json`
 - Each worker loads a full model copy into VRAM
 - Typical VRAM usage per model:
   - whisper-large-v3: ~3-6 GB
-  - whisper-large-v3: ~2-4 GB  
+  - whisper-large-v3-turbo: ~2-4 GB  
   - distil-whisper: ~1-2 GB
 - Example: 24 GB GPU → 4 workers with whisper-large-v3
 

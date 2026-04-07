@@ -314,10 +314,10 @@ if issues:
 
 ## Known Limitations
 
-- **Non-Latin script detection**: Currently only detects CJK (Chinese, Japanese, Korean) as wrong-script for Latin languages. Arabic, Cyrillic, and other scripts are tracked via the generic `non_latin_ratio` threshold but lack dedicated detection. See [Issue #19](https://github.com/FredDsR/etno-kgc-preprocessing/issues/19) for follow-up.
+- **Non-Latin script detection**: Currently only detects CJK (Chinese, Japanese, Korean) as wrong-script for Latin languages. Arabic, Cyrillic, and other scripts are tracked via the generic `non_latin_ratio` threshold but lack dedicated detection.
 - **Language probability**: Not used as a scoring dimension because valid Portuguese transcriptions can have `language_probability: 0.0`. Character-level script detection is more reliable.
 - **Content density with silence**: Long audio with extended silence produces low wpm but may still be a valid transcription. Consider the context when interpreting density scores.
 
 ---
 
-**See also**: [Transcription](transcription) | [Configuration](../../configuration) | [Getting Started](../../getting-started)
+**See also**: [Transcription](/guides/transcription/) | [Configuration](/configuration/) | [Getting Started](/getting-started/)

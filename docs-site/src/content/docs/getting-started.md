@@ -82,7 +82,7 @@ This shows your hardware configuration (CPU, GPU, memory).
 
 ```bash
 # Use faster turbo model
-arandu transcribe audio.mp3 --model-id openai/whisper-large-v3
+arandu transcribe audio.mp3 --model-id openai/whisper-large-v3-turbo
 
 # Use quantization for reduced VRAM
 arandu transcribe audio.mp3 --quantize
@@ -130,12 +130,12 @@ export OPENAI_API_KEY=sk-...
 
 | Task | Guide |
 |------|-------|
-| Process multiple files | [Transcription Guide](guides/transcription) |
-| Validate transcriptions | [Transcription Validation Guide](guides/transcription-validation) |
-| Generate QA pairs | [QA Generation Guide](guides/qa-generation) |
-| Build knowledge graphs | [KG Construction Guide](guides/kg-construction) |
-| Evaluate quality | [Evaluation Guide](guides/evaluation) |
-| Configure settings | [Configuration Reference](configuration) |
+| Process multiple files | [Transcription Guide](/guides/transcription/) |
+| Validate transcriptions | [Transcription Validation Guide](/guides/transcription-validation/) |
+| Generate QA pairs | [QA Generation Guide](/guides/qa-generation/) |
+| Build knowledge graphs | [KG Construction Guide](/guides/kg-construction/) |
+| Evaluate quality | [Evaluation Guide](/guides/evaluation/) |
+| Configure settings | [Configuration Reference](/configuration/) |
 
 ## Pipeline Overview
 
@@ -185,4 +185,4 @@ arandu transcribe audio.mp3 --cpu
 
 ---
 
-**See also**: [Transcription](guides/transcription) | [Transcription Validation](guides/transcription-validation) | [Configuration](configuration) | [CLI Reference](reference/cli)
+**See also**: [Transcription](/guides/transcription/) | [Transcription Validation](/guides/transcription-validation/) | [Configuration](/configuration/) | [CLI Reference](/reference/cli/)

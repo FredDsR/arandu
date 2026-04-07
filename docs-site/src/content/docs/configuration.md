@@ -463,7 +463,7 @@ config = TranscriptionQualityConfig(
 )
 ```
 
-**See also**: [Transcription Validation Guide](guides/transcription-validation) for full usage details
+**See also**: [Transcription Validation Guide](/guides/transcription-validation/) for full usage details
 
 ---
 

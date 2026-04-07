@@ -35,7 +35,7 @@ docker compose --profile qa up
 ### Using SLURM
 
 ```bash
-sbatch scripts/slurm/run_qa_generation.slurm
+sbatch scripts/slurm/qa/tupi.slurm
 ```
 
 ## Configuration
@@ -49,7 +49,7 @@ sbatch scripts/slurm/run_qa_generation.slurm
 | `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API URL |
 | `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
-| `ARANDU_WORKERS` | `2` | Parallel workers |
+| `ARANDU_QA_WORKERS` | `2` | Parallel workers |
 
 ### CEP-Specific Settings
 
@@ -117,7 +117,7 @@ docker compose --profile qa up
 ```bash
 # Submit with custom model and workers
 QA_MODEL=llama3.1:70b WORKERS=8 QUESTIONS_PER_DOCUMENT=20 \
-  sbatch scripts/slurm/run_qa_generation.slurm
+  sbatch scripts/slurm/qa/tupi.slurm
 ```
 
 ## Output Format
@@ -278,4 +278,4 @@ docker compose --profile qa exec ollama curl http://localhost:11434/v1/api/tags
 
 ---
 
-**See also**: [KG Construction](kg-construction) | [Evaluation](evaluation) | [Configuration](../../configuration)
+**See also**: [KG Construction](/guides/kg-construction/) | [Evaluation](/guides/evaluation/) | [Configuration](/configuration/)

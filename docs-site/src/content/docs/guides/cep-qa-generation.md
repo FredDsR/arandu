@@ -450,4 +450,4 @@ docker compose --profile cep exec ollama ollama pull qwen3:14b
 
 ---
 
-**See also**: [QA Generation](qa-generation) | [Configuration](../../configuration) | [SLURM Deployment](../../deployment/docker)
+**See also**: [QA Generation](/guides/qa-generation/) | [Configuration](/configuration/) | [Docker Deployment](/deployment/docker/)
