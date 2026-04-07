@@ -88,6 +88,12 @@ def _mock_atlas_rag() -> dict[str, MagicMock]:
     mocks["atlas_rag.llm_generator.prompt"] = MagicMock()
     mocks["atlas_rag.llm_generator.prompt.triple_extraction_prompt"] = prompt_module
 
+    # Mock csv_processing for the orphan-node patch
+    csv_to_graphml_module = MagicMock()
+    mocks["atlas_rag.kg_construction.utils"] = MagicMock()
+    mocks["atlas_rag.kg_construction.utils.csv_processing"] = MagicMock()
+    mocks["atlas_rag.kg_construction.utils.csv_processing.csv_to_graphml"] = csv_to_graphml_module
+
     with patch.dict("sys.modules", mocks):
         yield mocks
 
