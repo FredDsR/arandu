@@ -28,9 +28,6 @@ class ScriptMatchCriterion(HeuristicCriterion):
         max_non_latin_ratio: Maximum ratio of non-Latin characters before penalising.
     """
 
-    name: str = "script_match"
-    threshold: float = 0.6
-
     def __init__(
         self,
         *,
@@ -44,7 +41,7 @@ class ScriptMatchCriterion(HeuristicCriterion):
             max_non_latin_ratio: Maximum ratio of non-Latin characters
                 for Latin-script languages.
         """
-        self.threshold = threshold
+        super().__init__(name="script_match", threshold=threshold)
         self.max_non_latin_ratio = max_non_latin_ratio
 
     def _check(self, **kwargs: Any) -> tuple[float, str]:

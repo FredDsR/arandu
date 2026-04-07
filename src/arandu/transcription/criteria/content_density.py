@@ -24,9 +24,6 @@ class ContentDensityCriterion(HeuristicCriterion):
         max_words_per_minute: Maximum words per minute threshold.
     """
 
-    name: str = "content_density"
-    threshold: float = 0.4
-
     def __init__(
         self,
         *,
@@ -41,7 +38,7 @@ class ContentDensityCriterion(HeuristicCriterion):
             min_words_per_minute: Minimum words per minute threshold.
             max_words_per_minute: Maximum words per minute threshold.
         """
-        self.threshold = threshold
+        super().__init__(name="content_density", threshold=threshold)
         self.min_words_per_minute = min_words_per_minute
         self.max_words_per_minute = max_words_per_minute
 

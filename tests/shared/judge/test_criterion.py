@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from pydantic import ValidationError
 
 from arandu.shared.judge.criterion import CriterionResponse, HeuristicCriterion, LLMCriterion
 from arandu.shared.judge.schemas import CriterionScore
@@ -49,13 +50,13 @@ def prompts_dir(tmp_path: Path) -> Path:
 class TestLLMCriterion:
     """Tests for LLMCriterion class."""
 
-    def test_initialization(
+    def test_initialization_from_config(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test criterion initialization loads files."""
-        criterion = LLMCriterion(
+        """Test criterion initialization loads files via from_config."""
+        criterion = LLMCriterion.from_config(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -63,7 +64,6 @@ class TestLLMCriterion:
         )
 
         assert criterion.name == "faithfulness"
-        assert criterion.language == "pt"
         assert criterion.llm_client == mock_llm_client
         assert "Rubric content here" in criterion.prompt_template
         assert "$context" in criterion.prompt_template
@@ -74,7 +74,7 @@ class TestLLMCriterion:
         prompts_dir: Path,
     ) -> None:
         """Test that threshold is loaded from config.json."""
-        criterion = LLMCriterion(
+        criterion = LLMCriterion.from_config(
             name="faithfulness",
             prompts_dir=prompts_dir,
             language="pt",
@@ -91,8 +91,12 @@ class TestLLMCriterion:
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
 
+        # config.json must exist for from_config to reach prompt check
+        config_file = tmp_path / "criteria" / "test" / "config.json"
+        config_file.write_text(json.dumps({"threshold": 0.5}))
+
         with pytest.raises(FileNotFoundError, match="Prompt file not found"):
-            LLMCriterion(
+            LLMCriterion.from_config(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
                 language="pt",
@@ -109,8 +113,8 @@ class TestLLMCriterion:
         criterion_dir.mkdir(parents=True)
         (criterion_dir / "prompt.md").write_text("Prompt")
 
-        with pytest.raises(FileNotFoundError, match=r"config\.json"):
-            LLMCriterion(
+        with pytest.raises(FileNotFoundError, match=r"config"):
+            LLMCriterion.from_config(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
                 language="pt",
@@ -122,15 +126,15 @@ class TestLLMCriterion:
         mock_llm_client: Any,
         tmp_path: Path,
     ) -> None:
-        """Test that missing threshold key in config.json raises KeyError."""
+        """Test that missing threshold key in config.json raises ValidationError."""
         criterion_dir = tmp_path / "criteria" / "test" / "pt"
         criterion_dir.mkdir(parents=True)
         (criterion_dir / "prompt.md").write_text("Prompt")
         config_file = tmp_path / "criteria" / "test" / "config.json"
         config_file.write_text(json.dumps({"other_key": 42}))
 
-        with pytest.raises(KeyError, match="threshold"):
-            LLMCriterion(
+        with pytest.raises(ValidationError, match="threshold"):
+            LLMCriterion.from_config(
                 name="test",
                 prompts_dir=tmp_path / "criteria",
                 language="pt",
@@ -140,7 +144,6 @@ class TestLLMCriterion:
     def test_evaluate_success(
         self,
         mock_llm_client: Any,
-        prompts_dir: Path,
     ) -> None:
         """Test successful evaluation."""
         mock_llm_client.generate_structured.return_value = CriterionResponse(
@@ -149,9 +152,9 @@ class TestLLMCriterion:
 
         criterion = LLMCriterion(
             name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
+            threshold=0.7,
             llm_client=mock_llm_client,
+            prompt_template="Context: $context\nQuestion: $question\nAnswer: $answer\n",
             temperature=0.3,
             max_tokens=1024,
         )
@@ -176,7 +179,6 @@ class TestLLMCriterion:
     def test_evaluate_builds_prompt_with_kwargs(
         self,
         mock_llm_client: Any,
-        prompts_dir: Path,
     ) -> None:
         """Test that evaluate passes kwargs to prompt building."""
         mock_llm_client.generate_structured.return_value = CriterionResponse(
@@ -185,9 +187,11 @@ class TestLLMCriterion:
 
         criterion = LLMCriterion(
             name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
+            threshold=0.7,
             llm_client=mock_llm_client,
+            prompt_template=(
+                "Context: $context\nQuestion: $question\nAnswer: $answer\nRubric content here\n"
+            ),
         )
 
         criterion.evaluate(
@@ -207,7 +211,6 @@ class TestLLMCriterion:
     def test_evaluate_handles_structured_output_error(
         self,
         mock_llm_client: Any,
-        prompts_dir: Path,
     ) -> None:
         """Test that StructuredOutputError returns neutral score."""
         mock_llm_client.generate_structured.side_effect = StructuredOutputError(
@@ -216,9 +219,9 @@ class TestLLMCriterion:
 
         criterion = LLMCriterion(
             name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
+            threshold=0.7,
             llm_client=mock_llm_client,
+            prompt_template="Context: $context\nQuestion: $question\nAnswer: $answer\n",
         )
 
         result = criterion.evaluate(
@@ -236,16 +239,15 @@ class TestLLMCriterion:
     def test_evaluate_handles_generic_error(
         self,
         mock_llm_client: Any,
-        prompts_dir: Path,
     ) -> None:
         """Test that generic errors populate error field with None score."""
         mock_llm_client.generate_structured.side_effect = Exception("LLM error")
 
         criterion = LLMCriterion(
             name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
+            threshold=0.7,
             llm_client=mock_llm_client,
+            prompt_template="Context: $context\nQuestion: $question\nAnswer: $answer\n",
         )
 
         result = criterion.evaluate(
@@ -263,7 +265,6 @@ class TestLLMCriterion:
     def test_evaluate_clamps_scores(
         self,
         mock_llm_client: Any,
-        prompts_dir: Path,
     ) -> None:
         """Test that scores outside [0, 1] are clamped."""
         mock_llm_client.generate_structured.return_value = CriterionResponse(
@@ -272,9 +273,9 @@ class TestLLMCriterion:
 
         criterion = LLMCriterion(
             name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
+            threshold=0.7,
             llm_client=mock_llm_client,
+            prompt_template="Context: $context\nQuestion: $question\nAnswer: $answer\n",
         )
 
         result = criterion.evaluate(
@@ -288,7 +289,6 @@ class TestLLMCriterion:
     def test_evaluate_clamps_negative_scores(
         self,
         mock_llm_client: Any,
-        prompts_dir: Path,
     ) -> None:
         """Test that negative scores are clamped to 0."""
         mock_llm_client.generate_structured.return_value = CriterionResponse(
@@ -297,9 +297,9 @@ class TestLLMCriterion:
 
         criterion = LLMCriterion(
             name="faithfulness",
-            prompts_dir=prompts_dir,
-            language="pt",
+            threshold=0.7,
             llm_client=mock_llm_client,
+            prompt_template="Context: $context\nQuestion: $question\nAnswer: $answer\n",
         )
 
         result = criterion.evaluate(
@@ -313,27 +313,19 @@ class TestLLMCriterion:
     def test_evaluate_with_extra_params(
         self,
         mock_llm_client: Any,
-        tmp_path: Path,
     ) -> None:
         """Test evaluation with criterion-specific extra parameters."""
-        # Create criterion with extra params in template
-        criterion_dir = tmp_path / "criteria" / "test" / "pt"
-        criterion_dir.mkdir(parents=True)
-        (criterion_dir / "prompt.md").write_text(
-            "Context: $context\nQuestion: $question\nAnswer: $answer\nExtra: $extra_param\n"
-        )
-        config_file = tmp_path / "criteria" / "test" / "config.json"
-        config_file.write_text(json.dumps({"threshold": 0.5}))
-
         mock_llm_client.generate_structured.return_value = CriterionResponse(
             score=0.6, rationale="OK"
         )
 
         criterion = LLMCriterion(
             name="test",
-            prompts_dir=tmp_path / "criteria",
-            language="pt",
+            threshold=0.5,
             llm_client=mock_llm_client,
+            prompt_template=(
+                "Context: $context\nQuestion: $question\nAnswer: $answer\nExtra: $extra_param\n"
+            ),
         )
 
         criterion.evaluate(
@@ -348,12 +340,35 @@ class TestLLMCriterion:
         prompt = call_args.kwargs["prompt"]
         assert "Extra: custom_value" in prompt
 
+    def test_temperature_override_from_config(
+        self,
+        mock_llm_client: Any,
+        tmp_path: Path,
+    ) -> None:
+        """Test that config.json temperature overrides factory default."""
+        base_dir = tmp_path / "criteria"
+        criterion_dir = base_dir / "precise" / "pt"
+        criterion_dir.mkdir(parents=True)
+        (criterion_dir / "prompt.md").write_text("Prompt: $context $question $answer")
+        config_file = base_dir / "precise" / "config.json"
+        config_file.write_text(json.dumps({"threshold": 0.7, "temperature": 0.1}))
+
+        criterion = LLMCriterion.from_config(
+            name="precise",
+            prompts_dir=base_dir,
+            language="pt",
+            llm_client=mock_llm_client,
+            temperature=0.5,  # factory default
+        )
+
+        assert criterion.temperature == 0.1  # config overrides factory default
+
 
 class _DummyHeuristicCriterion(HeuristicCriterion):
     """Concrete subclass for testing the abstract base class."""
 
-    name = "dummy"
-    threshold = 0.5
+    def __init__(self) -> None:
+        super().__init__(name="dummy", threshold=0.5)
 
     def _check(self, **kwargs: Any) -> tuple[float, str]:
         """Return score based on kwargs."""
@@ -364,8 +379,8 @@ class _DummyHeuristicCriterion(HeuristicCriterion):
 class _FailingHeuristicCriterion(HeuristicCriterion):
     """Concrete subclass that always raises in _check."""
 
-    name = "failing"
-    threshold = 0.5
+    def __init__(self) -> None:
+        super().__init__(name="failing", threshold=0.5)
 
     def _check(self, **kwargs: Any) -> tuple[float, str]:
         """Always raise."""
@@ -376,8 +391,8 @@ class _FailingHeuristicCriterion(HeuristicCriterion):
 class TestHeuristicCriterion:
     """Tests for HeuristicCriterion abstract base class."""
 
-    def test_satisfies_judge_criterion_protocol(self) -> None:
-        """Test that HeuristicCriterion subclass satisfies JudgeCriterion."""
+    def test_satisfies_judge_criterion_abc(self) -> None:
+        """Test that HeuristicCriterion subclass is a JudgeCriterion."""
         from arandu.shared.judge.criterion import JudgeCriterion
 
         criterion = _DummyHeuristicCriterion()
@@ -413,8 +428,8 @@ class TestHeuristicCriterion:
         assert "intentional failure" in result.error
         assert result.passed is False
 
-    def test_name_and_threshold_from_class_attrs(self) -> None:
-        """Test that name and threshold are set from class attributes."""
+    def test_name_and_threshold_from_init(self) -> None:
+        """Test that name and threshold are set by __init__."""
         criterion = _DummyHeuristicCriterion()
         assert criterion.name == "dummy"
         assert criterion.threshold == 0.5

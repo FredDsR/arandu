@@ -75,7 +75,7 @@ class JudgeCriterionFactory:
             return self._criteria[name]
 
         # Create new LLM-based criterion from prompt files
-        criterion = LLMCriterion(
+        criterion = LLMCriterion.from_config(
             name=name,
             prompts_dir=self.prompts_dir,
             language=self.language,

@@ -81,7 +81,7 @@ class TestJudgeCriterionFactory:
 
         assert isinstance(criterion, LLMCriterion)
         assert criterion.name == "faithfulness"
-        assert criterion.language == "pt"
+        assert criterion.threshold == 0.7
 
     def test_get_criterion_caches_result(
         self,

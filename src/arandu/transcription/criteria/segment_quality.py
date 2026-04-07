@@ -29,9 +29,6 @@ class SegmentQualityCriterion(HeuristicCriterion):
         uniform_interval_tolerance: Tolerance for detecting uniform 1-second intervals.
     """
 
-    name: str = "segment_quality"
-    threshold: float = 0.4
-
     def __init__(
         self,
         *,
@@ -50,7 +47,7 @@ class SegmentQualityCriterion(HeuristicCriterion):
             uniform_interval_tolerance: Tolerance (seconds) for detecting uniform
                 1-second intervals.
         """
-        self.threshold = threshold
+        super().__init__(name="segment_quality", threshold=threshold)
         self.max_empty_segment_ratio = max_empty_segment_ratio
         self.suspicious_uniform_intervals = suspicious_uniform_intervals
         self.uniform_interval_tolerance = uniform_interval_tolerance

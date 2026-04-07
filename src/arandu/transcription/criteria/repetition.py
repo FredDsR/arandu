@@ -26,9 +26,6 @@ class RepetitionCriterion(HeuristicCriterion):
         max_phrase_repetition_count: Maximum allowed repetitions of same phrase.
     """
 
-    name: str = "repetition"
-    threshold: float = 0.5
-
     def __init__(
         self,
         *,
@@ -43,7 +40,7 @@ class RepetitionCriterion(HeuristicCriterion):
             max_word_repetition_ratio: Maximum ratio of most repeated word.
             max_phrase_repetition_count: Maximum allowed repetitions of same phrase.
         """
-        self.threshold = threshold
+        super().__init__(name="repetition", threshold=threshold)
         self.max_word_repetition_ratio = max_word_repetition_ratio
         self.max_phrase_repetition_count = max_phrase_repetition_count
 
