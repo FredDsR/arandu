@@ -30,6 +30,16 @@ class TestCriterionScore:
         )
         assert cs_with.thinking == "I thought..."
 
+    def test_error_always_fails(self) -> None:
+        cs = CriterionScore(score=None, threshold=0.5, rationale="", error="LLM error")
+        assert cs.passed is False
+        assert cs.score is None
+        assert cs.error == "LLM error"
+
+    def test_none_score_without_error_fails(self) -> None:
+        cs = CriterionScore(score=None, threshold=0.0, rationale="")
+        assert cs.passed is False
+
 
 class TestJudgeStepResult:
     def test_passed_when_all_criteria_pass(self) -> None:

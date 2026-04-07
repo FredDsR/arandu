@@ -175,21 +175,21 @@ class FileCriterion:
             )
 
         except StructuredOutputError as e:
-            logger.warning(f"Criterion '{self.name}' structured output failed: {e}")
+            logger.warning("Criterion '%s' structured output failed: %s", self.name, e)
             return CriterionScore(
-                score=0.5,
+                score=None,
                 threshold=self.threshold,
-                rationale=f"Evaluation failed: {e}",
-                thinking=None,
+                rationale="",
+                error=str(e),
             )
 
         except Exception as e:
-            logger.warning(f"Criterion '{self.name}' evaluation failed: {e}")
+            logger.warning("Criterion '%s' evaluation failed: %s", self.name, e)
             return CriterionScore(
-                score=0.5,
+                score=None,
                 threshold=self.threshold,
-                rationale=f"Evaluation failed: {e}",
-                thinking=None,
+                rationale="",
+                error=str(e),
             )
 
     def _build_prompt(self, **kwargs: Any) -> str:

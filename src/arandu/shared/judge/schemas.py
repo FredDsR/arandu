@@ -22,14 +22,17 @@ StageMode = Literal["filter", "score", "always"]
 class CriterionScore(BaseModel):
     """Result of a single criterion evaluation."""
 
-    score: float
+    score: float | None
     threshold: float
     rationale: str
     thinking: str | None = None
+    error: str | None = None
 
     @property
     def passed(self) -> bool:
-        """Whether the score meets the threshold."""
+        """Whether the score meets the threshold. Always False on error."""
+        if self.error is not None or self.score is None:
+            return False
         return self.score >= self.threshold
 
 

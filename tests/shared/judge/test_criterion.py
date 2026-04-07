@@ -227,16 +227,18 @@ class TestFileCriterion:
             answer="A.",
         )
 
-        assert result.score == 0.5  # Neutral
+        assert result.score is None
         assert result.threshold == 0.7
-        assert "Evaluation failed" in result.rationale
+        assert result.error is not None
+        assert "Failed to parse JSON" in result.error
+        assert result.passed is False
 
     def test_evaluate_handles_generic_error(
         self,
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test that generic errors return neutral score."""
+        """Test that generic errors populate error field with None score."""
         mock_llm_client.generate_structured.side_effect = Exception("LLM error")
 
         criterion = FileCriterion(
@@ -252,9 +254,11 @@ class TestFileCriterion:
             answer="A.",
         )
 
-        assert result.score == 0.5  # Neutral
+        assert result.score is None
         assert result.threshold == 0.7
-        assert "Evaluation failed" in result.rationale
+        assert result.error is not None
+        assert "LLM error" in result.error
+        assert result.passed is False
 
     def test_evaluate_clamps_scores(
         self,
