@@ -58,11 +58,12 @@ from arandu.cli.manage import (  # noqa: E402
     replicate,
     run_info,
 )
-from arandu.cli.qa import generate_cep_qa  # noqa: E402
+from arandu.cli.qa import generate_cep_qa, judge_qa  # noqa: E402
 from arandu.cli.report import report, serve_report  # noqa: E402
 from arandu.cli.transcribe import (  # noqa: E402
     batch_transcribe,
     drive_transcribe,
+    judge_transcription,
     transcribe,
     validate_transcriptions,
 )
@@ -73,6 +74,8 @@ app.command()(batch_transcribe)
 app.command()(validate_transcriptions)
 app.command()(refresh_auth)
 app.command()(generate_cep_qa)
+app.command()(judge_transcription)
+app.command()(judge_qa)
 app.command()(build_kg)
 app.command()(replicate)
 app.command()(info)

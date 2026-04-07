@@ -12,7 +12,6 @@ import typer
 from pydantic import ValidationError
 from rich.table import Table
 
-from arandu.shared.config import TranscriptionQualityConfig
 from arandu.shared.hardware import get_device_and_dtype
 from arandu.shared.io import (
     create_temp_file,
@@ -23,11 +22,6 @@ from arandu.shared.io import (
 from arandu.shared.schemas import EnrichedRecord, InputRecord
 from arandu.transcription.config import TranscriberConfig
 from arandu.transcription.engine import WhisperEngine
-from arandu.transcription.validator import (
-    TranscriptionValidator,
-    get_quality_issues,
-    validate_enriched_record,
-)
 from arandu.utils.console import console
 from arandu.utils.logger import (
     print_error,
@@ -161,12 +155,6 @@ def transcribe(
             transcription_status="completed",
             segments=segments,
         )
-
-        # Quality validation (lightweight, CPU-only)
-        validate_enriched_record(enriched)
-        issues = get_quality_issues(enriched)
-        if issues:
-            print_warning(f"Quality issues detected: {issues}")
 
         # Determine output path
         if output is None:
@@ -329,12 +317,6 @@ def drive_transcribe(
                 transcription_status="completed",
                 segments=segments,
             )
-
-            # Quality validation (lightweight, CPU-only)
-            validate_enriched_record(enriched)
-            issues = get_quality_issues(enriched)
-            if issues:
-                print_warning(f"Quality issues detected: {issues}")
 
             # Save locally first
             output_filename = get_output_filename(input_record.name)
@@ -550,24 +532,6 @@ def validate_transcriptions(
             dir_okay=True,
         ),
     ],
-    output_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--output-dir",
-            "-o",
-            help="Directory to save validated results (if not provided, updates files in-place)",
-        ),
-    ] = None,
-    threshold: Annotated[
-        float,
-        typer.Option(
-            "--threshold",
-            "-t",
-            help="Quality threshold (0.0-1.0) for marking transcriptions as valid",
-            min=0.0,
-            max=1.0,
-        ),
-    ] = 0.5,
     expected_language: Annotated[
         str,
         typer.Option(
@@ -576,89 +540,72 @@ def validate_transcriptions(
             help="Expected language code (e.g., 'pt', 'en')",
         ),
     ] = "pt",
-    report_only: Annotated[
-        bool,
+    output: Annotated[
+        Path | None,
         typer.Option(
-            "--report-only",
-            help="Only display validation report without updating files",
+            "--output",
+            "-o",
+            help="Path to save validation results as JSON.",
         ),
-    ] = False,
+    ] = None,
 ) -> None:
     """Validate existing transcriptions for quality issues.
 
-    Detects Whisper failure modes:
+    Detects Whisper failure modes using heuristic criteria:
     - Wrong language/script (Japanese when expecting Portuguese)
     - Repeated words/phrases
     - Suspicious segment patterns
     - Empty or sparse content
 
+    .. deprecated::
+        Use ``arandu judge-transcription`` instead.
+
     Examples:
         arandu validate-transcriptions results_tupi/
-        arandu validate-transcriptions results/ --threshold 0.6 --report-only
+        arandu validate-transcriptions results/ --language en
     """
+    from arandu.transcription.judge import TranscriptionJudge
+
+    print_warning("validate-transcriptions is deprecated. Use judge-transcription instead.")
 
     print_info("Scanning for transcription files...")
 
-    # Find all JSON files in input directory
-    json_files = list(input_dir.glob("*_transcription.json"))
-
+    json_files = sorted(input_dir.glob("*_transcription.json"))
     if not json_files:
         print_error(f"No transcription files found in {input_dir}")
         raise typer.Exit(code=1)
 
     print_info(f"Found {len(json_files)} transcription files")
 
-    # Create quality config with user-specified settings
-    quality_config = TranscriptionQualityConfig(
-        quality_threshold=threshold,
-        expected_language=expected_language,
-    )
+    judge = TranscriptionJudge(language=expected_language)
 
-    # Create validator once for reuse across all files
-    validator = TranscriptionValidator(quality_config)
-
-    # Validate each file
-    results = []
-    failed_files = []
+    results: list[dict] = []
 
     with create_progress() as progress:
         task = progress.add_task("Validating...", total=len(json_files))
 
         for json_path in json_files:
             try:
-                # Load record
                 with open(json_path) as f:
                     data = json.load(f)
                 record = EnrichedRecord(**data)
 
-                # Validate (reuse validator instance)
-                validate_enriched_record(record, validator=validator)
+                pipeline_result = judge.evaluate_transcription(
+                    text=record.transcription_text,
+                    duration_ms=record.duration_milliseconds,
+                    segments=record.segments or [],
+                )
 
                 results.append(
                     {
                         "file": json_path.name,
-                        "valid": record.is_valid,
-                        "score": record.transcription_quality.overall_score,
-                        "issues": len(record.transcription_quality.issues_detected),
+                        "valid": pipeline_result.passed,
                     }
                 )
 
-                # Save updated record if not report-only
-                if not report_only:
-                    if output_dir:
-                        output_path = output_dir / json_path.name
-                        output_dir.mkdir(parents=True, exist_ok=True)
-                    else:
-                        output_path = json_path
-
-                    save_enriched_record(record, output_path)
-
-                if record.is_valid is False:
-                    failed_files.append(json_path.name)
-
             except (json.JSONDecodeError, ValidationError, OSError) as e:
                 print_error(f"Failed to process {json_path.name}: {e}")
-                failed_files.append(json_path.name)
+                results.append({"file": json_path.name, "valid": False})
 
             progress.update(task, advance=1)
 
@@ -668,35 +615,163 @@ def validate_transcriptions(
     table = Table(title="Validation Summary", show_header=True, header_style="bold magenta")
     table.add_column("File", style="cyan")
     table.add_column("Valid", justify="center")
-    table.add_column("Score", justify="right")
-    table.add_column("Issues", justify="right")
 
-    for result in results:
-        valid_icon = "[green]\u2713[/green]" if result["valid"] else "[red]\u2717[/red]"
-        score_color = "green" if result["score"] >= threshold else "red"
-        table.add_row(
-            result["file"],
-            valid_icon,
-            f"[{score_color}]{result['score']:.2f}[/{score_color}]",
-            str(result["issues"]),
-        )
+    for r in results:
+        valid_icon = "[green]\u2713[/green]" if r["valid"] else "[red]\u2717[/red]"
+        table.add_row(r["file"], valid_icon)
 
     console.print(table)
     console.print()
 
-    # Summary statistics
     valid_count = sum(1 for r in results if r["valid"])
     invalid_count = len(results) - valid_count
-
     console.print(f"[bold]Total files:[/bold] {len(results)}")
     console.print(f"[green]Valid:[/green] {valid_count}")
     console.print(f"[red]Invalid:[/red] {invalid_count}")
-
-    if report_only:
-        print_info("Report-only mode: No files were updated")
-    elif output_dir:
-        print_success(f"Updated files saved to {output_dir}")
-    else:
-        print_success("Files updated in-place")
-
     console.print()
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        print_success(f"Results saved to [bold]{output}[/bold]")
+
+
+def judge_transcription(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing *_transcription.json files to judge.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ],
+    language: Annotated[
+        str,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Expected transcription language code (e.g., 'pt', 'en').",
+        ),
+    ] = "pt",
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Path to save judgement results as JSON.",
+        ),
+    ] = None,
+) -> None:
+    """Judge transcription quality using heuristic criteria.
+
+    Evaluates each transcription on script match, repetition, content density,
+    and segment quality using the TranscriptionJudge pipeline.
+
+    Examples:
+        arandu judge-transcription results/
+        arandu judge-transcription results/ --language en --output judgements.json
+    """
+    from arandu.transcription.judge import TranscriptionJudge
+
+    print_info("Scanning for transcription files...")
+
+    json_files = sorted(input_dir.glob("*_transcription.json"))
+    if not json_files:
+        print_error(f"No transcription files found in {input_dir}")
+        raise typer.Exit(code=1)
+
+    print_info(f"Found {len(json_files)} transcription files")
+
+    judge = TranscriptionJudge(language=language)
+
+    results: list[dict] = []
+
+    with create_progress() as progress:
+        task = progress.add_task("Judging...", total=len(json_files))
+
+        for json_path in json_files:
+            try:
+                with open(json_path) as f:
+                    data = json.load(f)
+
+                record = EnrichedRecord(**data)
+                text = record.transcription_text
+                duration_ms = record.duration_milliseconds
+                segments = record.segments or []
+
+                pipeline_result = judge.evaluate_transcription(
+                    text=text,
+                    duration_ms=duration_ms,
+                    segments=segments,
+                )
+
+                criterion_scores: dict[str, float] = {}
+                for stage_result in pipeline_result.stage_results.values():
+                    for name, cs in stage_result.criterion_scores.items():
+                        criterion_scores[name] = cs.score if cs.score is not None else 0.0
+
+                results.append(
+                    {
+                        "file": json_path.name,
+                        "passed": pipeline_result.passed,
+                        "criteria": criterion_scores,
+                    }
+                )
+
+            except (json.JSONDecodeError, ValidationError, OSError) as e:
+                print_error(f"Failed to process {json_path.name}: {e}")
+                results.append(
+                    {
+                        "file": json_path.name,
+                        "passed": False,
+                        "criteria": {},
+                    }
+                )
+
+            progress.update(task, advance=1)
+
+    # Display summary table
+    console.print()
+
+    # Determine criterion names from first successful result
+    criterion_names: list[str] = []
+    for r in results:
+        if r["criteria"]:
+            criterion_names = list(r["criteria"].keys())
+            break
+
+    table = Table(title="Transcription Judgement", show_header=True, header_style="bold magenta")
+    table.add_column("File", style="cyan")
+    table.add_column("Pass", justify="center")
+    for name in criterion_names:
+        table.add_column(name, justify="right")
+
+    for r in results:
+        pass_icon = "[green]\u2713[/green]" if r["passed"] else "[red]\u2717[/red]"
+        row = [r["file"], pass_icon]
+        for name in criterion_names:
+            score = r["criteria"].get(name)
+            if score is not None:
+                color = "green" if score >= 0.6 else "red"
+                row.append(f"[{color}]{score:.2f}[/{color}]")
+            else:
+                row.append("-")
+        table.add_row(*row)
+
+    console.print(table)
+    console.print()
+
+    passed_count = sum(1 for r in results if r["passed"])
+    failed_count = len(results) - passed_count
+    console.print(f"[bold]Total files:[/bold] {len(results)}")
+    console.print(f"[green]Passed:[/green] {passed_count}")
+    console.print(f"[red]Failed:[/red] {failed_count}")
+    console.print()
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        print_success(f"Results saved to [bold]{output}[/bold]")

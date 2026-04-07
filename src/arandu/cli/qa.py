@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path  # noqa: TC003
 from typing import Annotated, Any
 
 import typer
+from rich.table import Table
 
 from arandu.utils.console import console
-from arandu.utils.logger import print_error, print_success, print_warning
+from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 
 def generate_cep_qa(
@@ -61,17 +63,6 @@ def generate_cep_qa(
             help="Language for prompts: 'pt' (Portuguese) or 'en' (English). Default: pt",
         ),
     ] = None,
-    validate: Annotated[
-        bool,
-        typer.Option(
-            "--validate/--no-validate",
-            help="Enable LLM-as-a-Judge validation. Default: enabled",
-        ),
-    ] = True,
-    validator_model: Annotated[
-        str | None,
-        typer.Option("--validator-model", help="Model ID for LLM-as-a-Judge validation."),
-    ] = None,
     bloom_dist: Annotated[
         str | None,
         typer.Option(
@@ -96,20 +87,15 @@ def generate_cep_qa(
     Uses the Cognitive Elicitation Pipeline (CEP) with:
     - Module I: Bloom Scaffolding (question generation by cognitive level)
     - Module II: Reasoning & Grounding (reasoning traces and multi-hop detection)
-    - Module III: LLM-as-a-Judge Validation (optional quality evaluation)
 
     Questions are distributed across Bloom taxonomy levels (remember, understand,
     analyze, evaluate) to create cognitively scaffolded QA datasets.
 
+    Use ``arandu judge-qa`` to evaluate generated pairs with LLM-as-a-Judge.
+
     Examples:
-        # Basic CEP generation (default: Portuguese, validation enabled)
+        # Basic CEP generation (default: Portuguese)
         arandu generate-cep-qa results/ -o cep_dataset/
-
-        # Disable validation for faster processing
-        arandu generate-cep-qa results/ --no-validate
-
-        # Use custom validator model
-        arandu generate-cep-qa results/ --validator-model gpt-4
 
         # Adjust Bloom level distribution
         arandu generate-cep-qa results/ \\
@@ -151,10 +137,6 @@ def generate_cep_qa(
     cep_overrides: dict[str, Any] = {}
     if language is not None:
         cep_overrides["language"] = language
-    if not validate:
-        cep_overrides["enable_validation"] = False
-    if validator_model is not None:
-        cep_overrides["validator_model_id"] = validator_model
 
     # Parse Bloom distribution if provided
     if bloom_dist is not None:
@@ -205,9 +187,6 @@ def generate_cep_qa(
     console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_levels)}")
     console.print(f"[cyan]Bloom Distribution:[/cyan] {cep_config.bloom_distribution}")
     console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
-    console.print(f"[cyan]Validation Enabled:[/cyan] {cep_config.enable_validation}")
-    if cep_config.enable_validation:
-        console.print(f"[cyan]Validator Model:[/cyan] {cep_config.validator_model_id}")
     console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
     if qa_config.provider == "ollama":
         console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
@@ -242,3 +221,191 @@ def generate_cep_qa(
     except Exception as e:
         print_error(f"CEP QA generation failed: {e}")
         raise typer.Exit(code=1) from e
+
+
+def judge_qa(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing *_cep_qa.json files to judge.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ],
+    provider: Annotated[
+        str,
+        typer.Option("--provider", help="LLM provider: openai, ollama, custom."),
+    ],
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="Model ID for judge evaluation."),
+    ],
+    base_url: Annotated[
+        str | None,
+        typer.Option("--base-url", help="Custom base URL for OpenAI-compatible endpoints."),
+    ] = None,
+    language: Annotated[
+        str,
+        typer.Option("--language", "-l", help="Language for judge prompts (pt or en)."),
+    ] = "pt",
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Path to save judgement results as JSON."),
+    ] = None,
+    files: Annotated[
+        int | None,
+        typer.Option("--files", help="Maximum number of QA files to sample."),
+    ] = None,
+    pairs: Annotated[
+        int | None,
+        typer.Option("--pairs", help="Maximum QA pairs to judge per file."),
+    ] = None,
+) -> None:
+    """Judge CEP QA pairs using LLM-as-a-Judge evaluation.
+
+    Evaluates QA pairs on faithfulness, Bloom calibration, informativeness,
+    and self-containedness using the QAJudge pipeline.
+
+    Examples:
+        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
+        arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \\
+            --base-url https://generativelanguage.googleapis.com/v1beta/openai/
+        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b \\
+            --files 2 --pairs 3 --output judgements.json
+    """
+    from arandu.qa.cep.judge import QAJudge
+    from arandu.qa.config import CEPConfig
+    from arandu.qa.schemas import QAPairCEP
+    from arandu.shared.llm_client import create_llm_client
+
+    # Resolve base_url for ollama provider
+    effective_base_url = base_url
+    if effective_base_url is None and provider == "ollama":
+        effective_base_url = "http://localhost:11434/v1"
+
+    try:
+        client = create_llm_client(provider=provider, model_id=model, base_url=effective_base_url)
+    except Exception as e:
+        print_error(f"Failed to create LLM client: {e}")
+        raise typer.Exit(code=1) from e
+
+    cep_config = CEPConfig(language=language)
+    judge = QAJudge(validator_client=client, cep_config=cep_config)
+
+    # Find QA files
+    qa_files = sorted(input_dir.glob("*_cep_qa.json"))
+    if not qa_files:
+        print_error(f"No CEP QA files found in {input_dir}")
+        raise typer.Exit(code=1)
+
+    if files is not None:
+        qa_files = qa_files[:files]
+
+    print_info(
+        f"Judging [bold]{len(qa_files)}[/bold] QA files"
+        + (f", up to [bold]{pairs}[/bold] pairs each" if pairs else "")
+    )
+    console.print()
+
+    all_results: list[dict] = []
+
+    for qa_file in qa_files:
+        try:
+            data = json.loads(qa_file.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            print_error(f"Failed to read {qa_file.name}: {e}")
+            continue
+
+        context = data.get("transcription_text") or data.get("context", "")
+        all_pairs = data.get("qa_pairs", [])
+
+        # Sample diverse pairs by Bloom level
+        seen_levels: set[str] = set()
+        sampled: list[dict] = []
+        for p in all_pairs:
+            level = p.get("bloom_level", "")
+            if pairs is not None and len(sampled) >= pairs:
+                break
+            if level not in seen_levels:
+                sampled.append(p)
+                seen_levels.add(level)
+        # Fill remaining slots if pairs budget allows
+        if pairs is not None:
+            for p in all_pairs:
+                if len(sampled) >= pairs:
+                    break
+                if p not in sampled:
+                    sampled.append(p)
+        elif pairs is None:
+            sampled = all_pairs
+
+        console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
+
+        for pair_data in sampled:
+            try:
+                qa = QAPairCEP(**pair_data)
+                result = judge.validate(qa, context)
+
+                table = Table(show_header=True, border_style="dim", width=90)
+                table.add_column("Criterion", width=22)
+                table.add_column("Score", justify="right", width=7)
+                table.add_column("Threshold", justify="right", width=10)
+                table.add_column("Pass", justify="center", width=6)
+                table.add_column("Rationale", width=40)
+
+                if result.validation:
+                    for stage_result in result.validation.stage_results.values():
+                        for name, cs in stage_result.criterion_scores.items():
+                            if cs.error:
+                                table.add_row(
+                                    name,
+                                    "\u2014",
+                                    f"{cs.threshold:.2f}",
+                                    "[red]ERR[/red]",
+                                    cs.error[:40],
+                                )
+                            else:
+                                status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
+                                table.add_row(
+                                    name,
+                                    f"{cs.score:.2f}" if cs.score is not None else "\u2014",
+                                    f"{cs.threshold:.2f}",
+                                    status,
+                                    (cs.rationale or "")[:40],
+                                )
+
+                console.print(f"  Q: {qa.question[:70]}...")
+                console.print(f"  Bloom: {qa.bloom_level}  |  Valid: {result.is_valid}")
+                console.print(table)
+                console.print()
+
+                all_results.append(
+                    {
+                        "file": qa_file.name,
+                        "question": qa.question,
+                        "answer": qa.answer,
+                        "bloom_level": qa.bloom_level,
+                        "is_valid": result.is_valid,
+                        "validation": (
+                            result.validation.model_dump() if result.validation else None
+                        ),
+                    }
+                )
+
+            except Exception as e:
+                print_warning(f"Failed to judge pair in {qa_file.name}: {e}")
+                continue
+
+    # Summary
+    valid_count = sum(1 for r in all_results if r["is_valid"])
+    total_count = len(all_results)
+    console.print(f"[bold]Total pairs judged:[/bold] {total_count}")
+    console.print(f"[green]Valid:[/green] {valid_count}")
+    console.print(f"[red]Invalid:[/red] {total_count - valid_count}")
+    console.print()
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(all_results, indent=2, ensure_ascii=False))
+        print_success(f"Results saved to [bold]{output}[/bold]")
