@@ -164,7 +164,7 @@ def _get_enriched_processor_cls() -> type:
 def _patched_csvs_to_temp_graphml(
     triple_node_file: str,
     triple_edge_file: str,
-    config: Any = None,
+    config: Any,
 ) -> None:
     """Patched ``csvs_to_temp_graphml`` that guards against orphan nodes.
 
@@ -174,9 +174,12 @@ def _patched_csvs_to_temp_graphml(
 
     This patch ensures both edge endpoints exist as fully-attributed
     nodes before adding edges. Can be removed once atlas-rag upstream
-    fixes the issue.
+    fixes the issue (HKUST-KnowComp/AutoSchemaKG).
 
-    See: ``atlas-rag-keyerror-issue.md``
+    Args:
+        triple_node_file: Path to the triple nodes CSV.
+        triple_edge_file: Path to the triple edges CSV.
+        config: atlas-rag ``ProcessingConfig`` instance.
     """
     import os
     import pickle
@@ -212,17 +215,20 @@ def _patched_csvs_to_temp_graphml(
                 g.add_node(end_id, id=row[":END_ID"], type="entity")
                 orphan_count += 1
             if not g.has_edge(start_id, end_id):
-                g.add_edge(start_id, end_id, relation=row["relation"], type=row[":TYPE"])
+                g.add_edge(
+                    start_id, end_id, relation=row["relation"], type=row[":TYPE"]
+                )
 
     if orphan_count:
         logger.warning("Patched %d orphan nodes with default attributes", orphan_count)
 
     output_name = (
-        f"{config.output_directory}/kg_graphml/{config.filename_pattern}_without_concept.pkl"
+        f"{config.output_directory}/kg_graphml"
+        f"/{config.filename_pattern}_without_concept.pkl"
     )
     output_dir = os.path.dirname(output_name)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     with open(output_name, "wb") as output_file:
         pickle.dump(g, output_file)
 

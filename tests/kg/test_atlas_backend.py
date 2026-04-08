@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path  # noqa: TC003 — used at runtime for tmp_path fixtures
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1259,6 +1260,147 @@ class TestResumableConceptGeneration:
 
         call_kwargs = mock_extractor.generate_concept_csv_temp.call_args[1]
         assert call_kwargs["language"] == "pt"
+
+
+class TestPatchedCsvsToTempGraphml:
+    """Tests for _patched_csvs_to_temp_graphml orphan node handling."""
+
+    _NODE_FIELDS: ClassVar[list[str]] = ["name:ID", "type", "concepts", "synsets", ":LABEL"]
+
+    @staticmethod
+    def _write_nodes_csv(path: Path, rows: list[dict[str, str]]) -> None:
+        """Write a triple nodes CSV file."""
+        with path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=TestPatchedCsvsToTempGraphml._NODE_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    @staticmethod
+    def _write_edges_csv(path: Path, rows: list[dict[str, str]]) -> None:
+        """Write a triple edges CSV file."""
+        with path.open("w", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=[":START_ID", ":END_ID", "relation", "concepts", "synsets", ":TYPE"]
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def test_orphan_nodes_get_default_attributes(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Edge endpoints missing from nodes CSV get id and type attributes."""
+        import pickle
+
+        # Make get_node_id return input as-is (no hashing)
+        csv_mod = _mock_atlas_rag["atlas_rag.kg_construction.utils.csv_processing.csv_to_graphml"]
+        csv_mod.get_node_id = lambda name, cache=None: name
+
+        from arandu.kg.atlas_backend import _patched_csvs_to_temp_graphml
+
+        nodes_file = tmp_path / "nodes.csv"
+        edges_file = tmp_path / "edges.csv"
+        self._write_nodes_csv(
+            nodes_file,
+            [
+                {
+                    "name:ID": "rio",
+                    "type": "entity",
+                    "concepts": "",
+                    "synsets": "",
+                    ":LABEL": "Node",
+                },
+            ],
+        )
+        self._write_edges_csv(
+            edges_file,
+            [
+                {
+                    ":START_ID": "rio",
+                    ":END_ID": "enchente",
+                    "relation": "causou",
+                    "concepts": "",
+                    "synsets": "",
+                    ":TYPE": "Relation",
+                },
+            ],
+        )
+
+        config = MagicMock()
+        config.output_directory = str(tmp_path / "output")
+        config.filename_pattern = "test"
+
+        _patched_csvs_to_temp_graphml(str(nodes_file), str(edges_file), config)
+
+        pkl_path = tmp_path / "output" / "kg_graphml" / "test_without_concept.pkl"
+        assert pkl_path.exists()
+
+        with open(pkl_path, "rb") as f:
+            g = pickle.load(f)
+
+        # "enchente" was only in edges, should have been created with attributes
+        orphan_nodes = [n for n in g.nodes if g.nodes[n].get("id") == "enchente"]
+        assert len(orphan_nodes) == 1
+        assert g.nodes[orphan_nodes[0]]["type"] == "entity"
+        assert g.nodes[orphan_nodes[0]]["id"] == "enchente"
+
+    def test_no_orphans_when_all_nodes_present(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """No orphan warning when all edge endpoints exist in nodes CSV."""
+        csv_mod = _mock_atlas_rag["atlas_rag.kg_construction.utils.csv_processing.csv_to_graphml"]
+        csv_mod.get_node_id = lambda name, cache=None: name
+
+        from arandu.kg.atlas_backend import _patched_csvs_to_temp_graphml
+
+        nodes_file = tmp_path / "nodes.csv"
+        edges_file = tmp_path / "edges.csv"
+        self._write_nodes_csv(
+            nodes_file,
+            [
+                {
+                    "name:ID": "rio",
+                    "type": "entity",
+                    "concepts": "",
+                    "synsets": "",
+                    ":LABEL": "Node",
+                },
+                {
+                    "name:ID": "enchente",
+                    "type": "event",
+                    "concepts": "",
+                    "synsets": "",
+                    ":LABEL": "Node",
+                },
+            ],
+        )
+        self._write_edges_csv(
+            edges_file,
+            [
+                {
+                    ":START_ID": "rio",
+                    ":END_ID": "enchente",
+                    "relation": "causou",
+                    "concepts": "",
+                    "synsets": "",
+                    ":TYPE": "Relation",
+                },
+            ],
+        )
+
+        config = MagicMock()
+        config.output_directory = str(tmp_path / "output")
+        config.filename_pattern = "test"
+
+        _patched_csvs_to_temp_graphml(str(nodes_file), str(edges_file), config)
+
+        import pickle
+
+        pkl_path = tmp_path / "output" / "kg_graphml" / "test_without_concept.pkl"
+        with open(pkl_path, "rb") as f:
+            g = pickle.load(f)
+
+        # "enchente" should keep its original type from nodes CSV
+        enchente_nodes = [n for n in g.nodes if g.nodes[n].get("id") == "enchente"]
+        assert len(enchente_nodes) == 1
+        assert g.nodes[enchente_nodes[0]]["type"] == "event"  # original, not "entity"
 
 
 class TestBuildResult:
