@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from arandu.shared.judge.schemas import CriterionScore
 from arandu.utils.text import validate_score
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class CriterionConfig(BaseModel):
     """Base configuration for any criterion."""
 
-    threshold: float
+    threshold: float = Field(ge=0.0, le=1.0)
 
 
 class LLMCriterionConfig(CriterionConfig):
@@ -131,7 +131,7 @@ class HeuristicCriterion(JudgeCriterion):
         """Run heuristic check and wrap result."""
         score, rationale = self._check(**kwargs)
         return CriterionScore(
-            score=score,
+            score=validate_score(score),
             threshold=self.threshold,
             rationale=rationale,
         )

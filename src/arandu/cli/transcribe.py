@@ -707,16 +707,21 @@ def judge_transcription(
                     segments=segments,
                 )
 
-                criterion_scores: dict[str, float] = {}
+                criteria: dict[str, dict] = {}
                 for stage_result in pipeline_result.stage_results.values():
                     for name, cs in stage_result.criterion_scores.items():
-                        criterion_scores[name] = cs.score if cs.score is not None else 0.0
+                        criteria[name] = {
+                            "score": cs.score,
+                            "threshold": cs.threshold,
+                            "passed": cs.passed,
+                            "error": cs.error,
+                        }
 
                 results.append(
                     {
                         "file": json_path.name,
                         "passed": pipeline_result.passed,
-                        "criteria": criterion_scores,
+                        "criteria": criteria,
                     }
                 )
 
@@ -752,12 +757,15 @@ def judge_transcription(
         pass_icon = "[green]\u2713[/green]" if r["passed"] else "[red]\u2717[/red]"
         row = [r["file"], pass_icon]
         for name in criterion_names:
-            score = r["criteria"].get(name)
-            if score is not None:
-                color = "green" if score >= 0.6 else "red"
-                row.append(f"[{color}]{score:.2f}[/{color}]")
-            else:
+            cs = r["criteria"].get(name)
+            if cs is None:
                 row.append("-")
+            elif cs["error"]:
+                row.append("[red]ERR[/red]")
+            else:
+                score = cs["score"]
+                color = "green" if cs["passed"] else "red"
+                row.append(f"[{color}]{score:.2f}[/{color}]")
         table.add_row(*row)
 
     console.print(table)
