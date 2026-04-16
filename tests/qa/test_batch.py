@@ -401,63 +401,16 @@ class TestInitCEPWorker:
             provider="ollama",
             model_id="llama3.1:8b",
         )
-        cep_config = CEPConfig(
-            enable_validation=False,
-        )
+        cep_config = CEPConfig()
 
         _init_cep_worker(
             provider="ollama",
             model_id="llama3.1:8b",
             qa_config_dict=qa_config.model_dump(),
             cep_config_dict=cep_config.model_dump(),
-            validator_provider=None,
-            validator_model_id=None,
         )
 
         assert qa_batch_module._worker_cep_generator is not None
-        # Should be called with validator_client=None
-        call_kwargs = mock_cep_generator_class.call_args.kwargs
-        assert call_kwargs["validator_client"] is None
-
-    def test_init_cep_worker_with_validation(self, mocker: MockerFixture) -> None:
-        """Test CEP worker initialization with validation enabled."""
-        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
-
-        # Mock CEPQAGenerator
-        mock_cep_generator_class = mocker.patch("arandu.qa.cep.CEPQAGenerator")
-        mock_cep_generator = Mock()
-        mock_cep_generator_class.return_value = mock_cep_generator
-
-        # Reset global state
-        import arandu.qa.batch as qa_batch_module
-
-        qa_batch_module._worker_cep_generator = None
-
-        qa_config = QAConfig(
-            provider="ollama",
-            model_id="llama3.1:8b",
-        )
-        cep_config = CEPConfig(
-            enable_validation=True,
-            validator_provider="ollama",
-            validator_model_id="llama3.1:8b",
-        )
-
-        _init_cep_worker(
-            provider="ollama",
-            model_id="llama3.1:8b",
-            qa_config_dict=qa_config.model_dump(),
-            cep_config_dict=cep_config.model_dump(),
-            validator_provider="ollama",
-            validator_model_id="llama3.1:8b",
-        )
-
-        assert qa_batch_module._worker_cep_generator is not None
-        # Should be called with a validator_client
-        call_kwargs = mock_cep_generator_class.call_args.kwargs
-        assert call_kwargs["validator_client"] is not None
 
 
 class TestGenerateCEPQAForTranscription:
@@ -516,9 +469,7 @@ class TestGenerateCEPQAForTranscription:
             questions_per_document=1,
         ).model_dump()
 
-        cep_config_dict = CEPConfig(
-            enable_validation=False,
-        ).model_dump()
+        cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, message = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
@@ -559,7 +510,7 @@ class TestGenerateCEPQAForTranscription:
         )
 
         qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
-        cep_config_dict = CEPConfig(enable_validation=False).model_dump()
+        cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, message = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
@@ -590,7 +541,7 @@ class TestGenerateCEPQAForTranscription:
         )
 
         qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
-        cep_config_dict = CEPConfig(enable_validation=False).model_dump()
+        cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, message = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
@@ -658,11 +609,7 @@ class TestGenerateCEPQAForTranscription:
             questions_per_document=1,
         ).model_dump()
 
-        cep_config_dict = CEPConfig(
-            enable_validation=True,
-            validator_provider="ollama",
-            validator_model_id="llama3.1:8b",
-        ).model_dump()
+        cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, _ = generate_cep_qa_for_transcription(
             task, qa_config_dict, cep_config_dict
@@ -679,6 +626,10 @@ class TestRunBatchCEPGeneration:
     @pytest.fixture(autouse=True)
     def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Configure versioned results for CEP batch tests."""
+        import arandu.qa.batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
         self.results_dir = (tmp_path / "results").resolve()
 
         mock_rc = mocker.patch("arandu.qa.batch.ResultsConfig")
@@ -701,7 +652,7 @@ class TestRunBatchCEPGeneration:
         input_dir.mkdir()
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -719,7 +670,7 @@ class TestRunBatchCEPGeneration:
         input_dir.mkdir()
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -754,7 +705,7 @@ class TestRunBatchCEPGeneration:
         )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -797,7 +748,7 @@ class TestRunBatchCEPGeneration:
             model_id="llama3.1:8b",
             questions_per_document=1,
         )
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -835,7 +786,7 @@ class TestRunBatchCEPGeneration:
             )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -879,7 +830,7 @@ class TestRunBatchCEPGeneration:
             model_id="llama3.1:8b",
             questions_per_document=1,
         )
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -916,7 +867,7 @@ class TestRunBatchCEPGeneration:
             )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         # Use 4 workers (more than mocked cpu_count of 2)
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=4)
@@ -940,7 +891,7 @@ class TestRunBatchCEPGeneration:
         invalid_file.write_text("{ not valid json")
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -987,7 +938,7 @@ class TestRunBatchCEPGeneration:
             )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         # Use 2+ workers to trigger parallel path
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=2)
@@ -1019,7 +970,7 @@ class TestRunBatchCEPGeneration:
         )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -1050,7 +1001,7 @@ class TestRunBatchCEPGeneration:
         )
 
         qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
@@ -1094,7 +1045,7 @@ class TestRunBatchCEPGeneration:
             model_id="llama3.1:8b",
             questions_per_document=1,
         )
-        cep_config = CEPConfig(enable_validation=False)
+        cep_config = CEPConfig()
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 

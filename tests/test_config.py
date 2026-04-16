@@ -293,12 +293,8 @@ class TestCEPConfig:
         config = CEPConfig()
 
         assert config.enable_reasoning_traces is True
-        assert config.enable_validation is True
         assert config.bloom_levels == ["remember", "understand", "analyze", "evaluate"]
         assert config.max_hop_count == 3
-        assert config.validator_provider == "ollama"
-        assert config.validator_model_id == "qwen3:14b"
-        assert config.validator_temperature == 0.3
         assert config.validation_threshold == 0.6
         assert config.language == "pt"
 
@@ -379,13 +375,11 @@ class TestCEPConfig:
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test CEP config loading from environment variables."""
-        monkeypatch.setenv("ARANDU_CEP_VALIDATOR_MODEL_ID", "gpt-4")
-        monkeypatch.setenv("ARANDU_CEP_ENABLE_VALIDATION", "false")
+        monkeypatch.setenv("ARANDU_CEP_VALIDATION_THRESHOLD", "0.8")
 
         config = CEPConfig()
 
-        assert config.validator_model_id == "gpt-4"
-        assert config.enable_validation is False
+        assert config.validation_threshold == 0.8
 
     def test_max_hop_count_boundaries(self) -> None:
         """Test max_hop_count boundary values."""

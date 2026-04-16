@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from arandu.shared.judge.criterion import FileCriterion, JudgeCriterion
+from arandu.shared.judge.criterion import JudgeCriterion, LLMCriterion
 from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_JUDGE_PROMPTS_DIR = get_project_root() / "prompts" / "judge" / "criteria"
 
 
-class JudgeCriterionFactory:
+class LLMCriterionFactory:
     """Factory for managing evaluation criteria.
 
     Allows different pipeline steps to request specific criteria by name
@@ -56,7 +56,7 @@ class JudgeCriterionFactory:
         self.max_tokens = max_tokens
         self._criteria: dict[str, JudgeCriterion] = {}
 
-        logger.info(f"JudgeCriterionFactory initialized with language={language}")
+        logger.info(f"LLMCriterionFactory initialized with language={language}")
 
     def get_criterion(self, name: str) -> JudgeCriterion:
         """Get or create a criterion by name.
@@ -74,8 +74,8 @@ class JudgeCriterionFactory:
         if name in self._criteria:
             return self._criteria[name]
 
-        # Create new file-based criterion
-        criterion = FileCriterion(
+        # Create new LLM-based criterion from prompt files
+        criterion = LLMCriterion.from_config(
             name=name,
             prompts_dir=self.prompts_dir,
             language=self.language,
