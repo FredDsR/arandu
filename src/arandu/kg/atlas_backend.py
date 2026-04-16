@@ -215,16 +215,13 @@ def _patched_csvs_to_temp_graphml(
                 g.add_node(end_id, id=row[":END_ID"], type="entity")
                 orphan_count += 1
             if not g.has_edge(start_id, end_id):
-                g.add_edge(
-                    start_id, end_id, relation=row["relation"], type=row[":TYPE"]
-                )
+                g.add_edge(start_id, end_id, relation=row["relation"], type=row[":TYPE"])
 
     if orphan_count:
         logger.warning("Patched %d orphan nodes with default attributes", orphan_count)
 
     output_name = (
-        f"{config.output_directory}/kg_graphml"
-        f"/{config.filename_pattern}_without_concept.pkl"
+        f"{config.output_directory}/kg_graphml/{config.filename_pattern}_without_concept.pkl"
     )
     output_dir = os.path.dirname(output_name)
     if output_dir:
