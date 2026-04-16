@@ -161,6 +161,75 @@ def _get_enriched_processor_cls() -> type:
     return _MetadataEnrichedProcessorCls
 
 
+def _patched_csvs_to_temp_graphml(
+    triple_node_file: str,
+    triple_edge_file: str,
+    config: Any,
+) -> None:
+    """Patched ``csvs_to_temp_graphml`` that guards against orphan nodes.
+
+    atlas-rag's ``add_edge()`` auto-creates nodes without attributes when
+    edge endpoints are missing from the nodes CSV. This causes
+    ``generate_concept()`` to crash with ``KeyError: 'id'``.
+
+    This patch ensures both edge endpoints exist as fully-attributed
+    nodes before adding edges. Can be removed once atlas-rag upstream
+    fixes the issue (HKUST-KnowComp/AutoSchemaKG).
+
+    Args:
+        triple_node_file: Path to the triple nodes CSV.
+        triple_edge_file: Path to the triple edges CSV.
+        config: atlas-rag ``ProcessingConfig`` instance.
+    """
+    import os
+    import pickle
+
+    import networkx as nx
+    from atlas_rag.kg_construction.utils.csv_processing.csv_to_graphml import (
+        get_node_id,
+    )
+
+    g = nx.DiGraph()
+    entity_to_id: dict[str, str] = {}
+
+    # Add triple nodes (same as original)
+    with open(triple_node_file) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            node_id = row["name:ID"]
+            mapped_id = get_node_id(node_id, entity_to_id)
+            if mapped_id not in g.nodes:
+                g.add_node(mapped_id, id=node_id, type=row["type"])
+
+    # Add triple edges — ensure endpoints exist with attributes
+    orphan_count = 0
+    with open(triple_edge_file) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            start_id = get_node_id(row[":START_ID"], entity_to_id)
+            end_id = get_node_id(row[":END_ID"], entity_to_id)
+            if start_id not in g.nodes:
+                g.add_node(start_id, id=row[":START_ID"], type="entity")
+                orphan_count += 1
+            if end_id not in g.nodes:
+                g.add_node(end_id, id=row[":END_ID"], type="entity")
+                orphan_count += 1
+            if not g.has_edge(start_id, end_id):
+                g.add_edge(start_id, end_id, relation=row["relation"], type=row[":TYPE"])
+
+    if orphan_count:
+        logger.warning("Patched %d orphan nodes with default attributes", orphan_count)
+
+    output_name = (
+        f"{config.output_directory}/kg_graphml/{config.filename_pattern}_without_concept.pkl"
+    )
+    output_dir = os.path.dirname(output_name)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    with open(output_name, "wb") as output_file:
+        pickle.dump(g, output_file)
+
+
 class AtlasRagConstructor:
     """KG constructor using atlas-rag (AutoSchemaKG) as the extraction backend.
 
@@ -528,7 +597,14 @@ class AtlasRagConstructor:
             triple_extraction.DatasetProcessor = original_cls
 
         logger.info("Converting JSON to CSV...")
-        extractor.convert_json_to_csv()
+        from atlas_rag.kg_construction.utils.csv_processing import csv_to_graphml
+
+        original_csvs_to_temp = csv_to_graphml.csvs_to_temp_graphml
+        csv_to_graphml.csvs_to_temp_graphml = _patched_csvs_to_temp_graphml
+        try:
+            extractor.convert_json_to_csv()
+        finally:
+            csv_to_graphml.csvs_to_temp_graphml = original_csvs_to_temp
 
         if self._opts["include_concept"]:
             self._run_concept_generation_with_resume(extractor, output_dir)
