@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.shared.judge.criterion import FileCriterion
-from arandu.shared.judge.factory import JudgeCriterionFactory
+from arandu.shared.judge.criterion import LLMCriterion
+from arandu.shared.judge.factory import LLMCriterionFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,8 +46,8 @@ def prompts_dir(tmp_path: Path) -> Path:
     return base_dir
 
 
-class TestJudgeCriterionFactory:
-    """Tests for JudgeCriterionFactory class."""
+class TestLLMCriterionFactory:
+    """Tests for LLMCriterionFactory class."""
 
     def test_initialization(
         self,
@@ -55,7 +55,7 @@ class TestJudgeCriterionFactory:
         prompts_dir: Path,
     ) -> None:
         """Test factory initialization."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -70,8 +70,8 @@ class TestJudgeCriterionFactory:
         mock_llm_client: Any,
         prompts_dir: Path,
     ) -> None:
-        """Test getting criterion creates new FileCriterion."""
-        factory = JudgeCriterionFactory(
+        """Test getting criterion creates new LLMCriterion."""
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -79,9 +79,9 @@ class TestJudgeCriterionFactory:
 
         criterion = factory.get_criterion("faithfulness")
 
-        assert isinstance(criterion, FileCriterion)
+        assert isinstance(criterion, LLMCriterion)
         assert criterion.name == "faithfulness"
-        assert criterion.language == "pt"
+        assert criterion.threshold == 0.7
 
     def test_get_criterion_caches_result(
         self,
@@ -89,7 +89,7 @@ class TestJudgeCriterionFactory:
         prompts_dir: Path,
     ) -> None:
         """Test getting same criterion returns cached instance."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -106,7 +106,7 @@ class TestJudgeCriterionFactory:
         tmp_path: Path,
     ) -> None:
         """Test getting criterion with missing files raises error."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=tmp_path,
@@ -121,7 +121,7 @@ class TestJudgeCriterionFactory:
         prompts_dir: Path,
     ) -> None:
         """Test that criterion loaded via factory has correct threshold."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -140,7 +140,7 @@ class TestJudgeCriterionFactory:
         mocker: MockerFixture,
     ) -> None:
         """Test registering custom criterion implementation."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -161,7 +161,7 @@ class TestJudgeCriterionFactory:
         mock_llm_client: Any,
     ) -> None:
         """Test default prompts directory is set correctly."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
         )
@@ -177,7 +177,7 @@ class TestJudgeCriterionFactory:
         prompts_dir: Path,
     ) -> None:
         """Test temperature and max_tokens are passed to criteria."""
-        factory = JudgeCriterionFactory(
+        factory = LLMCriterionFactory(
             llm_client=mock_llm_client,
             language="pt",
             prompts_dir=prompts_dir,
@@ -187,6 +187,6 @@ class TestJudgeCriterionFactory:
 
         criterion = factory.get_criterion("faithfulness")
 
-        assert isinstance(criterion, FileCriterion)
+        assert isinstance(criterion, LLMCriterion)
         assert criterion.temperature == 0.5
         assert criterion.max_tokens == 4096

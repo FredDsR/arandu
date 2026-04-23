@@ -6,13 +6,13 @@ pipeline works end-to-end with a real provider.
 
 Usage:
     # With Gemini (OpenAI-compatible)
-    GEMINI_API_KEY=your-key uv run python scripts/test_judge.py
+    GEMINI_API_KEY=your-key uv run python scripts/test_qa_judge.py
 
     # With Ollama
-    uv run python scripts/test_judge.py --provider ollama --model qwen3:14b
+    uv run python scripts/test_qa_judge.py --provider ollama --model qwen3:14b
 
     # Custom sample size
-    uv run python scripts/test_judge.py --files 2 --pairs 2
+    uv run python scripts/test_qa_judge.py --files 2 --pairs 2
 """
 
 from __future__ import annotations
@@ -111,15 +111,19 @@ def main() -> None:
                     for name, cs in stage_result.criterion_scores.items():
                         if cs.error:
                             table.add_row(
-                                name, "—", f"{cs.threshold:.2f}",
-                                "[red]ERR[/red]", cs.error[:40],
+                                name,
+                                "—",
+                                f"{cs.threshold:.2f}",
+                                "[red]ERR[/red]",
+                                cs.error[:40],
                             )
                         else:
                             status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
                             table.add_row(
                                 name,
                                 f"{cs.score:.2f}" if cs.score is not None else "—",
-                                f"{cs.threshold:.2f}", status,
+                                f"{cs.threshold:.2f}",
+                                status,
                                 (cs.rationale or "")[:40],
                             )
 
@@ -128,14 +132,16 @@ def main() -> None:
             console.print(table)
             console.print()
 
-            all_results.append({
-                "file": qa_file.name,
-                "question": qa.question,
-                "answer": qa.answer,
-                "bloom_level": qa.bloom_level,
-                "is_valid": result.is_valid,
-                "validation": result.validation.model_dump() if result.validation else None,
-            })
+            all_results.append(
+                {
+                    "file": qa_file.name,
+                    "question": qa.question,
+                    "answer": qa.answer,
+                    "bloom_level": qa.bloom_level,
+                    "is_valid": result.is_valid,
+                    "validation": result.validation.model_dump() if result.validation else None,
+                }
+            )
 
     # Save JSON results
     if args.output:

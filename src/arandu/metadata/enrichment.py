@@ -1,8 +1,7 @@
 """Source metadata enrichment for transcription records.
 
 Provides the convenience function for attaching extracted metadata
-to EnrichedRecord instances, following the same pattern as
-``validate_enriched_record`` in ``transcription_validator.py``.
+to EnrichedRecord instances.  Mutates the record in-place.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ def enrich_with_source_metadata(
 ) -> EnrichedRecord:
     """Extract and attach source metadata to an enriched record.
 
-    Mutates the record in-place, same pattern as ``validate_enriched_record``.
+    Mutates the record in-place.
 
     Args:
         record: EnrichedRecord to enrich with source metadata.

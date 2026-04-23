@@ -14,7 +14,7 @@ from arandu.shared.judge.schemas import CriterionScore, JudgeStepResult
 
 if TYPE_CHECKING:
     from arandu.shared.judge.criterion import JudgeCriterion
-    from arandu.shared.judge.factory import JudgeCriterionFactory
+    from arandu.shared.judge.factory import LLMCriterionFactory
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class JudgeStep:
     def __init__(
         self,
         criteria: list[JudgeCriterion | str],
-        factory: JudgeCriterionFactory | None = None,
+        factory: LLMCriterionFactory | None = None,
     ) -> None:
         """Initialize the step with criteria (objects or names).
 
@@ -45,7 +45,7 @@ class JudgeStep:
     @staticmethod
     def _resolve_criteria(
         criteria: list[JudgeCriterion | str],
-        factory: JudgeCriterionFactory | None,
+        factory: LLMCriterionFactory | None,
     ) -> list[JudgeCriterion]:
         """Convert string criterion names to objects via factory.
 

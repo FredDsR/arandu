@@ -31,7 +31,6 @@ from arandu.transcription.media import (
     has_audio_stream,
     requires_audio_extraction,
 )
-from arandu.transcription.validator import get_quality_issues, validate_enriched_record
 
 if TYPE_CHECKING:
     from arandu.transcription.engine import TranscriptionResult
@@ -310,12 +309,6 @@ def transcribe_single_file(
                 transcription_status="completed",
                 segments=segments,
             )
-
-            # Quality validation (lightweight, CPU-only)
-            validate_enriched_record(enriched)
-            issues = get_quality_issues(enriched)
-            if issues:
-                logger.warning(f"Quality check failed for {task.name}: {issues}")
 
             # Metadata extraction (if catalog row available)
             if task.catalog_row is not None:

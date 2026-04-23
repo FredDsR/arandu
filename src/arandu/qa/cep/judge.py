@@ -18,6 +18,7 @@ from arandu.shared.judge import (
     JudgePipeline,
     JudgeStage,
     JudgeStep,
+    LLMCriterionFactory,
 )
 from arandu.utils.paths import get_project_root
 
@@ -35,8 +36,8 @@ _VALIDATION_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep" / "valid
 class QAJudge(BaseJudge):
     """Validate QA pairs using a composable shared judge pipeline.
 
-    Replaces the legacy QAValidator with a single-stage filter pipeline
-    backed by ``JudgeCriterionFactory`` and ``JudgePipeline``.
+    Uses a single-stage filter pipeline
+    backed by ``LLMCriterionFactory`` and ``JudgePipeline``.
 
     Evaluates each QA pair on four criteria:
     - Faithfulness: Is the answer grounded in the context?
@@ -62,12 +63,14 @@ class QAJudge(BaseJudge):
         self.cep_config = cep_config
         self.judge_config = judge_config or get_judge_config()
 
-        super().__init__(
+        self._factory = LLMCriterionFactory(
             llm_client=validator_client,
             language=self.judge_config.language,
             temperature=self.judge_config.temperature,
             max_tokens=self.judge_config.max_tokens,
         )
+
+        super().__init__()  # calls _build_pipeline() which uses self._factory
 
     def _build_pipeline(self) -> JudgePipeline:
         """Build evaluation pipelines for CEP validation.
