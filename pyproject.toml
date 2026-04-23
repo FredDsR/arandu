@@ -100,6 +100,10 @@ kg = [
     "faiss-cpu>=1.7",
 ]
 
+dashboard = [
+    "textual>=3.0.0",
+]
+
 [dependency-groups]
 dev = [
     "ruff>=0.8.0",
