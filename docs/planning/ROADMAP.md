@@ -89,11 +89,13 @@ flowchart TD
 
 ### Tasks
 
-1. **Implement #77** — resumable concept generation wrapper + `language='pt'` bug fix
-2. **Run KG pipeline to completion** — resume or fresh run with Portuguese prompts
-3. **Inspect output quality** — are Portuguese entities/relations sensible? Knowledge islands?
-4. **Analyze predicate explosion** — check for semantic duplicates in predicates (e.g., "lutar"/"combater"/"brigar" as separate predicates). AutoSchemaKG's conceptualization step should canonicalize these, but the language bug may have broken it. (Feedback: Joel, midway seminar)
-5. **Close #75** — superseded by #77
+1. ~~**Implement #77** — resumable concept generation wrapper + `language='pt'` bug fix~~ Done
+2. ~~**Patch atlas-rag `KeyError: 'id'`** — monkey-patch `csvs_to_temp_graphml()` in `atlas_backend.py` so edge endpoints get `id`/`type` attributes.~~ Done in PR [#85](https://github.com/FredDsR/arandu/pull/85).
+3. **File upstream issue** on [HKUST-KnowComp/AutoSchemaKG](https://github.com/HKUST-KnowComp/AutoSchemaKG) so the local patch can eventually be removed.
+4. **Run KG pipeline to completion** — resume from `test-kg-04` checkpoint with patch applied
+5. **Inspect output quality** — are Portuguese entities/relations sensible? Knowledge islands?
+6. **Analyze predicate explosion** — check for semantic duplicates in predicates (e.g., "lutar"/"combater"/"brigar" as separate predicates). AutoSchemaKG's conceptualization step should canonicalize these, but the language bug may have broken it. (Feedback: Joel, midway seminar)
+7. ~~**Close #75** — superseded by #77~~ Done
 
 ### Success Criteria
 
