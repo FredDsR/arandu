@@ -42,13 +42,9 @@ Technical documentation for contributors:
 - **[Dependencies](development/dependencies.md)** - Package requirements
 - **[CI/CD Setup](development/ci-cd.md)** - GitHub Actions workflow
 
-### Implementation Planning
+### Roadmap
 
-Active implementation guides (Phase 2 of 5 complete):
-
-- **[Implementation Plan](planning/IMPLEMENTATION_PLAN.md)** - Master plan for all phases
-- **[Phase Status](planning/PHASE_STATUS.md)** - Current progress and completed phases
-- **[Quick Start for Implementers](planning/IMPLEMENTATION_QUICKSTART.md)** - Getting started with development
+- **[ROADMAP.md](planning/ROADMAP.md)** — master's roadmap, phase timeline, and active tasks
 
 ## Documentation Structure
 
@@ -74,10 +70,8 @@ docs/
 │   ├── testing.md
 │   ├── dependencies.md
 │   └── ci-cd.md
-└── planning/                 # Implementation planning (active)
-    ├── IMPLEMENTATION_PLAN.md
-    ├── PHASE_STATUS.md
-    └── IMPLEMENTATION_QUICKSTART.md
+└── planning/
+    └── ROADMAP.md            # Master's roadmap + phase status
 ```
 
 ## External Resources
