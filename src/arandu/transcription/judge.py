@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from arandu.shared.config import get_llm_config
 from arandu.shared.judge import (
     BaseJudge,
     JudgePipeline,
@@ -18,6 +19,7 @@ from arandu.shared.judge import (
     JudgeStep,
     LLMCriterionFactory,
 )
+from arandu.shared.llm_client import LLMClient, LLMProvider
 from arandu.transcription.criteria import (
     ContentDensityCriterion,
     RepetitionCriterion,
@@ -27,7 +29,38 @@ from arandu.transcription.criteria import (
 
 if TYPE_CHECKING:
     from arandu.shared.judge.schemas import JudgePipelineResult
-    from arandu.shared.llm_client import LLMClient
+
+
+def build_validator_client(
+    model_id: str,
+    *,
+    provider: str | None = None,
+    base_url: str | None = None,
+) -> LLMClient:
+    """Build an ``LLMClient`` for the ``TranscriptionJudge`` LLM stage.
+
+    Resolves the base URL from ``LLMConfig`` (which reads
+    ``ARANDU_LLM_BASE_URL`` from environment / ``.env``) when not provided
+    explicitly. Infers ``provider='custom'`` when a base URL is set but
+    ``provider`` wasn't, falling back to ``'ollama'`` otherwise.
+
+    Args:
+        model_id: Model identifier (e.g. ``'qwen3:14b'``, ``'gemini-2.5-flash'``).
+        provider: Optional provider name. ``'openai'`` / ``'ollama'`` / ``'custom'``.
+        base_url: Optional base URL override.
+
+    Returns:
+        A configured ``LLMClient`` instance ready to pass as
+        ``TranscriptionJudge(validator_client=...)``.
+    """
+    llm_config = get_llm_config()
+    resolved_base_url = base_url or llm_config.base_url
+    resolved_provider = provider or ("custom" if resolved_base_url else "ollama")
+    return LLMClient(
+        provider=LLMProvider(resolved_provider),
+        model_id=model_id,
+        base_url=resolved_base_url,
+    )
 
 
 class TranscriptionJudge(BaseJudge):

@@ -8,7 +8,8 @@ import pytest
 
 from arandu.shared.judge import BaseJudge
 from arandu.shared.judge.criterion import CriterionResponse
-from arandu.transcription.judge import TranscriptionJudge
+from arandu.shared.llm_client import LLMProvider
+from arandu.transcription.judge import TranscriptionJudge, build_validator_client
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -152,3 +153,99 @@ class TestTranscriptionJudgeLLMStage:
         # language_drift prompt must include the expected_language substitution
         drift_prompt = next(p for p in prompts_sent if "Language Drift" in p)
         assert "**Expected language:** en" in drift_prompt
+
+
+class TestBuildValidatorClient:
+    """Tests for the build_validator_client factory helper."""
+
+    def test_infers_ollama_when_no_base_url(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "arandu.transcription.judge.get_llm_config",
+            return_value=mocker.MagicMock(base_url=None),
+        )
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_validator_client("qwen3:14b")
+        assert client.provider == LLMProvider.OLLAMA
+        assert client.model_id == "qwen3:14b"
+
+    def test_infers_custom_when_base_url_from_env(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "arandu.transcription.judge.get_llm_config",
+            return_value=mocker.MagicMock(base_url="https://example.test/v1"),
+        )
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_validator_client("gemini-2.5-flash")
+        assert client.provider == LLMProvider.CUSTOM
+        assert client.base_url == "https://example.test/v1"
+
+    def test_explicit_provider_overrides_inference(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "arandu.transcription.judge.get_llm_config",
+            return_value=mocker.MagicMock(base_url="https://example.test/v1"),
+        )
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_validator_client(
+            "gpt-4o-mini", provider="openai", base_url="https://api.openai.com/v1"
+        )
+        assert client.provider == LLMProvider.OPENAI
+        assert client.base_url == "https://api.openai.com/v1"
+
+
+class TestJudgeTranscriptionCLI:
+    """Tests for the judge-transcription CLI command."""
+
+    def test_missing_validator_model_exits(self, mocker: MockerFixture, tmp_path: Any) -> None:
+        """CLI exits without building a client when no model is configured."""
+        from typer.testing import CliRunner
+
+        from arandu.cli.app import app
+
+        mocker.patch(
+            "arandu.qa.config.get_judge_config",
+            return_value=mocker.MagicMock(validator_model=None),
+        )
+        # If the guard works, build_validator_client is never reached
+        build_spy = mocker.patch("arandu.transcription.judge.build_validator_client")
+
+        input_dir = tmp_path / "results"
+        input_dir.mkdir()
+        (input_dir / "dummy_transcription.json").write_text("{}")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["judge-transcription", str(input_dir)])
+        assert result.exit_code == 1
+        build_spy.assert_not_called()
+
+    def test_env_var_fulfills_requirement(self, mocker: MockerFixture, tmp_path: Any) -> None:
+        """ARANDU_JUDGE_VALIDATOR_MODEL satisfies the model requirement."""
+        from typer.testing import CliRunner
+
+        from arandu.cli.app import app
+
+        mocker.patch(
+            "arandu.qa.config.get_judge_config",
+            return_value=mocker.MagicMock(
+                validator_model="qwen3:14b",
+                validator_provider=None,
+                validator_base_url=None,
+            ),
+        )
+        fake_client = mocker.MagicMock()
+        fake_client.is_available.return_value = True
+        fake_client.provider.value = "ollama"
+        fake_client.base_url = "http://localhost:11434/v1"
+        build_spy = mocker.patch(
+            "arandu.transcription.judge.build_validator_client", return_value=fake_client
+        )
+
+        input_dir = tmp_path / "results"
+        # Empty dir → CLI still proceeds past the validator-model check,
+        # builds a client, then exits 1 on "no files found". The important
+        # signal is that build_validator_client WAS called.
+        input_dir.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(app, ["judge-transcription", str(input_dir)])
+        assert result.exit_code == 1
+        build_spy.assert_called_once()
+        call_kwargs = build_spy.call_args.kwargs
+        assert call_kwargs["model_id"] == "qwen3:14b"

@@ -80,77 +80,9 @@ export ARANDU_QUALITY_ENABLED=false
 
 When disabled, records are marked `is_valid: true` and `transcription_quality: null`.
 
-## Retroactive Validation CLI
+## Retroactive CLI
 
-Validate existing transcription files that were produced before this feature:
-
-### Basic Usage
-
-```bash
-arandu validate-transcriptions results/
-```
-
-This updates each `*_transcription.json` file in-place with quality scores.
-
-### Report Only (No File Changes)
-
-```bash
-arandu validate-transcriptions results/ --report-only
-```
-
-Displays a validation summary table without modifying any files.
-
-### Custom Threshold
-
-```bash
-arandu validate-transcriptions results/ --threshold 0.7
-```
-
-Use a higher threshold for stricter quality requirements.
-
-### Custom Language
-
-```bash
-arandu validate-transcriptions results/ --language en
-```
-
-Override the expected language for script matching (default: `pt`).
-
-### Save to Separate Directory
-
-```bash
-arandu validate-transcriptions results/ --output-dir validated/
-```
-
-Write validated files to a new directory instead of updating in-place.
-
-### Full Example
-
-```bash
-arandu validate-transcriptions results_tupi/ \
-  --threshold 0.6 \
-  --language pt \
-  --report-only
-```
-
-### Output
-
-The CLI displays a summary table:
-
-```
-         Validation Summary
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━┓
-┃ File                        ┃ Valid ┃ Score ┃ Issues ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━┩
-│ abc123_transcription.json   │   ✓   │  0.94 │      0 │
-│ def456_transcription.json   │   ✗   │  0.35 │      3 │
-│ ghi789_transcription.json   │   ✓   │  0.82 │      1 │
-└─────────────────────────────┴───────┴───────┴────────┘
-
-Total files: 3
-Valid: 2
-Invalid: 1
-```
+Judge existing transcription files via `arandu judge-transcription`. See the [CLI reference](/reference/cli/#judge-transcription) for usage and flags.
 
 ## Validation Dimensions in Detail
 

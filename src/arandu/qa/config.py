@@ -295,6 +295,30 @@ class JudgeConfig(BaseSettings):
         ),
     )
 
+    # Validator client settings (used by TranscriptionJudge LLM stage)
+    validator_model: str | None = Field(
+        default=None,
+        description=(
+            "Model ID for the LLM filter stage (language_drift + hallucination_loop). "
+            "e.g. 'qwen3:14b' or 'gemini-2.5-flash'. Required for judge-transcription."
+        ),
+    )
+    validator_provider: str | None = Field(
+        default=None,
+        description=(
+            "LLM provider for the validator: 'openai', 'ollama', or 'custom'. "
+            "Inferred from ARANDU_LLM_BASE_URL (custom when set, else ollama) "
+            "when not specified."
+        ),
+    )
+    validator_base_url: str | None = Field(
+        default=None,
+        description=(
+            "Base URL for the validator provider. Falls back to "
+            "ARANDU_LLM_BASE_URL when not specified."
+        ),
+    )
+
     @field_validator("language")
     @classmethod
     def validate_language(cls, v: str) -> str:

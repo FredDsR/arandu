@@ -27,7 +27,6 @@ from arandu.utils.logger import (
     print_error,
     print_info,
     print_success,
-    print_warning,
 )
 from arandu.utils.ui import (
     create_progress,
@@ -522,121 +521,6 @@ def batch_transcribe(
         raise typer.Exit(code=1) from e
 
 
-def validate_transcriptions(
-    input_dir: Annotated[
-        Path,
-        typer.Argument(
-            help="Directory containing transcription JSON files to validate",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-        ),
-    ],
-    expected_language: Annotated[
-        str,
-        typer.Option(
-            "--language",
-            "-l",
-            help="Expected language code (e.g., 'pt', 'en')",
-        ),
-    ] = "pt",
-    output: Annotated[
-        Path | None,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Path to save validation results as JSON.",
-        ),
-    ] = None,
-) -> None:
-    """Validate existing transcriptions for quality issues.
-
-    Detects Whisper failure modes using heuristic criteria:
-    - Wrong language/script (Japanese when expecting Portuguese)
-    - Repeated words/phrases
-    - Suspicious segment patterns
-    - Empty or sparse content
-
-    .. deprecated::
-        Use ``arandu judge-transcription`` instead.
-
-    Examples:
-        arandu validate-transcriptions results_tupi/
-        arandu validate-transcriptions results/ --language en
-    """
-    from arandu.transcription.judge import TranscriptionJudge
-
-    print_warning("validate-transcriptions is deprecated. Use judge-transcription instead.")
-
-    print_info("Scanning for transcription files...")
-
-    json_files = sorted(input_dir.glob("*_transcription.json"))
-    if not json_files:
-        print_error(f"No transcription files found in {input_dir}")
-        raise typer.Exit(code=1)
-
-    print_info(f"Found {len(json_files)} transcription files")
-
-    judge = TranscriptionJudge(language=expected_language)
-
-    results: list[dict] = []
-
-    with create_progress() as progress:
-        task = progress.add_task("Validating...", total=len(json_files))
-
-        for json_path in json_files:
-            try:
-                with open(json_path) as f:
-                    data = json.load(f)
-                record = EnrichedRecord(**data)
-
-                pipeline_result = judge.evaluate_transcription(
-                    text=record.transcription_text,
-                    duration_ms=record.duration_milliseconds,
-                    segments=record.segments or [],
-                )
-
-                results.append(
-                    {
-                        "file": json_path.name,
-                        "valid": pipeline_result.passed,
-                    }
-                )
-
-            except (json.JSONDecodeError, ValidationError, OSError) as e:
-                print_error(f"Failed to process {json_path.name}: {e}")
-                results.append({"file": json_path.name, "valid": False})
-
-            progress.update(task, advance=1)
-
-    # Display summary
-    console.print()
-
-    table = Table(title="Validation Summary", show_header=True, header_style="bold magenta")
-    table.add_column("File", style="cyan")
-    table.add_column("Valid", justify="center")
-
-    for r in results:
-        valid_icon = "[green]\u2713[/green]" if r["valid"] else "[red]\u2717[/red]"
-        table.add_row(r["file"], valid_icon)
-
-    console.print(table)
-    console.print()
-
-    valid_count = sum(1 for r in results if r["valid"])
-    invalid_count = len(results) - valid_count
-    console.print(f"[bold]Total files:[/bold] {len(results)}")
-    console.print(f"[green]Valid:[/green] {valid_count}")
-    console.print(f"[red]Invalid:[/red] {invalid_count}")
-    console.print()
-
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with open(output, "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        print_success(f"Results saved to [bold]{output}[/bold]")
-
-
 def judge_transcription(
     input_dir: Annotated[
         Path,
@@ -663,17 +547,86 @@ def judge_transcription(
             help="Path to save judgement results as JSON.",
         ),
     ] = None,
+    validator_model: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-model",
+            help=(
+                "Model ID for the LLM filter stage (language_drift + "
+                "hallucination_loop). Falls back to ARANDU_JUDGE_VALIDATOR_MODEL."
+            ),
+        ),
+    ] = None,
+    validator_provider: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-provider",
+            help=(
+                "LLM provider for the validator: 'openai', 'ollama', 'custom'. "
+                "Falls back to ARANDU_JUDGE_VALIDATOR_PROVIDER, then inferred "
+                "from ARANDU_LLM_BASE_URL (custom when set, else ollama)."
+            ),
+        ),
+    ] = None,
+    validator_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-base-url",
+            help=(
+                "Base URL for the validator provider. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_BASE_URL, then ARANDU_LLM_BASE_URL."
+            ),
+        ),
+    ] = None,
+    validator_temperature: Annotated[
+        float,
+        typer.Option(
+            "--validator-temperature",
+            help="Sampling temperature for LLM criteria (default: 0.3).",
+        ),
+    ] = 0.3,
 ) -> None:
-    """Judge transcription quality using heuristic criteria.
+    """Judge transcription quality with heuristic + LLM criteria.
 
-    Evaluates each transcription on script match, repetition, content density,
-    and segment quality using the TranscriptionJudge pipeline.
+    Runs a two-stage filter pipeline:
+
+    1. Heuristics — script match, repetition, content density, segment quality.
+    2. LLM — ``language_drift`` + ``hallucination_loop``, catching failure
+       modes heuristics cannot detect (Latin-script language drift,
+       formulaic Whisper hallucinations).
+
+    The LLM stage is mandatory. Supply the validator model via
+    ``--validator-model`` or the ``ARANDU_JUDGE_VALIDATOR_MODEL`` env var.
 
     Examples:
-        arandu judge-transcription results/
-        arandu judge-transcription results/ --language en --output judgements.json
+        arandu judge-transcription results/ --validator-model qwen3:14b
+        arandu judge-transcription results/ --validator-model gemini-2.5-flash
     """
-    from arandu.transcription.judge import TranscriptionJudge
+    from arandu.qa.config import get_judge_config
+    from arandu.transcription.judge import TranscriptionJudge, build_validator_client
+
+    judge_config = get_judge_config()
+    resolved_model = validator_model or judge_config.validator_model
+    if not resolved_model:
+        print_error(
+            "Validator model is required. Pass --validator-model or set "
+            "ARANDU_JUDGE_VALIDATOR_MODEL in your environment / .env."
+        )
+        raise typer.Exit(code=1)
+
+    # Fail fast on unreachable validator before walking the input directory.
+    validator_client = build_validator_client(
+        model_id=resolved_model,
+        provider=validator_provider or judge_config.validator_provider,
+        base_url=validator_base_url or judge_config.validator_base_url,
+    )
+    if not validator_client.is_available():
+        print_error(
+            f"Validator provider unreachable: {validator_client.provider.value} "
+            f"({validator_client.base_url or 'default URL'})"
+        )
+        raise typer.Exit(code=1)
+    print_info(f"Validator: {validator_client.provider.value}/{resolved_model}")
 
     print_info("Scanning for transcription files...")
 
@@ -684,7 +637,11 @@ def judge_transcription(
 
     print_info(f"Found {len(json_files)} transcription files")
 
-    judge = TranscriptionJudge(language=language)
+    judge = TranscriptionJudge(
+        language=language,
+        validator_client=validator_client,
+        temperature=validator_temperature,
+    )
 
     results: list[dict] = []
 
