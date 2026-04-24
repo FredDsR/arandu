@@ -10,14 +10,22 @@
 #SBATCH --error=logs/judge_tupi_%x_%j.err
 
 # =============================================================================
-# Arandu Transcription-Judge SLURM Job Script - TUPI Partition
+# Arandu Judge SLURM Job Script - TUPI Partition
 #
 # Partition: tupi
 # GPU: NVIDIA GeForce RTX 4090 (24 GB)
 # Validator: qwen3:14b on GPU-accelerated Ollama
 #
+# Defaults to judge-transcription. Set JUDGE_SUBCOMMAND=judge-qa to run
+# the CEP QA judge against the same pipeline's cep/outputs instead.
+#
 # Usage:
+#     # Judge transcriptions (default)
 #     PIPELINE_ID=test-cep-01 sbatch scripts/slurm/judge/tupi.slurm
+#
+#     # Judge CEP QA pairs
+#     PIPELINE_ID=test-cep-01 JUDGE_SUBCOMMAND=judge-qa \
+#         sbatch scripts/slurm/judge/tupi.slurm
 # =============================================================================
 
 # Partition-specific settings

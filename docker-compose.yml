@@ -296,7 +296,10 @@ services:
       - qa
       - qa-gpu
 
-  # Transcription Judge Service (heuristic + LLM filter pipeline)
+  # Judge Service (runs any `arandu judge-*` CLI command against results/)
+  # Generic by design: the specific subcommand + args are supplied at run time
+  # via `docker compose run arandu-judge <subcommand> ...`. Used by both
+  # judge-transcription and judge-qa SLURM wrappers.
   arandu-judge:
     build:
       context: .
@@ -315,8 +318,9 @@ services:
         required: false
 
     environment:
-      # Validator settings — pinned to the sidecar so Gemini values from .env
-      # (OPENAI_API_KEY / ARANDU_LLM_BASE_URL) don't leak in.
+      # Validator settings — default to the local Ollama sidecar so the Gemini
+      # values that may live in .env (OPENAI_API_KEY / ARANDU_LLM_BASE_URL)
+      # don't leak into SLURM runs.
       - ARANDU_JUDGE_VALIDATOR_MODEL=${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}
       - ARANDU_JUDGE_VALIDATOR_PROVIDER=${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}
       - ARANDU_JUDGE_VALIDATOR_BASE_URL=${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}
@@ -326,11 +330,9 @@ services:
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
-    command: >
-      judge-transcription
-      /app/results/${PIPELINE_ID:-}/transcription/outputs
-      --language ${ARANDU_JUDGE_LANGUAGE:-pt}
-      --output /app/results/${PIPELINE_ID:-}/transcription/judgements.json
+    # No `command:` block — rely on the image's `ENTRYPOINT ["arandu"]` and
+    # the `CMD` provided at invocation. SLURM wrappers use `docker compose run
+    # arandu-judge judge-transcription ...` or `... judge-qa ...`.
 
     volumes:
       - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
