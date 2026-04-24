@@ -249,3 +249,88 @@ class TestJudgeTranscriptionCLI:
         build_spy.assert_called_once()
         call_kwargs = build_spy.call_args.kwargs
         assert call_kwargs["model_id"] == "qwen3:14b"
+
+    def test_writes_verdict_back_into_record(self, mocker: MockerFixture, tmp_path: Any) -> None:
+        """judge-transcription mutates the on-disk record and does not write an aggregate file."""
+        import json as _json
+
+        from typer.testing import CliRunner
+
+        from arandu.cli.app import app
+        from arandu.shared.judge.schemas import (
+            CriterionScore,
+            JudgePipelineResult,
+            JudgeStepResult,
+        )
+
+        mocker.patch(
+            "arandu.qa.config.get_judge_config",
+            return_value=mocker.MagicMock(
+                validator_model="qwen3:14b",
+                validator_provider=None,
+                validator_base_url=None,
+            ),
+        )
+        fake_client = mocker.MagicMock()
+        fake_client.is_available.return_value = True
+        fake_client.provider.value = "ollama"
+        fake_client.base_url = "http://localhost:11434/v1"
+        mocker.patch("arandu.transcription.judge.build_validator_client", return_value=fake_client)
+
+        pipeline_result = JudgePipelineResult(
+            stage_results={
+                "heuristic_filter": JudgeStepResult(
+                    criterion_scores={
+                        "script_match": CriterionScore(score=1.0, threshold=0.6, rationale="ok"),
+                        "repetition": CriterionScore(score=0.9, threshold=0.5, rationale="ok"),
+                        "segment_quality": CriterionScore(score=1.0, threshold=0.4, rationale="ok"),
+                        "content_density": CriterionScore(score=0.8, threshold=0.4, rationale="ok"),
+                    }
+                )
+            },
+            passed=True,
+        )
+        evaluate_mock = mocker.patch(
+            "arandu.transcription.judge.TranscriptionJudge.evaluate_transcription",
+            return_value=pipeline_result,
+        )
+
+        input_dir = tmp_path / "outputs"
+        input_dir.mkdir()
+        sample_file = input_dir / "abc_transcription.json"
+        sample_file.write_text(
+            _json.dumps(
+                {
+                    "gdrive_id": "abc",
+                    "name": "sample.mp4",
+                    "mimeType": "video/mp4",
+                    "parents": ["p1"],
+                    "webContentLink": "https://x",
+                    "transcription_text": _GOOD_PT_TEXT,
+                    "detected_language": "pt",
+                    "language_probability": 0.99,
+                    "model_id": "whisper",
+                    "compute_device": "cpu",
+                    "processing_duration_sec": 1.0,
+                    "transcription_status": "completed",
+                }
+            )
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["judge-transcription", str(input_dir)])
+        assert result.exit_code == 0, result.stdout
+        evaluate_mock.assert_called_once()
+
+        on_disk = _json.loads(sample_file.read_text())
+        assert on_disk["is_valid"] is True
+        assert on_disk["transcription_quality"]["passed"] is True
+        assert set(
+            on_disk["transcription_quality"]["stage_results"]["heuristic_filter"][
+                "criterion_scores"
+            ].keys()
+        ) == {"script_match", "repetition", "segment_quality", "content_density"}
+
+        # No aggregate side-file produced.
+        aggregate_candidates = list(input_dir.glob("judgements*.json"))
+        assert aggregate_candidates == []

@@ -10,7 +10,6 @@ from typing import Annotated
 
 import typer
 from pydantic import ValidationError
-from rich.table import Table
 
 from arandu.shared.hardware import get_device_and_dtype
 from arandu.shared.io import (
@@ -539,14 +538,6 @@ def judge_transcription(
             help="Expected transcription language code (e.g., 'pt', 'en').",
         ),
     ] = "pt",
-    output: Annotated[
-        Path | None,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Path to save judgement results as JSON.",
-        ),
-    ] = None,
     validator_model: Annotated[
         str | None,
         typer.Option(
@@ -598,6 +589,12 @@ def judge_transcription(
     The LLM stage is mandatory. Supply the validator model via
     ``--validator-model`` or the ``ARANDU_JUDGE_VALIDATOR_MODEL`` env var.
 
+    Verdicts are written back into each ``*_transcription.json`` record:
+    the full ``JudgePipelineResult`` lands in ``transcription_quality`` and
+    the pass/fail boolean in ``is_valid``. No aggregate side-file is
+    produced — run a downstream analytics script over the directory for
+    cross-record reports.
+
     Examples:
         arandu judge-transcription results/ --validator-model qwen3:14b
         arandu judge-transcription results/ --validator-model gemini-2.5-flash
@@ -643,7 +640,9 @@ def judge_transcription(
         temperature=validator_temperature,
     )
 
-    results: list[dict] = []
+    passed_count = 0
+    failed_count = 0
+    error_count = 0
 
     with create_progress() as progress:
         task = progress.add_task("Judging...", total=len(json_files))
@@ -654,89 +653,35 @@ def judge_transcription(
                     data = json.load(f)
 
                 record = EnrichedRecord(**data)
-                text = record.transcription_text
-                duration_ms = record.duration_milliseconds
-                segments = record.segments or []
 
                 pipeline_result = judge.evaluate_transcription(
-                    text=text,
-                    duration_ms=duration_ms,
-                    segments=segments,
+                    text=record.transcription_text,
+                    duration_ms=record.duration_milliseconds,
+                    segments=record.segments or [],
                 )
 
-                criteria: dict[str, dict] = {}
-                for stage_result in pipeline_result.stage_results.values():
-                    for name, cs in stage_result.criterion_scores.items():
-                        criteria[name] = {
-                            "score": cs.score,
-                            "threshold": cs.threshold,
-                            "passed": cs.passed,
-                            "error": cs.error,
-                        }
+                # Persist verdict back into the record.
+                record.transcription_quality = pipeline_result
+                record.is_valid = pipeline_result.passed
 
-                results.append(
-                    {
-                        "file": json_path.name,
-                        "passed": pipeline_result.passed,
-                        "criteria": criteria,
-                    }
-                )
+                with open(json_path, "w") as f:
+                    f.write(record.model_dump_json(indent=2, by_alias=True))
+
+                if pipeline_result.passed:
+                    passed_count += 1
+                else:
+                    failed_count += 1
 
             except (json.JSONDecodeError, ValidationError, OSError) as e:
                 print_error(f"Failed to process {json_path.name}: {e}")
-                results.append(
-                    {
-                        "file": json_path.name,
-                        "passed": False,
-                        "criteria": {},
-                    }
-                )
+                error_count += 1
 
             progress.update(task, advance=1)
 
-    # Display summary table
     console.print()
-
-    # Determine criterion names from first successful result
-    criterion_names: list[str] = []
-    for r in results:
-        if r["criteria"]:
-            criterion_names = list(r["criteria"].keys())
-            break
-
-    table = Table(title="Transcription Judgement", show_header=True, header_style="bold magenta")
-    table.add_column("File", style="cyan")
-    table.add_column("Pass", justify="center")
-    for name in criterion_names:
-        table.add_column(name, justify="right")
-
-    for r in results:
-        pass_icon = "[green]\u2713[/green]" if r["passed"] else "[red]\u2717[/red]"
-        row = [r["file"], pass_icon]
-        for name in criterion_names:
-            cs = r["criteria"].get(name)
-            if cs is None:
-                row.append("-")
-            elif cs["error"]:
-                row.append("[red]ERR[/red]")
-            else:
-                score = cs["score"]
-                color = "green" if cs["passed"] else "red"
-                row.append(f"[{color}]{score:.2f}[/{color}]")
-        table.add_row(*row)
-
-    console.print(table)
-    console.print()
-
-    passed_count = sum(1 for r in results if r["passed"])
-    failed_count = len(results) - passed_count
-    console.print(f"[bold]Total files:[/bold] {len(results)}")
+    console.print(f"[bold]Total files:[/bold] {len(json_files)}")
     console.print(f"[green]Passed:[/green] {passed_count}")
     console.print(f"[red]Failed:[/red] {failed_count}")
+    if error_count:
+        console.print(f"[red]Errors:[/red] {error_count}")
     console.print()
-
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with open(output, "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        print_success(f"Results saved to [bold]{output}[/bold]")

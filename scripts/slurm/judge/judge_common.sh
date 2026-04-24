@@ -53,22 +53,21 @@ export PIPELINE_ID
 # -----------------------------------------------------------------------------
 # Assemble the CLI invocation based on the requested subcommand
 # -----------------------------------------------------------------------------
+# The judge CLIs persist verdicts back into each record (EnrichedRecord for
+# transcriptions, QARecordCEP for QA); they do not emit an aggregate file.
 case "$JUDGE_SUBCOMMAND" in
     judge-transcription)
         INPUT_DIR_HOST="$ARANDU_RESULTS_DIR/$PIPELINE_ID/transcription/outputs"
         INPUT_DIR_CONTAINER="/app/results/$PIPELINE_ID/transcription/outputs"
-        OUTPUT_FILE_CONTAINER="/app/results/$PIPELINE_ID/transcription/judgements.json"
         JUDGE_CMD=(
             "$JUDGE_SUBCOMMAND"
             "$INPUT_DIR_CONTAINER"
             "--language" "$ARANDU_JUDGE_LANGUAGE"
-            "--output" "$OUTPUT_FILE_CONTAINER"
         )
         ;;
     judge-qa)
         INPUT_DIR_HOST="$ARANDU_RESULTS_DIR/$PIPELINE_ID/cep/outputs"
         INPUT_DIR_CONTAINER="/app/results/$PIPELINE_ID/cep/outputs"
-        OUTPUT_FILE_CONTAINER="/app/results/$PIPELINE_ID/cep/judgements.json"
         JUDGE_CMD=(
             "$JUDGE_SUBCOMMAND"
             "$INPUT_DIR_CONTAINER"
@@ -76,7 +75,6 @@ case "$JUDGE_SUBCOMMAND" in
             "--model" "$ARANDU_JUDGE_VALIDATOR_MODEL"
             "--base-url" "$ARANDU_JUDGE_VALIDATOR_BASE_URL"
             "--language" "$ARANDU_JUDGE_LANGUAGE"
-            "--output" "$OUTPUT_FILE_CONTAINER"
         )
         ;;
     *)
@@ -203,7 +201,7 @@ echo "Arandu Judge Job Completed"
 echo "=============================================="
 echo "End Time:       $(date)"
 echo "Subcommand:     $JUDGE_SUBCOMMAND"
-echo "Judgements:     $ARANDU_RESULTS_DIR/$PIPELINE_ID/$(dirname "${OUTPUT_FILE_CONTAINER#/app/results/$PIPELINE_ID/}")/$(basename "$OUTPUT_FILE_CONTAINER")"
+echo "Updated records in: $INPUT_DIR_HOST"
 echo "Exit Code:      $JUDGE_EXIT"
 echo "=============================================="
 

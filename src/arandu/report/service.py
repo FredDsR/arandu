@@ -375,12 +375,24 @@ class ReportService:
                 raise KeyError(f"Could not build summary for {pipeline_id}/{source_filename}")
             summary = rows[0]
 
+        # Surface failed-criterion rationales in place of the old
+        # `issues_detected` / `quality_rationale` fields on the retired
+        # heuristic score struct. With the unified JudgePipelineResult, each
+        # failing criterion carries its own rationale string.
         quality = record.transcription_quality
         issues: list[str] = []
         rationale: str | None = None
-        if quality:
-            issues = quality.issues_detected if hasattr(quality, "issues_detected") else []
-            rationale = quality.quality_rationale if hasattr(quality, "quality_rationale") else None
+        if quality is not None:
+            failing: list[str] = []
+            rationales: list[str] = []
+            for stage in quality.stage_results.values():
+                for name, cs in stage.criterion_scores.items():
+                    if not cs.passed:
+                        failing.append(name)
+                        if cs.rationale:
+                            rationales.append(f"{name}: {cs.rationale}")
+            issues = failing
+            rationale = "; ".join(rationales) if rationales else None
 
         segments = record.segments or []
         total_duration: float | None = None

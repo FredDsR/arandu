@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path  # noqa: TC003
 from typing import Annotated, Any
 
@@ -249,10 +248,6 @@ def judge_qa(
         str,
         typer.Option("--language", "-l", help="Language for judge prompts (pt or en)."),
     ] = "pt",
-    output: Annotated[
-        Path | None,
-        typer.Option("--output", "-o", help="Path to save judgement results as JSON."),
-    ] = None,
     files: Annotated[
         int | None,
         typer.Option("--files", help="Maximum number of QA files to sample."),
@@ -264,19 +259,23 @@ def judge_qa(
 ) -> None:
     """Judge CEP QA pairs using LLM-as-a-Judge evaluation.
 
-    Evaluates QA pairs on faithfulness, Bloom calibration, informativeness,
-    and self-containedness using the QAJudge pipeline.
+    Evaluates sampled pairs on faithfulness, Bloom calibration, informativeness,
+    and self-containedness using the QAJudge pipeline. Each judged pair is
+    persisted back into its ``*_cep_qa.json`` file as a ``QAPairValidated``
+    entry (replacing the unvalidated ``QAPairCEP`` in the ``qa_pairs`` list).
+    No aggregate side-file is produced — run a downstream analytics script
+    for cross-record reports.
 
     Examples:
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
         arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \\
             --base-url https://generativelanguage.googleapis.com/v1beta/openai/
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b \\
-            --files 2 --pairs 3 --output judgements.json
+            --files 2 --pairs 3
     """
     from arandu.qa.cep.judge import QAJudge
     from arandu.qa.config import CEPConfig
-    from arandu.qa.schemas import QAPairCEP
+    from arandu.qa.schemas import QAPairCEP, QAPairValidated, QARecordCEP
     from arandu.shared.llm_client import create_llm_client
 
     # Resolve base_url for ollama provider
@@ -308,104 +307,106 @@ def judge_qa(
     )
     console.print()
 
-    all_results: list[dict] = []
+    total_valid = 0
+    total_judged = 0
 
     for qa_file in qa_files:
         try:
-            data = json.loads(qa_file.read_text())
-        except (json.JSONDecodeError, OSError) as e:
+            record = QARecordCEP.model_validate_json(qa_file.read_text())
+        except Exception as e:
             print_error(f"Failed to read {qa_file.name}: {e}")
             continue
 
-        context = data.get("transcription_text") or data.get("context", "")
-        all_pairs = data.get("qa_pairs", [])
+        context = record.transcription_text
+        all_pairs = record.qa_pairs
 
-        # Sample diverse pairs by Bloom level
+        # Sample diverse pairs by Bloom level first, then fill remaining slots
         seen_levels: set[str] = set()
-        sampled: list[dict] = []
-        for p in all_pairs:
-            level = p.get("bloom_level", "")
-            if pairs is not None and len(sampled) >= pairs:
+        sampled_indices: list[int] = []
+        for i, p in enumerate(all_pairs):
+            if pairs is not None and len(sampled_indices) >= pairs:
                 break
-            if level not in seen_levels:
-                sampled.append(p)
-                seen_levels.add(level)
-        # Fill remaining slots if pairs budget allows
+            if p.bloom_level not in seen_levels:
+                sampled_indices.append(i)
+                seen_levels.add(p.bloom_level)
         if pairs is not None:
-            for p in all_pairs:
-                if len(sampled) >= pairs:
+            for i in range(len(all_pairs)):
+                if len(sampled_indices) >= pairs:
                     break
-                if p not in sampled:
-                    sampled.append(p)
+                if i not in sampled_indices:
+                    sampled_indices.append(i)
         elif pairs is None:
-            sampled = all_pairs
+            sampled_indices = list(range(len(all_pairs)))
 
         console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
 
-        for pair_data in sampled:
+        updated_pairs: list[QAPairValidated | QAPairCEP] = list(all_pairs)
+        file_judged = 0
+        file_valid = 0
+
+        for idx in sampled_indices:
+            qa = updated_pairs[idx]
+            # Re-judge even if already a QAPairValidated
+            if isinstance(qa, QAPairValidated):
+                qa = QAPairCEP(**qa.model_dump(exclude={"validation", "is_valid"}))
             try:
-                qa = QAPairCEP(**pair_data)
-                result = judge.validate(qa, context)
-
-                table = Table(show_header=True, border_style="dim", width=90)
-                table.add_column("Criterion", width=22)
-                table.add_column("Score", justify="right", width=7)
-                table.add_column("Threshold", justify="right", width=10)
-                table.add_column("Pass", justify="center", width=6)
-                table.add_column("Rationale", width=40)
-
-                if result.validation:
-                    for stage_result in result.validation.stage_results.values():
-                        for name, cs in stage_result.criterion_scores.items():
-                            if cs.error:
-                                table.add_row(
-                                    name,
-                                    "\u2014",
-                                    f"{cs.threshold:.2f}",
-                                    "[red]ERR[/red]",
-                                    cs.error[:40],
-                                )
-                            else:
-                                status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
-                                table.add_row(
-                                    name,
-                                    f"{cs.score:.2f}" if cs.score is not None else "\u2014",
-                                    f"{cs.threshold:.2f}",
-                                    status,
-                                    (cs.rationale or "")[:40],
-                                )
-
-                console.print(f"  Q: {qa.question[:70]}...")
-                console.print(f"  Bloom: {qa.bloom_level}  |  Valid: {result.is_valid}")
-                console.print(table)
-                console.print()
-
-                all_results.append(
-                    {
-                        "file": qa_file.name,
-                        "question": qa.question,
-                        "answer": qa.answer,
-                        "bloom_level": qa.bloom_level,
-                        "is_valid": result.is_valid,
-                        "validation": (
-                            result.validation.model_dump() if result.validation else None
-                        ),
-                    }
-                )
-
+                validated = judge.validate(qa, context)
+                updated_pairs[idx] = validated
+                file_judged += 1
+                total_judged += 1
+                if validated.is_valid:
+                    file_valid += 1
+                    total_valid += 1
+                _render_qa_verdict(validated)
             except Exception as e:
                 print_warning(f"Failed to judge pair in {qa_file.name}: {e}")
                 continue
 
-    # Summary
-    valid_count = sum(1 for r in all_results if r["is_valid"])
-    total_count = len(all_results)
-    console.print(f"[bold]Total pairs judged:[/bold] {total_count}")
-    console.print(f"[green]Valid:[/green] {valid_count}")
-    console.print(f"[red]Invalid:[/red] {total_count - valid_count}")
+        # Persist updated record back to disk
+        record.qa_pairs = updated_pairs
+        record.validator_model_id = model
+        record.validated_pairs = sum(1 for p in record.qa_pairs if isinstance(p, QAPairValidated))
+        qa_file.write_text(record.model_dump_json(indent=2, by_alias=True))
+
+        console.print(
+            f"  [dim]{qa_file.name}: judged {file_judged}, valid {file_valid}, "
+            f"persisted {record.validated_pairs}/{len(record.qa_pairs)} validated[/dim]"
+        )
+        console.print()
+
+    console.print(f"[bold]Total pairs judged:[/bold] {total_judged}")
+    console.print(f"[green]Valid:[/green] {total_valid}")
+    console.print(f"[red]Invalid:[/red] {total_judged - total_valid}")
     console.print()
 
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(all_results, indent=2, ensure_ascii=False))
-        print_success(f"Results saved to [bold]{output}[/bold]")
+
+def _render_qa_verdict(validated: Any) -> None:
+    """Render a single validated QA pair's verdict to the console."""
+    table = Table(show_header=True, border_style="dim", width=90)
+    table.add_column("Criterion", width=22)
+    table.add_column("Score", justify="right", width=7)
+    table.add_column("Threshold", justify="right", width=10)
+    table.add_column("Pass", justify="center", width=6)
+    table.add_column("Rationale", width=40)
+
+    if validated.validation:
+        for stage_result in validated.validation.stage_results.values():
+            for name, cs in stage_result.criterion_scores.items():
+                if cs.error:
+                    table.add_row(
+                        name, "\u2014", f"{cs.threshold:.2f}", "[red]ERR[/red]", cs.error[:40]
+                    )
+                else:
+                    status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
+                    table.add_row(
+                        name,
+                        f"{cs.score:.2f}" if cs.score is not None else "\u2014",
+                        f"{cs.threshold:.2f}",
+                        status,
+                        (cs.rationale or "")[:40],
+                    )
+
+    console.print(f"  Q: {validated.question[:70]}...")
+    console.print(f"  Bloom: {validated.bloom_level}  |  Valid: {validated.is_valid}")
+    console.print(table)
+    console.print()

@@ -8,7 +8,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
+
+from arandu.shared.judge.schemas import (
+    JudgePipelineResult,  # noqa: TC001 (runtime-needed by Pydantic)
+)
 
 
 class InputRecord(BaseModel):
@@ -68,30 +72,6 @@ class TranscriptionSegment(BaseModel):
     end: float = Field(..., description="End time in seconds")
 
 
-class TranscriptionQualityScore(BaseModel):
-    """Quality scores for transcription validation.
-
-    Distinct from JudgePipelineResult (LLM-as-a-Judge for QA pairs).
-    This evaluates Whisper transcription output quality using heuristics.
-    """
-
-    script_match_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Text uses expected character set (Latin for pt/en)"
-    )
-    repetition_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Text is free from excessive repetition"
-    )
-    segment_quality_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Segment timestamps are natural, not suspicious"
-    )
-    content_density_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Words per minute within reasonable range"
-    )
-    overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
-    issues_detected: list[str] = Field(default_factory=list, description="List of quality issues")
-    quality_rationale: str | None = Field(None, description="Explanation of quality assessment")
-
-
 class SourceMetadata(BaseModel):
     """Metadata extracted from catalog source information.
 
@@ -147,13 +127,37 @@ class EnrichedRecord(InputRecord):
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"
     )
-    transcription_quality: TranscriptionQualityScore | None = Field(
-        None, description="Transcription quality check results"
+    transcription_quality: JudgePipelineResult | None = Field(
+        None,
+        description=(
+            "Transcription quality judge result. Produced by TranscriptionJudge "
+            "(heuristic + optional LLM stages). None when not yet judged."
+        ),
     )
     is_valid: bool | None = Field(
         default=None,
         description="Whether transcription passes quality check (None = not yet checked)",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_transcription_quality(cls, data: object) -> object:
+        """Drop the pre-PR-87 weighted-score payload when loading old records.
+
+        Records written before the judge unification carry
+        ``transcription_quality`` as the retired ``TranscriptionQualityScore``
+        struct (with keys like ``overall_score``, ``script_match_score``, ...).
+        Those don't match ``JudgePipelineResult`` and would otherwise raise
+        a ValidationError on load. Reset to ``None`` so the record becomes
+        re-judgeable; the legacy scores weren't being consumed anyway.
+        """
+        if not isinstance(data, dict):
+            return data
+        tq = data.get("transcription_quality")
+        if isinstance(tq, dict) and "stage_results" not in tq:
+            data = {**data, "transcription_quality": None}
+        return data
+
     source_metadata: SourceMetadata | None = Field(
         default=None,
         description="Extracted metadata from source catalog (None = not yet extracted)",

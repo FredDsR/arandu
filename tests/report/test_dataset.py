@@ -17,7 +17,6 @@ from arandu.shared.schemas import (
     PipelineMetadata,
     PipelineType,
     SourceMetadata,
-    TranscriptionQualityScore,
 )
 from tests.report.helpers import make_run_metadata
 
@@ -37,12 +36,29 @@ def _make_enriched_record(
             location=location,
             recording_date="2024-05-15",
         )
-    quality = TranscriptionQualityScore(
-        script_match_score=0.9,
-        repetition_score=0.8,
-        segment_quality_score=0.85,
-        content_density_score=0.7,
-        overall_score=overall_score,
+    # Build a JudgePipelineResult whose flattened mean lines up with the
+    # requested overall_score — the test fixtures expose a single knob and
+    # the report reader averages the criterion scores.
+    quality = JudgePipelineResult(
+        stage_results={
+            "heuristic_filter": JudgeStepResult(
+                criterion_scores={
+                    "script_match": CriterionScore(
+                        score=overall_score, threshold=0.6, rationale="ok"
+                    ),
+                    "repetition": CriterionScore(
+                        score=overall_score, threshold=0.5, rationale="ok"
+                    ),
+                    "segment_quality": CriterionScore(
+                        score=overall_score, threshold=0.4, rationale="ok"
+                    ),
+                    "content_density": CriterionScore(
+                        score=overall_score, threshold=0.4, rationale="ok"
+                    ),
+                }
+            )
+        },
+        passed=bool(is_valid),
     )
     return EnrichedRecord(
         file_id="gdrive_123",
