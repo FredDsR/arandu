@@ -894,6 +894,53 @@ class TestRunPipeline:
         mock_extractor.create_concept_csv.assert_not_called()
         mock_extractor.convert_to_graphml.assert_called_once()
 
+    def test_orphan_patch_active_during_concept_generation(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Regression: the orphan-nodes patch must stay installed through
+        concept generation.
+
+        atlas-rag's ``generate_concept_csv_temp`` rebuilds a fresh temp
+        graph internally by calling ``csvs_to_temp_graphml``. If the patch
+        is reverted before concept generation runs (the original
+        narrow-scope wiring), that call hits the unpatched function,
+        creates orphan nodes, and ``generate_concept`` crashes with
+        ``KeyError: 'id'`` after hours of work (see job 779284,
+        2026-04-24).
+
+        This test asserts the patch is still installed when
+        ``generate_concept_csv_temp`` is invoked.
+        """
+        import arandu.kg.atlas_backend as backend
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig(backend_options={"include_concept": True})
+        constructor = AtlasRagConstructor(config)
+
+        self._setup_missing_csv(tmp_path)
+        mock_extractor = MagicMock()
+
+        observed: dict[str, object] = {}
+
+        def _capture_patch_state(*_args: object, **_kwargs: object) -> None:
+            # Re-import from the same module path `_run_pipeline` uses so we
+            # see the attribute value on the exact object the production
+            # code is touching.
+            from atlas_rag.kg_construction.utils.csv_processing import (
+                csv_to_graphml as live_csv_to_graphml,
+            )
+
+            observed["csvs_to_temp_at_concept_gen"] = live_csv_to_graphml.csvs_to_temp_graphml
+
+        mock_extractor.generate_concept_csv_temp.side_effect = _capture_patch_state
+
+        constructor._run_pipeline(mock_extractor, tmp_path)
+
+        assert observed["csvs_to_temp_at_concept_gen"] is backend._patched_csvs_to_temp_graphml, (
+            "Orphan-nodes patch was reverted before concept generation — "
+            "this is the regression that caused 779284 to crash."
+        )
+
 
 class TestResumableConceptGeneration:
     """Tests for _run_concept_generation_with_resume."""
