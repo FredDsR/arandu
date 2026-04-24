@@ -23,8 +23,7 @@
 # Declare this wrapper's intent
 export JUDGE_SUBCOMMAND=judge-transcription
 
-# Partition-specific settings
-export ARANDU_JUDGE_VALIDATOR_MODEL="${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}"
+# Partition-specific settings (validator model default lives in judge_common.sh)
 export USE_GPU_OLLAMA=true
 
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/judge/judge_common.sh"
