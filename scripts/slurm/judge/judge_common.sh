@@ -34,8 +34,9 @@ export ARANDU_JUDGE_VALIDATOR_BASE_URL="${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http:
 export ARANDU_JUDGE_LANGUAGE="${ARANDU_JUDGE_LANGUAGE:-pt}"
 export ARANDU_JUDGE_TEMPERATURE="${ARANDU_JUDGE_TEMPERATURE:-0.3}"
 
-# Which CLI subcommand to run inside the arandu-judge container
-JUDGE_SUBCOMMAND="${JUDGE_SUBCOMMAND:-judge-transcription}"
+# Which CLI subcommand to run inside the arandu-judge container. Partition
+# wrappers under scripts/slurm/judge/<kind>/ set this explicitly.
+: "${JUDGE_SUBCOMMAND:?JUDGE_SUBCOMMAND is required. Use scripts/slurm/judge/transcription/<partition>.slurm or scripts/slurm/judge/qa/<partition>.slurm.}"
 
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
