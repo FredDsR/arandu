@@ -216,6 +216,87 @@ Checks whether the words-per-minute ratio falls within a reasonable range for sp
 
 **Issue tags**: `low_content_density:<wpm>_wpm`, `high_content_density:<wpm>_wpm`, `duration_unknown:neutral_score`, `invalid_duration`
 
+## LLM-Based Criteria (Optional)
+
+Two additional criteria run as a second pipeline stage when `TranscriptionJudge` is given an `LLMClient`. They target failure modes that pure-heuristic checks cannot detect.
+
+- **`language_drift`** — detects when sustained content is in a different Latin-script language than expected (e.g., English content in a Portuguese transcription). The heuristic `script_match` criterion cannot catch this because English and Portuguese share the Latin alphabet. Default threshold: `0.8`.
+- **`hallucination_loop`** — detects formulaic Whisper hallucinations that slip past the heuristic `repetition` criterion: YouTube-style openings/closings, short sentence loops that appear only a handful of times, apology/filler loops, channel-name "signatures". Default threshold: `0.7`.
+
+Prompts live under `prompts/judge/criteria/language_drift/{pt,en}/prompt.md` and `prompts/judge/criteria/hallucination_loop/{pt,en}/prompt.md`. Thresholds live in each criterion's `config.json`. Both are domain-neutral by design — they target generic transcription failure modes, not interview-specific content.
+
+### Pipeline Behavior
+
+The pipeline is two filter stages in order:
+
+1. `heuristic_filter` — script match + repetition + content density + segment quality.
+2. `llm_filter` — language drift + hallucination loop (only when an `LLMClient` is provided).
+
+If the heuristic stage rejects, the LLM stage is skipped — no wasted LLM calls on transcriptions already flagged by cheap checks.
+
+### Programmatic Usage
+
+```python
+from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.transcription.judge import TranscriptionJudge
+
+# Heuristics only (no LLM calls)
+judge = TranscriptionJudge(language="pt")
+
+# Heuristics + LLM stage
+validator = LLMClient(provider=LLMProvider.OLLAMA, model_id="qwen3:14b")
+judge = TranscriptionJudge(language="pt", validator_client=validator)
+
+result = judge.evaluate_transcription(
+    text=record.transcription_text,
+    duration_ms=record.duration_milliseconds,
+    segments=record.segments,
+)
+if not result.passed:
+    print(f"Rejected at stage: {result.rejected_at}")
+```
+
+### Smoke-testing the Pipeline
+
+`scripts/test_transcription_judge.py` exercises both stages against real transcription files:
+
+```bash
+# Heuristics only
+uv run python scripts/test_transcription_judge.py \
+    --input-dir results/test-cep-01/transcription/outputs \
+    --files 5
+
+# Heuristics + LLM (Ollama)
+uv run python scripts/test_transcription_judge.py \
+    --validator-model qwen3:14b \
+    --input-dir results/test-cep-01/transcription/outputs \
+    --files 5
+
+# Single-file mode (useful for reproducing a known-bad case)
+uv run python scripts/test_transcription_judge.py \
+    --validator-model qwen3:14b \
+    --file results/test-cep-01/transcription/outputs/<id>_transcription.json
+```
+
+### Limitations of the LLM Criteria
+
+**These criteria do not catch all Whisper hallucinations.** Be explicit about what they do and don't detect before relying on them:
+
+- **`hallucination_loop` only catches formulaic/pattern hallucinations.** It is designed to flag content that looks copied from Whisper's training distribution (stock phrases, channel openings, short loops, implausibly repeated interjections). It does **not** reliably catch:
+  - **Plausible silence-fillers** — a single coherent sentence Whisper invents from background noise when no speech occurred.
+  - **Low-SNR invention** — phonetically-close but wrong words across a real utterance. The output reads naturally.
+  - **Name/number substitutions** — "João" → "Joaquim", "15 anos" → "50 anos".
+
+  These are fundamentally undetectable from text alone — they require audio-aware signals (Whisper `avg_logprob` / `no_speech_prob` per segment, voice-activity detection, or multi-model cross-check). Adding audio-aware heuristics is tracked separately from this criterion.
+
+- **`language_drift` tolerates isolated loanwords and proper nouns by design.** It flags *sustained* non-expected-language content, not single borrowed words, acronyms, or technical terms. Its ceiling is the LLM's own competence in the target languages; exotic code-switching targets (e.g., indigenous languages) may be over-tolerated.
+
+- **Text-only ceiling.** Neither criterion can distinguish "real but unusual speech" from "plausibly fabricated speech" without access to the audio. If an interview contains genuinely ordinary conversational content, the LLM judge has no grounds to flag it — which is the correct behavior, but means well-hidden fabrications will pass.
+
+- **LLM cost + latency.** Each transcription triggers two LLM calls (one per criterion). For large corpora, budget accordingly or keep the LLM stage disabled at ingestion time and run it selectively via the smoke script.
+
+- **Thresholds are defaults, not calibrated.** The 0.8 / 0.7 defaults come from the rubric design. Empirical calibration against a labeled set is tracked as follow-up work.
+
 ## Configuration Reference
 
 All settings use the `ARANDU_QUALITY_` environment variable prefix.
