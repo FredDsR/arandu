@@ -29,12 +29,18 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from arandu.shared.config import get_llm_config
 from arandu.shared.llm_client import LLMClient, LLMProvider
 from arandu.shared.schemas import EnrichedRecord
 from arandu.transcription.judge import TranscriptionJudge
+
+# Load .env so OPENAI_API_KEY / ARANDU_LLM_BASE_URL are visible to the
+# OpenAI SDK and to LLMConfig below. Safe to call when no .env exists.
+load_dotenv()
 
 console = Console()
 
@@ -84,14 +90,20 @@ def main() -> None:
     )
     parser.add_argument(
         "--validator-provider",
-        default="ollama",
+        default=None,
         choices=[p.value for p in LLMProvider],
-        help="LLM provider for the validator (default: ollama).",
+        help=(
+            "LLM provider for the validator. If omitted, inferred from "
+            "ARANDU_LLM_BASE_URL (custom when set, else ollama)."
+        ),
     )
     parser.add_argument(
         "--validator-base-url",
         default=None,
-        help="Custom base URL for the validator provider.",
+        help=(
+            "Base URL for the validator provider. Falls back to "
+            "ARANDU_LLM_BASE_URL from the environment / .env."
+        ),
     )
     parser.add_argument(
         "--validator-temperature",
@@ -125,18 +137,21 @@ def main() -> None:
 
     validator_client: LLMClient | None = None
     if args.validator_model:
+        llm_config = get_llm_config()
+        base_url = args.validator_base_url or llm_config.base_url
+        provider = args.validator_provider or ("custom" if base_url else "ollama")
         validator_client = _build_validator_client(
-            provider=args.validator_provider,
+            provider=provider,
             model_id=args.validator_model,
-            base_url=args.validator_base_url,
+            base_url=base_url,
         )
         if not validator_client.is_available():
             console.print(
-                f"[red]Validator provider unreachable: {args.validator_provider} "
+                f"[red]Validator provider unreachable: {provider} "
                 f"({validator_client.base_url or 'default URL'})[/red]"
             )
             sys.exit(1)
-        mode_label = f"heuristic + LLM ({args.validator_provider}/{args.validator_model})"
+        mode_label = f"heuristic + LLM ({provider}/{args.validator_model})"
     else:
         mode_label = "heuristic only"
 
