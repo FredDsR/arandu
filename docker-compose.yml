@@ -197,6 +197,7 @@ services:
       - qa
       - kg
       - cep
+      - judge
       - ollama
 
   # Ollama with GPU support (use --profile ollama-gpu)
@@ -238,6 +239,7 @@ services:
       - qa-gpu
       - kg-gpu
       - cep-gpu
+      - judge-gpu
       - ollama-gpu
 
   # QA Generation Service
@@ -293,6 +295,59 @@ services:
     profiles:
       - qa
       - qa-gpu
+
+  # Transcription Judge Service (heuristic + LLM filter pipeline)
+  arandu-judge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arandu:latest
+    container_name: arandu-judge-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed on the judge container itself; the LLM lives in the ollama sidecar.
+    deploy: {}
+
+    # Wait for Ollama when using the ollama provider; not required for custom/Gemini.
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false
+
+    environment:
+      # Validator settings — pinned to the sidecar so Gemini values from .env
+      # (OPENAI_API_KEY / ARANDU_LLM_BASE_URL) don't leak in.
+      - ARANDU_JUDGE_VALIDATOR_MODEL=${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}
+      - ARANDU_JUDGE_VALIDATOR_PROVIDER=${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}
+      - ARANDU_JUDGE_VALIDATOR_BASE_URL=${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_JUDGE_LANGUAGE=${ARANDU_JUDGE_LANGUAGE:-pt}
+      - ARANDU_JUDGE_TEMPERATURE=${ARANDU_JUDGE_TEMPERATURE:-0.3}
+      - ARANDU_JUDGE_MAX_TOKENS=${ARANDU_JUDGE_MAX_TOKENS:-2048}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      judge-transcription
+      /app/results/${PIPELINE_ID:-}/transcription/outputs
+      --language ${ARANDU_JUDGE_LANGUAGE:-pt}
+      --output /app/results/${PIPELINE_ID:-}/transcription/judgements.json
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '8gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - judge
+      - judge-gpu
 
   # CEP QA Generation Service (Cognitive Elicitation Pipeline)
   arandu-cep:
