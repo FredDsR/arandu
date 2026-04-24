@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=judge-qa
+#SBATCH --job-name=arandu-judge-qa
 #SBATCH --partition=tupi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
