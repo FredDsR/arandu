@@ -596,23 +596,32 @@ class AtlasRagConstructor:
         finally:
             triple_extraction.DatasetProcessor = original_cls
 
-        logger.info("Converting JSON to CSV...")
+        # Install the orphan-nodes patch for the rest of the pipeline.
+        # atlas-rag's ``generate_concept_csv_temp`` also calls
+        # ``csvs_to_temp_graphml`` internally to rebuild a fresh temp graph
+        # before concept generation, so the patch must stay active through
+        # both ``convert_json_to_csv()`` and
+        # ``_run_concept_generation_with_resume()``. Previously the patch
+        # was only active during convert_json_to_csv — concept generation
+        # then hit the unpatched function and crashed with KeyError: 'id'
+        # after ~20h of work (job 779284).
         from atlas_rag.kg_construction.utils.csv_processing import csv_to_graphml
 
         original_csvs_to_temp = csv_to_graphml.csvs_to_temp_graphml
         csv_to_graphml.csvs_to_temp_graphml = _patched_csvs_to_temp_graphml
         try:
+            logger.info("Converting JSON to CSV...")
             extractor.convert_json_to_csv()
+
+            if self._opts["include_concept"]:
+                self._run_concept_generation_with_resume(extractor, output_dir)
+                extractor.create_concept_csv()
+
+            logger.info("Converting to GraphML...")
+            extractor.convert_to_graphml()
+            logger.info("Atlas-rag pipeline completed")
         finally:
             csv_to_graphml.csvs_to_temp_graphml = original_csvs_to_temp
-
-        if self._opts["include_concept"]:
-            self._run_concept_generation_with_resume(extractor, output_dir)
-            extractor.create_concept_csv()
-
-        logger.info("Converting to GraphML...")
-        extractor.convert_to_graphml()
-        logger.info("Atlas-rag pipeline completed")
 
     # ------------------------------------------------------------------
     # Resumable concept generation
