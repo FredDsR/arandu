@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path  # noqa: TC003 — used at runtime for tmp_path fixtures
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,8 +22,13 @@ def _write_transcription(
     text: str = "Test transcription text.",
     is_valid: bool = True,
 ) -> Path:
-    """Write a minimal transcription JSON file."""
-    data = {
+    """Write a minimal transcription JSON file.
+
+    ``is_valid`` is a derived field on ``EnrichedRecord`` (computed from
+    ``validation.passed``), so the fixture writes a stub ``validation``
+    payload whose ``passed`` flag matches the desired value.
+    """
+    data: dict[str, Any] = {
         "file_id": file_id,
         "name": f"{file_id}.mp3",
         "mimeType": "audio/mpeg",
@@ -38,7 +43,11 @@ def _write_transcription(
         "compute_device": "cpu",
         "processing_duration_sec": 10.0,
         "transcription_status": "completed",
-        "is_valid": is_valid,
+        "validation": {
+            "stage_results": {},
+            "passed": is_valid,
+            "rejected_at": None if is_valid else "heuristic_filter",
+        },
     }
     filepath = directory / f"{file_id}_transcription.json"
     filepath.write_text(json.dumps(data))

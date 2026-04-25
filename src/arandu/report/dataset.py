@@ -249,7 +249,7 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
     """
     for record in report.transcription_records:
         source = record.source_metadata
-        quality = record.transcription_quality
+        scores = _extract_transcription_scores(record.validation)
 
         row = TranscriptionRow(
             pipeline_id=report.pipeline_id,
@@ -258,16 +258,52 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
             location=source.location if source else None,
             recording_date=source.recording_date if source else None,
             is_valid=record.is_valid,
-            overall_quality=quality.overall_score if quality else None,
-            script_match=quality.script_match_score if quality else None,
-            repetition=quality.repetition_score if quality else None,
-            segment_quality=quality.segment_quality_score if quality else None,
-            content_density=quality.content_density_score if quality else None,
+            overall_quality=scores["overall_score"],
+            script_match=scores["script_match"],
+            repetition=scores["repetition"],
+            segment_quality=scores["segment_quality"],
+            content_density=scores["content_density"],
             processing_duration_sec=record.processing_duration_sec,
             model_id=record.model_id,
             detected_language=record.detected_language,
         )
         transcription_rows.append(row)
+
+
+def _extract_transcription_scores(quality: Any) -> dict[str, float | None]:
+    """Extract flat criterion scores from a transcription JudgePipelineResult.
+
+    Walks every stage (``heuristic_filter`` + optional ``llm_filter``) and
+    pulls the four heuristic criterion scores by name. ``overall_score`` is
+    the mean of the present criterion scores across all stages.
+
+    Args:
+        quality: A ``JudgePipelineResult`` or ``None``.
+
+    Returns:
+        Dict mapping known criterion names + ``overall_score`` to floats.
+    """
+    criteria = ["script_match", "repetition", "segment_quality", "content_density"]
+    empty: dict[str, float | None] = dict.fromkeys(criteria)
+    empty["overall_score"] = None
+
+    if quality is None:
+        return empty
+
+    stage_results = getattr(quality, "stage_results", None)
+    if not stage_results:
+        return empty
+
+    # Flatten criterion scores across every stage, last-write-wins if duplicates
+    flat: dict[str, float | None] = {}
+    for stage in stage_results.values():
+        for name, cs in stage.criterion_scores.items():
+            flat[name] = cs.score
+
+    scores: dict[str, float | None] = {name: flat.get(name) for name in criteria}
+    available = [v for v in flat.values() if v is not None]
+    scores["overall_score"] = sum(available) / len(available) if available else None
+    return scores
 
 
 def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:

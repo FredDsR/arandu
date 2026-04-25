@@ -25,7 +25,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 **Command Categories**:
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
 - **QA Generation**: `generate-cep-qa`
-- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `validate-transcriptions`, `rebuild-index`
+- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `rebuild-index`
 
 **Global Options**:
 - `--help` - Show command help
@@ -367,53 +367,6 @@ arandu run-info latest --pipeline cep
 
 ---
 
-### `validate-transcriptions`
-
-Validate existing transcriptions for quality issues (wrong language/script, repeated words, suspicious patterns, empty content).
-
-**Usage**:
-```bash
-arandu validate-transcriptions INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing transcription JSON files to validate
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | In-place update | Directory to save validated results |
-| `--threshold` | `-t` | float | `0.5` | Quality threshold (0.0-1.0) for marking as valid |
-| `--language` | `-l` | str | `pt` | Expected language code (e.g., 'pt', 'en') |
-| `--report-only` | | flag | `False` | Only display report without updating files |
-
-**Examples**:
-```bash
-# Validate and update in-place
-arandu validate-transcriptions results/
-
-# Validate with custom threshold
-arandu validate-transcriptions results/ --threshold 0.6
-
-# Validate English transcriptions
-arandu validate-transcriptions results/ --language en
-
-# Report only (no file updates)
-arandu validate-transcriptions results/ --report-only
-
-# Save validated files to new directory
-arandu validate-transcriptions results/ --output-dir validated/
-```
-
-**Quality Checks**:
-- Script match (Latin characters for pt/en)
-- Repetition detection (words and phrases)
-- Segment quality (natural timestamps)
-- Content density (words per minute)
-
----
-
 ### `rebuild-index`
 
 Rebuild index.json from existing run directories by scanning all pipeline ID directories for run_metadata.json files.
@@ -449,9 +402,8 @@ arandu batch-transcribe input/catalog.csv \
     --quantize \
     --id etno-001
 
-# Step 2: Validate transcription quality
-arandu validate-transcriptions results/ \
-    --threshold 0.6
+# Step 2: Judge transcription quality
+arandu judge-transcription results/
 
 # Step 3: Generate CEP QA pairs
 arandu generate-cep-qa results/ \
@@ -555,7 +507,7 @@ Use consistent pipeline IDs across related steps:
 PIPELINE_ID="etno-project-001"
 
 arandu batch-transcribe input/catalog.csv --id $PIPELINE_ID
-arandu validate-transcriptions results/ 
+arandu judge-transcription results/
 arandu generate-cep-qa results/ --id $PIPELINE_ID
 
 # View all runs for this pipeline
@@ -648,13 +600,13 @@ arandu generate-cep-qa results/ --workers $(nproc)
 arandu batch-transcribe catalog.csv --workers 2
 ```
 
-### 5. Validate Quality
+### 5. Judge Quality
 
-Always validate transcriptions before downstream tasks:
+Always judge transcriptions before downstream tasks:
 
 ```bash
-# Validate first
-arandu validate-transcriptions results/ --threshold 0.6
+# Judge first
+arandu judge-transcription results/
 
 # Then generate QA
 arandu generate-cep-qa results/ --workers 4

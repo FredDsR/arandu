@@ -9,7 +9,7 @@ import pytest
 
 from arandu.qa.cep.judge import QAJudge
 from arandu.qa.config import CEPConfig, JudgeConfig
-from arandu.qa.schemas import QAPairCEP, QAPairValidated
+from arandu.qa.schemas import QAPairCEP
 from arandu.shared.judge.judge import BaseJudge
 from arandu.shared.judge.schemas import (
     CriterionScore,
@@ -198,7 +198,7 @@ class TestQAJudgeValidate:
         sample_qa_pair: QAPairCEP,
         mocker: MockerFixture,
     ) -> None:
-        """Test that validate returns a QAPairValidated with scores."""
+        """Test that validate returns a QAPairCEP with scores."""
         mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
@@ -213,7 +213,7 @@ class TestQAJudgeValidate:
 
         result = judge.validate(sample_qa_pair, "context")
 
-        assert isinstance(result, QAPairValidated)
+        assert isinstance(result, QAPairCEP)
         assert result.validation is not None
         assert result.validation.passed is True
         stage = result.validation.stage_results["cep_validation"]
@@ -277,7 +277,7 @@ class TestQAJudgeValidate:
         sample_qa_pair: QAPairCEP,
         mocker: MockerFixture,
     ) -> None:
-        """Test that errors result in unvalidated pair."""
+        """Pipeline errors return the pair unchanged (is_valid stays None)."""
         mocker.patch("arandu.qa.cep.judge.LLMCriterionFactory")
 
         judge = QAJudge(
@@ -291,8 +291,9 @@ class TestQAJudgeValidate:
 
         result = judge.validate(sample_qa_pair, "context")
 
+        # validation never gets populated, so is_valid (computed) is None.
         assert result.validation is None
-        assert result.is_valid is True
+        assert result.is_valid is None
 
     def test_validate_preserves_fields(
         self,
@@ -356,7 +357,7 @@ class TestQAJudgeBatch:
         results = judge.validate_batch(pairs, "context")
 
         assert len(results) == 2
-        assert all(isinstance(r, QAPairValidated) for r in results)
+        assert all(isinstance(r, QAPairCEP) for r in results)
         assert all(r.is_valid for r in results)
 
 
@@ -451,13 +452,13 @@ class TestRememberLevelPipeline:
         assert stage.criterion_scores["self_containedness"].score == 0.3
 
 
-class TestQAPairValidatedSchema:
-    """Tests for updated QAPairValidated schema."""
+class TestQAPairCEPSchema:
+    """Tests for updated QAPairCEP schema."""
 
     def test_pair_with_judge_pipeline_result(self) -> None:
-        """Test QAPairValidated with JudgePipelineResult validation."""
+        """is_valid is derived from validation.passed when validation is set."""
         result = _make_pipeline_result()
-        pair = QAPairValidated(
+        pair = QAPairCEP(
             question="Test?",
             answer="Answer.",
             context="Context.",
@@ -465,7 +466,6 @@ class TestQAPairValidatedSchema:
             confidence=0.9,
             bloom_level="remember",
             validation=result,
-            is_valid=True,
         )
 
         assert pair.validation is not None
@@ -473,25 +473,23 @@ class TestQAPairValidatedSchema:
         assert pair.is_valid is True
 
     def test_pair_without_validation(self) -> None:
-        """Test pair can be created without validation."""
-        pair = QAPairValidated(
+        """A fresh pair without validation has is_valid=None (not yet judged)."""
+        pair = QAPairCEP(
             question="Test?",
             answer="Answer.",
             context="Context.",
             question_type="factual",
             confidence=0.9,
             bloom_level="remember",
-            validation=None,
-            is_valid=False,
         )
 
         assert pair.validation is None
-        assert pair.is_valid is False
+        assert pair.is_valid is None
 
     def test_pair_serialization_roundtrip(self) -> None:
-        """Test QAPairValidated serializes and deserializes."""
+        """Test QAPairCEP serializes and deserializes."""
         result = _make_pipeline_result()
-        pair = QAPairValidated(
+        pair = QAPairCEP(
             question="Test?",
             answer="Answer.",
             context="Context.",
@@ -499,13 +497,14 @@ class TestQAPairValidatedSchema:
             confidence=0.9,
             bloom_level="remember",
             validation=result,
-            is_valid=True,
         )
 
         json_str = pair.model_dump_json()
-        restored = QAPairValidated.model_validate_json(json_str)
+        restored = QAPairCEP.model_validate_json(json_str)
 
         assert restored.validation is not None
         assert restored.validation.passed is True
+        # is_valid is a computed_field, restored from validation.passed
+        assert restored.is_valid is True
         stage = restored.validation.stage_results["cep_validation"]
         assert stage.criterion_scores["faithfulness"].score == 0.9

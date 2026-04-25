@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from arandu.qa.schemas import QAPairValidated, QARecordCEP
+from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.report.collector import RunReport
 from arandu.report.dataset import (
     QAPairRow,
@@ -17,7 +17,6 @@ from arandu.shared.schemas import (
     PipelineMetadata,
     PipelineType,
     SourceMetadata,
-    TranscriptionQualityScore,
 )
 from tests.report.helpers import make_run_metadata
 
@@ -37,12 +36,29 @@ def _make_enriched_record(
             location=location,
             recording_date="2024-05-15",
         )
-    quality = TranscriptionQualityScore(
-        script_match_score=0.9,
-        repetition_score=0.8,
-        segment_quality_score=0.85,
-        content_density_score=0.7,
-        overall_score=overall_score,
+    # Build a JudgePipelineResult whose flattened mean lines up with the
+    # requested overall_score — the test fixtures expose a single knob and
+    # the report reader averages the criterion scores.
+    quality = JudgePipelineResult(
+        stage_results={
+            "heuristic_filter": JudgeStepResult(
+                criterion_scores={
+                    "script_match": CriterionScore(
+                        score=overall_score, threshold=0.6, rationale="ok"
+                    ),
+                    "repetition": CriterionScore(
+                        score=overall_score, threshold=0.5, rationale="ok"
+                    ),
+                    "segment_quality": CriterionScore(
+                        score=overall_score, threshold=0.4, rationale="ok"
+                    ),
+                    "content_density": CriterionScore(
+                        score=overall_score, threshold=0.4, rationale="ok"
+                    ),
+                }
+            )
+        },
+        passed=bool(is_valid),
     )
     return EnrichedRecord(
         file_id="gdrive_123",
@@ -57,9 +73,8 @@ def _make_enriched_record(
         compute_device="cuda",
         processing_duration_sec=15.0,
         transcription_status="completed",
-        is_valid=is_valid,
         source_metadata=source,
-        transcription_quality=quality,
+        validation=quality,
     )
 
 
@@ -114,7 +129,7 @@ def _make_cep_record(
             informativeness=0.75,
             self_containedness=0.95,
         )
-        pair = QAPairValidated(
+        pair = QAPairCEP(
             question=f"Question {i}?",
             answer=f"Answer {i}.",
             context="Some context text.",
@@ -124,7 +139,6 @@ def _make_cep_record(
             is_multi_hop=i == 0,
             hop_count=2 if i == 0 else None,
             validation=validation,
-            is_valid=True,
         )
         qa_pairs.append(pair)
 
@@ -414,7 +428,7 @@ class TestRunSummaryNewFields:
         invalid_record = _make_enriched_record(name="invalid.mp3", is_valid=False)
 
         # Build a CEP record with 2 valid + 1 invalid QA pair
-        invalid_qa = QAPairValidated(
+        invalid_qa = QAPairCEP(
             question="Q?",
             answer="A.",
             context="ctx",
@@ -428,7 +442,6 @@ class TestRunSummaryNewFields:
                 self_containedness=0.3,
                 threshold=0.6,
             ),
-            is_valid=False,
         )
         # _make_cep_record produces 2 valid pairs; add 1 invalid by building manually
         cep_record = QARecordCEP(
@@ -439,7 +452,7 @@ class TestRunSummaryNewFields:
             ),
             transcription_text="Test.",
             qa_pairs=[
-                QAPairValidated(
+                QAPairCEP(
                     question="Q1?",
                     answer="A1.",
                     context="ctx",
@@ -452,9 +465,8 @@ class TestRunSummaryNewFields:
                         informativeness=0.75,
                         self_containedness=0.95,
                     ),
-                    is_valid=True,
                 ),
-                QAPairValidated(
+                QAPairCEP(
                     question="Q2?",
                     answer="A2.",
                     context="ctx",
@@ -467,7 +479,6 @@ class TestRunSummaryNewFields:
                         informativeness=0.75,
                         self_containedness=0.95,
                     ),
-                    is_valid=True,
                 ),
                 invalid_qa,
             ],
