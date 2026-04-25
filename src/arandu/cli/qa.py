@@ -256,6 +256,18 @@ def judge_qa(
         int | None,
         typer.Option("--pairs", help="Maximum QA pairs to judge per file."),
     ] = None,
+    rejudge: Annotated[
+        bool,
+        typer.Option(
+            "--rejudge/--resume",
+            help=(
+                "--rejudge re-evaluates every sampled pair from scratch. "
+                "--resume (default) skips pairs that already carry a "
+                "``validation`` payload, so a re-submission after a wall "
+                "hit only judges the unjudged remainder."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Judge CEP QA pairs using LLM-as-a-Judge evaluation.
 
@@ -266,12 +278,17 @@ def judge_qa(
     ``validation.passed`` automatically. No aggregate side-file is
     produced — run a downstream analytics script for cross-record reports.
 
+    By default the command resumes: any pair whose ``validation`` is already
+    populated is skipped. Pass ``--rejudge`` to force a fresh pass over
+    every sampled pair (e.g. after changing the validator model).
+
     Examples:
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
         arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \\
             --base-url https://generativelanguage.googleapis.com/v1beta/openai/
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b \\
             --files 2 --pairs 3
+        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b --rejudge
     """
     from arandu.qa.cep.judge import QAJudge
     from arandu.qa.config import CEPConfig
@@ -301,14 +318,16 @@ def judge_qa(
     if files is not None:
         qa_files = qa_files[:files]
 
+    mode_label = "rejudge" if rejudge else "resume"
     print_info(
-        f"Judging [bold]{len(qa_files)}[/bold] QA files"
+        f"Judging [bold]{len(qa_files)}[/bold] QA files (mode: {mode_label})"
         + (f", up to [bold]{pairs}[/bold] pairs each" if pairs else "")
     )
     console.print()
 
     total_valid = 0
     total_judged = 0
+    total_skipped = 0
 
     for qa_file in qa_files:
         try:
@@ -343,11 +362,18 @@ def judge_qa(
         updated_pairs: list[QAPairCEP] = list(all_pairs)
         file_judged = 0
         file_valid = 0
+        file_skipped = 0
 
         for idx in sampled_indices:
-            # Re-judge unconditionally — judge.validate returns a fresh pair
-            # with its ``validation`` field set; ``is_valid`` follows.
             qa = updated_pairs[idx]
+            if not rejudge and qa.validation is not None:
+                # Resume mode — pair already carries a verdict.
+                if qa.is_valid:
+                    file_valid += 1
+                    total_valid += 1
+                file_skipped += 1
+                total_skipped += 1
+                continue
             try:
                 validated = judge.validate(qa, context)
                 updated_pairs[idx] = validated
@@ -368,14 +394,17 @@ def judge_qa(
         qa_file.write_text(record.model_dump_json(indent=2, by_alias=True))
 
         console.print(
-            f"  [dim]{qa_file.name}: judged {file_judged}, valid {file_valid}, "
+            f"  [dim]{qa_file.name}: judged {file_judged}, "
+            f"resumed (skipped) {file_skipped}, valid {file_valid}, "
             f"persisted {record.validated_pairs}/{len(record.qa_pairs)} validated[/dim]"
         )
         console.print()
 
     console.print(f"[bold]Total pairs judged:[/bold] {total_judged}")
     console.print(f"[green]Valid:[/green] {total_valid}")
-    console.print(f"[red]Invalid:[/red] {total_judged - total_valid}")
+    console.print(f"[red]Invalid:[/red] {total_judged + total_skipped - total_valid}")
+    if total_skipped:
+        console.print(f"[dim]Resumed (already judged, skipped):[/dim] {total_skipped}")
     console.print()
 
 

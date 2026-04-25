@@ -38,6 +38,21 @@ export ARANDU_JUDGE_TEMPERATURE="${ARANDU_JUDGE_TEMPERATURE:-0.3}"
 # wrappers under scripts/slurm/judge/<kind>/ set this explicitly.
 : "${JUDGE_SUBCOMMAND:?JUDGE_SUBCOMMAND is required. Use scripts/slurm/judge/transcription/<partition>.slurm or scripts/slurm/judge/qa/<partition>.slurm.}"
 
+# Resume vs rejudge. Default is resume — skip records that already carry a
+# validation payload so a re-submission after a wall hit only judges the
+# unjudged remainder. Set JUDGE_REJUDGE=1 (or true / yes / on) to force a
+# fresh pass over everything, e.g. after changing the validator model or
+# a prompt.
+JUDGE_REJUDGE="${JUDGE_REJUDGE:-0}"
+case "${JUDGE_REJUDGE,,}" in
+    1|true|yes|on) JUDGE_REJUDGE_FLAG="--rejudge" ;;
+    0|false|no|off|"") JUDGE_REJUDGE_FLAG="--resume" ;;
+    *)
+        echo "Error: JUDGE_REJUDGE must be 0/1, true/false, yes/no, or on/off (got '$JUDGE_REJUDGE')"
+        exit 1
+        ;;
+esac
+
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
 
@@ -63,6 +78,7 @@ case "$JUDGE_SUBCOMMAND" in
             "$JUDGE_SUBCOMMAND"
             "$INPUT_DIR_CONTAINER"
             "--language" "$ARANDU_JUDGE_LANGUAGE"
+            "$JUDGE_REJUDGE_FLAG"
         )
         ;;
     judge-qa)
@@ -75,6 +91,7 @@ case "$JUDGE_SUBCOMMAND" in
             "--model" "$ARANDU_JUDGE_VALIDATOR_MODEL"
             "--base-url" "$ARANDU_JUDGE_VALIDATOR_BASE_URL"
             "--language" "$ARANDU_JUDGE_LANGUAGE"
+            "$JUDGE_REJUDGE_FLAG"
         )
         ;;
     *)
@@ -99,6 +116,7 @@ echo "Project Dir:       $PROJECT_DIR"
 echo "Pipeline ID:       $PIPELINE_ID"
 echo "=============================================="
 echo "Subcommand:        $JUDGE_SUBCOMMAND"
+echo "Mode:              ${JUDGE_REJUDGE_FLAG#--}"
 echo "Validator Model:   $ARANDU_JUDGE_VALIDATOR_MODEL"
 echo "Validator Provider:$ARANDU_JUDGE_VALIDATOR_PROVIDER"
 echo "Validator URL:     $ARANDU_JUDGE_VALIDATOR_BASE_URL"

@@ -332,3 +332,69 @@ class TestJudgeTranscriptionCLI:
         # No aggregate side-file produced.
         aggregate_candidates = list(input_dir.glob("judgements*.json"))
         assert aggregate_candidates == []
+
+    def test_resume_skips_already_judged_records(
+        self, mocker: MockerFixture, tmp_path: Any
+    ) -> None:
+        """Default --resume mode does not re-evaluate records that already carry validation."""
+        import json as _json
+
+        from typer.testing import CliRunner
+
+        from arandu.cli.app import app
+        from arandu.shared.judge.schemas import JudgePipelineResult
+
+        mocker.patch(
+            "arandu.qa.config.get_judge_config",
+            return_value=mocker.MagicMock(
+                validator_model="qwen3:14b",
+                validator_provider=None,
+                validator_base_url=None,
+            ),
+        )
+        fake_client = mocker.MagicMock()
+        fake_client.is_available.return_value = True
+        fake_client.provider.value = "ollama"
+        fake_client.base_url = "http://localhost:11434/v1"
+        mocker.patch("arandu.transcription.judge.build_validator_client", return_value=fake_client)
+
+        evaluate_mock = mocker.patch(
+            "arandu.transcription.judge.TranscriptionJudge.evaluate_transcription",
+            return_value=JudgePipelineResult(stage_results={}, passed=True),
+        )
+
+        input_dir = tmp_path / "outputs"
+        input_dir.mkdir()
+        already_judged = input_dir / "abc_transcription.json"
+        already_judged.write_text(
+            _json.dumps(
+                {
+                    "gdrive_id": "abc",
+                    "name": "sample.mp4",
+                    "mimeType": "video/mp4",
+                    "parents": ["p1"],
+                    "webContentLink": "https://x",
+                    "transcription_text": _GOOD_PT_TEXT,
+                    "detected_language": "pt",
+                    "language_probability": 0.99,
+                    "model_id": "whisper",
+                    "compute_device": "cpu",
+                    "processing_duration_sec": 1.0,
+                    "transcription_status": "completed",
+                    "validation": {"stage_results": {}, "passed": False, "rejected_at": None},
+                }
+            )
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["judge-transcription", str(input_dir)])
+        assert result.exit_code == 0, result.stdout
+
+        # Resume mode → evaluate_transcription is NOT called for the
+        # already-judged record.
+        evaluate_mock.assert_not_called()
+
+        # And --rejudge forces a fresh pass.
+        result_rejudge = runner.invoke(app, ["judge-transcription", str(input_dir), "--rejudge"])
+        assert result_rejudge.exit_code == 0, result_rejudge.stdout
+        evaluate_mock.assert_called_once()

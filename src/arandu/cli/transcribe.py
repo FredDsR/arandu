@@ -576,6 +576,18 @@ def judge_transcription(
             help="Sampling temperature for LLM criteria (default: 0.3).",
         ),
     ] = 0.3,
+    rejudge: Annotated[
+        bool,
+        typer.Option(
+            "--rejudge/--resume",
+            help=(
+                "--rejudge re-evaluates every record from scratch. --resume "
+                "(default) skips records that already carry a ``validation`` "
+                "payload, so a re-submission after a wall hit only judges "
+                "the unjudged remainder."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Judge transcription quality with heuristic + LLM criteria.
 
@@ -595,9 +607,15 @@ def judge_transcription(
     side-file is produced — run a downstream analytics script over the
     directory for cross-record reports.
 
+    By default the command resumes: any record whose ``validation`` is
+    already populated is skipped. Pass ``--rejudge`` to force a fresh
+    pass over everything (e.g. after changing the validator model or
+    a prompt).
+
     Examples:
         arandu judge-transcription results/ --validator-model qwen3:14b
         arandu judge-transcription results/ --validator-model gemini-2.5-flash
+        arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
     """
     from arandu.qa.config import get_judge_config
     from arandu.transcription.judge import TranscriptionJudge, build_validator_client
@@ -632,7 +650,8 @@ def judge_transcription(
         print_error(f"No transcription files found in {input_dir}")
         raise typer.Exit(code=1)
 
-    print_info(f"Found {len(json_files)} transcription files")
+    mode_label = "rejudge" if rejudge else "resume"
+    print_info(f"Found {len(json_files)} transcription files (mode: {mode_label})")
 
     judge = TranscriptionJudge(
         language=language,
@@ -642,6 +661,7 @@ def judge_transcription(
 
     passed_count = 0
     failed_count = 0
+    skipped_count = 0
     error_count = 0
 
     with create_progress() as progress:
@@ -653,6 +673,16 @@ def judge_transcription(
                     data = json.load(f)
 
                 record = EnrichedRecord(**data)
+
+                if not rejudge and record.validation is not None:
+                    # Already judged — count toward final tallies and skip.
+                    if record.is_valid:
+                        passed_count += 1
+                    else:
+                        failed_count += 1
+                    skipped_count += 1
+                    progress.update(task, advance=1)
+                    continue
 
                 pipeline_result = judge.evaluate_transcription(
                     text=record.transcription_text,
@@ -682,6 +712,8 @@ def judge_transcription(
     console.print(f"[bold]Total files:[/bold] {len(json_files)}")
     console.print(f"[green]Passed:[/green] {passed_count}")
     console.print(f"[red]Failed:[/red] {failed_count}")
+    if skipped_count:
+        console.print(f"[dim]Resumed (already judged, skipped):[/dim] {skipped_count}")
     if error_count:
         console.print(f"[red]Errors:[/red] {error_count}")
     console.print()
