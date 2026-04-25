@@ -18,7 +18,7 @@ from arandu.kg.schemas import (
     RelationMetricsResult,
     SemanticQualityResult,
 )
-from arandu.qa.schemas import QAPair, QAPairCEP, QAPairValidated
+from arandu.qa.schemas import QAPair, QAPairCEP
 from arandu.shared.schemas import InputRecord, TranscriptionSegment
 
 
@@ -309,9 +309,9 @@ class TestQAPairCEPGenerationPrompt:
         )
         assert pair.generation_prompt == "Generate a question about..."
 
-    def test_inherited_by_qa_pair_validated(self) -> None:
-        """Test that QAPairValidated inherits generation_prompt."""
-        pair = QAPairValidated(
+    def test_qa_pair_cep_round_trip_with_judge_fields(self) -> None:
+        """generation_prompt survives alongside the JudgeResultMixin fields."""
+        pair = QAPairCEP(
             question="Q?",
             answer="A",
             context="C",
@@ -319,10 +319,10 @@ class TestQAPairCEPGenerationPrompt:
             confidence=0.9,
             bloom_level="remember",
             generation_prompt="The prompt",
-            validation=None,
-            is_valid=True,
         )
         assert pair.generation_prompt == "The prompt"
+        assert pair.validation is None
+        assert pair.is_valid is None
 
     def test_included_in_serialization(self) -> None:
         """Test that generation_prompt is included in JSON serialization."""

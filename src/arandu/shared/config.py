@@ -133,5 +133,3 @@ def get_llm_config() -> LLMConfig:
 def get_results_config() -> ResultsConfig:
     """Get results versioning configuration."""
     return ResultsConfig()
-
-

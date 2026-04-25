@@ -324,11 +324,9 @@ class TestJudgeTranscriptionCLI:
 
         on_disk = _json.loads(sample_file.read_text())
         assert on_disk["is_valid"] is True
-        assert on_disk["transcription_quality"]["passed"] is True
+        assert on_disk["validation"]["passed"] is True
         assert set(
-            on_disk["transcription_quality"]["stage_results"]["heuristic_filter"][
-                "criterion_scores"
-            ].keys()
+            on_disk["validation"]["stage_results"]["heuristic_filter"]["criterion_scores"].keys()
         ) == {"script_match", "repetition", "segment_quality", "content_density"}
 
         # No aggregate side-file produced.

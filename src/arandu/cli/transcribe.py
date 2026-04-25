@@ -590,10 +590,10 @@ def judge_transcription(
     ``--validator-model`` or the ``ARANDU_JUDGE_VALIDATOR_MODEL`` env var.
 
     Verdicts are written back into each ``*_transcription.json`` record:
-    the full ``JudgePipelineResult`` lands in ``transcription_quality`` and
-    the pass/fail boolean in ``is_valid``. No aggregate side-file is
-    produced — run a downstream analytics script over the directory for
-    cross-record reports.
+    the full ``JudgePipelineResult`` lands in ``validation`` and
+    ``is_valid`` is derived from ``validation.passed``. No aggregate
+    side-file is produced — run a downstream analytics script over the
+    directory for cross-record reports.
 
     Examples:
         arandu judge-transcription results/ --validator-model qwen3:14b
@@ -660,9 +660,9 @@ def judge_transcription(
                     segments=record.segments or [],
                 )
 
-                # Persist verdict back into the record.
-                record.transcription_quality = pipeline_result
-                record.is_valid = pipeline_result.passed
+                # Persist verdict back into the record. ``is_valid`` is
+                # derived from ``validation.passed`` by the mixin.
+                record.validation = pipeline_result
 
                 with open(json_path, "w") as f:
                     f.write(record.model_dump_json(indent=2, by_alias=True))

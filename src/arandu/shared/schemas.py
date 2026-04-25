@@ -11,8 +11,12 @@ from typing import Literal
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from arandu.shared.judge.schemas import (
-    JudgePipelineResult,  # noqa: TC001 (runtime-needed by Pydantic)
+    JudgeResultMixin,
 )
+
+# Sentinel for "key not present" — distinguishes a missing key from an
+# explicit ``None`` value during legacy-payload migration.
+_MISSING = object()
 
 
 class InputRecord(BaseModel):
@@ -107,7 +111,7 @@ class SourceMetadata(BaseModel):
     )
 
 
-class EnrichedRecord(InputRecord):
+class EnrichedRecord(InputRecord, JudgeResultMixin):
     """Schema for output records containing transcription results and metadata.
 
     This schema defines the format of the final JSON file that will be saved
@@ -127,36 +131,31 @@ class EnrichedRecord(InputRecord):
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"
     )
-    transcription_quality: JudgePipelineResult | None = Field(
-        None,
-        description=(
-            "Transcription quality judge result. Produced by TranscriptionJudge "
-            "(heuristic + optional LLM stages). None when not yet judged."
-        ),
-    )
-    is_valid: bool | None = Field(
-        default=None,
-        description="Whether transcription passes quality check (None = not yet checked)",
-    )
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_legacy_transcription_quality(cls, data: object) -> object:
-        """Drop the pre-PR-87 weighted-score payload when loading old records.
+    def _migrate_legacy_quality_field(cls, data: object) -> object:
+        """Adapt records that still carry the retired ``transcription_quality`` key.
 
-        Records written before the judge unification carry
-        ``transcription_quality`` as the retired ``TranscriptionQualityScore``
-        struct (with keys like ``overall_score``, ``script_match_score``, ...).
-        Those don't match ``JudgePipelineResult`` and would otherwise raise
-        a ValidationError on load. Reset to ``None`` so the record becomes
-        re-judgeable; the legacy scores weren't being consumed anyway.
+        Two pre-mixin shapes can show up on disk:
+
+        - The very old weighted-score struct (``overall_score``,
+          ``script_match_score``, …) — drop it; those scores weren't
+          consumed anyway and the record becomes re-judgeable.
+        - The interim ``JudgePipelineResult`` payload that was briefly
+          stored under ``transcription_quality`` — rename it to
+          ``validation`` so the mixin picks it up.
         """
         if not isinstance(data, dict):
             return data
-        tq = data.get("transcription_quality")
-        if isinstance(tq, dict) and "stage_results" not in tq:
-            data = {**data, "transcription_quality": None}
-        return data
+        tq = data.get("transcription_quality", _MISSING)
+        if tq is _MISSING:
+            return data
+        new_data = {k: v for k, v in data.items() if k != "transcription_quality"}
+        if isinstance(tq, dict) and "stage_results" in tq:
+            new_data.setdefault("validation", tq)
+        # Anything else (legacy weighted-score struct, or None) → drop the key.
+        return new_data
 
     source_metadata: SourceMetadata | None = Field(
         default=None,

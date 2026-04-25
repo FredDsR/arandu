@@ -249,7 +249,7 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
     """
     for record in report.transcription_records:
         source = record.source_metadata
-        scores = _extract_transcription_scores(record.transcription_quality)
+        scores = _extract_transcription_scores(record.validation)
 
         row = TranscriptionRow(
             pipeline_id=report.pipeline_id,

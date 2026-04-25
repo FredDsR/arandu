@@ -261,10 +261,10 @@ def judge_qa(
 
     Evaluates sampled pairs on faithfulness, Bloom calibration, informativeness,
     and self-containedness using the QAJudge pipeline. Each judged pair is
-    persisted back into its ``*_cep_qa.json`` file as a ``QAPairValidated``
-    entry (replacing the unvalidated ``QAPairCEP`` in the ``qa_pairs`` list).
-    No aggregate side-file is produced — run a downstream analytics script
-    for cross-record reports.
+    persisted back into its ``*_cep_qa.json`` file by populating the pair's
+    ``validation`` field. ``is_valid`` is derived from
+    ``validation.passed`` automatically. No aggregate side-file is
+    produced — run a downstream analytics script for cross-record reports.
 
     Examples:
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
@@ -275,7 +275,7 @@ def judge_qa(
     """
     from arandu.qa.cep.judge import QAJudge
     from arandu.qa.config import CEPConfig
-    from arandu.qa.schemas import QAPairCEP, QAPairValidated, QARecordCEP
+    from arandu.qa.schemas import QAPairCEP, QARecordCEP
     from arandu.shared.llm_client import create_llm_client
 
     # Resolve base_url for ollama provider
@@ -340,15 +340,14 @@ def judge_qa(
 
         console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
 
-        updated_pairs: list[QAPairValidated | QAPairCEP] = list(all_pairs)
+        updated_pairs: list[QAPairCEP] = list(all_pairs)
         file_judged = 0
         file_valid = 0
 
         for idx in sampled_indices:
+            # Re-judge unconditionally — judge.validate returns a fresh pair
+            # with its ``validation`` field set; ``is_valid`` follows.
             qa = updated_pairs[idx]
-            # Re-judge even if already a QAPairValidated
-            if isinstance(qa, QAPairValidated):
-                qa = QAPairCEP(**qa.model_dump(exclude={"validation", "is_valid"}))
             try:
                 validated = judge.validate(qa, context)
                 updated_pairs[idx] = validated
@@ -365,7 +364,7 @@ def judge_qa(
         # Persist updated record back to disk
         record.qa_pairs = updated_pairs
         record.validator_model_id = model
-        record.validated_pairs = sum(1 for p in record.qa_pairs if isinstance(p, QAPairValidated))
+        record.validated_pairs = sum(1 for p in record.qa_pairs if p.validation is not None)
         qa_file.write_text(record.model_dump_json(indent=2, by_alias=True))
 
         console.print(
