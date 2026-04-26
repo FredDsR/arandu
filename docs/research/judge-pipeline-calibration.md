@@ -286,8 +286,16 @@ KG-protection rationale above.
 1. **Sample size.** The 20 % manual audit (n = 29) gives a 95 % upper
    confidence bound of ≈ 10.3 % on the unambiguous false-positive rate
    (or ≈ 22.6 % under the conservative reclassification of the two
-   §4.4 borderline cases). Tighter regimes (e.g. distinguishing 5 % vs
-   2 %) would require n ≥ 60.
+   §4.4 borderline cases). For a dataset of this size (353 records,
+   145 rejected, 208 admitted) the natural extension is a dual-class
+   audit at 30 % of rejected (≈ 44 records) plus 15 % of admitted
+   (≈ 31 records), totalling ≈ 75 records (21 % of the corpus). With
+   zero errors observed, that split would yield rule-of-three upper
+   95 % bounds of ≈ 6.8 % on the false-positive rate and ≈ 9.7 % on
+   the false-negative rate, completing both arms of the confusion
+   matrix at a tractable reviewer burden. Larger absolute samples
+   would tip towards full enumeration without proportionate
+   information gain.
 2. **Reviewer-of-one.** Audit classifications were performed by a single
    reviewer (the author). Inter-rater agreement on edge cases (§3.3) is
    unmeasured; a second-rater review of the same sample would
@@ -300,11 +308,11 @@ KG-protection rationale above.
 4. **Domain specificity.** Findings apply to the riverine-fieldwork
    corpus. Thresholds may need re-calibration for other recording
    contexts (broadcast media, scripted speech).
-5. **No negative-class audit.** This study audits the rejection set; a
-   complementary audit of the 208 admitted records would complete the
-   confusion matrix and bound the false-negative rate. A 20 % audit of
-   admitted records (≈ 42 records) is feasible and recommended as
-   follow-up.
+5. **No negative-class audit.** This study audits the rejection set
+   only; a complementary audit of the 208 admitted records would
+   complete the confusion matrix and bound the false-negative rate.
+   The dual-class plan in limitation 1 (15 % of admitted, ≈ 31
+   records) is the recommended follow-up.
 
 ## 6. Conclusion
 
