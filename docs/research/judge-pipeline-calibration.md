@@ -31,9 +31,11 @@ reading and 11.6 % under the conservative reading; sample false-negative
 rate is 3.2 %. The two pipeline stages contribute complementary coverage
 (58 % of rejections by heuristics, 42 % by the LLM stage) and the
 overall result supports retaining both stages and the current default
-thresholds for the riverine-fieldwork corpus, with one specific
-calibration adjustment proposed for the silence-filler boundary
-(§ 4.5).
+thresholds for the riverine-fieldwork corpus. The single false
+negative motivated a `content_length_floor` heuristic now installed at
+the head of the heuristic stage (§ 4.5), which rejects the audited
+record by construction and subsumes the legacy 200-character filter
+previously embedded in the QA-generation step.
 
 ## 1. Background and motivation
 
@@ -92,6 +94,7 @@ the riverine-community study (PCAD `tupi`).
 | `script_match` threshold | `0.6` |
 | `content_density` threshold | `0.4` |
 | `segment_quality` threshold | `0.4` |
+| `content_length_floor` threshold | `0.5` (binary; 200 chars / 30 words) — **added post-audit, see § 4.5** |
 | Hardware | NVIDIA RTX 4090 (24 GB), tupi6 |
 | Wall clock | 75 m (1.27 s/record amortised) |
 
@@ -380,26 +383,35 @@ reach the LLM stage's deference rule but with a wpm that puts
 12–14 words/min at a 6–9 second duration; it is plausible that a
 handful of similar records exist in the unaudited admission set.
 
-Two minimally-invasive remediations are feasible without altering the
-broader judge architecture:
+Three minimally-invasive remediations were considered:
 
-1. Lift `content_density`'s minimum-wpm threshold from 30 wpm
-   (current default) towards 40 wpm; the affected band closes at the
-   cost of also rejecting some legitimate single-utterance interviews.
-2. Replace the LLM "too short → 1.0" rule with a "too short →
-   defer to a stricter heuristic check on language" branch, so the
-   `language_drift` criterion can still flag obvious non-Portuguese
-   stubs even when the text is brief.
+1. **A non-scaled length-floor heuristic.** Add a binary
+   `content_length_floor` criterion at the front of the heuristic
+   stage that rejects records below a minimum character and word
+   count regardless of duration; this short-circuits the silence-filler
+   band before any other check runs. **Adopted** — implemented as
+   `arandu.transcription.criteria.ContentLengthFloorCriterion`
+   (defaults: 200 chars OR 30 words; both knobs configurable). The
+   audited false negative ("Thank you.", 10 chars / 2 words) fails
+   this floor by construction, and the gate also subsumes the previous
+   200-char `MIN_CONTEXT_LENGTH` filter that lived inside the QA
+   generation step (now removed; the QA layer trusts upstream
+   judging).
+2. Lift `content_density`'s minimum-wpm threshold from 30 wpm towards
+   40 wpm; closes the 12–14 wpm band but also rejects some legitimate
+   single-utterance interviews. **Not adopted** — option 1 closes
+   the gap without affecting the wpm-only regime.
+3. Replace the LLM "too short → 1.0" rule with a "too short → defer
+   to a stricter heuristic language check" branch. **Not adopted** —
+   becomes redundant once option 1 prevents short records from
+   reaching the LLM stage, but worth revisiting if a future record
+   class slips past option 1.
 
-A third option — leave the calibration as-is, accept the ~3 % FN rate
-and rely on downstream consumers to be tolerant of an occasional
-silence-filler — is also defensible given the low absolute count and
-the fact that a "Thank you."-shaped record contains no extractable
-content to corrupt the KG.
-
-The decision is left for follow-up work; this note documents the gap
-and its mechanism so the next calibration pass can target it
-specifically.
+The implementation closes the silence-filler boundary specifically;
+records that satisfy both floors but otherwise look like
+hallucinations remain the LLM stage's responsibility, and the §4.4
+borderline-cluster question (real-content interviews near
+`hallucination_loop = 0.6`) is unaffected and remains open.
 
 ## 5. Limitations
 
@@ -461,11 +473,14 @@ catch repetition loops, low-density stubs, wrong-script content, and
 high-density runs (58 % of all rejections); the LLM stage catches
 sustained Latin-script language drift and short formulaic
 hallucinations the heuristics admit (42 % of all rejections). The
-combined two-stage pipeline can be recommended for routine use on the
-dissertation corpus at the current default thresholds, with one
-specific calibration adjustment proposed for the silence-filler
-boundary (§ 4.5) and one open question about the 0.6-band borderline
-behaviour (§ 4.4).
+silence-filler calibration gap surfaced by the admission audit was
+closed in-thesis by adding a `content_length_floor` heuristic at the
+front of the pipeline (§ 4.5); the legacy 200-character QA-generation
+filter was removed in the same change so the responsibility lives in
+exactly one place. The combined two-stage pipeline can be recommended
+for routine use on the dissertation corpus at the current default
+thresholds, with one open question about the 0.6-band borderline
+behaviour (§ 4.4) deferred to follow-up work.
 
 ## 7. Reproducibility
 

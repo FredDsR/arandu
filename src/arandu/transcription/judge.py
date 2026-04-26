@@ -1,10 +1,11 @@
 """Transcription quality judge using heuristic and optional LLM criteria.
 
-Evaluates transcription quality with pure-Python heuristics (script match,
-repetition, content density, segment quality). When an LLM client is
-supplied, adds a second filter stage with ``language_drift`` and
-``hallucination_loop`` criteria to catch quality failures that heuristics
-cannot detect (Latin-script language drift, formulaic Whisper hallucinations).
+Evaluates transcription quality with pure-Python heuristics (content
+length floor, script match, repetition, content density, segment
+quality). When an LLM client is supplied, adds a second filter stage
+with ``language_drift`` and ``hallucination_loop`` criteria to catch
+quality failures that heuristics cannot detect (Latin-script language
+drift, formulaic Whisper hallucinations).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from arandu.shared.judge import (
 from arandu.shared.llm_client import LLMClient, LLMProvider
 from arandu.transcription.criteria import (
     ContentDensityCriterion,
+    ContentLengthFloorCriterion,
     RepetitionCriterion,
     ScriptMatchCriterion,
     SegmentQualityCriterion,
@@ -67,8 +69,10 @@ class TranscriptionJudge(BaseJudge):
     """Evaluate transcription quality using heuristic and optional LLM criteria.
 
     Builds a two-stage filter pipeline:
-    1. ``heuristic_filter`` — script match, repetition, content density,
-       segment quality (always runs, no LLM needed).
+    1. ``heuristic_filter`` — content length floor, script match,
+       repetition, content density, segment quality (always runs, no LLM
+       needed). The length floor runs first so very short records
+       short-circuit the rest of the pipeline.
     2. ``llm_filter`` — ``language_drift`` + ``hallucination_loop`` (runs
        only when ``validator_client`` is provided). Skipped automatically
        when the heuristic stage rejects.
@@ -140,6 +144,7 @@ class TranscriptionJudge(BaseJudge):
         """
         heuristic_step = JudgeStep(
             criteria=[
+                ContentLengthFloorCriterion(),
                 ScriptMatchCriterion(),
                 RepetitionCriterion(),
                 ContentDensityCriterion(),

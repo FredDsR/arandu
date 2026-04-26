@@ -77,6 +77,22 @@ class TestTranscriptionJudge:
         )
         assert result.passed is True
 
+    def test_silence_filler_rejected_by_length_floor(self) -> None:
+        """Reproduces the §3.4 calibration false negative.
+
+        ``Thank you.`` at 8.4 s clears the linear ``content_density``
+        threshold (0.475 > 0.40) but must fail at the new
+        ``content_length_floor`` heuristic which short-circuits before
+        the rest of the pipeline runs.
+        """
+        judge = TranscriptionJudge()
+        result = judge.evaluate_transcription(text="Thank you.", duration_ms=8400)
+
+        assert result.passed is False
+        assert result.rejected_at == "heuristic_filter"
+        heuristic_scores = result.stage_results["heuristic_filter"].criterion_scores
+        assert heuristic_scores["content_length_floor"].passed is False
+
 
 @pytest.fixture
 def mock_llm_client(mocker: MockerFixture) -> Any:

@@ -480,46 +480,6 @@ class TestGenerateCEPQAForTranscription:
         assert message == "Success"
         assert output_file.exists()
 
-    def test_generate_cep_qa_validation_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
-        """Test CEP QA generation with validation error (too short transcription)."""
-        mocker.patch("arandu.shared.llm_client.OpenAI")
-
-        # Reset global state
-        import arandu.qa.batch as qa_batch_module
-
-        qa_batch_module._worker_cep_generator = None
-
-        input_file = tmp_path / "short_transcription.json"
-        input_file.write_text(
-            json.dumps(
-                create_test_enriched_data(
-                    file_id="short_cep",
-                    name="short.mp3",
-                    transcription_text="Short",
-                )
-            )
-        )
-
-        output_file = tmp_path / "short_cep_qa.json"
-
-        task = QAGenerationTask(
-            transcription_file=input_file,
-            file_id="short_cep",
-            filename="short.mp3",
-            output_file=output_file,
-        )
-
-        qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
-        cep_config_dict = CEPConfig().model_dump()
-
-        file_id, success, message = generate_cep_qa_for_transcription(
-            task, qa_config_dict, cep_config_dict
-        )
-
-        assert file_id == "short_cep"
-        assert success is False
-        assert "short" in message.lower() or len(message) > 0
-
     def test_generate_cep_qa_generic_exception(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test CEP QA generation with generic exception (file not found)."""
         mocker.patch("arandu.shared.llm_client.OpenAI")

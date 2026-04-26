@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # Context window size for chunking
 MAX_CONTEXT_LENGTH = 4000
-MIN_CONTEXT_LENGTH = 200
 
 
 class CEPQAGenerator:
@@ -67,22 +66,17 @@ class CEPQAGenerator:
     def generate_qa_pairs(self, transcription: EnrichedRecord) -> QARecordCEP:
         """Generate CEP-enhanced QA pairs from a transcription.
 
+        The caller is responsible for filtering out records that are too
+        short to carry extractable content; the transcription judge's
+        ``content_length_floor`` heuristic owns that gate upstream.
+
         Args:
             transcription: EnrichedRecord containing transcription text.
 
         Returns:
             QARecordCEP with cognitive-level QA pairs.
-
-        Raises:
-            ValueError: If transcription text is too short.
         """
         text = transcription.transcription_text.strip()
-
-        if len(text) < MIN_CONTEXT_LENGTH:
-            raise ValueError(
-                f"Transcription too short for QA generation "
-                f"({len(text)} chars < {MIN_CONTEXT_LENGTH})"
-            )
 
         logger.info(f"Generating CEP QA pairs for {transcription.file_id} ({len(text)} chars)")
 
