@@ -192,6 +192,12 @@ results*/*
 
 input/*
 !input/.gitkeep
+
+# Research-evidence appendices may contain raw transcription text with
+# participant names — keep local-only, regenerate via the doc's
+# reproducibility section.
+docs/research/data/*
+!docs/research/data/.gitkeep
 # Checkpoint files (can be committed if you want to track progress)
 # Uncomment the line below to ignore checkpoint files:
 # *.checkpoint.json
