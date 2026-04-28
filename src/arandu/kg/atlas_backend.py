@@ -703,6 +703,15 @@ class AtlasRagConstructor:
                 shard_file.write_text("")
             return
 
+        # Step 7b: Backfill missing id/type attributes on temp_kg nodes.
+        # atlas-rag's ``generate_concept`` walks the graph via ``predecessors``
+        # / ``successors`` and reads ``temp_kg.nodes[neighbor]['id']`` (line
+        # 212 of concept_generation.py). Some atlas-rag code path adds nodes
+        # without attributes (distinct from the orphan-attribute path covered
+        # by ``_patched_csvs_to_temp_graphml``); without this sweep that
+        # neighbor lookup raises ``KeyError: 'id'``.
+        self._ensure_temp_kg_node_attributes(output_dir)
+
         # Step 8: Run concept generation
         logger.info(
             "Generating concepts for %d remaining nodes (%d already completed)",
@@ -921,6 +930,72 @@ class AtlasRagConstructor:
             )
 
         return len(kept)
+
+    def _ensure_temp_kg_node_attributes(self, output_dir: Path) -> int:
+        """Backfill missing ``id`` / ``type`` attributes on every temp_kg node.
+
+        atlas-rag's ``generate_concept`` reads
+        ``temp_kg.nodes[neighbor]['id']`` while building the context string
+        for each missing concept. If any node lacks the ``id`` attribute the
+        lookup raises ``KeyError: 'id'`` and the whole job fails. The
+        ``_patched_csvs_to_temp_graphml`` helper sets ``id`` on every node it
+        creates, but a separate atlas-rag code path (not covered by that
+        patch) can add attributeless nodes to the temp KG; this sweep is a
+        defensive shim that runs immediately before concept generation,
+        loads the pickle, sets ``id = node_id`` and ``type = "entity"`` on
+        any node missing those attributes, and writes the pickle back.
+
+        Args:
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of nodes that needed at least one attribute backfilled.
+        """
+        import pickle
+
+        kg_dir = output_dir / "atlas_output" / "kg_graphml"
+        pkl_paths = list(kg_dir.glob("*_without_concept.pkl"))
+        if not pkl_paths:
+            logger.debug(
+                "No *_without_concept.pkl in %s — skipping temp_kg attribute sweep",
+                kg_dir,
+            )
+            return 0
+
+        pkl_path = pkl_paths[0]
+        try:
+            with pkl_path.open("rb") as f:
+                g = pickle.load(f)
+        except (OSError, pickle.UnpicklingError) as exc:
+            logger.warning(
+                "Failed to load temp_kg pickle %s for attribute sweep (%s); skipping",
+                pkl_path,
+                exc,
+            )
+            return 0
+
+        patched = 0
+        for node_id, attrs in g.nodes(data=True):
+            needs_patch = False
+            if "id" not in attrs:
+                attrs["id"] = node_id
+                needs_patch = True
+            if "type" not in attrs:
+                attrs["type"] = "entity"
+                needs_patch = True
+            if needs_patch:
+                patched += 1
+
+        if patched:
+            with pkl_path.open("wb") as f:
+                pickle.dump(g, f)
+            logger.warning(
+                "Backfilled missing id/type attributes on %d node(s) in %s",
+                patched,
+                pkl_path.name,
+            )
+
+        return patched
 
     def _restore_and_finalize(
         self,

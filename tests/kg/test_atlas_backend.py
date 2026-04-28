@@ -1365,6 +1365,87 @@ class TestResumableConceptGeneration:
         # All 3 rows survive — no false drops.
         assert set(captured["names"]) == {"Rio Guaíba", "enchente", "afeta"}
 
+    def test_temp_kg_attribute_sweep_backfills_missing_id(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Nodes added to temp_kg without an ``id`` attribute get backfilled.
+
+        Regression for the atlas-rag ``KeyError: 'id'`` crash in
+        ``generate_concept`` line 212 (cluster job 779946) — a code path
+        outside ``_patched_csvs_to_temp_graphml`` adds attributeless nodes
+        and the per-neighbor lookup raises.
+        """
+        import pickle
+
+        import networkx as nx
+
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        # Build a temp_kg with one well-formed node and one attributeless one.
+        kg_dir = tmp_path / "atlas_output" / "kg_graphml"
+        kg_dir.mkdir(parents=True)
+        pkl_path = kg_dir / "test_without_concept.pkl"
+
+        g = nx.DiGraph()
+        g.add_node("good", id="Rio Guaíba", type="entity")
+        g.add_node("bad")  # no attributes — simulates the bug
+        g.add_edge("good", "bad", relation="ref", type="Relation")
+        with pkl_path.open("wb") as f:
+            pickle.dump(g, f)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        patched = constructor._ensure_temp_kg_node_attributes(tmp_path)
+
+        assert patched == 1, f"expected 1 node patched, got {patched}"
+
+        with pkl_path.open("rb") as f:
+            g2 = pickle.load(f)
+        assert g2.nodes["bad"]["id"] == "bad"
+        assert g2.nodes["bad"]["type"] == "entity"
+        # Existing well-formed node untouched.
+        assert g2.nodes["good"]["id"] == "Rio Guaíba"
+        assert g2.nodes["good"]["type"] == "entity"
+
+    def test_temp_kg_attribute_sweep_no_op_when_all_attributes_present(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Sweep returns 0 and does not rewrite the pickle when all nodes are well-formed."""
+        import pickle
+
+        import networkx as nx
+
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_graphml"
+        kg_dir.mkdir(parents=True)
+        pkl_path = kg_dir / "test_without_concept.pkl"
+
+        g = nx.DiGraph()
+        g.add_node("a", id="A", type="entity")
+        g.add_node("b", id="B", type="event")
+        with pkl_path.open("wb") as f:
+            pickle.dump(g, f)
+        mtime_before = pkl_path.stat().st_mtime_ns
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        patched = constructor._ensure_temp_kg_node_attributes(tmp_path)
+
+        assert patched == 0
+        # Pickle should not have been rewritten.
+        assert pkl_path.stat().st_mtime_ns == mtime_before
+
+    def test_temp_kg_attribute_sweep_skipped_when_pickle_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No-op when the pickle directory is empty (defensive)."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        # Create the directory but leave it empty.
+        (tmp_path / "atlas_output" / "kg_graphml").mkdir(parents=True)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        assert constructor._ensure_temp_kg_node_attributes(tmp_path) == 0
+
     def test_phantom_drop_skipped_when_source_csvs_missing(
         self, tmp_path: Path, _mock_atlas_rag: dict
     ) -> None:
