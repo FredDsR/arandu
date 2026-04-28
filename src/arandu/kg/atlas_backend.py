@@ -683,6 +683,14 @@ class AtlasRagConstructor:
         # Step 6: Trim input CSV to exclude completed nodes
         remaining = self._trim_input_csv(missing_csv, completed_nodes)
 
+        # Step 6b: Drop phantom rows whose node ID isn't anywhere in the
+        # triple_nodes / triple_edges sources. atlas-rag's
+        # ``generate_concept`` would crash with NetworkXError on these rows
+        # because the temp KG is built from those CSVs and the phantom node
+        # never enters the graph. Filed upstream as the second of the
+        # ID-consistency bugs in HKUST-KnowComp/AutoSchemaKG.
+        remaining = self._drop_phantom_missing_concepts(missing_csv, triples_dir)
+
         # Step 7: If all nodes are done, skip generation
         if remaining == 0:
             logger.info("All concept nodes already completed, skipping generation")
@@ -829,6 +837,90 @@ class AtlasRagConstructor:
                 len(all_rows) - 1 - len(data_rows),
             )
         return len(data_rows)
+
+    def _drop_phantom_missing_concepts(self, csv_path: Path, triples_dir: Path) -> int:
+        """Drop missing-concepts rows whose node ID isn't in the temp-KG sources.
+
+        atlas-rag writes node IDs to ``missing_concepts*_from_json.csv`` that
+        sometimes don't appear in either ``triple_nodes*.csv`` or
+        ``triple_edges*.csv``. When ``generate_concept`` later calls
+        ``temp_kg.predecessors(node_id)`` on such a phantom, NetworkX raises
+        ``NetworkXError: The node ... is not in the digraph``. This helper
+        prefilters the CSV to drop rows whose column-0 value is absent from
+        the union of ``name:ID`` (triple_nodes) and ``:START_ID`` /
+        ``:END_ID`` (triple_edges).
+
+        If the source CSVs cannot be read, returns the unfiltered row count
+        and lets the downstream pipeline surface any actual issue.
+
+        Args:
+            csv_path: Path to the missing_concepts CSV (will be rewritten in
+                place when phantom rows are detected).
+            triples_dir: Directory containing ``triple_nodes*.csv`` and
+                ``triple_edges*.csv`` produced by atlas-rag's
+                ``convert_json_to_csv``.
+
+        Returns:
+            Number of remaining data rows after the prefilter.
+        """
+        valid_names: set[str] = set()
+        nodes_csvs = list(triples_dir.glob("triple_nodes*.csv"))
+        edges_csvs = list(triples_dir.glob("triple_edges*.csv"))
+        if not nodes_csvs and not edges_csvs:
+            logger.debug(
+                "No triple_nodes/triple_edges CSVs in %s — skipping phantom prefilter",
+                triples_dir,
+            )
+            with csv_path.open(newline="") as f:
+                rows = list(csv.reader(f))
+            return max(0, len(rows) - 1)
+
+        try:
+            for nodes_file in nodes_csvs:
+                with nodes_file.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get("name:ID"):
+                            valid_names.add(row["name:ID"])
+            for edges_file in edges_csvs:
+                with edges_file.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get(":START_ID"):
+                            valid_names.add(row[":START_ID"])
+                        if row.get(":END_ID"):
+                            valid_names.add(row[":END_ID"])
+        except (OSError, csv.Error, KeyError) as exc:
+            logger.warning(
+                "Failed to read triple_*.csv for phantom prefilter (%s); skipping",
+                exc,
+            )
+            with csv_path.open(newline="") as f:
+                rows = list(csv.reader(f))
+            return max(0, len(rows) - 1)
+
+        with csv_path.open(newline="") as f:
+            all_rows = list(csv.reader(f))
+
+        if not all_rows:
+            return 0
+
+        header = all_rows[0]
+        kept = [row for row in all_rows[1:] if row and row[0] in valid_names]
+        dropped = len(all_rows) - 1 - len(kept)
+
+        if dropped:
+            with csv_path.open("w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(header)
+                writer.writerows(kept)
+            logger.warning(
+                "Dropped %d phantom row(s) from %s (node IDs absent from triple_*.csv)",
+                dropped,
+                csv_path.name,
+            )
+
+        return len(kept)
 
     def _restore_and_finalize(
         self,

@@ -1261,6 +1261,145 @@ class TestResumableConceptGeneration:
         call_kwargs = mock_extractor.generate_concept_csv_temp.call_args[1]
         assert call_kwargs["language"] == "pt"
 
+    def test_phantom_missing_concept_dropped(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Rows in missing_concepts.csv whose node ID isn't in triple_nodes/edges are dropped.
+
+        Regression for the missing-node bug observed in cluster job 779433:
+        atlas-rag's ``generate_concept`` calls ``temp_kg.predecessors(node_id)``
+        for each missing-concepts row and raises ``NetworkXError`` when the
+        node isn't in the graph. The prefilter drops phantom rows before
+        atlas-rag sees them.
+        """
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        missing_csv, concepts_dir, triples_dir = self._setup_dirs(tmp_path)
+
+        # Re-write missing_concepts with a phantom row that isn't in any
+        # triple_*.csv source; the patch should drop it.
+        missing_csv.write_text(
+            "node,description,node_type\n"
+            "Rio Guaíba,grande rio do sul,entity\n"
+            "phantom_node,not in graph anywhere,entity\n"
+            "enchente,evento climático,event\n"
+        )
+
+        # Companion source CSVs the prefilter consults.
+        nodes_csv = triples_dir / "triple_nodes_test_from_json.csv"
+        nodes_csv.write_text("name:ID,type,concepts,synsets,:LABEL\nRio Guaíba,entity,,,Node\n")
+        edges_csv = triples_dir / "triple_edges_test_from_json.csv"
+        edges_csv.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+        )
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river in southern Brazil,entity\nenchente,climatic event,event\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        # Verify the phantom is dropped from the input atlas-rag ultimately sees.
+        # Capture the missing_csv content right before generate_concept_csv_temp is called.
+        captured: dict[str, list[str]] = {}
+
+        def capture_then_write(**kwargs: Any) -> None:
+            with missing_csv.open() as f:
+                captured["names"] = [row[0] for row in csv.reader(f) if row and row[0] != "node"]
+            write_shard(**kwargs)
+
+        mock_extractor.generate_concept_csv_temp.side_effect = capture_then_write
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        # The phantom row must NOT have been visible to atlas-rag.
+        assert "phantom_node" not in captured["names"], (
+            f"phantom row leaked through to atlas-rag: {captured['names']}"
+        )
+        assert "Rio Guaíba" in captured["names"]
+        assert "enchente" in captured["names"]
+
+    def test_no_phantom_drop_when_all_present(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Prefilter is a no-op when every missing_concepts row is in the graph."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        missing_csv, concepts_dir, triples_dir = self._setup_dirs(tmp_path)
+
+        # _setup_dirs writes 3 nodes; build matching source CSVs.
+        nodes_csv = triples_dir / "triple_nodes_test_from_json.csv"
+        nodes_csv.write_text(
+            "name:ID,type,concepts,synsets,:LABEL\n"
+            "Rio Guaíba,entity,,,Node\n"
+            "enchente,event,,,Node\n"
+            "afeta,relation,,,Node\n"
+        )
+        edges_csv = triples_dir / "triple_edges_test_from_json.csv"
+        edges_csv.write_text(":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n")
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+        captured: dict[str, list[str]] = {}
+
+        def write_shard(**kwargs: Any) -> None:
+            with missing_csv.open() as f:
+                captured["names"] = [row[0] for row in csv.reader(f) if row and row[0] != "node"]
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        # All 3 rows survive — no false drops.
+        assert set(captured["names"]) == {"Rio Guaíba", "enchente", "afeta"}
+
+    def test_phantom_drop_skipped_when_source_csvs_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Defensive: if triple_nodes/edges CSVs are absent, prefilter is a no-op.
+
+        Triple extraction must run before concept generation, so the source
+        CSVs *should* exist. But if a test or odd resume state leaves them
+        missing, the prefilter should not crash — atlas-rag will surface
+        any actual problem itself.
+        """
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _triples_dir = self._setup_dirs(tmp_path)
+        # Intentionally do NOT create triple_nodes / triple_edges CSVs.
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        # Should NOT raise.
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_called_once()
+
 
 class TestPatchedCsvsToTempGraphml:
     """Tests for _patched_csvs_to_temp_graphml orphan node handling."""
