@@ -1566,6 +1566,77 @@ class TestResumableConceptGeneration:
         constructor = AtlasRagConstructor(KGConfig(language="pt"))
         assert constructor._ensure_triple_node_csv_covers_endpoints(tmp_path) == 0
 
+    @staticmethod
+    def _write_participation_csvs(tmp_path: Path) -> tuple[Path, Path]:
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        concept_dir = tmp_path / "atlas_output" / "concept_csv"
+        triples_dir.mkdir(parents=True)
+        concept_dir.mkdir(parents=True)
+
+        without_emb = triples_dir / "triple_edges_test_from_json_without_emb.csv"
+        without_emb.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Enchente,Rio Guaíba,is participated by,,,Relation\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+            "Enchente,Porto Alegre,is participated by,,,Relation\n"
+        )
+        with_concept = concept_dir / "triple_edges_test_from_json_with_concept.csv"
+        with_concept.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Enchente,Rio Guaíba,is participated by,[],[],Relation\n"
+        )
+        return without_emb, with_concept
+
+    def test_participation_relabel_rewrites_pt_corpus(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """For language=pt, hardcoded English predicate is replaced in both CSVs."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        without_emb, with_concept = self._write_participation_csvs(tmp_path)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        rewritten = constructor._relabel_synthesized_event_participation(tmp_path)
+
+        # 2 in _without_emb + 1 in _with_concept = 3 total.
+        assert rewritten == 3, f"expected 3 relabels, got {rewritten}"
+
+        for path in (without_emb, with_concept):
+            with path.open(newline="") as f:
+                rows = list(csv.DictReader(f))
+            relations = [r["relation"] for r in rows]
+            assert "is participated by" not in relations
+            assert "envolve" in relations
+
+        # The non-synthesized "causou" relation must be untouched.
+        with without_emb.open(newline="") as f:
+            relations = [r["relation"] for r in csv.DictReader(f)]
+        assert "causou" in relations
+
+    def test_participation_relabel_no_op_for_english(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No mapping for language=en → CSVs untouched."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        without_emb, _ = self._write_participation_csvs(tmp_path)
+        mtime_before = without_emb.stat().st_mtime_ns
+
+        constructor = AtlasRagConstructor(KGConfig(language="en"))
+        assert constructor._relabel_synthesized_event_participation(tmp_path) == 0
+        assert without_emb.stat().st_mtime_ns == mtime_before
+
+    def test_participation_relabel_skipped_when_csvs_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No-op when no triple_edges CSVs exist (defensive)."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        (tmp_path / "atlas_output" / "triples_csv").mkdir(parents=True)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        assert constructor._relabel_synthesized_event_participation(tmp_path) == 0
+
 
 class TestPatchedCsvsToTempGraphml:
     """Tests for _patched_csvs_to_temp_graphml orphan node handling."""

@@ -36,6 +36,19 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from arandu.kg.atlas_backend import (
+    SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG,
+    SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN,
+)
+
+# All known forms of the synthesized event-participation predicate, across
+# the languages we relabel. Used to split edges into atlas-rag-synthesized
+# vs LLM-extracted relations regardless of which language the run used.
+SYNTHESIZED_PARTICIPATION_PREDICATES: frozenset[str] = frozenset(
+    {SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN}
+    | set(SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG.values())
+)
+
 
 def _component_stats(g: nx.DiGraph) -> dict[str, int | float]:
     wcc = list(nx.weakly_connected_components(g))
@@ -75,6 +88,49 @@ def _clustering_stats(g_undir: nx.Graph) -> dict[str, float]:
     }
 
 
+def _edge_type_breakdown(g: nx.DiGraph) -> dict[str, int]:
+    """Count edges by atlas-rag's ``type`` attribute.
+
+    Atlas-rag tags edges with one of: ``Relation`` (entity↔entity / event↔
+    entity triples), ``Source`` (text-mention edges), ``Concept`` (concept
+    linking). Unknown types get bucketed under ``other``.
+    """
+    counts = {"Relation": 0, "Source": 0, "Concept": 0, "other": 0}
+    for _, _, data in g.edges(data=True):
+        t = data.get("type")
+        counts[t if t in counts else "other"] += 1
+    return counts
+
+
+def _relation_split_stats(g: nx.DiGraph) -> dict[str, int | float]:
+    """Within ``type=Relation`` edges, split synthesized vs LLM-extracted.
+
+    Atlas-rag synthesizes ``(Event, "is participated by", Entity)`` edges
+    from the LLM's event_entity_relation_dict (no predicate field). Every
+    other Relation-typed edge carries an LLM-chosen predicate. Text and
+    Concept edges are excluded — they're structural, not semantic.
+    """
+    synthesized = 0
+    extracted = 0
+    for _, _, data in g.edges(data=True):
+        if data.get("type") != "Relation":
+            continue
+        rel = data.get("relation")
+        if rel in SYNTHESIZED_PARTICIPATION_PREDICATES:
+            synthesized += 1
+        else:
+            extracted += 1
+
+    total = synthesized + extracted
+    return {
+        "synthesized_participation_edges": synthesized,
+        "extracted_relation_edges": extracted,
+        "relation_edges_total": total,
+        "synthesized_share_of_relations": synthesized / total if total else 0.0,
+        "extracted_share_of_relations": extracted / total if total else 0.0,
+    }
+
+
 def _shortest_path_stats_largest_wcc(g: nx.DiGraph) -> dict[str, float]:
     wcc = max(nx.weakly_connected_components(g), key=len)
     sub = g.subgraph(wcc).to_undirected()
@@ -106,6 +162,8 @@ def compute_metrics(graphml: Path, full: bool) -> dict:
     metrics.update(_component_stats(g))
     metrics.update(_degree_stats(g))
     metrics.update(_clustering_stats(g.to_undirected()))
+    metrics["edges_by_type"] = _edge_type_breakdown(g)
+    metrics.update(_relation_split_stats(g))
 
     if full:
         t0 = time.perf_counter()
@@ -164,6 +222,41 @@ def render_table(metrics: dict, console: Console) -> None:
     clu.add_row("Transitivity (global)", f"{metrics['transitivity']:.4f}")
     clu.add_row("Average clustering", f"{metrics['average_clustering']:.4f}")
     console.print(clu)
+
+    edge_types = metrics["edges_by_type"]
+    total_edges = metrics["edges"]
+    et = Table(title="Edges by type")
+    et.add_column("Type", style="bold")
+    et.add_column("Edges", justify="right")
+    et.add_column("Share", justify="right")
+    for label, key in (
+        ("Relation (triples)", "Relation"),
+        ("Source (text mention)", "Source"),
+        ("Concept (concept link)", "Concept"),
+        ("other", "other"),
+    ):
+        count = edge_types[key]
+        if count or key != "other":
+            share = (count / total_edges * 100) if total_edges else 0.0
+            et.add_row(label, f"{count:,}", f"{share:.1f}%")
+    console.print(et)
+
+    if metrics["relation_edges_total"]:
+        rel = Table(title="Within Relation edges: synthesized vs LLM-extracted")
+        rel.add_column("Source", style="bold")
+        rel.add_column("Edges", justify="right")
+        rel.add_column("Share of Relation", justify="right")
+        rel.add_row(
+            "atlas-rag synthesized",
+            f"{metrics['synthesized_participation_edges']:,}",
+            f"{metrics['synthesized_share_of_relations'] * 100:.1f}%",
+        )
+        rel.add_row(
+            "LLM extracted",
+            f"{metrics['extracted_relation_edges']:,}",
+            f"{metrics['extracted_share_of_relations'] * 100:.1f}%",
+        )
+        console.print(rel)
 
     if "largest_wcc_diameter" in metrics:
         sp = Table(title="Shortest paths (largest WCC, undirected)", show_header=False)

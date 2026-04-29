@@ -108,6 +108,14 @@ ATLAS_DEFAULTS: dict[str, Any] = {
 # Path to atlas-rag prompt files relative to the project root
 _PROMPTS_DIR = get_project_root() / "prompts" / "kg" / "atlas"
 
+# atlas-rag synthesizes event-entity participation triples with a hardcoded
+# predicate (json_to_csv.py:161, json_to_csv.py:364, json_to_graphml.py:145).
+# The post-extraction relabel sweep rewrites it for non-English corpora.
+SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN = "is participated by"
+SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG: dict[str, str] = {
+    "pt": "envolve",
+}
+
 # Lazy reference — populated on first use by _get_enriched_processor_cls()
 _MetadataEnrichedProcessorCls: type | None = None
 
@@ -610,6 +618,13 @@ class AtlasRagConstructor:
             self._run_concept_generation_with_resume(extractor, output_dir)
             extractor.create_concept_csv()
 
+        # Translate atlas-rag's hardcoded English event-entity participation
+        # predicate to a natural Portuguese form for pt-language runs. The
+        # framework synthesizes (Event, "is participated by", Entity) edges
+        # because the LLM's event_entity_relation_dict only emits {Event,
+        # Entity} pairs (no predicate). Pure CSV rewrite, no upstream change.
+        self._relabel_synthesized_event_participation(output_dir)
+
         # Backfill triple_nodes CSV with any endpoint referenced by
         # triple_edges but absent from triple_nodes. atlas-rag's
         # ``csvs_to_graphml`` calls ``g.add_edge`` on every edge endpoint;
@@ -1097,6 +1112,85 @@ class AtlasRagConstructor:
             nodes_csv.name,
         )
         return len(orphans)
+
+    def _relabel_synthesized_event_participation(self, output_dir: Path) -> int:
+        """Rewrite atlas-rag's hardcoded event-participation predicate.
+
+        atlas-rag synthesizes (Event, ``"is participated by"``, Entity) edges
+        from the LLM's ``event_entity_relation_dict`` (which has no
+        predicate field). The string is hardcoded in atlas-rag's
+        ``json_to_csv.py`` and ``json_to_graphml.py``, so for non-English
+        corpora we rewrite the relation column in the triple_edges CSVs
+        before ``convert_to_graphml`` reads them. No-op when
+        ``self._config.language`` has no mapping in
+        ``SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG``.
+
+        Args:
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of edge rows whose relation was rewritten across all
+            target CSVs (0 if the language has no mapping).
+        """
+        target_predicate = SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG.get(
+            self._config.language
+        )
+        if not target_predicate:
+            return 0
+
+        atlas_output = output_dir / "atlas_output"
+        candidates: list[Path] = []
+        candidates.extend(
+            (atlas_output / "triples_csv").glob("triple_edges_*_from_json_without_emb.csv")
+        )
+        candidates.extend(
+            (atlas_output / "concept_csv").glob("triple_edges_*_from_json_with_concept.csv")
+        )
+        if not candidates:
+            logger.debug(
+                "No triple_edges CSVs in %s — skipping participation relabel sweep",
+                atlas_output,
+            )
+            return 0
+
+        total_rewritten = 0
+        for csv_path in candidates:
+            try:
+                with csv_path.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    fieldnames = reader.fieldnames
+                    if not fieldnames or "relation" not in fieldnames:
+                        continue
+                    rows = list(reader)
+            except (OSError, csv.Error) as exc:
+                logger.warning(
+                    "Failed to read %s for participation relabel (%s); skipping",
+                    csv_path.name,
+                    exc,
+                )
+                continue
+
+            rewritten = 0
+            for row in rows:
+                if row.get("relation") == SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN:
+                    row["relation"] = target_predicate
+                    rewritten += 1
+
+            if rewritten:
+                with csv_path.open("w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                logger.info(
+                    "Relabeled %d %r → %r in %s",
+                    rewritten,
+                    SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN,
+                    target_predicate,
+                    csv_path.name,
+                )
+                total_rewritten += rewritten
+
+        return total_rewritten
 
     def _restore_and_finalize(
         self,
