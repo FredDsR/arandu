@@ -1481,6 +1481,87 @@ class TestResumableConceptGeneration:
 
         mock_extractor.generate_concept_csv_temp.assert_called_once()
 
+    def test_endpoint_coverage_sweep_backfills_orphans(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Endpoints in triple_edges absent from triple_nodes get a backfill row.
+
+        Regression for the atlas-rag ``KeyError: 'type'`` crash in
+        ``csv_to_graphml.py`` line 185 (cluster job 780114) — atlas-rag's
+        ``g.add_edge`` implicitly creates attributeless nodes for any edge
+        endpoint missing from triple_nodes_*.csv.
+        """
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        triples_dir.mkdir(parents=True)
+
+        nodes_csv = triples_dir / "triple_nodes_test_from_json_without_emb.csv"
+        nodes_csv.write_text("name:ID,type,concepts,synsets,:LABEL\nRio Guaíba,entity,,,Node\n")
+        edges_csv = triples_dir / "triple_edges_test_from_json_with_concept.csv"
+        edges_csv.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+            "enchente,Porto Alegre,atingiu,,,Relation\n"
+        )
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        backfilled = constructor._ensure_triple_node_csv_covers_endpoints(tmp_path)
+
+        assert backfilled == 2, f"expected 2 orphans backfilled, got {backfilled}"
+
+        with nodes_csv.open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        names = {row["name:ID"] for row in rows}
+        assert names == {"Rio Guaíba", "enchente", "Porto Alegre"}
+
+        # Backfilled rows have type=entity and empty other columns.
+        backfilled_rows = [r for r in rows if r["name:ID"] in {"enchente", "Porto Alegre"}]
+        for row in backfilled_rows:
+            assert row["type"] == "entity"
+            assert row["concepts"] == ""
+            assert row["synsets"] == ""
+            assert row[":LABEL"] == ""
+
+    def test_endpoint_coverage_sweep_no_op_when_all_present(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No backfill when every endpoint already has a row."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        triples_dir.mkdir(parents=True)
+
+        nodes_csv = triples_dir / "triple_nodes_test_from_json_without_emb.csv"
+        nodes_csv.write_text(
+            "name:ID,type,concepts,synsets,:LABEL\n"
+            "Rio Guaíba,entity,,,Node\n"
+            "enchente,event,,,Node\n"
+        )
+        edges_csv = triples_dir / "triple_edges_test_from_json_with_concept.csv"
+        edges_csv.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+        )
+        mtime_before = nodes_csv.stat().st_mtime_ns
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        backfilled = constructor._ensure_triple_node_csv_covers_endpoints(tmp_path)
+
+        assert backfilled == 0
+        assert nodes_csv.stat().st_mtime_ns == mtime_before
+
+    def test_endpoint_coverage_sweep_skipped_when_csvs_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No-op when the source CSVs are absent (defensive)."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        (tmp_path / "atlas_output" / "triples_csv").mkdir(parents=True)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        assert constructor._ensure_triple_node_csv_covers_endpoints(tmp_path) == 0
+
 
 class TestPatchedCsvsToTempGraphml:
     """Tests for _patched_csvs_to_temp_graphml orphan node handling."""

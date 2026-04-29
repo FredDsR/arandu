@@ -610,6 +610,16 @@ class AtlasRagConstructor:
             self._run_concept_generation_with_resume(extractor, output_dir)
             extractor.create_concept_csv()
 
+        # Backfill triple_nodes CSV with any endpoint referenced by
+        # triple_edges but absent from triple_nodes. atlas-rag's
+        # ``csvs_to_graphml`` calls ``g.add_edge`` on every edge endpoint;
+        # missing endpoints become attributeless nodes that crash line 185
+        # of ``csv_to_graphml.py`` (``g.nodes[node_id]['type']``). Filed
+        # upstream as the same family of ID-consistency bugs in
+        # HKUST-KnowComp/AutoSchemaKG#45 — interruption-derived per the
+        # authors, so the local sweep is the maintained fix.
+        self._ensure_triple_node_csv_covers_endpoints(output_dir)
+
         logger.info("Converting to GraphML...")
         extractor.convert_to_graphml()
         logger.info("Atlas-rag pipeline completed")
@@ -996,6 +1006,84 @@ class AtlasRagConstructor:
             )
 
         return patched
+
+    def _ensure_triple_node_csv_covers_endpoints(self, output_dir: Path) -> int:
+        """Backfill triple_nodes CSV with edge endpoints that lack a row.
+
+        atlas-rag's ``csvs_to_graphml`` reads
+        ``triple_nodes_<pat>_from_json_without_emb.csv`` to seed the graph
+        with attributed nodes, then iterates
+        ``triple_edges_<pat>_from_json_with_concept.csv`` and calls
+        ``g.add_edge(start_id, end_id, ...)``. Any endpoint absent from the
+        nodes CSV becomes an attributeless node (NetworkX implicitly
+        creates it) and crashes line 185 of ``csv_to_graphml.py`` —
+        ``if g.nodes[node_id]['type'] in ['triple', 'concept']`` raises
+        ``KeyError: 'type'``.
+
+        This sweep appends a row (``name:ID=<endpoint>``, ``type=entity``,
+        empty other columns) for every endpoint missing from the nodes
+        CSV, so the graph build sees a well-formed input.
+
+        Args:
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of orphan endpoints backfilled into the nodes CSV.
+        """
+        triples_dir = output_dir / "atlas_output" / "triples_csv"
+        nodes_csvs = list(triples_dir.glob("triple_nodes_*_from_json_without_emb.csv"))
+        edges_csvs = list(triples_dir.glob("triple_edges_*_from_json_with_concept.csv"))
+        if not nodes_csvs or not edges_csvs:
+            logger.debug(
+                "No triple_nodes/triple_edges _without_emb / _with_concept CSV in %s — "
+                "skipping endpoint coverage sweep",
+                triples_dir,
+            )
+            return 0
+
+        nodes_csv = nodes_csvs[0]
+        edges_csv = edges_csvs[0]
+
+        try:
+            with nodes_csv.open(newline="") as f:
+                reader = csv.DictReader(f)
+                node_header = reader.fieldnames or []
+                existing_names = {row["name:ID"] for row in reader if row.get("name:ID")}
+
+            endpoint_names: set[str] = set()
+            with edges_csv.open(newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get(":START_ID"):
+                        endpoint_names.add(row[":START_ID"])
+                    if row.get(":END_ID"):
+                        endpoint_names.add(row[":END_ID"])
+        except (OSError, csv.Error, KeyError) as exc:
+            logger.warning(
+                "Failed to read triple_*.csv for endpoint coverage sweep (%s); skipping",
+                exc,
+            )
+            return 0
+
+        orphans = endpoint_names - existing_names
+        if not orphans:
+            return 0
+
+        with nodes_csv.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=node_header)
+            for name in sorted(orphans):
+                row = dict.fromkeys(node_header, "")
+                row["name:ID"] = name
+                if "type" in node_header:
+                    row["type"] = "entity"
+                writer.writerow(row)
+
+        logger.warning(
+            "Backfilled %d orphan endpoint(s) into %s with type=entity",
+            len(orphans),
+            nodes_csv.name,
+        )
+        return len(orphans)
 
     def _restore_and_finalize(
         self,
