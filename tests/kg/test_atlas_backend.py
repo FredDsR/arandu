@@ -1494,11 +1494,13 @@ class TestResumableConceptGeneration:
         from arandu.kg.atlas_backend import AtlasRagConstructor
 
         triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        concept_dir = tmp_path / "atlas_output" / "concept_csv"
         triples_dir.mkdir(parents=True)
+        concept_dir.mkdir(parents=True)
 
         nodes_csv = triples_dir / "triple_nodes_test_from_json_without_emb.csv"
         nodes_csv.write_text("name:ID,type,concepts,synsets,:LABEL\nRio Guaíba,entity,,,Node\n")
-        edges_csv = triples_dir / "triple_edges_test_from_json_with_concept.csv"
+        edges_csv = concept_dir / "triple_edges_test_from_json_with_concept.csv"
         edges_csv.write_text(
             ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
             "Rio Guaíba,enchente,causou,,,Relation\n"
@@ -1530,7 +1532,9 @@ class TestResumableConceptGeneration:
         from arandu.kg.atlas_backend import AtlasRagConstructor
 
         triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        concept_dir = tmp_path / "atlas_output" / "concept_csv"
         triples_dir.mkdir(parents=True)
+        concept_dir.mkdir(parents=True)
 
         nodes_csv = triples_dir / "triple_nodes_test_from_json_without_emb.csv"
         nodes_csv.write_text(
@@ -1538,7 +1542,7 @@ class TestResumableConceptGeneration:
             "Rio Guaíba,entity,,,Node\n"
             "enchente,event,,,Node\n"
         )
-        edges_csv = triples_dir / "triple_edges_test_from_json_with_concept.csv"
+        edges_csv = concept_dir / "triple_edges_test_from_json_with_concept.csv"
         edges_csv.write_text(
             ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
             "Rio Guaíba,enchente,causou,,,Relation\n"

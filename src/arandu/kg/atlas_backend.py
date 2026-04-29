@@ -1030,14 +1030,27 @@ class AtlasRagConstructor:
         Returns:
             Number of orphan endpoints backfilled into the nodes CSV.
         """
-        triples_dir = output_dir / "atlas_output" / "triples_csv"
+        atlas_output = output_dir / "atlas_output"
+        triples_dir = atlas_output / "triples_csv"
+        # When include_concept=True, atlas-rag passes the *_with_concept.csv
+        # from concept_csv/ as triple_edge_file. Otherwise it falls back to
+        # the *_without_emb.csv from triples_csv/. Mirror that selection so
+        # the sweep targets exactly the file csvs_to_graphml will read.
+        if self._opts["include_concept"]:
+            edges_dir = atlas_output / "concept_csv"
+            edges_pattern = "triple_edges_*_from_json_with_concept.csv"
+        else:
+            edges_dir = triples_dir
+            edges_pattern = "triple_edges_*_from_json_without_emb.csv"
+
         nodes_csvs = list(triples_dir.glob("triple_nodes_*_from_json_without_emb.csv"))
-        edges_csvs = list(triples_dir.glob("triple_edges_*_from_json_with_concept.csv"))
+        edges_csvs = list(edges_dir.glob(edges_pattern))
         if not nodes_csvs or not edges_csvs:
             logger.debug(
-                "No triple_nodes/triple_edges _without_emb / _with_concept CSV in %s — "
-                "skipping endpoint coverage sweep",
+                "No triple_nodes (%s) / triple_edges (%s/%s) — skipping endpoint coverage sweep",
                 triples_dir,
+                edges_dir,
+                edges_pattern,
             )
             return 0
 
