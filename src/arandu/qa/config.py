@@ -315,8 +315,10 @@ class JudgeConfig(BaseSettings):
     validator_base_url: str | None = Field(
         default=None,
         description=(
-            "Base URL for the validator provider. Falls back to "
-            "ARANDU_LLM_BASE_URL when not specified."
+            "Base URL for the validator provider. When unset, "
+            "ARANDU_LLM_BASE_URL is inherited only if the resolved provider "
+            "is 'custom'; explicit 'openai' or 'ollama' providers keep their "
+            "own defaults regardless of ARANDU_LLM_BASE_URL."
         ),
     )
 

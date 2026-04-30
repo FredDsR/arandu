@@ -427,9 +427,14 @@ def judge_qa(
                 print_warning(f"Failed to judge pair in {qa_file.name}: {e}")
                 continue
 
-        # Persist updated record back to disk
+        # Persist updated record back to disk. ``resolved_model`` (not the
+        # raw CLI option) is the actual model the judge ran with —
+        # ``model`` may be None when the value came from
+        # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
+        # existing validator_model_id on the record.
         record.qa_pairs = updated_pairs
-        record.validator_model_id = model
+        if resolved_model is not None:
+            record.validator_model_id = resolved_model
         # Count pairs that *passed* validation, not just pairs that have a
         # verdict — the schema field is documented as "Number of pairs
         # passing validation" and validation_rate is computed off it.

@@ -96,13 +96,16 @@ def load_transcription_tasks(
 
     Filtering rules, in order:
 
-    - Transcriptions where ``is_valid`` is explicitly ``False`` are skipped
-      (judged and rejected).
-    - Transcriptions without the field or with ``is_valid=None`` are
-      included so users can run QA before judging — but a defensive
-      length floor still drops empty / sub-floor records to avoid
-      wasting LLM budget on text the judge would have rejected anyway.
-      The floor mirrors ``ContentLengthFloorCriterion``'s defaults.
+    - Transcriptions whose ``validation`` payload reports ``passed=False``
+      are skipped (judged and rejected). The check keys off the
+      ``validation`` field directly so it works even on older on-disk
+      records that don't carry the computed ``is_valid`` field.
+    - Transcriptions with no ``validation`` payload are treated as
+      unjudged and included so users can run QA before judging — but a
+      defensive length floor still drops empty / sub-floor records to
+      avoid wasting LLM budget on text the judge would have rejected
+      anyway. The floor mirrors ``ContentLengthFloorCriterion``'s
+      defaults.
 
     Args:
         input_dir: Directory containing EnrichedRecord JSON files, or the
@@ -142,17 +145,24 @@ def load_transcription_tasks(
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
 
-            # Skip transcriptions that failed quality validation
-            if data.get("is_valid") is False:
+            # Resolve "judged?" / "passed?" from the canonical validation
+            # payload rather than the computed is_valid mirror, which may
+            # be missing from older on-disk records.
+            validation = data.get("validation")
+            judged = isinstance(validation, dict)
+            passed = bool(validation.get("passed")) if judged else None
+
+            # Skip transcriptions that were judged and failed validation.
+            if judged and passed is False:
                 skipped_invalid += 1
                 logger.info(f"Skipping invalid transcription: {json_file.name}")
                 continue
 
-            # Defensive length floor: when a record is unjudged
-            # (``is_valid=None`` / missing) AND below the content-length
-            # floor, skip it instead of paying for LLM calls that would
-            # produce garbage QA from empty or near-empty text.
-            if data.get("is_valid") is None:
+            # Defensive length floor: when a record is unjudged (no
+            # validation payload) AND below the content-length floor,
+            # skip it instead of paying for LLM calls that would produce
+            # garbage QA from empty or near-empty text.
+            if not judged:
                 text = (data.get("transcription_text") or "").strip()
                 n_words = len(text.split())
                 if len(text) < min_chars or n_words < min_words:
