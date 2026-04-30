@@ -206,6 +206,48 @@ class TestBuildValidatorClient:
         assert client.provider == LLMProvider.OPENAI
         assert client.base_url == "https://api.openai.com/v1"
 
+    def test_explicit_openai_does_not_inherit_env_base_url(self, mocker: MockerFixture) -> None:
+        """provider='openai' must keep OpenAI's default endpoint even if
+        ARANDU_LLM_BASE_URL points at a different (e.g., Gemini-compatible)
+        host. Regression for the silent-routing leak Copilot flagged.
+        """
+        mocker.patch(
+            "arandu.transcription.judge.get_llm_config",
+            return_value=mocker.MagicMock(
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            ),
+        )
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_validator_client("gpt-4o-mini", provider="openai")
+        assert client.provider == LLMProvider.OPENAI
+        # Falls through to OpenAI SDK's own default (None at the LLMClient level).
+        assert client.base_url is None
+
+    def test_explicit_ollama_does_not_inherit_env_base_url(self, mocker: MockerFixture) -> None:
+        """provider='ollama' must keep Ollama's default endpoint even if
+        ARANDU_LLM_BASE_URL is set."""
+        mocker.patch(
+            "arandu.transcription.judge.get_llm_config",
+            return_value=mocker.MagicMock(base_url="https://example.test/v1"),
+        )
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_validator_client("qwen3:14b", provider="ollama")
+        assert client.provider == LLMProvider.OLLAMA
+        # LLMClient falls back to PROVIDER_URLS[OLLAMA] (localhost:11434).
+        assert client.base_url == "http://localhost:11434/v1"
+
+    def test_custom_without_base_url_raises(self, mocker: MockerFixture) -> None:
+        """provider='custom' with no base_url anywhere raises ValueError
+        instead of silently routing to OpenAI's default."""
+        import pytest as _pytest
+
+        mocker.patch(
+            "arandu.transcription.judge.get_llm_config",
+            return_value=mocker.MagicMock(base_url=None),
+        )
+        with _pytest.raises(ValueError, match="provider='custom' requires a base URL"):
+            build_validator_client("some-model", provider="custom")
+
 
 class TestJudgeTranscriptionCLI:
     """Tests for the judge-transcription CLI command."""

@@ -41,23 +41,36 @@ def build_validator_client(
 ) -> LLMClient:
     """Build an ``LLMClient`` for the ``TranscriptionJudge`` LLM stage.
 
-    Resolves the base URL from ``LLMConfig`` (which reads
-    ``ARANDU_LLM_BASE_URL`` from environment / ``.env``) when not provided
-    explicitly. Infers ``provider='custom'`` when a base URL is set but
-    ``provider`` wasn't, falling back to ``'ollama'`` otherwise.
+    Resolution order for the base URL:
+      - explicit ``base_url`` kwarg wins;
+      - else ``ARANDU_LLM_BASE_URL`` (via ``LLMConfig``) is used **only**
+        when the resolved provider is ``custom``;
+      - explicit ``provider='openai'`` or ``provider='ollama'`` keeps each
+        provider's own default endpoint, even if ``ARANDU_LLM_BASE_URL``
+        is set in the environment for some other tool.
+
+    Provider inference: when ``provider`` is unset, infer ``'custom'`` if
+    an env-var base URL is configured, otherwise fall back to ``'ollama'``.
 
     Args:
         model_id: Model identifier (e.g. ``'qwen3:14b'``, ``'gemini-2.5-flash'``).
         provider: Optional provider name. ``'openai'`` / ``'ollama'`` / ``'custom'``.
-        base_url: Optional base URL override.
+        base_url: Optional explicit base URL override.
 
     Returns:
         A configured ``LLMClient`` instance ready to pass as
         ``TranscriptionJudge(validator_client=...)``.
+
+    Raises:
+        ValueError: If ``provider`` is unrecognised, or if the resolved
+            provider is ``custom`` with no base URL configured.
     """
     llm_config = get_llm_config()
-    resolved_base_url = base_url or llm_config.base_url
-    resolved_provider = provider or ("custom" if resolved_base_url else "ollama")
+    env_base_url = llm_config.base_url
+
+    # Step 1: pick the provider, inferring 'custom' only when the user
+    # hasn't named one and an env-var base URL is configured.
+    resolved_provider = provider or ("custom" if env_base_url else "ollama")
     try:
         provider_enum = LLMProvider(resolved_provider.lower())
     except ValueError as exc:
@@ -65,6 +78,17 @@ def build_validator_client(
         raise ValueError(
             f"Invalid LLM provider: {resolved_provider!r}. Must be one of {valid}."
         ) from exc
+
+    # Step 2: pick the base URL. Explicit base_url always wins. Otherwise
+    # only inherit the env-var URL when the resolved provider is 'custom';
+    # an explicit 'openai' / 'ollama' keeps its own default endpoint and
+    # is never silently rerouted by ARANDU_LLM_BASE_URL.
+    if base_url:
+        resolved_base_url: str | None = base_url
+    elif provider_enum is LLMProvider.CUSTOM:
+        resolved_base_url = env_base_url
+    else:
+        resolved_base_url = None
 
     # The 'custom' provider exists specifically to point at a non-default
     # OpenAI-compatible endpoint. Without an explicit base URL the

@@ -299,8 +299,9 @@ class JudgeConfig(BaseSettings):
     validator_model: str | None = Field(
         default=None,
         description=(
-            "Model ID for the LLM filter stage (language_drift + hallucination_loop). "
-            "e.g. 'qwen3:14b' or 'gemini-2.5-flash'. Required for judge-transcription."
+            "Model ID for the LLM filter stage (language_drift + hallucination_loop), "
+            "e.g. 'qwen3:14b' or 'gemini-2.5-flash'. Optional: when unset, "
+            "judge-transcription runs in heuristic-only mode and skips the LLM stage."
         ),
     )
     validator_provider: str | None = Field(

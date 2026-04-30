@@ -94,8 +94,15 @@ def load_transcription_tasks(
 ) -> TaskLoadResult:
     """Load transcription files and create QA generation tasks.
 
-    Transcriptions where ``is_valid`` is explicitly ``False`` are skipped.
-    Transcriptions without the field or with ``is_valid=None`` are included.
+    Filtering rules, in order:
+
+    - Transcriptions where ``is_valid`` is explicitly ``False`` are skipped
+      (judged and rejected).
+    - Transcriptions without the field or with ``is_valid=None`` are
+      included so users can run QA before judging — but a defensive
+      length floor still drops empty / sub-floor records to avoid
+      wasting LLM budget on text the judge would have rejected anyway.
+      The floor mirrors ``ContentLengthFloorCriterion``'s defaults.
 
     Args:
         input_dir: Directory containing EnrichedRecord JSON files, or the
@@ -108,6 +115,15 @@ def load_transcription_tasks(
         A TaskLoadResult containing the tasks list and filtering metadata
         (total files found and number skipped as invalid).
     """
+    from arandu.transcription.criteria.content_length import ContentLengthFloorCriterion
+
+    # Match the judge's content-length defaults so the QA stage's
+    # defensive skip is consistent with what content_length_floor would
+    # reject upstream when judging is run.
+    _length_floor = ContentLengthFloorCriterion()
+    min_chars = _length_floor.min_chars
+    min_words = _length_floor.min_words
+
     tasks: list[QAGenerationTask] = []
 
     # Resolve versioned directory layout when needed
@@ -131,6 +147,28 @@ def load_transcription_tasks(
                 skipped_invalid += 1
                 logger.info(f"Skipping invalid transcription: {json_file.name}")
                 continue
+
+            # Defensive length floor: when a record is unjudged
+            # (``is_valid=None`` / missing) AND below the content-length
+            # floor, skip it instead of paying for LLM calls that would
+            # produce garbage QA from empty or near-empty text.
+            if data.get("is_valid") is None:
+                text = (data.get("transcription_text") or "").strip()
+                n_words = len(text.split())
+                if len(text) < min_chars or n_words < min_words:
+                    skipped_invalid += 1
+                    logger.warning(
+                        "Skipping unjudged transcription %s — text below "
+                        "content_length_floor (%d chars / %d words; floor: "
+                        "%d chars / %d words). Run judge-transcription to "
+                        "make this decision deterministic.",
+                        json_file.name,
+                        len(text),
+                        n_words,
+                        min_chars,
+                        min_words,
+                    )
+                    continue
 
             file_id = data.get("file_id") or data.get("gdrive_id", "unknown")
             filename = data.get("name", json_file.name)

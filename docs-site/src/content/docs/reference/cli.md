@@ -238,10 +238,29 @@ arandu judge-qa INPUT_DIR [OPTIONS]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--language` | str | `pt` | Expected QA language (`pt` or `en`) |
+| `--model` / `-m` | str \| None | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for judge evaluation. Required (CLI flag or env var) |
+| `--provider` | str \| None | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`). Inferred from `ARANDU_LLM_BASE_URL` when unset (`custom` if set, else `ollama`) |
+| `--base-url` | str \| None | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` / `ARANDU_LLM_BASE_URL` | Custom base URL for OpenAI-compatible endpoints (required for `--provider custom`) |
+| `--language` / `-l` | str | `pt` | Expected QA language (`pt` or `en`) |
+| `--files` | int \| None | (all) | Maximum number of QA files to sample |
+| `--pairs` | int \| None | (all) | Maximum QA pairs to judge per file |
 | `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every pair from scratch; `--resume` (default) skips pairs already carrying a `validation` payload |
 
-LLM model + provider are loaded from `ARANDU_JUDGE_*` env vars (same set as `judge-transcription`).
+**Examples**:
+```bash
+# Use ARANDU_JUDGE_VALIDATOR_* env vars from .env
+arandu judge-qa cep_dataset/
+
+# Explicit Ollama
+arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
+
+# OpenAI-compatible custom endpoint (Gemini)
+arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \
+    --base-url https://generativelanguage.googleapis.com/v1beta/openai/
+
+# Sample-bounded run
+arandu judge-qa cep_dataset/ --files 2 --pairs 3
+```
 
 ---
 

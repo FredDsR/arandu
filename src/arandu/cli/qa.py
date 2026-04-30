@@ -233,16 +233,36 @@ def judge_qa(
         ),
     ],
     provider: Annotated[
-        str,
-        typer.Option("--provider", help="LLM provider: openai, ollama, custom."),
-    ],
+        str | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "LLM provider: openai, ollama, custom. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_PROVIDER, then inferred from "
+                "ARANDU_LLM_BASE_URL (custom when set, else ollama)."
+            ),
+        ),
+    ] = None,
     model: Annotated[
-        str,
-        typer.Option("--model", "-m", help="Model ID for judge evaluation."),
-    ],
+        str | None,
+        typer.Option(
+            "--model",
+            "-m",
+            help=(
+                "Model ID for judge evaluation. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_MODEL when not provided."
+            ),
+        ),
+    ] = None,
     base_url: Annotated[
         str | None,
-        typer.Option("--base-url", help="Custom base URL for OpenAI-compatible endpoints."),
+        typer.Option(
+            "--base-url",
+            help=(
+                "Custom base URL for OpenAI-compatible endpoints. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_BASE_URL, then ARANDU_LLM_BASE_URL."
+            ),
+        ),
     ] = None,
     language: Annotated[
         str,
@@ -278,33 +298,53 @@ def judge_qa(
     ``validation.passed`` automatically. No aggregate side-file is
     produced — run a downstream analytics script for cross-record reports.
 
+    Validator model and provider come from ``--model`` / ``--provider`` /
+    ``--base-url`` when supplied, otherwise from
+    ``ARANDU_JUDGE_VALIDATOR_MODEL`` / ``ARANDU_JUDGE_VALIDATOR_PROVIDER``
+    / ``ARANDU_JUDGE_VALIDATOR_BASE_URL`` (with ``ARANDU_LLM_BASE_URL`` as
+    a final fallback for custom endpoints), matching ``judge-transcription``.
+
     By default the command resumes: any pair whose ``validation`` is already
     populated is skipped. Pass ``--rejudge`` to force a fresh pass over
     every sampled pair (e.g. after changing the validator model).
 
     Examples:
+        # Defaults from ARANDU_JUDGE_* env vars
+        arandu judge-qa cep_dataset/
+
+        # Explicit Ollama
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
+
+        # OpenAI-compatible custom endpoint
         arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \\
             --base-url https://generativelanguage.googleapis.com/v1beta/openai/
-        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b \\
-            --files 2 --pairs 3
-        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b --rejudge
+
+        arandu judge-qa cep_dataset/ --files 2 --pairs 3
+        arandu judge-qa cep_dataset/ --rejudge
     """
     from arandu.qa.cep.judge import QAJudge
-    from arandu.qa.config import CEPConfig
+    from arandu.qa.config import CEPConfig, get_judge_config
     from arandu.qa.schemas import QAPairCEP, QARecordCEP
-    from arandu.shared.llm_client import create_llm_client
+    from arandu.transcription.judge import build_validator_client
 
-    # Resolve base_url for ollama provider
-    effective_base_url = base_url
-    if effective_base_url is None and provider == "ollama":
-        effective_base_url = "http://localhost:11434/v1"
+    judge_config = get_judge_config()
+    resolved_model = model or judge_config.validator_model
+    if not resolved_model:
+        print_error(
+            "Validator model is required. Pass --model or set "
+            "ARANDU_JUDGE_VALIDATOR_MODEL in your environment / .env."
+        )
+        raise typer.Exit(code=1)
 
     try:
-        client = create_llm_client(provider=provider, model_id=model, base_url=effective_base_url)
-    except Exception as e:
-        print_error(f"Failed to create LLM client: {e}")
-        raise typer.Exit(code=1) from e
+        client = build_validator_client(
+            model_id=resolved_model,
+            provider=provider or judge_config.validator_provider,
+            base_url=base_url or judge_config.validator_base_url,
+        )
+    except ValueError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
 
     cep_config = CEPConfig(language=language)
     judge = QAJudge(validator_client=client, cep_config=cep_config)
@@ -390,7 +430,10 @@ def judge_qa(
         # Persist updated record back to disk
         record.qa_pairs = updated_pairs
         record.validator_model_id = model
-        record.validated_pairs = sum(1 for p in record.qa_pairs if p.validation is not None)
+        # Count pairs that *passed* validation, not just pairs that have a
+        # verdict — the schema field is documented as "Number of pairs
+        # passing validation" and validation_rate is computed off it.
+        record.validated_pairs = sum(1 for p in record.qa_pairs if p.is_valid)
         qa_file.write_text(record.model_dump_json(indent=2, by_alias=True))
 
         console.print(

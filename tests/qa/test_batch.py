@@ -32,15 +32,30 @@ class _ThreadPoolCompat(ThreadPoolExecutor):
         super().__init__(*args, **kwargs)
 
 
+_DEFAULT_TRANSCRIPTION_TEXT = (
+    # 200+ chars / 30+ words so the batch loader's defensive content-length
+    # floor (which mirrors ContentLengthFloorCriterion's defaults) doesn't
+    # drop test fixtures that are unjudged-by-design.
+    "Esta é uma transcrição completa o suficiente para passar pelo piso de "
+    "comprimento de conteúdo do juiz, com um número razoável de palavras e "
+    "caracteres para os testes de carga em lote do pipeline de geração de "
+    "perguntas e respostas."
+)
+
+
 def create_test_enriched_data(
-    file_id: str = "test123", name: str = "test.mp3", transcription_text: str = "Test"
+    file_id: str = "test123",
+    name: str = "test.mp3",
+    transcription_text: str = _DEFAULT_TRANSCRIPTION_TEXT,
 ) -> dict:
     """Create a complete EnrichedRecord test data dictionary.
 
     Args:
         file_id: Unique file identifier.
         name: Filename.
-        transcription_text: Transcription text.
+        transcription_text: Transcription text (default is a realistic
+            Portuguese sentence that clears the content-length floor; pass
+            an explicit short string to exercise the defensive skip path).
 
     Returns:
         Complete EnrichedRecord data dictionary.
@@ -114,34 +129,35 @@ class TestLoadTranscriptionTasks:
         assert result.skipped_invalid == 0
 
     def test_valid_transcription_files(self, tmp_path: Path) -> None:
-        """Test discovering valid transcription files."""
+        """Test discovering valid transcription files.
+
+        Each fixture is marked ``is_valid=True`` so the loader treats it as
+        already judged-and-passed; the defensive content-length floor is
+        skipped on those records (it only applies to unjudged transcripts).
+        """
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
         output_dir.mkdir()
 
-        # Create valid transcription files
+        # Create valid transcription files (judged + passed)
         file1 = input_dir / "file1_transcription.json"
-        file1.write_text(
-            json.dumps(
-                create_test_enriched_data(
-                    file_id="id1",
-                    name="interview1.mp3",
-                    transcription_text="This is a test transcription.",
-                )
-            )
+        data1 = create_test_enriched_data(
+            file_id="id1",
+            name="interview1.mp3",
+            transcription_text="This is a test transcription.",
         )
+        data1["is_valid"] = True
+        file1.write_text(json.dumps(data1))
 
         file2 = input_dir / "file2_transcription.json"
-        file2.write_text(
-            json.dumps(
-                create_test_enriched_data(
-                    file_id="id2",
-                    name="interview2.mp3",
-                    transcription_text="Another transcription.",
-                )
-            )
+        data2 = create_test_enriched_data(
+            file_id="id2",
+            name="interview2.mp3",
+            transcription_text="Another transcription.",
         )
+        data2["is_valid"] = True
+        file2.write_text(json.dumps(data2))
 
         result = load_transcription_tasks(input_dir, output_dir)
 
@@ -909,7 +925,13 @@ class TestRunBatchCEPGeneration:
     def test_run_batch_cep_final_summary_with_failures(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test CEP final summary includes failure information."""
+        """Records below the content-length floor are reported as skipped.
+
+        With the defensive length floor in the batch loader, sub-floor
+        transcriptions are dropped before reaching the generator; the
+        final summary should reflect that with a "skipped as invalid"
+        log entry.
+        """
         caplog.set_level("INFO")
         mocker.patch("arandu.shared.llm_client.OpenAI")
 
@@ -917,7 +939,8 @@ class TestRunBatchCEPGeneration:
         output_dir = tmp_path / "cep_output"
         input_dir.mkdir()
 
-        # Create file that will fail (too short)
+        # Sub-floor transcription (1 word, 5 chars). is_valid is left
+        # unset so the loader's defensive floor applies.
         file = input_dir / "fail_transcription.json"
         file.write_text(
             json.dumps(
@@ -934,8 +957,11 @@ class TestRunBatchCEPGeneration:
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
-        # Check summary mentions failures
-        assert "Failed:" in caplog.text or "failed" in caplog.text.lower()
+        # Check summary mentions a skipped/failed file (skip path is the
+        # new outcome for sub-floor records; "failed" is the legacy path
+        # for genuine generator errors).
+        log_lower = caplog.text.lower()
+        assert "skipped" in log_lower or "failed" in log_lower
 
     def test_run_batch_cep_zero_total_files(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture

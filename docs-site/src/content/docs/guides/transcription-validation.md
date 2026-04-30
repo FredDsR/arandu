@@ -216,7 +216,7 @@ uv run python scripts/test_transcription_judge.py \
 
 - **LLM cost + latency.** Each transcription triggers two LLM calls (one per criterion). For large corpora, budget accordingly or keep the LLM stage disabled at ingestion time and run it selectively via the smoke script.
 
-- **Thresholds are defaults, not calibrated.** The 0.8 / 0.7 defaults come from the rubric design. Empirical calibration against a labeled set is tracked as follow-up work.
+- **Threshold provenance.** The 0.8 / 0.7 defaults started from the rubric design. Empirical calibration against the project's Portuguese corpus is documented in [`docs/research/judge-pipeline-calibration.md`](https://github.com/FredDsR/arandu/blob/main/docs/research/judge-pipeline-calibration.md), including the dual-class audit protocol (30% rejected + 15% admitted, Clopper-Pearson 95% CIs) used to validate them. Re-calibration is needed if the corpus or the validator model changes substantively.
 
 ## Configuration Reference
 
