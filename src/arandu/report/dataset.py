@@ -35,7 +35,7 @@ class QAPairRow(BaseModel):
     model_id: str | None = None
     validator_model_id: str | None = None
     provider: str | None = None
-    is_valid: bool = True
+    is_valid: bool | None = True
     idx: int = Field(default=0, description="Zero-based index of QA pair within its source file")
 
 
@@ -49,10 +49,15 @@ class TranscriptionRow(BaseModel):
     recording_date: str | None = None
     is_valid: bool | None = None
     overall_quality: float | None = None
+    # Heuristic stage scores
+    content_length_floor: float | None = None
     script_match: float | None = None
     repetition: float | None = None
     segment_quality: float | None = None
     content_density: float | None = None
+    # LLM stage scores (None when LLM stage skipped or judge ran heuristics-only)
+    language_drift: float | None = None
+    hallucination_loop: float | None = None
     processing_duration_sec: float | None = None
     model_id: str | None = None
     detected_language: str | None = None
@@ -259,10 +264,13 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
             recording_date=source.recording_date if source else None,
             is_valid=record.is_valid,
             overall_quality=scores["overall_score"],
+            content_length_floor=scores["content_length_floor"],
             script_match=scores["script_match"],
             repetition=scores["repetition"],
             segment_quality=scores["segment_quality"],
             content_density=scores["content_density"],
+            language_drift=scores["language_drift"],
+            hallucination_loop=scores["hallucination_loop"],
             processing_duration_sec=record.processing_duration_sec,
             model_id=record.model_id,
             detected_language=record.detected_language,
@@ -274,8 +282,10 @@ def _extract_transcription_scores(quality: Any) -> dict[str, float | None]:
     """Extract flat criterion scores from a transcription JudgePipelineResult.
 
     Walks every stage (``heuristic_filter`` + optional ``llm_filter``) and
-    pulls the four heuristic criterion scores by name. ``overall_score`` is
-    the mean of the present criterion scores across all stages.
+    surfaces every criterion the ``TranscriptionJudge`` knows about.
+    ``overall_score`` is the mean of the same criterion scores returned in
+    this dict, so the dashboard column always matches the sum of the
+    sub-scores it displays.
 
     Args:
         quality: A ``JudgePipelineResult`` or ``None``.
@@ -283,7 +293,15 @@ def _extract_transcription_scores(quality: Any) -> dict[str, float | None]:
     Returns:
         Dict mapping known criterion names + ``overall_score`` to floats.
     """
-    criteria = ["script_match", "repetition", "segment_quality", "content_density"]
+    criteria = [
+        "content_length_floor",
+        "script_match",
+        "repetition",
+        "segment_quality",
+        "content_density",
+        "language_drift",
+        "hallucination_loop",
+    ]
     empty: dict[str, float | None] = dict.fromkeys(criteria)
     empty["overall_score"] = None
 
@@ -301,7 +319,11 @@ def _extract_transcription_scores(quality: Any) -> dict[str, float | None]:
             flat[name] = cs.score
 
     scores: dict[str, float | None] = {name: flat.get(name) for name in criteria}
-    available = [v for v in flat.values() if v is not None]
+    # overall_score is the mean of the *displayed* sub-scores so the column
+    # is directly comparable to them. Criteria absent from the result (e.g.
+    # LLM stage skipped because no validator was configured) don't pull
+    # the average down toward zero — they're excluded from the denominator.
+    available = [v for v in scores.values() if v is not None]
     scores["overall_score"] = sum(available) / len(available) if available else None
     return scores
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.report.collector import RunReport
 from arandu.report.dataset import (
@@ -26,7 +28,10 @@ def _make_enriched_record(
     participant: str | None = "Maria",
     location: str | None = "Barra de Pelotas",
     is_valid: bool | None = True,
-    overall_score: float = 0.85,
+    script_match: float = 0.9,
+    repetition: float = 0.8,
+    segment_quality: float = 0.85,
+    content_density: float = 0.7,
 ) -> EnrichedRecord:
     """Create a sample EnrichedRecord for testing."""
     source = None
@@ -36,24 +41,23 @@ def _make_enriched_record(
             location=location,
             recording_date="2024-05-15",
         )
-    # Build a JudgePipelineResult whose flattened mean lines up with the
-    # requested overall_score — the test fixtures expose a single knob and
-    # the report reader averages the criterion scores.
+    # Build a JudgePipelineResult covering the four heuristic criteria with
+    # varied scores. The report reader's overall_score is the mean of the
+    # scores actually present in the result, so tests that exercise the
+    # mean must compute it from these four values explicitly.
     quality = JudgePipelineResult(
         stage_results={
             "heuristic_filter": JudgeStepResult(
                 criterion_scores={
                     "script_match": CriterionScore(
-                        score=overall_score, threshold=0.6, rationale="ok"
+                        score=script_match, threshold=0.6, rationale="ok"
                     ),
-                    "repetition": CriterionScore(
-                        score=overall_score, threshold=0.5, rationale="ok"
-                    ),
+                    "repetition": CriterionScore(score=repetition, threshold=0.5, rationale="ok"),
                     "segment_quality": CriterionScore(
-                        score=overall_score, threshold=0.4, rationale="ok"
+                        score=segment_quality, threshold=0.4, rationale="ok"
                     ),
                     "content_density": CriterionScore(
-                        score=overall_score, threshold=0.4, rationale="ok"
+                        score=content_density, threshold=0.4, rationale="ok"
                     ),
                 }
             )
@@ -250,11 +254,18 @@ class TestBuildDataset:
         assert trans.participant_name == "Maria"
         assert trans.location == "Barra de Pelotas"
         assert trans.is_valid is True
-        assert trans.overall_quality == 0.85
+        # Heuristic stage scores from the fixture defaults.
         assert trans.script_match == 0.9
         assert trans.repetition == 0.8
         assert trans.segment_quality == 0.85
         assert trans.content_density == 0.7
+        # Criteria absent from the fixture (LLM stage skipped, length floor
+        # not in fixture) remain None and are excluded from overall_quality.
+        assert trans.content_length_floor is None
+        assert trans.language_drift is None
+        assert trans.hallucination_loop is None
+        # overall_quality is the mean of the criteria actually present.
+        assert trans.overall_quality == pytest.approx((0.9 + 0.8 + 0.85 + 0.7) / 4)
         assert trans.processing_duration_sec == 15.0
         assert trans.model_id == "openai/whisper-large-v3"
         assert trans.detected_language == "pt"

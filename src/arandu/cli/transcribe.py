@@ -602,17 +602,16 @@ def judge_transcription(
         ),
     ] = False,
 ) -> None:
-    """Judge transcription quality with heuristic + LLM criteria.
+    """Judge transcription quality with heuristic and optional LLM criteria.
 
     Runs a two-stage filter pipeline:
 
-    1. Heuristics — script match, repetition, content density, segment quality.
+    1. Heuristics — content length floor, script match, repetition, content
+       density, segment quality. Always runs; needs no model.
     2. LLM — ``language_drift`` + ``hallucination_loop``, catching failure
-       modes heuristics cannot detect (Latin-script language drift,
-       formulaic Whisper hallucinations).
-
-    The LLM stage is mandatory. Supply the validator model via
-    ``--validator-model`` or the ``ARANDU_JUDGE_VALIDATOR_MODEL`` env var.
+       modes heuristics cannot detect. Runs only when a validator model is
+       configured (via ``--validator-model`` or
+       ``ARANDU_JUDGE_VALIDATOR_MODEL``); skipped otherwise with a notice.
 
     Verdicts are written back into each ``*_transcription.json`` record:
     the full ``JudgePipelineResult`` lands in ``validation`` and
@@ -626,6 +625,7 @@ def judge_transcription(
     a prompt).
 
     Examples:
+        arandu judge-transcription results/                                   # heuristics only
         arandu judge-transcription results/ --validator-model qwen3:14b
         arandu judge-transcription results/ --validator-model gemini-2.5-flash
         arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
@@ -635,26 +635,28 @@ def judge_transcription(
 
     judge_config = get_judge_config()
     resolved_model = validator_model or judge_config.validator_model
-    if not resolved_model:
-        print_error(
-            "Validator model is required. Pass --validator-model or set "
-            "ARANDU_JUDGE_VALIDATOR_MODEL in your environment / .env."
-        )
-        raise typer.Exit(code=1)
 
-    # Fail fast on unreachable validator before walking the input directory.
-    validator_client = build_validator_client(
-        model_id=resolved_model,
-        provider=validator_provider or judge_config.validator_provider,
-        base_url=validator_base_url or judge_config.validator_base_url,
-    )
-    if not validator_client.is_available():
-        print_error(
-            f"Validator provider unreachable: {validator_client.provider.value} "
-            f"({validator_client.base_url or 'default URL'})"
+    validator_client = None
+    if resolved_model:
+        # Fail fast on unreachable validator before walking the input directory.
+        validator_client = build_validator_client(
+            model_id=resolved_model,
+            provider=validator_provider or judge_config.validator_provider,
+            base_url=validator_base_url or judge_config.validator_base_url,
         )
-        raise typer.Exit(code=1)
-    print_info(f"Validator: {validator_client.provider.value}/{resolved_model}")
+        if not validator_client.is_available():
+            print_error(
+                f"Validator provider unreachable: {validator_client.provider.value} "
+                f"({validator_client.base_url or 'default URL'})"
+            )
+            raise typer.Exit(code=1)
+        print_info(f"Validator: {validator_client.provider.value}/{resolved_model}")
+    else:
+        print_info(
+            "No validator model configured — running heuristic-only mode "
+            "(language_drift + hallucination_loop skipped). "
+            "Set --validator-model or ARANDU_JUDGE_VALIDATOR_MODEL to enable the LLM stage."
+        )
 
     print_info("Scanning for transcription files...")
 
