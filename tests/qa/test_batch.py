@@ -32,15 +32,40 @@ class _ThreadPoolCompat(ThreadPoolExecutor):
         super().__init__(*args, **kwargs)
 
 
+_DEFAULT_TRANSCRIPTION_TEXT = (
+    # 200+ chars / 30+ words so the batch loader's defensive content-length
+    # floor (which mirrors ContentLengthFloorCriterion's defaults) doesn't
+    # drop test fixtures that are unjudged-by-design.
+    "Esta é uma transcrição completa o suficiente para passar pelo piso de "
+    "comprimento de conteúdo do juiz, com um número razoável de palavras e "
+    "caracteres para os testes de carga em lote do pipeline de geração de "
+    "perguntas e respostas."
+)
+
+
+def _validation_payload(passed: bool) -> dict:
+    """Minimal canonical validation payload for test fixtures.
+
+    The batch loader keys filtering off ``data["validation"]["passed"]``,
+    not the computed ``is_valid`` mirror, so tests that previously set
+    ``is_valid`` on raw dicts must now embed a real validation payload.
+    """
+    return {"passed": passed, "stage_results": {}}
+
+
 def create_test_enriched_data(
-    file_id: str = "test123", name: str = "test.mp3", transcription_text: str = "Test"
+    file_id: str = "test123",
+    name: str = "test.mp3",
+    transcription_text: str = _DEFAULT_TRANSCRIPTION_TEXT,
 ) -> dict:
     """Create a complete EnrichedRecord test data dictionary.
 
     Args:
         file_id: Unique file identifier.
         name: Filename.
-        transcription_text: Transcription text.
+        transcription_text: Transcription text (default is a realistic
+            Portuguese sentence that clears the content-length floor; pass
+            an explicit short string to exercise the defensive skip path).
 
     Returns:
         Complete EnrichedRecord data dictionary.
@@ -114,34 +139,35 @@ class TestLoadTranscriptionTasks:
         assert result.skipped_invalid == 0
 
     def test_valid_transcription_files(self, tmp_path: Path) -> None:
-        """Test discovering valid transcription files."""
+        """Test discovering valid transcription files.
+
+        Each fixture carries a ``validation`` payload with ``passed=True``
+        so the loader treats it as judged-and-passed; the defensive
+        content-length floor only applies to unjudged transcripts.
+        """
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
         output_dir.mkdir()
 
-        # Create valid transcription files
+        # Create valid transcription files (judged + passed)
         file1 = input_dir / "file1_transcription.json"
-        file1.write_text(
-            json.dumps(
-                create_test_enriched_data(
-                    file_id="id1",
-                    name="interview1.mp3",
-                    transcription_text="This is a test transcription.",
-                )
-            )
+        data1 = create_test_enriched_data(
+            file_id="id1",
+            name="interview1.mp3",
+            transcription_text="This is a test transcription.",
         )
+        data1["validation"] = _validation_payload(passed=True)
+        file1.write_text(json.dumps(data1))
 
         file2 = input_dir / "file2_transcription.json"
-        file2.write_text(
-            json.dumps(
-                create_test_enriched_data(
-                    file_id="id2",
-                    name="interview2.mp3",
-                    transcription_text="Another transcription.",
-                )
-            )
+        data2 = create_test_enriched_data(
+            file_id="id2",
+            name="interview2.mp3",
+            transcription_text="Another transcription.",
         )
+        data2["validation"] = _validation_payload(passed=True)
+        file2.write_text(json.dumps(data2))
 
         result = load_transcription_tasks(input_dir, output_dir)
 
@@ -229,19 +255,19 @@ class TestLoadTranscriptionTasks:
         assert result.tasks[0].output_file == output_dir / "myid_cep_qa.json"
 
     def test_skips_invalid_transcriptions(self, tmp_path: Path) -> None:
-        """Test that transcriptions with is_valid=False are skipped."""
+        """Transcriptions whose validation reports passed=False are skipped."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
 
-        # Valid transcription (is_valid=True)
+        # Judged + passed
         valid_data = create_test_enriched_data(file_id="valid1", name="valid.mp3")
-        valid_data["is_valid"] = True
+        valid_data["validation"] = _validation_payload(passed=True)
         (input_dir / "valid1_transcription.json").write_text(json.dumps(valid_data))
 
-        # Invalid transcription (is_valid=False)
+        # Judged + rejected
         invalid_data = create_test_enriched_data(file_id="invalid1", name="invalid.mp3")
-        invalid_data["is_valid"] = False
+        invalid_data["validation"] = _validation_payload(passed=False)
         (input_dir / "invalid1_transcription.json").write_text(json.dumps(invalid_data))
 
         result = load_transcription_tasks(input_dir, output_dir)
@@ -282,30 +308,29 @@ class TestLoadTranscriptionTasks:
         assert result.tasks[0].file_id == "no_field"
 
     def test_filters_mixed_validity(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """Test filtering with a mix of valid, invalid, and unchecked transcriptions."""
+        """Test filtering with a mix of judged-passed, judged-rejected, and unjudged."""
         caplog.set_level("INFO")
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         input_dir.mkdir()
 
-        # is_valid=True
+        # Judged + passed
         d1 = create_test_enriched_data(file_id="ok1", name="ok1.mp3")
-        d1["is_valid"] = True
+        d1["validation"] = _validation_payload(passed=True)
         (input_dir / "ok1_transcription.json").write_text(json.dumps(d1))
 
-        # is_valid=False
+        # Judged + rejected
         d2 = create_test_enriched_data(file_id="bad1", name="bad1.mp3")
-        d2["is_valid"] = False
+        d2["validation"] = _validation_payload(passed=False)
         (input_dir / "bad1_transcription.json").write_text(json.dumps(d2))
 
-        # is_valid=False
+        # Judged + rejected
         d3 = create_test_enriched_data(file_id="bad2", name="bad2.mp3")
-        d3["is_valid"] = False
+        d3["validation"] = _validation_payload(passed=False)
         (input_dir / "bad2_transcription.json").write_text(json.dumps(d3))
 
-        # is_valid=None (unchecked)
+        # Unjudged (no validation payload)
         d4 = create_test_enriched_data(file_id="unk1", name="unk1.mp3")
-        d4["is_valid"] = None
         (input_dir / "unk1_transcription.json").write_text(json.dumps(d4))
 
         result = load_transcription_tasks(input_dir, output_dir)
@@ -322,7 +347,7 @@ class TestLoadTranscriptionTasks:
         input_dir.mkdir()
 
         invalid_data = create_test_enriched_data(file_id="bad1", name="bad.mp3")
-        invalid_data["is_valid"] = False
+        invalid_data["validation"] = _validation_payload(passed=False)
         (input_dir / "bad1_transcription.json").write_text(json.dumps(invalid_data))
 
         result = load_transcription_tasks(input_dir, output_dir)
@@ -359,14 +384,14 @@ class TestLoadTranscriptionTasks:
 
         # 2 valid, 1 invalid, 1 corrupt JSON = 4 total files found
         d1 = create_test_enriched_data(file_id="v1", name="v1.mp3")
-        d1["is_valid"] = True
+        d1["validation"] = _validation_payload(passed=True)
         (input_dir / "v1_transcription.json").write_text(json.dumps(d1))
 
         d2 = create_test_enriched_data(file_id="v2", name="v2.mp3")
         (input_dir / "v2_transcription.json").write_text(json.dumps(d2))
 
         d3 = create_test_enriched_data(file_id="bad1", name="bad1.mp3")
-        d3["is_valid"] = False
+        d3["validation"] = _validation_payload(passed=False)
         (input_dir / "bad1_transcription.json").write_text(json.dumps(d3))
 
         (input_dir / "corrupt_transcription.json").write_text("{ bad json")
@@ -479,46 +504,6 @@ class TestGenerateCEPQAForTranscription:
         assert success is True
         assert message == "Success"
         assert output_file.exists()
-
-    def test_generate_cep_qa_validation_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
-        """Test CEP QA generation with validation error (too short transcription)."""
-        mocker.patch("arandu.shared.llm_client.OpenAI")
-
-        # Reset global state
-        import arandu.qa.batch as qa_batch_module
-
-        qa_batch_module._worker_cep_generator = None
-
-        input_file = tmp_path / "short_transcription.json"
-        input_file.write_text(
-            json.dumps(
-                create_test_enriched_data(
-                    file_id="short_cep",
-                    name="short.mp3",
-                    transcription_text="Short",
-                )
-            )
-        )
-
-        output_file = tmp_path / "short_cep_qa.json"
-
-        task = QAGenerationTask(
-            transcription_file=input_file,
-            file_id="short_cep",
-            filename="short.mp3",
-            output_file=output_file,
-        )
-
-        qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
-        cep_config_dict = CEPConfig().model_dump()
-
-        file_id, success, message = generate_cep_qa_for_transcription(
-            task, qa_config_dict, cep_config_dict
-        )
-
-        assert file_id == "short_cep"
-        assert success is False
-        assert "short" in message.lower() or len(message) > 0
 
     def test_generate_cep_qa_generic_exception(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test CEP QA generation with generic exception (file not found)."""
@@ -949,7 +934,13 @@ class TestRunBatchCEPGeneration:
     def test_run_batch_cep_final_summary_with_failures(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test CEP final summary includes failure information."""
+        """Records below the content-length floor are reported as skipped.
+
+        With the defensive length floor in the batch loader, sub-floor
+        transcriptions are dropped before reaching the generator; the
+        final summary should reflect that with a "skipped as invalid"
+        log entry.
+        """
         caplog.set_level("INFO")
         mocker.patch("arandu.shared.llm_client.OpenAI")
 
@@ -957,7 +948,8 @@ class TestRunBatchCEPGeneration:
         output_dir = tmp_path / "cep_output"
         input_dir.mkdir()
 
-        # Create file that will fail (too short)
+        # Sub-floor transcription (1 word, 5 chars). is_valid is left
+        # unset so the loader's defensive floor applies.
         file = input_dir / "fail_transcription.json"
         file.write_text(
             json.dumps(
@@ -974,8 +966,11 @@ class TestRunBatchCEPGeneration:
 
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
-        # Check summary mentions failures
-        assert "Failed:" in caplog.text or "failed" in caplog.text.lower()
+        # Check summary mentions a skipped/failed file (skip path is the
+        # new outcome for sub-floor records; "failed" is the legacy path
+        # for genuine generator errors).
+        log_lower = caplog.text.lower()
+        assert "skipped" in log_lower or "failed" in log_lower
 
     def test_run_batch_cep_zero_total_files(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -1032,12 +1027,12 @@ class TestRunBatchCEPGeneration:
         valid_data = create_test_enriched_data(
             file_id="ok1", name="ok.mp3", transcription_text="Test text. " * 20
         )
-        valid_data["is_valid"] = True
+        valid_data["validation"] = _validation_payload(passed=True)
         (input_dir / "ok1_transcription.json").write_text(json.dumps(valid_data))
 
         # Invalid transcription (should be skipped)
         bad_data = create_test_enriched_data(file_id="bad1", name="bad.mp3")
-        bad_data["is_valid"] = False
+        bad_data["validation"] = _validation_payload(passed=False)
         (input_dir / "bad1_transcription.json").write_text(json.dumps(bad_data))
 
         qa_config = QAConfig(

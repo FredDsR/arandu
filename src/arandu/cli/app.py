@@ -65,13 +65,11 @@ from arandu.cli.transcribe import (  # noqa: E402
     drive_transcribe,
     judge_transcription,
     transcribe,
-    validate_transcriptions,
 )
 
 app.command()(transcribe)
 app.command()(drive_transcribe)
 app.command()(batch_transcribe)
-app.command()(validate_transcriptions)
 app.command()(refresh_auth)
 app.command()(generate_cep_qa)
 app.command()(judge_transcription)

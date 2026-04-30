@@ -24,8 +24,9 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 
 **Command Categories**:
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
+- **Judging**: `judge-transcription`, `judge-qa`
 - **QA Generation**: `generate-cep-qa`
-- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `validate-transcriptions`, `rebuild-index`
+- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `rebuild-index`
 
 **Global Options**:
 - `--help` - Show command help
@@ -169,6 +170,96 @@ arandu batch-transcribe input/catalog.csv --workers 4
 
 # With custom pipeline ID
 arandu batch-transcribe input/catalog.csv --id my-project-001
+```
+
+---
+
+## Judging Commands
+
+The judge layer scores artifacts (transcriptions, QA pairs) with a composable two-stage pipeline: cheap heuristics first, optional LLM criteria second. The LLM stage is skipped automatically when the heuristic stage rejects.
+
+### `judge-transcription`
+
+Judge transcription quality with heuristic and (optional) LLM criteria. Verdicts are written back into each `*_transcription.json` record under the `validation` field.
+
+**Usage**:
+```bash
+arandu judge-transcription INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing `*_transcription.json` files
+
+**Options**:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--language` | str | `pt` | Expected transcription language (`pt` or `en`) |
+| `--validator-model` | str \| None | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for the LLM filter stage. Omit (and leave the env var unset) to run heuristic-only |
+| `--validator-provider` | str | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`). `custom` requires `--validator-base-url` or `ARANDU_LLM_BASE_URL` |
+| `--validator-base-url` | str | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` | Base URL for the validator provider |
+| `--validator-temperature` | float | from `ARANDU_JUDGE_TEMPERATURE` (0.3) | Sampling temperature for LLM criteria |
+| `--validator-max-tokens` | int | from `ARANDU_JUDGE_MAX_TOKENS` (2048) | Max tokens for LLM criterion responses |
+| `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every record from scratch; `--resume` (default) skips records already carrying a `validation` payload |
+
+**Heuristic stage**: `content_length_floor` (runs first, can short-circuit) → `script_match` → `repetition` → `content_density` → `segment_quality`.
+
+**LLM stage**: `language_drift` + `hallucination_loop`. Skipped when no validator model is configured.
+
+**Examples**:
+```bash
+# Heuristic-only (no LLM model needed) — fastest, runs entirely on CPU.
+arandu judge-transcription results/
+
+# Heuristics + LLM via Ollama
+arandu judge-transcription results/ --validator-model qwen3:14b
+
+# Heuristics + LLM via an OpenAI-compatible custom endpoint
+ARANDU_LLM_BASE_URL=https://my-llm.example.com/v1 \
+arandu judge-transcription results/ --validator-model openai/gpt-4.1-mini
+
+# Force a fresh pass over every record (default is resume)
+arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
+```
+
+### `judge-qa`
+
+Judge QA pair quality (faithfulness, Bloom calibration, informativeness, self-containedness). Verdicts are persisted onto each QA pair.
+
+**Usage**:
+```bash
+arandu judge-qa INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing CEP QA pair JSON files
+
+**Options**:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--model` / `-m` | str \| None | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for judge evaluation. Required (CLI flag or env var) |
+| `--provider` | str \| None | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`). Inferred from `ARANDU_LLM_BASE_URL` when unset (`custom` if set, else `ollama`) |
+| `--base-url` | str \| None | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` / `ARANDU_LLM_BASE_URL` | Custom base URL for OpenAI-compatible endpoints (required for `--provider custom`) |
+| `--language` / `-l` | str | `pt` | Expected QA language (`pt` or `en`) |
+| `--files` | int \| None | (all) | Maximum number of QA files to sample |
+| `--pairs` | int \| None | (all) | Maximum QA pairs to judge per file |
+| `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every pair from scratch; `--resume` (default) skips pairs already carrying a `validation` payload |
+
+**Examples**:
+```bash
+# Use ARANDU_JUDGE_VALIDATOR_* env vars from .env
+arandu judge-qa cep_dataset/
+
+# Explicit Ollama
+arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
+
+# OpenAI-compatible custom endpoint (Gemini)
+arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \
+    --base-url https://generativelanguage.googleapis.com/v1beta/openai/
+
+# Sample-bounded run
+arandu judge-qa cep_dataset/ --files 2 --pairs 3
 ```
 
 ---
@@ -367,53 +458,6 @@ arandu run-info latest --pipeline cep
 
 ---
 
-### `validate-transcriptions`
-
-Validate existing transcriptions for quality issues (wrong language/script, repeated words, suspicious patterns, empty content).
-
-**Usage**:
-```bash
-arandu validate-transcriptions INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing transcription JSON files to validate
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | In-place update | Directory to save validated results |
-| `--threshold` | `-t` | float | `0.5` | Quality threshold (0.0-1.0) for marking as valid |
-| `--language` | `-l` | str | `pt` | Expected language code (e.g., 'pt', 'en') |
-| `--report-only` | | flag | `False` | Only display report without updating files |
-
-**Examples**:
-```bash
-# Validate and update in-place
-arandu validate-transcriptions results/
-
-# Validate with custom threshold
-arandu validate-transcriptions results/ --threshold 0.6
-
-# Validate English transcriptions
-arandu validate-transcriptions results/ --language en
-
-# Report only (no file updates)
-arandu validate-transcriptions results/ --report-only
-
-# Save validated files to new directory
-arandu validate-transcriptions results/ --output-dir validated/
-```
-
-**Quality Checks**:
-- Script match (Latin characters for pt/en)
-- Repetition detection (words and phrases)
-- Segment quality (natural timestamps)
-- Content density (words per minute)
-
----
-
 ### `rebuild-index`
 
 Rebuild index.json from existing run directories by scanning all pipeline ID directories for run_metadata.json files.
@@ -449,9 +493,8 @@ arandu batch-transcribe input/catalog.csv \
     --quantize \
     --id etno-001
 
-# Step 2: Validate transcription quality
-arandu validate-transcriptions results/ \
-    --threshold 0.6
+# Step 2: Judge transcription quality
+arandu judge-transcription results/
 
 # Step 3: Generate CEP QA pairs
 arandu generate-cep-qa results/ \
@@ -555,7 +598,7 @@ Use consistent pipeline IDs across related steps:
 PIPELINE_ID="etno-project-001"
 
 arandu batch-transcribe input/catalog.csv --id $PIPELINE_ID
-arandu validate-transcriptions results/ 
+arandu judge-transcription results/
 arandu generate-cep-qa results/ --id $PIPELINE_ID
 
 # View all runs for this pipeline
@@ -648,13 +691,13 @@ arandu generate-cep-qa results/ --workers $(nproc)
 arandu batch-transcribe catalog.csv --workers 2
 ```
 
-### 5. Validate Quality
+### 5. Judge Quality
 
-Always validate transcriptions before downstream tasks:
+Always judge transcriptions before downstream tasks:
 
 ```bash
-# Validate first
-arandu validate-transcriptions results/ --threshold 0.6
+# Judge first
+arandu judge-transcription results/
 
 # Then generate QA
 arandu generate-cep-qa results/ --workers 4

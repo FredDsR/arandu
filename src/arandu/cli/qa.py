@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path  # noqa: TC003
 from typing import Annotated, Any
 
@@ -234,25 +233,41 @@ def judge_qa(
         ),
     ],
     provider: Annotated[
-        str,
-        typer.Option("--provider", help="LLM provider: openai, ollama, custom."),
-    ],
+        str | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "LLM provider: openai, ollama, custom. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_PROVIDER, then inferred from "
+                "ARANDU_LLM_BASE_URL (custom when set, else ollama)."
+            ),
+        ),
+    ] = None,
     model: Annotated[
-        str,
-        typer.Option("--model", "-m", help="Model ID for judge evaluation."),
-    ],
+        str | None,
+        typer.Option(
+            "--model",
+            "-m",
+            help=(
+                "Model ID for judge evaluation. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_MODEL when not provided."
+            ),
+        ),
+    ] = None,
     base_url: Annotated[
         str | None,
-        typer.Option("--base-url", help="Custom base URL for OpenAI-compatible endpoints."),
+        typer.Option(
+            "--base-url",
+            help=(
+                "Custom base URL for OpenAI-compatible endpoints. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_BASE_URL, then ARANDU_LLM_BASE_URL."
+            ),
+        ),
     ] = None,
     language: Annotated[
         str,
         typer.Option("--language", "-l", help="Language for judge prompts (pt or en)."),
     ] = "pt",
-    output: Annotated[
-        Path | None,
-        typer.Option("--output", "-o", help="Path to save judgement results as JSON."),
-    ] = None,
     files: Annotated[
         int | None,
         typer.Option("--files", help="Maximum number of QA files to sample."),
@@ -261,34 +276,75 @@ def judge_qa(
         int | None,
         typer.Option("--pairs", help="Maximum QA pairs to judge per file."),
     ] = None,
+    rejudge: Annotated[
+        bool,
+        typer.Option(
+            "--rejudge/--resume",
+            help=(
+                "--rejudge re-evaluates every sampled pair from scratch. "
+                "--resume (default) skips pairs that already carry a "
+                "``validation`` payload, so a re-submission after a wall "
+                "hit only judges the unjudged remainder."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Judge CEP QA pairs using LLM-as-a-Judge evaluation.
 
-    Evaluates QA pairs on faithfulness, Bloom calibration, informativeness,
-    and self-containedness using the QAJudge pipeline.
+    Evaluates sampled pairs on faithfulness, Bloom calibration, informativeness,
+    and self-containedness using the QAJudge pipeline. Each judged pair is
+    persisted back into its ``*_cep_qa.json`` file by populating the pair's
+    ``validation`` field. ``is_valid`` is derived from
+    ``validation.passed`` automatically. No aggregate side-file is
+    produced — run a downstream analytics script for cross-record reports.
+
+    Validator model and provider come from ``--model`` / ``--provider`` /
+    ``--base-url`` when supplied, otherwise from
+    ``ARANDU_JUDGE_VALIDATOR_MODEL`` / ``ARANDU_JUDGE_VALIDATOR_PROVIDER``
+    / ``ARANDU_JUDGE_VALIDATOR_BASE_URL`` (with ``ARANDU_LLM_BASE_URL`` as
+    a final fallback for custom endpoints), matching ``judge-transcription``.
+
+    By default the command resumes: any pair whose ``validation`` is already
+    populated is skipped. Pass ``--rejudge`` to force a fresh pass over
+    every sampled pair (e.g. after changing the validator model).
 
     Examples:
+        # Defaults from ARANDU_JUDGE_* env vars
+        arandu judge-qa cep_dataset/
+
+        # Explicit Ollama
         arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
+
+        # OpenAI-compatible custom endpoint
         arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \\
             --base-url https://generativelanguage.googleapis.com/v1beta/openai/
-        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b \\
-            --files 2 --pairs 3 --output judgements.json
+
+        arandu judge-qa cep_dataset/ --files 2 --pairs 3
+        arandu judge-qa cep_dataset/ --rejudge
     """
     from arandu.qa.cep.judge import QAJudge
-    from arandu.qa.config import CEPConfig
-    from arandu.qa.schemas import QAPairCEP
-    from arandu.shared.llm_client import create_llm_client
+    from arandu.qa.config import CEPConfig, get_judge_config
+    from arandu.qa.schemas import QAPairCEP, QARecordCEP
+    from arandu.transcription.judge import build_validator_client
 
-    # Resolve base_url for ollama provider
-    effective_base_url = base_url
-    if effective_base_url is None and provider == "ollama":
-        effective_base_url = "http://localhost:11434/v1"
+    judge_config = get_judge_config()
+    resolved_model = model or judge_config.validator_model
+    if not resolved_model:
+        print_error(
+            "Validator model is required. Pass --model or set "
+            "ARANDU_JUDGE_VALIDATOR_MODEL in your environment / .env."
+        )
+        raise typer.Exit(code=1)
 
     try:
-        client = create_llm_client(provider=provider, model_id=model, base_url=effective_base_url)
-    except Exception as e:
-        print_error(f"Failed to create LLM client: {e}")
-        raise typer.Exit(code=1) from e
+        client = build_validator_client(
+            model_id=resolved_model,
+            provider=provider or judge_config.validator_provider,
+            base_url=base_url or judge_config.validator_base_url,
+        )
+    except ValueError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
 
     cep_config = CEPConfig(language=language)
     judge = QAJudge(validator_client=client, cep_config=cep_config)
@@ -302,110 +358,131 @@ def judge_qa(
     if files is not None:
         qa_files = qa_files[:files]
 
+    mode_label = "rejudge" if rejudge else "resume"
     print_info(
-        f"Judging [bold]{len(qa_files)}[/bold] QA files"
+        f"Judging [bold]{len(qa_files)}[/bold] QA files (mode: {mode_label})"
         + (f", up to [bold]{pairs}[/bold] pairs each" if pairs else "")
     )
     console.print()
 
-    all_results: list[dict] = []
+    total_valid = 0
+    total_judged = 0
+    total_skipped = 0
 
     for qa_file in qa_files:
         try:
-            data = json.loads(qa_file.read_text())
-        except (json.JSONDecodeError, OSError) as e:
+            record = QARecordCEP.model_validate_json(qa_file.read_text())
+        except Exception as e:
             print_error(f"Failed to read {qa_file.name}: {e}")
             continue
 
-        context = data.get("transcription_text") or data.get("context", "")
-        all_pairs = data.get("qa_pairs", [])
+        context = record.transcription_text
+        all_pairs = record.qa_pairs
 
-        # Sample diverse pairs by Bloom level
+        # Sample diverse pairs by Bloom level first, then fill remaining slots
         seen_levels: set[str] = set()
-        sampled: list[dict] = []
-        for p in all_pairs:
-            level = p.get("bloom_level", "")
-            if pairs is not None and len(sampled) >= pairs:
+        sampled_indices: list[int] = []
+        for i, p in enumerate(all_pairs):
+            if pairs is not None and len(sampled_indices) >= pairs:
                 break
-            if level not in seen_levels:
-                sampled.append(p)
-                seen_levels.add(level)
-        # Fill remaining slots if pairs budget allows
+            if p.bloom_level not in seen_levels:
+                sampled_indices.append(i)
+                seen_levels.add(p.bloom_level)
         if pairs is not None:
-            for p in all_pairs:
-                if len(sampled) >= pairs:
+            for i in range(len(all_pairs)):
+                if len(sampled_indices) >= pairs:
                     break
-                if p not in sampled:
-                    sampled.append(p)
+                if i not in sampled_indices:
+                    sampled_indices.append(i)
         elif pairs is None:
-            sampled = all_pairs
+            sampled_indices = list(range(len(all_pairs)))
 
         console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
 
-        for pair_data in sampled:
+        updated_pairs: list[QAPairCEP] = list(all_pairs)
+        file_judged = 0
+        file_valid = 0
+        file_skipped = 0
+
+        for idx in sampled_indices:
+            qa = updated_pairs[idx]
+            if not rejudge and qa.validation is not None:
+                # Resume mode — pair already carries a verdict.
+                if qa.is_valid:
+                    file_valid += 1
+                    total_valid += 1
+                file_skipped += 1
+                total_skipped += 1
+                continue
             try:
-                qa = QAPairCEP(**pair_data)
-                result = judge.validate(qa, context)
-
-                table = Table(show_header=True, border_style="dim", width=90)
-                table.add_column("Criterion", width=22)
-                table.add_column("Score", justify="right", width=7)
-                table.add_column("Threshold", justify="right", width=10)
-                table.add_column("Pass", justify="center", width=6)
-                table.add_column("Rationale", width=40)
-
-                if result.validation:
-                    for stage_result in result.validation.stage_results.values():
-                        for name, cs in stage_result.criterion_scores.items():
-                            if cs.error:
-                                table.add_row(
-                                    name,
-                                    "\u2014",
-                                    f"{cs.threshold:.2f}",
-                                    "[red]ERR[/red]",
-                                    cs.error[:40],
-                                )
-                            else:
-                                status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
-                                table.add_row(
-                                    name,
-                                    f"{cs.score:.2f}" if cs.score is not None else "\u2014",
-                                    f"{cs.threshold:.2f}",
-                                    status,
-                                    (cs.rationale or "")[:40],
-                                )
-
-                console.print(f"  Q: {qa.question[:70]}...")
-                console.print(f"  Bloom: {qa.bloom_level}  |  Valid: {result.is_valid}")
-                console.print(table)
-                console.print()
-
-                all_results.append(
-                    {
-                        "file": qa_file.name,
-                        "question": qa.question,
-                        "answer": qa.answer,
-                        "bloom_level": qa.bloom_level,
-                        "is_valid": result.is_valid,
-                        "validation": (
-                            result.validation.model_dump() if result.validation else None
-                        ),
-                    }
-                )
-
+                validated = judge.validate(qa, context)
+                updated_pairs[idx] = validated
+                file_judged += 1
+                total_judged += 1
+                if validated.is_valid:
+                    file_valid += 1
+                    total_valid += 1
+                _render_qa_verdict(validated)
             except Exception as e:
                 print_warning(f"Failed to judge pair in {qa_file.name}: {e}")
                 continue
 
-    # Summary
-    valid_count = sum(1 for r in all_results if r["is_valid"])
-    total_count = len(all_results)
-    console.print(f"[bold]Total pairs judged:[/bold] {total_count}")
-    console.print(f"[green]Valid:[/green] {valid_count}")
-    console.print(f"[red]Invalid:[/red] {total_count - valid_count}")
+        # Persist updated record back to disk. ``resolved_model`` (not the
+        # raw CLI option) is the actual model the judge ran with —
+        # ``model`` may be None when the value came from
+        # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
+        # existing validator_model_id on the record.
+        record.qa_pairs = updated_pairs
+        if resolved_model is not None:
+            record.validator_model_id = resolved_model
+        # Count pairs that *passed* validation, not just pairs that have a
+        # verdict — the schema field is documented as "Number of pairs
+        # passing validation" and validation_rate is computed off it.
+        record.validated_pairs = sum(1 for p in record.qa_pairs if p.is_valid)
+        qa_file.write_text(record.model_dump_json(indent=2, by_alias=True))
+
+        console.print(
+            f"  [dim]{qa_file.name}: judged {file_judged}, "
+            f"resumed (skipped) {file_skipped}, valid {file_valid}, "
+            f"persisted {record.validated_pairs}/{len(record.qa_pairs)} validated[/dim]"
+        )
+        console.print()
+
+    console.print(f"[bold]Total pairs judged:[/bold] {total_judged}")
+    console.print(f"[green]Valid:[/green] {total_valid}")
+    console.print(f"[red]Invalid:[/red] {total_judged + total_skipped - total_valid}")
+    if total_skipped:
+        console.print(f"[dim]Resumed (already judged, skipped):[/dim] {total_skipped}")
     console.print()
 
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(all_results, indent=2, ensure_ascii=False))
-        print_success(f"Results saved to [bold]{output}[/bold]")
+
+def _render_qa_verdict(validated: Any) -> None:
+    """Render a single validated QA pair's verdict to the console."""
+    table = Table(show_header=True, border_style="dim", width=90)
+    table.add_column("Criterion", width=22)
+    table.add_column("Score", justify="right", width=7)
+    table.add_column("Threshold", justify="right", width=10)
+    table.add_column("Pass", justify="center", width=6)
+    table.add_column("Rationale", width=40)
+
+    if validated.validation:
+        for stage_result in validated.validation.stage_results.values():
+            for name, cs in stage_result.criterion_scores.items():
+                if cs.error:
+                    table.add_row(
+                        name, "\u2014", f"{cs.threshold:.2f}", "[red]ERR[/red]", cs.error[:40]
+                    )
+                else:
+                    status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
+                    table.add_row(
+                        name,
+                        f"{cs.score:.2f}" if cs.score is not None else "\u2014",
+                        f"{cs.threshold:.2f}",
+                        status,
+                        (cs.rationale or "")[:40],
+                    )
+
+    console.print(f"  Q: {validated.question[:70]}...")
+    console.print(f"  Bloom: {validated.bloom_level}  |  Valid: {validated.is_valid}")
+    console.print(table)
+    console.print()

@@ -3,158 +3,99 @@ title: Transcription Quality Validation
 description: Detect common Whisper failure modes using lightweight heuristic checks.
 ---
 
-Detect common Whisper failure modes in transcription output using lightweight heuristic checks.
+Detect common Whisper failure modes in transcription output using a composable judge pipeline (heuristic checks + optional LLM criteria).
 
 ## Overview
 
-The transcription quality validator catches failures that Whisper produces silently:
+The transcription judge catches failures that Whisper produces silently:
 
-- **Wrong language/script** - Japanese characters when expecting Portuguese (strongest signal)
-- **Repeated words/phrases** - e.g., "Obrigada" x30, looping phrase artifacts
-- **Suspicious segment patterns** - uniform 1-second intervals, empty segments
-- **Abnormal content density** - too few or too many words per minute
+- **Pre-filter on length** — short records that should be discarded before any other check (`content_length_floor`)
+- **Wrong language/script** — Japanese characters when expecting Portuguese (strongest signal)
+- **Repeated words/phrases** — e.g., "Obrigada" x30, looping phrase artifacts
+- **Suspicious segment patterns** — uniform 1-second intervals, empty segments
+- **Abnormal content density** — too few or too many words per minute
+- **Latin-script language drift** (LLM stage) — sustained English content in a Portuguese transcription
+- **Formulaic Whisper hallucinations** (LLM stage) — YouTube-style openings/closings, apology loops, channel signatures
 
-Validation runs **inline** after every transcription (CPU-only, negligible overhead) and is also available as a standalone CLI command for retroactive checks.
+Judging is a **separate step** in the pipeline — it runs after transcription via the `arandu judge-transcription` CLI, not inline at ingestion time. Verdicts are written back to each `*_transcription.json` record under the `validation` field.
 
 ## How It Works
 
-### Weighted Scoring
+### Multi-Stage Pipeline with Per-Criterion Thresholds
 
-Each transcription is evaluated on four dimensions. The overall quality score is a weighted average:
+`TranscriptionJudge` runs a two-stage filter pipeline. Each stage applies *individual* thresholds per criterion — there is no weighted-average overall score. A record fails a stage as soon as any criterion's score is below its threshold, and a record fails the pipeline as soon as it fails any stage.
 
-| Check | Weight | What it detects |
-|-------|--------|-----------------|
-| **Script/charset match** | 0.35 | Text uses wrong alphabet (e.g., CJK when expecting Latin) |
-| **Repetition detection** | 0.30 | Single word floods, repeated multi-word phrases |
-| **Segment patterns** | 0.20 | Uniform timestamp intervals, empty segments |
-| **Content density** | 0.15 | Words per minute outside 30-300 wpm range |
+| Stage | Criteria | Type | Skipped when |
+|-------|----------|------|--------------|
+| `heuristic_filter` | `content_length_floor` → `script_match` → `repetition` → `content_density` → `segment_quality` | Pure-Python heuristics, CPU-only | Never (always runs) |
+| `llm_filter` | `language_drift`, `hallucination_loop` | LLM-based | No validator client configured, OR previous stage already rejected |
 
-Each dimension produces a score from 0.0 (worst) to 1.0 (best). The weighted average becomes the `overall_score`. If the overall score falls below the configured `quality_threshold` (default: 0.5), the record is marked `is_valid: false`.
+`content_length_floor` runs first — it short-circuits the rest of the heuristic stage when a record is too short to evaluate meaningfully.
 
-> **Note**: Weights must sum to 1.0. A `@model_validator` on `TranscriptionQualityConfig` enforces this constraint.
+### Schema
 
-### Schema Extension
-
-Validated records include two new fields on `EnrichedRecord`:
+Judged records carry the full `JudgePipelineResult` payload under `validation`. The `is_valid` field is derived from `validation.passed`:
 
 ```json
 {
-  "transcription_quality": {
-    "script_match_score": 1.0,
-    "repetition_score": 0.85,
-    "segment_quality_score": 1.0,
-    "content_density_score": 0.95,
-    "overall_score": 0.94,
-    "issues_detected": [],
-    "quality_rationale": null
+  "validation": {
+    "passed": true,
+    "stage_results": {
+      "heuristic_filter": {
+        "passed": true,
+        "criterion_scores": {
+          "content_length_floor": { "score": 1.0, "passed": true, "rationale": "..." },
+          "script_match":         { "score": 1.0, "passed": true, "rationale": "..." },
+          "repetition":           { "score": 0.85, "passed": true, "rationale": "..." },
+          "content_density":      { "score": 0.95, "passed": true, "rationale": "..." },
+          "segment_quality":      { "score": 1.0, "passed": true, "rationale": "..." }
+        }
+      },
+      "llm_filter": {
+        "passed": true,
+        "criterion_scores": {
+          "language_drift":      { "score": 0.92, "passed": true, "rationale": "..." },
+          "hallucination_loop":  { "score": 0.88, "passed": true, "rationale": "..." }
+        }
+      }
+    }
   },
   "is_valid": true
 }
 ```
 
-- `is_valid: true` - Passed quality check
-- `is_valid: false` - Failed quality check (issues detected)
-- `is_valid: null` - Not yet validated (pre-existing records)
+- `is_valid: true` — every criterion in every stage passed its threshold
+- `is_valid: false` — at least one criterion was below its threshold
+- `is_valid: null` — record has not been judged yet
 
-The `null` sentinel distinguishes records that predate validation from those that were actively checked.
+The `llm_filter` stage block is absent when the judge ran without a validator client (heuristic-only mode).
 
-## Inline Validation
+## Running the Judge
 
-Validation runs automatically in all transcription entry points:
-
-- `arandu transcribe` - Single file transcription
-- `arandu drive-transcribe` - Google Drive file transcription
-- `arandu batch-transcribe` - Batch processing
-
-No extra flags are needed. Quality issues are logged as warnings:
-
-```
-WARNING - Quality issues detected: ['high_word_repetition:obrigada:30', 'repeated_phrase:obrigada obrigada obrigada:10']
-```
-
-### Disabling Inline Validation
+The judge is a standalone CLI step:
 
 ```bash
-export ARANDU_QUALITY_ENABLED=false
+# Heuristic-only mode (no LLM model needed)
+arandu judge-transcription results/
+
+# With LLM stage enabled
+arandu judge-transcription results/ --validator-model qwen3:14b
+
+# Resume after an interrupted run (default)
+arandu judge-transcription results/ --validator-model qwen3:14b
+# Force a fresh pass over every record
+arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
 ```
 
-When disabled, records are marked `is_valid: true` and `transcription_quality: null`.
+See the [CLI reference](/reference/cli/#judge-transcription) for the full flag list. Recommended workflow:
 
-## Retroactive Validation CLI
-
-Validate existing transcription files that were produced before this feature:
-
-### Basic Usage
-
-```bash
-arandu validate-transcriptions results/
-```
-
-This updates each `*_transcription.json` file in-place with quality scores.
-
-### Report Only (No File Changes)
-
-```bash
-arandu validate-transcriptions results/ --report-only
-```
-
-Displays a validation summary table without modifying any files.
-
-### Custom Threshold
-
-```bash
-arandu validate-transcriptions results/ --threshold 0.7
-```
-
-Use a higher threshold for stricter quality requirements.
-
-### Custom Language
-
-```bash
-arandu validate-transcriptions results/ --language en
-```
-
-Override the expected language for script matching (default: `pt`).
-
-### Save to Separate Directory
-
-```bash
-arandu validate-transcriptions results/ --output-dir validated/
-```
-
-Write validated files to a new directory instead of updating in-place.
-
-### Full Example
-
-```bash
-arandu validate-transcriptions results_tupi/ \
-  --threshold 0.6 \
-  --language pt \
-  --report-only
-```
-
-### Output
-
-The CLI displays a summary table:
-
-```
-         Validation Summary
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━┓
-┃ File                        ┃ Valid ┃ Score ┃ Issues ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━┩
-│ abc123_transcription.json   │   ✓   │  0.94 │      0 │
-│ def456_transcription.json   │   ✗   │  0.35 │      3 │
-│ ghi789_transcription.json   │   ✓   │  0.82 │      1 │
-└─────────────────────────────┴───────┴───────┴────────┘
-
-Total files: 3
-Valid: 2
-Invalid: 1
-```
+1. Transcribe (`arandu batch-transcribe …`) — records land with `validation: null`.
+2. Judge (`arandu judge-transcription …`) — records get `validation: <JudgePipelineResult>` and `is_valid` is derived from it.
+3. Filter / inspect downstream (e.g. `kg`/`cep`/`qa` stages or report dashboards) using `is_valid`.
 
 ## Validation Dimensions in Detail
 
-### 1. Script/Charset Match (Weight: 0.35)
+### 1. Script/Charset Match
 
 Checks whether the text uses the expected character set for the configured language.
 
@@ -172,7 +113,7 @@ For Latin-script languages (`pt`, `en`, `es`, `fr`, `de`, `it`), the validator u
 
 **Issue tags**: `wrong_script:cjk_detected`, `high_non_latin_ratio`, `no_alphabetic_content`
 
-### 2. Repetition Detection (Weight: 0.30)
+### 2. Repetition Detection
 
 Detects both single-word floods and repeated multi-word phrases.
 
@@ -186,7 +127,7 @@ Detects both single-word floods and repeated multi-word phrases.
 
 **Issue tags**: `high_word_repetition:<word>:<count>`, `repeated_phrase:<text>:<count>`, `very_short_transcription`
 
-### 3. Segment Pattern Analysis (Weight: 0.20)
+### 3. Segment Pattern Analysis
 
 Analyzes Whisper's timestamp segments for anomalies that indicate processing artifacts.
 
@@ -201,7 +142,7 @@ Analyzes Whisper's timestamp segments for anomalies that indicate processing art
 
 **Issue tags**: `suspicious_uniform_intervals:<count>`, `high_empty_segments:<empty>/<total>`
 
-### 4. Content Density (Weight: 0.15)
+### 4. Content Density
 
 Checks whether the words-per-minute ratio falls within a reasonable range for spoken language.
 
@@ -216,100 +157,143 @@ Checks whether the words-per-minute ratio falls within a reasonable range for sp
 
 **Issue tags**: `low_content_density:<wpm>_wpm`, `high_content_density:<wpm>_wpm`, `duration_unknown:neutral_score`, `invalid_duration`
 
+## LLM-Based Criteria (Optional)
+
+Two additional criteria run as a second pipeline stage when `TranscriptionJudge` is given an `LLMClient`. They target failure modes that pure-heuristic checks cannot detect.
+
+- **`language_drift`** — detects when sustained content is in a different Latin-script language than expected (e.g., English content in a Portuguese transcription). The heuristic `script_match` criterion cannot catch this because English and Portuguese share the Latin alphabet. Default threshold: `0.8`.
+- **`hallucination_loop`** — detects formulaic Whisper hallucinations that slip past the heuristic `repetition` criterion: YouTube-style openings/closings, short sentence loops that appear only a handful of times, apology/filler loops, channel-name "signatures". Default threshold: `0.7`.
+
+Prompts live under `prompts/judge/criteria/language_drift/{pt,en}/prompt.md` and `prompts/judge/criteria/hallucination_loop/{pt,en}/prompt.md`. Thresholds live in each criterion's `config.json`. Both are domain-neutral by design — they target generic transcription failure modes, not interview-specific content.
+
+### Pipeline Behavior
+
+The pipeline is two filter stages in order:
+
+1. `heuristic_filter` — content length floor + script match + repetition + content density + segment quality. The `content_length_floor` criterion runs first and can short-circuit the rest of the heuristic stage.
+2. `llm_filter` — language drift + hallucination loop (only when an `LLMClient` is provided).
+
+If the heuristic stage rejects — including an early rejection from `content_length_floor` — the LLM stage is skipped, so there are no wasted LLM calls on transcriptions already flagged by cheap checks.
+
+Programmatic usage of `TranscriptionJudge` is documented in the [Programmatic Usage](#programmatic-usage) section below.
+
+### Smoke-testing the Pipeline
+
+`scripts/test_transcription_judge.py` exercises both stages against real transcription files:
+
+```bash
+# Heuristics only
+uv run python scripts/test_transcription_judge.py \
+    --input-dir results/test-cep-01/transcription/outputs \
+    --files 5
+
+# Heuristics + LLM (Ollama)
+uv run python scripts/test_transcription_judge.py \
+    --validator-model qwen3:14b \
+    --input-dir results/test-cep-01/transcription/outputs \
+    --files 5
+
+# Single-file mode (useful for reproducing a known-bad case)
+uv run python scripts/test_transcription_judge.py \
+    --validator-model qwen3:14b \
+    --file results/test-cep-01/transcription/outputs/<id>_transcription.json
+```
+
+### Limitations of the LLM Criteria
+
+**These criteria do not catch all Whisper hallucinations.** Be explicit about what they do and don't detect before relying on them:
+
+- **`hallucination_loop` only catches formulaic/pattern hallucinations.** It is designed to flag content that looks copied from Whisper's training distribution (stock phrases, channel openings, short loops, implausibly repeated interjections). It does **not** reliably catch:
+  - **Plausible silence-fillers** — a single coherent sentence Whisper invents from background noise when no speech occurred.
+  - **Low-SNR invention** — phonetically-close but wrong words across a real utterance. The output reads naturally.
+  - **Name/number substitutions** — "João" → "Joaquim", "15 anos" → "50 anos".
+
+  These are fundamentally undetectable from text alone — they require audio-aware signals (Whisper `avg_logprob` / `no_speech_prob` per segment, voice-activity detection, or multi-model cross-check). Adding audio-aware heuristics is tracked separately from this criterion.
+
+- **`language_drift` tolerates isolated loanwords and proper nouns by design.** It flags *sustained* non-expected-language content, not single borrowed words, acronyms, or technical terms. Its ceiling is the LLM's own competence in the target languages; exotic code-switching targets (e.g., indigenous languages) may be over-tolerated.
+
+- **Text-only ceiling.** Neither criterion can distinguish "real but unusual speech" from "plausibly fabricated speech" without access to the audio. If an interview contains genuinely ordinary conversational content, the LLM judge has no grounds to flag it — which is the correct behavior, but means well-hidden fabrications will pass.
+
+- **LLM cost + latency.** Each transcription triggers two LLM calls (one per criterion). For large corpora, budget accordingly or keep the LLM stage disabled at ingestion time and run it selectively via the smoke script.
+
+- **Threshold provenance.** The 0.8 / 0.7 defaults started from the rubric design. Empirical calibration against the project's Portuguese corpus is documented in [`docs/research/judge-pipeline-calibration.md`](https://github.com/FredDsR/arandu/blob/main/docs/research/judge-pipeline-calibration.md), including the dual-class audit protocol (30% rejected + 15% admitted, Clopper-Pearson 95% CIs) used to validate them. Re-calibration is needed if the corpus or the validator model changes substantively.
+
 ## Configuration Reference
 
-All settings use the `ARANDU_QUALITY_` environment variable prefix.
+The judge module uses the `ARANDU_JUDGE_` env-var prefix for runtime knobs and per-criterion JSON files for criterion-level tuning.
 
-### General Settings
-
-| Setting | Type | Default | Env Var |
-|---------|------|---------|---------|
-| `enabled` | `bool` | `True` | `ARANDU_QUALITY_ENABLED` |
-| `quality_threshold` | `float` | `0.5` | `ARANDU_QUALITY_QUALITY_THRESHOLD` |
-| `expected_language` | `str` | `"pt"` | `ARANDU_QUALITY_EXPECTED_LANGUAGE` |
-
-### Dimension Weights (must sum to 1.0)
+### Runtime settings (`ARANDU_JUDGE_*`)
 
 | Setting | Type | Default | Env Var |
 |---------|------|---------|---------|
-| `script_match_weight` | `float` | `0.35` | `ARANDU_QUALITY_SCRIPT_MATCH_WEIGHT` |
-| `repetition_weight` | `float` | `0.30` | `ARANDU_QUALITY_REPETITION_WEIGHT` |
-| `segment_quality_weight` | `float` | `0.20` | `ARANDU_QUALITY_SEGMENT_QUALITY_WEIGHT` |
-| `content_density_weight` | `float` | `0.15` | `ARANDU_QUALITY_CONTENT_DENSITY_WEIGHT` |
+| `language` | `str` | `"pt"` | `ARANDU_JUDGE_LANGUAGE` |
+| `temperature` | `float` | `0.3` | `ARANDU_JUDGE_TEMPERATURE` |
+| `max_tokens` | `int` | `2048` | `ARANDU_JUDGE_MAX_TOKENS` |
+| `validator_model` | `str` \| `None` | `None` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
+| `validator_provider` | `str` \| `None` | `None` (inferred) | `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
+| `validator_base_url` | `str` \| `None` | `None` | `ARANDU_JUDGE_VALIDATOR_BASE_URL` |
 
-### Detection Thresholds
+When `validator_model` is unset (and not provided via `--validator-model`), `judge-transcription` runs in heuristic-only mode and skips the LLM stage.
 
-| Setting | Type | Default | Env Var |
-|---------|------|---------|---------|
-| `max_non_latin_ratio` | `float` | `0.1` | `ARANDU_QUALITY_MAX_NON_LATIN_RATIO` |
-| `max_word_repetition_ratio` | `float` | `0.15` | `ARANDU_QUALITY_MAX_WORD_REPETITION_RATIO` |
-| `max_phrase_repetition_count` | `int` | `4` | `ARANDU_QUALITY_MAX_PHRASE_REPETITION_COUNT` |
-| `suspicious_uniform_intervals` | `int` | `5` | `ARANDU_QUALITY_SUSPICIOUS_UNIFORM_INTERVALS` |
-| `min_words_per_minute` | `float` | `30.0` | `ARANDU_QUALITY_MIN_WORDS_PER_MINUTE` |
-| `max_words_per_minute` | `float` | `300.0` | `ARANDU_QUALITY_MAX_WORDS_PER_MINUTE` |
-| `max_empty_segment_ratio` | `float` | `0.2` | `ARANDU_QUALITY_MAX_EMPTY_SEGMENT_RATIO` |
-| `uniform_interval_tolerance` | `float` | `0.1` | `ARANDU_QUALITY_UNIFORM_INTERVAL_TOLERANCE` |
+### Per-criterion thresholds and detection bounds
+
+Each criterion ships with a JSON config under `prompts/judge/criteria/<name>/config.json` (LLM criteria) and Python defaults baked into `arandu.transcription.criteria.<name>` (heuristic criteria). Detection thresholds (e.g. `max_non_latin_ratio`, `max_word_repetition_ratio`, words-per-minute bounds) are configured per-criterion rather than via a global `ARANDU_QUALITY_*` block. See the criterion source files / JSON configs for the current defaults.
 
 ### Example `.env` Configuration
 
 ```bash
-# Transcription Quality Validation
-ARANDU_QUALITY_ENABLED=true
-ARANDU_QUALITY_QUALITY_THRESHOLD=0.6
-ARANDU_QUALITY_EXPECTED_LANGUAGE=pt
+# Validator model for the LLM stage (omit to run heuristic-only)
+ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+# Optional: pin a specific provider / base URL
+ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
+ARANDU_LLM_BASE_URL=http://localhost:11434/v1
 
-# Stricter repetition detection
-ARANDU_QUALITY_MAX_WORD_REPETITION_RATIO=0.10
-ARANDU_QUALITY_MAX_PHRASE_REPETITION_COUNT=3
+# Sampling for LLM criteria (low temperature for consistent evaluation)
+ARANDU_JUDGE_TEMPERATURE=0.3
+ARANDU_JUDGE_MAX_TOKENS=2048
+
+# Language used for criterion prompts and script-match expectations
+ARANDU_JUDGE_LANGUAGE=pt
 ```
 
 ## Interpreting Results
 
 ### Common Failure Patterns
 
-| Pattern | Typical Score | Root Cause |
-|---------|--------------|------------|
-| Japanese text for Portuguese audio | 0.15-0.30 | Whisper language detection failure |
-| "Obrigada" x30 | 0.65-0.70 | Whisper repetition loop |
-| Uniform 1-second segments | 0.50-0.70 | Whisper timestamp artifact |
-| 5 words in 60 seconds | 0.80-0.90 | Mostly silence or background noise |
+| Pattern | Failing criterion | Root cause |
+|---------|-------------------|------------|
+| Japanese text for Portuguese audio | `script_match` | Whisper language detection failure |
+| "Obrigada" x30 | `repetition` | Whisper repetition loop |
+| Uniform 1-second segments | `segment_quality` | Whisper timestamp artifact |
+| 5 words in 60 seconds | `content_length_floor` (short-circuit) | Mostly silence or background noise |
+| English narration in PT corpus | `language_drift` (LLM stage) | Whisper transcribed against the wrong language model |
+| YouTube intro/outro phrasing | `hallucination_loop` (LLM stage) | Whisper hallucinated training-distribution text |
 
-### Threshold Guidance
+### Threshold Tuning
 
-| Threshold | Use Case |
-|-----------|----------|
-| `0.5` (default) | Catches severe failures (wrong script, extreme repetition + other issues) |
-| `0.6-0.7` | Balanced — catches most artifacts while keeping borderline transcriptions |
-| `0.75-0.8` | Strict — flags single-dimension failures (e.g., pure repetition) |
-
-> **Tip**: A pure repetition case (e.g., "Obrigada" x30) scores ~0.70 overall because repetition weight (0.30) alone cannot pull the weighted average below 0.50 when all other dimensions score well. Use a threshold of 0.75+ to catch these cases.
+Thresholds are **per-criterion**, not global. To make any single failure mode stricter or more lenient, edit the criterion's config rather than chasing a single overall-score cutoff. The overall `passed` outcome flips as soon as *any* criterion's score is below its threshold, so adjusting one criterion can be done without touching the others.
 
 ## Programmatic Usage
 
 ```python
-from arandu.config import TranscriptionQualityConfig
-from arandu.core.transcription_validator import (
-    TranscriptionValidator,
-    validate_enriched_record,
-    get_quality_issues,
+from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.transcription.judge import TranscriptionJudge, build_validator_client
+
+# Heuristic-only mode (no LLM calls)
+judge = TranscriptionJudge(language="pt")
+result = judge.evaluate_transcription(
+    text=record.transcription_text,
+    duration_ms=record.duration_milliseconds,
+    segments=record.segments or [],
 )
 
-# Validate a single record (mutates in-place)
-validate_enriched_record(record)
+# Heuristics + LLM stage
+validator = build_validator_client(model_id="qwen3:14b")  # respects ARANDU_LLM_BASE_URL
+judge = TranscriptionJudge(language="pt", validator_client=validator)
+result = judge.evaluate_transcription(text=..., duration_ms=..., segments=...)
 
-# With custom config
-config = TranscriptionQualityConfig(quality_threshold=0.7, expected_language="en")
-validate_enriched_record(record, config)
-
-# Reuse validator across multiple records (batch optimization)
-validator = TranscriptionValidator(config)
-for record in records:
-    validate_enriched_record(record, validator=validator)
-
-# Check for issues
-issues = get_quality_issues(record)
-if issues:
-    print(f"Failed: {issues}")
+# Persist back into the EnrichedRecord — is_valid is derived from result.passed
+record.validation = result
 ```
 
 ## Known Limitations

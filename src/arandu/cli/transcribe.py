@@ -10,7 +10,6 @@ from typing import Annotated
 
 import typer
 from pydantic import ValidationError
-from rich.table import Table
 
 from arandu.shared.hardware import get_device_and_dtype
 from arandu.shared.io import (
@@ -27,7 +26,6 @@ from arandu.utils.logger import (
     print_error,
     print_info,
     print_success,
-    print_warning,
 )
 from arandu.utils.ui import (
     create_progress,
@@ -522,121 +520,6 @@ def batch_transcribe(
         raise typer.Exit(code=1) from e
 
 
-def validate_transcriptions(
-    input_dir: Annotated[
-        Path,
-        typer.Argument(
-            help="Directory containing transcription JSON files to validate",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-        ),
-    ],
-    expected_language: Annotated[
-        str,
-        typer.Option(
-            "--language",
-            "-l",
-            help="Expected language code (e.g., 'pt', 'en')",
-        ),
-    ] = "pt",
-    output: Annotated[
-        Path | None,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Path to save validation results as JSON.",
-        ),
-    ] = None,
-) -> None:
-    """Validate existing transcriptions for quality issues.
-
-    Detects Whisper failure modes using heuristic criteria:
-    - Wrong language/script (Japanese when expecting Portuguese)
-    - Repeated words/phrases
-    - Suspicious segment patterns
-    - Empty or sparse content
-
-    .. deprecated::
-        Use ``arandu judge-transcription`` instead.
-
-    Examples:
-        arandu validate-transcriptions results_tupi/
-        arandu validate-transcriptions results/ --language en
-    """
-    from arandu.transcription.judge import TranscriptionJudge
-
-    print_warning("validate-transcriptions is deprecated. Use judge-transcription instead.")
-
-    print_info("Scanning for transcription files...")
-
-    json_files = sorted(input_dir.glob("*_transcription.json"))
-    if not json_files:
-        print_error(f"No transcription files found in {input_dir}")
-        raise typer.Exit(code=1)
-
-    print_info(f"Found {len(json_files)} transcription files")
-
-    judge = TranscriptionJudge(language=expected_language)
-
-    results: list[dict] = []
-
-    with create_progress() as progress:
-        task = progress.add_task("Validating...", total=len(json_files))
-
-        for json_path in json_files:
-            try:
-                with open(json_path) as f:
-                    data = json.load(f)
-                record = EnrichedRecord(**data)
-
-                pipeline_result = judge.evaluate_transcription(
-                    text=record.transcription_text,
-                    duration_ms=record.duration_milliseconds,
-                    segments=record.segments or [],
-                )
-
-                results.append(
-                    {
-                        "file": json_path.name,
-                        "valid": pipeline_result.passed,
-                    }
-                )
-
-            except (json.JSONDecodeError, ValidationError, OSError) as e:
-                print_error(f"Failed to process {json_path.name}: {e}")
-                results.append({"file": json_path.name, "valid": False})
-
-            progress.update(task, advance=1)
-
-    # Display summary
-    console.print()
-
-    table = Table(title="Validation Summary", show_header=True, header_style="bold magenta")
-    table.add_column("File", style="cyan")
-    table.add_column("Valid", justify="center")
-
-    for r in results:
-        valid_icon = "[green]\u2713[/green]" if r["valid"] else "[red]\u2717[/red]"
-        table.add_row(r["file"], valid_icon)
-
-    console.print(table)
-    console.print()
-
-    valid_count = sum(1 for r in results if r["valid"])
-    invalid_count = len(results) - valid_count
-    console.print(f"[bold]Total files:[/bold] {len(results)}")
-    console.print(f"[green]Valid:[/green] {valid_count}")
-    console.print(f"[red]Invalid:[/red] {invalid_count}")
-    console.print()
-
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with open(output, "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        print_success(f"Results saved to [bold]{output}[/bold]")
-
-
 def judge_transcription(
     input_dir: Annotated[
         Path,
@@ -655,25 +538,129 @@ def judge_transcription(
             help="Expected transcription language code (e.g., 'pt', 'en').",
         ),
     ] = "pt",
-    output: Annotated[
-        Path | None,
+    validator_model: Annotated[
+        str | None,
         typer.Option(
-            "--output",
-            "-o",
-            help="Path to save judgement results as JSON.",
+            "--validator-model",
+            help=(
+                "Model ID for the LLM filter stage (language_drift + "
+                "hallucination_loop). Falls back to ARANDU_JUDGE_VALIDATOR_MODEL."
+            ),
         ),
     ] = None,
+    validator_provider: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-provider",
+            help=(
+                "LLM provider for the validator: 'openai', 'ollama', 'custom'. "
+                "Falls back to ARANDU_JUDGE_VALIDATOR_PROVIDER, then inferred "
+                "from ARANDU_LLM_BASE_URL (custom when set, else ollama)."
+            ),
+        ),
+    ] = None,
+    validator_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-base-url",
+            help=(
+                "Base URL for the validator provider. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_BASE_URL, then ARANDU_LLM_BASE_URL."
+            ),
+        ),
+    ] = None,
+    validator_temperature: Annotated[
+        float | None,
+        typer.Option(
+            "--validator-temperature",
+            help=(
+                "Sampling temperature for LLM criteria. Falls back to "
+                "ARANDU_JUDGE_TEMPERATURE (default 0.3) when not set."
+            ),
+        ),
+    ] = None,
+    validator_max_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--validator-max-tokens",
+            help=(
+                "Max tokens for LLM criterion responses. Falls back to "
+                "ARANDU_JUDGE_MAX_TOKENS (default 2048) when not set."
+            ),
+        ),
+    ] = None,
+    rejudge: Annotated[
+        bool,
+        typer.Option(
+            "--rejudge/--resume",
+            help=(
+                "--rejudge re-evaluates every record from scratch. --resume "
+                "(default) skips records that already carry a ``validation`` "
+                "payload, so a re-submission after a wall hit only judges "
+                "the unjudged remainder."
+            ),
+        ),
+    ] = False,
 ) -> None:
-    """Judge transcription quality using heuristic criteria.
+    """Judge transcription quality with heuristic and optional LLM criteria.
 
-    Evaluates each transcription on script match, repetition, content density,
-    and segment quality using the TranscriptionJudge pipeline.
+    Runs a two-stage filter pipeline:
+
+    1. Heuristics — content length floor, script match, repetition, content
+       density, segment quality. Always runs; needs no model.
+    2. LLM — ``language_drift`` + ``hallucination_loop``, catching failure
+       modes heuristics cannot detect. Runs only when a validator model is
+       configured (via ``--validator-model`` or
+       ``ARANDU_JUDGE_VALIDATOR_MODEL``); skipped otherwise with a notice.
+
+    Verdicts are written back into each ``*_transcription.json`` record:
+    the full ``JudgePipelineResult`` lands in ``validation`` and
+    ``is_valid`` is derived from ``validation.passed``. No aggregate
+    side-file is produced — run a downstream analytics script over the
+    directory for cross-record reports.
+
+    By default the command resumes: any record whose ``validation`` is
+    already populated is skipped. Pass ``--rejudge`` to force a fresh
+    pass over everything (e.g. after changing the validator model or
+    a prompt).
 
     Examples:
-        arandu judge-transcription results/
-        arandu judge-transcription results/ --language en --output judgements.json
+        arandu judge-transcription results/                                   # heuristics only
+        arandu judge-transcription results/ --validator-model qwen3:14b
+        arandu judge-transcription results/ --validator-model gemini-2.5-flash
+        arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
     """
-    from arandu.transcription.judge import TranscriptionJudge
+    from arandu.qa.config import get_judge_config
+    from arandu.transcription.judge import TranscriptionJudge, build_validator_client
+
+    judge_config = get_judge_config()
+    resolved_model = validator_model or judge_config.validator_model
+
+    validator_client = None
+    if resolved_model:
+        # Fail fast on invalid or unreachable validator before walking the input directory.
+        try:
+            validator_client = build_validator_client(
+                model_id=resolved_model,
+                provider=validator_provider or judge_config.validator_provider,
+                base_url=validator_base_url or judge_config.validator_base_url,
+            )
+        except ValueError as exc:
+            print_error(str(exc))
+            raise typer.Exit(code=1) from exc
+        if not validator_client.is_available():
+            print_error(
+                f"Validator provider unreachable: {validator_client.provider.value} "
+                f"({validator_client.base_url or 'default URL'})"
+            )
+            raise typer.Exit(code=1)
+        print_info(f"Validator: {validator_client.provider.value}/{resolved_model}")
+    else:
+        print_info(
+            "No validator model configured — running heuristic-only mode "
+            "(language_drift + hallucination_loop skipped). "
+            "Set --validator-model or ARANDU_JUDGE_VALIDATOR_MODEL to enable the LLM stage."
+        )
 
     print_info("Scanning for transcription files...")
 
@@ -682,11 +669,26 @@ def judge_transcription(
         print_error(f"No transcription files found in {input_dir}")
         raise typer.Exit(code=1)
 
-    print_info(f"Found {len(json_files)} transcription files")
+    mode_label = "rejudge" if rejudge else "resume"
+    print_info(f"Found {len(json_files)} transcription files (mode: {mode_label})")
 
-    judge = TranscriptionJudge(language=language)
+    resolved_temperature = (
+        validator_temperature if validator_temperature is not None else judge_config.temperature
+    )
+    resolved_max_tokens = (
+        validator_max_tokens if validator_max_tokens is not None else judge_config.max_tokens
+    )
+    judge = TranscriptionJudge(
+        language=language,
+        validator_client=validator_client,
+        temperature=resolved_temperature,
+        max_tokens=resolved_max_tokens,
+    )
 
-    results: list[dict] = []
+    passed_count = 0
+    failed_count = 0
+    skipped_count = 0
+    error_count = 0
 
     with create_progress() as progress:
         task = progress.add_task("Judging...", total=len(json_files))
@@ -697,89 +699,47 @@ def judge_transcription(
                     data = json.load(f)
 
                 record = EnrichedRecord(**data)
-                text = record.transcription_text
-                duration_ms = record.duration_milliseconds
-                segments = record.segments or []
+
+                if not rejudge and record.validation is not None:
+                    # Already judged — count toward final tallies and skip.
+                    if record.is_valid:
+                        passed_count += 1
+                    else:
+                        failed_count += 1
+                    skipped_count += 1
+                    progress.update(task, advance=1)
+                    continue
 
                 pipeline_result = judge.evaluate_transcription(
-                    text=text,
-                    duration_ms=duration_ms,
-                    segments=segments,
+                    text=record.transcription_text,
+                    duration_ms=record.duration_milliseconds,
+                    segments=record.segments or [],
                 )
 
-                criteria: dict[str, dict] = {}
-                for stage_result in pipeline_result.stage_results.values():
-                    for name, cs in stage_result.criterion_scores.items():
-                        criteria[name] = {
-                            "score": cs.score,
-                            "threshold": cs.threshold,
-                            "passed": cs.passed,
-                            "error": cs.error,
-                        }
+                # Persist verdict back into the record. ``is_valid`` is
+                # derived from ``validation.passed`` by the mixin.
+                record.validation = pipeline_result
 
-                results.append(
-                    {
-                        "file": json_path.name,
-                        "passed": pipeline_result.passed,
-                        "criteria": criteria,
-                    }
-                )
+                with open(json_path, "w") as f:
+                    f.write(record.model_dump_json(indent=2, by_alias=True))
+
+                if pipeline_result.passed:
+                    passed_count += 1
+                else:
+                    failed_count += 1
 
             except (json.JSONDecodeError, ValidationError, OSError) as e:
                 print_error(f"Failed to process {json_path.name}: {e}")
-                results.append(
-                    {
-                        "file": json_path.name,
-                        "passed": False,
-                        "criteria": {},
-                    }
-                )
+                error_count += 1
 
             progress.update(task, advance=1)
 
-    # Display summary table
     console.print()
-
-    # Determine criterion names from first successful result
-    criterion_names: list[str] = []
-    for r in results:
-        if r["criteria"]:
-            criterion_names = list(r["criteria"].keys())
-            break
-
-    table = Table(title="Transcription Judgement", show_header=True, header_style="bold magenta")
-    table.add_column("File", style="cyan")
-    table.add_column("Pass", justify="center")
-    for name in criterion_names:
-        table.add_column(name, justify="right")
-
-    for r in results:
-        pass_icon = "[green]\u2713[/green]" if r["passed"] else "[red]\u2717[/red]"
-        row = [r["file"], pass_icon]
-        for name in criterion_names:
-            cs = r["criteria"].get(name)
-            if cs is None:
-                row.append("-")
-            elif cs["error"]:
-                row.append("[red]ERR[/red]")
-            else:
-                score = cs["score"]
-                color = "green" if cs["passed"] else "red"
-                row.append(f"[{color}]{score:.2f}[/{color}]")
-        table.add_row(*row)
-
-    console.print(table)
-    console.print()
-
-    passed_count = sum(1 for r in results if r["passed"])
-    failed_count = len(results) - passed_count
-    console.print(f"[bold]Total files:[/bold] {len(results)}")
+    console.print(f"[bold]Total files:[/bold] {len(json_files)}")
     console.print(f"[green]Passed:[/green] {passed_count}")
     console.print(f"[red]Failed:[/red] {failed_count}")
+    if skipped_count:
+        console.print(f"[dim]Resumed (already judged, skipped):[/dim] {skipped_count}")
+    if error_count:
+        console.print(f"[red]Errors:[/red] {error_count}")
     console.print()
-
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with open(output, "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        print_success(f"Results saved to [bold]{output}[/bold]")

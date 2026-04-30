@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
-from arandu.shared.judge.schemas import JudgePipelineResult  # noqa: TC001
+from arandu.shared.judge.schemas import JudgeResultMixin
 from arandu.shared.schemas import BloomLevel, SourceMetadata  # noqa: TC001
 
 if TYPE_CHECKING:
@@ -53,11 +53,13 @@ class QAPair(BaseModel):
 # BloomLevel is imported from arandu.shared.schemas
 
 
-class QAPairCEP(QAPair):
+class QAPairCEP(QAPair, JudgeResultMixin):
     """Extended QA pair with CEP cognitive elicitation fields.
 
     Adds Bloom's taxonomy level, reasoning traces, and tacit knowledge inference
-    to the base QAPair for cognitive scaffolding-based QA generation.
+    to the base QAPair for cognitive scaffolding-based QA generation. Mixes in
+    judge verdict fields so any pair can carry a ``validation`` result once
+    a judge has run.
     """
 
     bloom_level: BloomLevel = Field(
@@ -102,17 +104,6 @@ class QAPairCEP(QAPair):
         return self
 
 
-class QAPairValidated(QAPairCEP):
-    """QA pair with LLM-as-a-Judge validation results.
-
-    The ``validation`` field holds a ``JudgePipelineResult`` from the shared
-    judge module (``arandu.shared.judge``).
-    """
-
-    validation: JudgePipelineResult | None = None
-    is_valid: bool = True
-
-
 class QARecordCEP(BaseModel):
     """Extended QA dataset record with CEP metadata and validation summary.
 
@@ -129,12 +120,7 @@ class QARecordCEP(BaseModel):
         default=None, description="Source interview metadata for provenance tracking"
     )
     transcription_text: str = Field(..., description="Full transcription text")
-    # NOTE: QAPairValidated must be listed first in the union. Since it's a subclass
-    # of QAPairCEP with optional fields that have defaults, Pydantic will try types
-    # in order and QAPairValidated must match first to preserve validation fields.
-    qa_pairs: list[QAPairValidated | QAPairCEP] = Field(
-        ..., description="List of CEP-enhanced QA pairs"
-    )
+    qa_pairs: list[QAPairCEP] = Field(..., description="List of CEP-enhanced QA pairs")
     model_id: str = Field(..., description="LLM model used for generation")
     validator_model_id: str | None = Field(
         None, description="LLM model used for validation (if enabled)"

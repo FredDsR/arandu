@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from arandu.qa.schemas import QAPairValidated, QARecordCEP
+import pytest
+
+from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.report.collector import RunReport
 from arandu.report.dataset import (
     QAPairRow,
@@ -17,7 +19,6 @@ from arandu.shared.schemas import (
     PipelineMetadata,
     PipelineType,
     SourceMetadata,
-    TranscriptionQualityScore,
 )
 from tests.report.helpers import make_run_metadata
 
@@ -27,7 +28,10 @@ def _make_enriched_record(
     participant: str | None = "Maria",
     location: str | None = "Barra de Pelotas",
     is_valid: bool | None = True,
-    overall_score: float = 0.85,
+    script_match: float = 0.9,
+    repetition: float = 0.8,
+    segment_quality: float = 0.85,
+    content_density: float = 0.7,
 ) -> EnrichedRecord:
     """Create a sample EnrichedRecord for testing."""
     source = None
@@ -37,12 +41,28 @@ def _make_enriched_record(
             location=location,
             recording_date="2024-05-15",
         )
-    quality = TranscriptionQualityScore(
-        script_match_score=0.9,
-        repetition_score=0.8,
-        segment_quality_score=0.85,
-        content_density_score=0.7,
-        overall_score=overall_score,
+    # Build a JudgePipelineResult covering the four heuristic criteria with
+    # varied scores. The report reader's overall_score is the mean of the
+    # scores actually present in the result, so tests that exercise the
+    # mean must compute it from these four values explicitly.
+    quality = JudgePipelineResult(
+        stage_results={
+            "heuristic_filter": JudgeStepResult(
+                criterion_scores={
+                    "script_match": CriterionScore(
+                        score=script_match, threshold=0.6, rationale="ok"
+                    ),
+                    "repetition": CriterionScore(score=repetition, threshold=0.5, rationale="ok"),
+                    "segment_quality": CriterionScore(
+                        score=segment_quality, threshold=0.4, rationale="ok"
+                    ),
+                    "content_density": CriterionScore(
+                        score=content_density, threshold=0.4, rationale="ok"
+                    ),
+                }
+            )
+        },
+        passed=bool(is_valid),
     )
     return EnrichedRecord(
         file_id="gdrive_123",
@@ -57,9 +77,8 @@ def _make_enriched_record(
         compute_device="cuda",
         processing_duration_sec=15.0,
         transcription_status="completed",
-        is_valid=is_valid,
         source_metadata=source,
-        transcription_quality=quality,
+        validation=quality,
     )
 
 
@@ -114,7 +133,7 @@ def _make_cep_record(
             informativeness=0.75,
             self_containedness=0.95,
         )
-        pair = QAPairValidated(
+        pair = QAPairCEP(
             question=f"Question {i}?",
             answer=f"Answer {i}.",
             context="Some context text.",
@@ -124,7 +143,6 @@ def _make_cep_record(
             is_multi_hop=i == 0,
             hop_count=2 if i == 0 else None,
             validation=validation,
-            is_valid=True,
         )
         qa_pairs.append(pair)
 
@@ -236,11 +254,18 @@ class TestBuildDataset:
         assert trans.participant_name == "Maria"
         assert trans.location == "Barra de Pelotas"
         assert trans.is_valid is True
-        assert trans.overall_quality == 0.85
+        # Heuristic stage scores from the fixture defaults.
         assert trans.script_match == 0.9
         assert trans.repetition == 0.8
         assert trans.segment_quality == 0.85
         assert trans.content_density == 0.7
+        # Criteria absent from the fixture (LLM stage skipped, length floor
+        # not in fixture) remain None and are excluded from overall_quality.
+        assert trans.content_length_floor is None
+        assert trans.language_drift is None
+        assert trans.hallucination_loop is None
+        # overall_quality is the mean of the criteria actually present.
+        assert trans.overall_quality == pytest.approx((0.9 + 0.8 + 0.85 + 0.7) / 4)
         assert trans.processing_duration_sec == 15.0
         assert trans.model_id == "openai/whisper-large-v3"
         assert trans.detected_language == "pt"
@@ -414,7 +439,7 @@ class TestRunSummaryNewFields:
         invalid_record = _make_enriched_record(name="invalid.mp3", is_valid=False)
 
         # Build a CEP record with 2 valid + 1 invalid QA pair
-        invalid_qa = QAPairValidated(
+        invalid_qa = QAPairCEP(
             question="Q?",
             answer="A.",
             context="ctx",
@@ -428,7 +453,6 @@ class TestRunSummaryNewFields:
                 self_containedness=0.3,
                 threshold=0.6,
             ),
-            is_valid=False,
         )
         # _make_cep_record produces 2 valid pairs; add 1 invalid by building manually
         cep_record = QARecordCEP(
@@ -439,7 +463,7 @@ class TestRunSummaryNewFields:
             ),
             transcription_text="Test.",
             qa_pairs=[
-                QAPairValidated(
+                QAPairCEP(
                     question="Q1?",
                     answer="A1.",
                     context="ctx",
@@ -452,9 +476,8 @@ class TestRunSummaryNewFields:
                         informativeness=0.75,
                         self_containedness=0.95,
                     ),
-                    is_valid=True,
                 ),
-                QAPairValidated(
+                QAPairCEP(
                     question="Q2?",
                     answer="A2.",
                     context="ctx",
@@ -467,7 +490,6 @@ class TestRunSummaryNewFields:
                         informativeness=0.75,
                         self_containedness=0.95,
                     ),
-                    is_valid=True,
                 ),
                 invalid_qa,
             ],

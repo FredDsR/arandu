@@ -8,7 +8,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
+
+from arandu.shared.judge.schemas import (
+    JudgeResultMixin,
+)
+
+# Sentinel for "key not present" — distinguishes a missing key from an
+# explicit ``None`` value during legacy-payload migration.
+_MISSING = object()
 
 
 class InputRecord(BaseModel):
@@ -68,30 +76,6 @@ class TranscriptionSegment(BaseModel):
     end: float = Field(..., description="End time in seconds")
 
 
-class TranscriptionQualityScore(BaseModel):
-    """Quality scores for transcription validation.
-
-    Distinct from JudgePipelineResult (LLM-as-a-Judge for QA pairs).
-    This evaluates Whisper transcription output quality using heuristics.
-    """
-
-    script_match_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Text uses expected character set (Latin for pt/en)"
-    )
-    repetition_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Text is free from excessive repetition"
-    )
-    segment_quality_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Segment timestamps are natural, not suspicious"
-    )
-    content_density_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Words per minute within reasonable range"
-    )
-    overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
-    issues_detected: list[str] = Field(default_factory=list, description="List of quality issues")
-    quality_rationale: str | None = Field(None, description="Explanation of quality assessment")
-
-
 class SourceMetadata(BaseModel):
     """Metadata extracted from catalog source information.
 
@@ -127,7 +111,7 @@ class SourceMetadata(BaseModel):
     )
 
 
-class EnrichedRecord(InputRecord):
+class EnrichedRecord(InputRecord, JudgeResultMixin):
     """Schema for output records containing transcription results and metadata.
 
     This schema defines the format of the final JSON file that will be saved
@@ -147,13 +131,32 @@ class EnrichedRecord(InputRecord):
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"
     )
-    transcription_quality: TranscriptionQualityScore | None = Field(
-        None, description="Transcription quality check results"
-    )
-    is_valid: bool | None = Field(
-        default=None,
-        description="Whether transcription passes quality check (None = not yet checked)",
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_quality_field(cls, data: object) -> object:
+        """Adapt records that still carry the retired ``transcription_quality`` key.
+
+        Two pre-mixin shapes can show up on disk:
+
+        - The very old weighted-score struct (``overall_score``,
+          ``script_match_score``, …) — drop it; those scores weren't
+          consumed anyway and the record becomes re-judgeable.
+        - The interim ``JudgePipelineResult`` payload that was briefly
+          stored under ``transcription_quality`` — rename it to
+          ``validation`` so the mixin picks it up.
+        """
+        if not isinstance(data, dict):
+            return data
+        tq = data.get("transcription_quality", _MISSING)
+        if tq is _MISSING:
+            return data
+        new_data = {k: v for k, v in data.items() if k != "transcription_quality"}
+        if isinstance(tq, dict) and "stage_results" in tq:
+            new_data.setdefault("validation", tq)
+        # Anything else (legacy weighted-score struct, or None) → drop the key.
+        return new_data
+
     source_metadata: SourceMetadata | None = Field(
         default=None,
         description="Extracted metadata from source catalog (None = not yet extracted)",

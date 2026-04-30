@@ -404,9 +404,18 @@ class TestCEPConfig:
 class TestLLMConfig:
     """Tests for LLMConfig."""
 
-    def test_default_initialization(self) -> None:
-        """Test default LLM configuration initialization."""
-        config = LLMConfig()
+    def test_default_initialization(self, monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+        """Test default LLM configuration initialization.
+
+        Isolates from the repo's ``.env`` (which may carry real credentials
+        for local dev) by pointing ``LLMConfig`` at an empty tmp file and
+        unsetting the relevant env vars.
+        """
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_LLM_BASE_URL", raising=False)
+        empty_env = tmp_path / ".env"
+        empty_env.write_text("")
+        config = LLMConfig(_env_file=str(empty_env))
 
         assert config.openai_api_key is None
         assert config.base_url is None

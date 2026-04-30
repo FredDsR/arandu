@@ -35,7 +35,7 @@ class QAPairRow(BaseModel):
     model_id: str | None = None
     validator_model_id: str | None = None
     provider: str | None = None
-    is_valid: bool = True
+    is_valid: bool | None = True
     idx: int = Field(default=0, description="Zero-based index of QA pair within its source file")
 
 
@@ -49,10 +49,15 @@ class TranscriptionRow(BaseModel):
     recording_date: str | None = None
     is_valid: bool | None = None
     overall_quality: float | None = None
+    # Heuristic stage scores
+    content_length_floor: float | None = None
     script_match: float | None = None
     repetition: float | None = None
     segment_quality: float | None = None
     content_density: float | None = None
+    # LLM stage scores (None when LLM stage skipped or judge ran heuristics-only)
+    language_drift: float | None = None
+    hallucination_loop: float | None = None
     processing_duration_sec: float | None = None
     model_id: str | None = None
     detected_language: str | None = None
@@ -249,7 +254,7 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
     """
     for record in report.transcription_records:
         source = record.source_metadata
-        quality = record.transcription_quality
+        scores = _extract_transcription_scores(record.validation)
 
         row = TranscriptionRow(
             pipeline_id=report.pipeline_id,
@@ -258,16 +263,69 @@ def build_transcription_rows(report: RunReport, transcription_rows: list[Transcr
             location=source.location if source else None,
             recording_date=source.recording_date if source else None,
             is_valid=record.is_valid,
-            overall_quality=quality.overall_score if quality else None,
-            script_match=quality.script_match_score if quality else None,
-            repetition=quality.repetition_score if quality else None,
-            segment_quality=quality.segment_quality_score if quality else None,
-            content_density=quality.content_density_score if quality else None,
+            overall_quality=scores["overall_score"],
+            content_length_floor=scores["content_length_floor"],
+            script_match=scores["script_match"],
+            repetition=scores["repetition"],
+            segment_quality=scores["segment_quality"],
+            content_density=scores["content_density"],
+            language_drift=scores["language_drift"],
+            hallucination_loop=scores["hallucination_loop"],
             processing_duration_sec=record.processing_duration_sec,
             model_id=record.model_id,
             detected_language=record.detected_language,
         )
         transcription_rows.append(row)
+
+
+def _extract_transcription_scores(quality: Any) -> dict[str, float | None]:
+    """Extract flat criterion scores from a transcription JudgePipelineResult.
+
+    Walks every stage (``heuristic_filter`` + optional ``llm_filter``) and
+    surfaces every criterion the ``TranscriptionJudge`` knows about.
+    ``overall_score`` is the mean of the same criterion scores returned in
+    this dict, so the dashboard column always matches the sum of the
+    sub-scores it displays.
+
+    Args:
+        quality: A ``JudgePipelineResult`` or ``None``.
+
+    Returns:
+        Dict mapping known criterion names + ``overall_score`` to floats.
+    """
+    criteria = [
+        "content_length_floor",
+        "script_match",
+        "repetition",
+        "segment_quality",
+        "content_density",
+        "language_drift",
+        "hallucination_loop",
+    ]
+    empty: dict[str, float | None] = dict.fromkeys(criteria)
+    empty["overall_score"] = None
+
+    if quality is None:
+        return empty
+
+    stage_results = getattr(quality, "stage_results", None)
+    if not stage_results:
+        return empty
+
+    # Flatten criterion scores across every stage, last-write-wins if duplicates
+    flat: dict[str, float | None] = {}
+    for stage in stage_results.values():
+        for name, cs in stage.criterion_scores.items():
+            flat[name] = cs.score
+
+    scores: dict[str, float | None] = {name: flat.get(name) for name in criteria}
+    # overall_score is the mean of the *displayed* sub-scores so the column
+    # is directly comparable to them. Criteria absent from the result (e.g.
+    # LLM stage skipped because no validator was configured) don't pull
+    # the average down toward zero — they're excluded from the denominator.
+    available = [v for v in scores.values() if v is not None]
+    scores["overall_score"] = sum(available) / len(available) if available else None
+    return scores
 
 
 def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:

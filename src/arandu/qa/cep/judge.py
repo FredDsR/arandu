@@ -12,7 +12,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from arandu.qa.config import get_judge_config
-from arandu.qa.schemas import QAPairCEP, QAPairValidated
 from arandu.shared.judge import (
     BaseJudge,
     JudgePipeline,
@@ -24,6 +23,7 @@ from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, JudgeConfig
+    from arandu.qa.schemas import QAPairCEP
     from arandu.shared.judge.schemas import JudgePipelineResult
     from arandu.shared.llm_client import LLMClient
 
@@ -109,7 +109,7 @@ class QAJudge(BaseJudge):
         self,
         qa_pair: QAPairCEP,
         context: str,
-    ) -> QAPairValidated:
+    ) -> QAPairCEP:
         """Validate a single QA pair.
 
         Args:
@@ -117,7 +117,8 @@ class QAJudge(BaseJudge):
             context: Source context for grounding check.
 
         Returns:
-            QAPairValidated with pipeline result and pass/fail status.
+            QAPairCEP with the ``validation`` field populated. ``is_valid``
+            is derived automatically from ``validation.passed``.
         """
         try:
             bloom_level_desc = self._get_bloom_level_desc(qa_pair.bloom_level)
@@ -134,25 +135,18 @@ class QAJudge(BaseJudge):
                 bloom_level_desc=bloom_level_desc,
             )
 
-            return QAPairValidated(
-                **qa_pair.model_dump(),
-                validation=result,
-                is_valid=result.passed,
-            )
+            return qa_pair.model_copy(update={"validation": result})
 
         except Exception as e:
             logger.warning(f"Validation failed for QA pair: {e}", exc_info=True)
-            return QAPairValidated(
-                **qa_pair.model_dump(),
-                validation=None,
-                is_valid=True,
-            )
+            # Return the original pair unchanged — no verdict, is_valid stays None.
+            return qa_pair
 
     def validate_batch(
         self,
         qa_pairs: list[QAPairCEP],
         context: str,
-    ) -> list[QAPairValidated]:
+    ) -> list[QAPairCEP]:
         """Validate multiple QA pairs.
 
         Args:
@@ -160,7 +154,7 @@ class QAJudge(BaseJudge):
             context: Source context.
 
         Returns:
-            List of validated QA pairs.
+            List of QA pairs with their ``validation`` field populated.
         """
         return [self.validate(pair, context) for pair in qa_pairs]
 
