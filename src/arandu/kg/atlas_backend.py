@@ -108,6 +108,14 @@ ATLAS_DEFAULTS: dict[str, Any] = {
 # Path to atlas-rag prompt files relative to the project root
 _PROMPTS_DIR = get_project_root() / "prompts" / "kg" / "atlas"
 
+# atlas-rag synthesizes event-entity participation triples with a hardcoded
+# predicate (json_to_csv.py:161, json_to_csv.py:364, json_to_graphml.py:145).
+# The post-extraction relabel sweep rewrites it for non-English corpora.
+SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN = "is participated by"
+SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG: dict[str, str] = {
+    "pt": "envolve",
+}
+
 # Lazy reference — populated on first use by _get_enriched_processor_cls()
 _MetadataEnrichedProcessorCls: type | None = None
 
@@ -610,6 +618,23 @@ class AtlasRagConstructor:
             self._run_concept_generation_with_resume(extractor, output_dir)
             extractor.create_concept_csv()
 
+        # Translate atlas-rag's hardcoded English event-entity participation
+        # predicate to a natural Portuguese form for pt-language runs. The
+        # framework synthesizes (Event, "is participated by", Entity) edges
+        # because the LLM's event_entity_relation_dict only emits {Event,
+        # Entity} pairs (no predicate). Pure CSV rewrite, no upstream change.
+        self._relabel_synthesized_event_participation(output_dir)
+
+        # Backfill triple_nodes CSV with any endpoint referenced by
+        # triple_edges but absent from triple_nodes. atlas-rag's
+        # ``csvs_to_graphml`` calls ``g.add_edge`` on every edge endpoint;
+        # missing endpoints become attributeless nodes that crash line 185
+        # of ``csv_to_graphml.py`` (``g.nodes[node_id]['type']``). Filed
+        # upstream as the same family of ID-consistency bugs in
+        # HKUST-KnowComp/AutoSchemaKG#45 — interruption-derived per the
+        # authors, so the local sweep is the maintained fix.
+        self._ensure_triple_node_csv_covers_endpoints(output_dir)
+
         logger.info("Converting to GraphML...")
         extractor.convert_to_graphml()
         logger.info("Atlas-rag pipeline completed")
@@ -683,6 +708,14 @@ class AtlasRagConstructor:
         # Step 6: Trim input CSV to exclude completed nodes
         remaining = self._trim_input_csv(missing_csv, completed_nodes)
 
+        # Step 6b: Drop phantom rows whose node ID isn't anywhere in the
+        # triple_nodes / triple_edges sources. atlas-rag's
+        # ``generate_concept`` would crash with NetworkXError on these rows
+        # because the temp KG is built from those CSVs and the phantom node
+        # never enters the graph. Filed upstream as the second of the
+        # ID-consistency bugs in HKUST-KnowComp/AutoSchemaKG.
+        remaining = self._drop_phantom_missing_concepts(missing_csv, triples_dir)
+
         # Step 7: If all nodes are done, skip generation
         if remaining == 0:
             logger.info("All concept nodes already completed, skipping generation")
@@ -694,6 +727,15 @@ class AtlasRagConstructor:
             if not shard_file.exists():
                 shard_file.write_text("")
             return
+
+        # Step 7b: Backfill missing id/type attributes on temp_kg nodes.
+        # atlas-rag's ``generate_concept`` walks the graph via ``predecessors``
+        # / ``successors`` and reads ``temp_kg.nodes[neighbor]['id']`` (line
+        # 212 of concept_generation.py). Some atlas-rag code path adds nodes
+        # without attributes (distinct from the orphan-attribute path covered
+        # by ``_patched_csvs_to_temp_graphml``); without this sweep that
+        # neighbor lookup raises ``KeyError: 'id'``.
+        self._ensure_temp_kg_node_attributes(output_dir)
 
         # Step 8: Run concept generation
         logger.info(
@@ -829,6 +871,326 @@ class AtlasRagConstructor:
                 len(all_rows) - 1 - len(data_rows),
             )
         return len(data_rows)
+
+    def _drop_phantom_missing_concepts(self, csv_path: Path, triples_dir: Path) -> int:
+        """Drop missing-concepts rows whose node ID isn't in the temp-KG sources.
+
+        atlas-rag writes node IDs to ``missing_concepts*_from_json.csv`` that
+        sometimes don't appear in either ``triple_nodes*.csv`` or
+        ``triple_edges*.csv``. When ``generate_concept`` later calls
+        ``temp_kg.predecessors(node_id)`` on such a phantom, NetworkX raises
+        ``NetworkXError: The node ... is not in the digraph``. This helper
+        prefilters the CSV to drop rows whose column-0 value is absent from
+        the union of ``name:ID`` (triple_nodes) and ``:START_ID`` /
+        ``:END_ID`` (triple_edges).
+
+        If the source CSVs cannot be read, returns the unfiltered row count
+        and lets the downstream pipeline surface any actual issue.
+
+        Args:
+            csv_path: Path to the missing_concepts CSV (will be rewritten in
+                place when phantom rows are detected).
+            triples_dir: Directory containing ``triple_nodes*.csv`` and
+                ``triple_edges*.csv`` produced by atlas-rag's
+                ``convert_json_to_csv``.
+
+        Returns:
+            Number of remaining data rows after the prefilter.
+        """
+        valid_names: set[str] = set()
+        nodes_csvs = list(triples_dir.glob("triple_nodes*.csv"))
+        edges_csvs = list(triples_dir.glob("triple_edges*.csv"))
+        if not nodes_csvs and not edges_csvs:
+            logger.debug(
+                "No triple_nodes/triple_edges CSVs in %s — skipping phantom prefilter",
+                triples_dir,
+            )
+            with csv_path.open(newline="") as f:
+                rows = list(csv.reader(f))
+            return max(0, len(rows) - 1)
+
+        try:
+            for nodes_file in nodes_csvs:
+                with nodes_file.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get("name:ID"):
+                            valid_names.add(row["name:ID"])
+            for edges_file in edges_csvs:
+                with edges_file.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get(":START_ID"):
+                            valid_names.add(row[":START_ID"])
+                        if row.get(":END_ID"):
+                            valid_names.add(row[":END_ID"])
+        except (OSError, csv.Error, KeyError) as exc:
+            logger.warning(
+                "Failed to read triple_*.csv for phantom prefilter (%s); skipping",
+                exc,
+            )
+            with csv_path.open(newline="") as f:
+                rows = list(csv.reader(f))
+            return max(0, len(rows) - 1)
+
+        with csv_path.open(newline="") as f:
+            all_rows = list(csv.reader(f))
+
+        if not all_rows:
+            return 0
+
+        header = all_rows[0]
+        kept = [row for row in all_rows[1:] if row and row[0] in valid_names]
+        dropped = len(all_rows) - 1 - len(kept)
+
+        if dropped:
+            with csv_path.open("w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(header)
+                writer.writerows(kept)
+            logger.warning(
+                "Dropped %d phantom row(s) from %s (node IDs absent from triple_*.csv)",
+                dropped,
+                csv_path.name,
+            )
+
+        return len(kept)
+
+    def _ensure_temp_kg_node_attributes(self, output_dir: Path) -> int:
+        """Backfill missing ``id`` / ``type`` attributes on every temp_kg node.
+
+        atlas-rag's ``generate_concept`` reads
+        ``temp_kg.nodes[neighbor]['id']`` while building the context string
+        for each missing concept. If any node lacks the ``id`` attribute the
+        lookup raises ``KeyError: 'id'`` and the whole job fails. The
+        ``_patched_csvs_to_temp_graphml`` helper sets ``id`` on every node it
+        creates, but a separate atlas-rag code path (not covered by that
+        patch) can add attributeless nodes to the temp KG; this sweep is a
+        defensive shim that runs immediately before concept generation,
+        loads the pickle, sets ``id = node_id`` and ``type = "entity"`` on
+        any node missing those attributes, and writes the pickle back.
+
+        Args:
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of nodes that needed at least one attribute backfilled.
+        """
+        import pickle
+
+        kg_dir = output_dir / "atlas_output" / "kg_graphml"
+        pkl_paths = list(kg_dir.glob("*_without_concept.pkl"))
+        if not pkl_paths:
+            logger.debug(
+                "No *_without_concept.pkl in %s — skipping temp_kg attribute sweep",
+                kg_dir,
+            )
+            return 0
+
+        pkl_path = pkl_paths[0]
+        try:
+            with pkl_path.open("rb") as f:
+                g = pickle.load(f)
+        except (OSError, pickle.UnpicklingError) as exc:
+            logger.warning(
+                "Failed to load temp_kg pickle %s for attribute sweep (%s); skipping",
+                pkl_path,
+                exc,
+            )
+            return 0
+
+        patched = 0
+        for node_id, attrs in g.nodes(data=True):
+            needs_patch = False
+            if "id" not in attrs:
+                attrs["id"] = node_id
+                needs_patch = True
+            if "type" not in attrs:
+                attrs["type"] = "entity"
+                needs_patch = True
+            if needs_patch:
+                patched += 1
+
+        if patched:
+            with pkl_path.open("wb") as f:
+                pickle.dump(g, f)
+            logger.warning(
+                "Backfilled missing id/type attributes on %d node(s) in %s",
+                patched,
+                pkl_path.name,
+            )
+
+        return patched
+
+    def _ensure_triple_node_csv_covers_endpoints(self, output_dir: Path) -> int:
+        """Backfill triple_nodes CSV with edge endpoints that lack a row.
+
+        atlas-rag's ``csvs_to_graphml`` reads
+        ``triple_nodes_<pat>_from_json_without_emb.csv`` to seed the graph
+        with attributed nodes, then iterates
+        ``triple_edges_<pat>_from_json_with_concept.csv`` and calls
+        ``g.add_edge(start_id, end_id, ...)``. Any endpoint absent from the
+        nodes CSV becomes an attributeless node (NetworkX implicitly
+        creates it) and crashes line 185 of ``csv_to_graphml.py`` —
+        ``if g.nodes[node_id]['type'] in ['triple', 'concept']`` raises
+        ``KeyError: 'type'``.
+
+        This sweep appends a row (``name:ID=<endpoint>``, ``type=entity``,
+        empty other columns) for every endpoint missing from the nodes
+        CSV, so the graph build sees a well-formed input.
+
+        Args:
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of orphan endpoints backfilled into the nodes CSV.
+        """
+        atlas_output = output_dir / "atlas_output"
+        triples_dir = atlas_output / "triples_csv"
+        # When include_concept=True, atlas-rag passes the *_with_concept.csv
+        # from concept_csv/ as triple_edge_file. Otherwise it falls back to
+        # the *_without_emb.csv from triples_csv/. Mirror that selection so
+        # the sweep targets exactly the file csvs_to_graphml will read.
+        if self._opts["include_concept"]:
+            edges_dir = atlas_output / "concept_csv"
+            edges_pattern = "triple_edges_*_from_json_with_concept.csv"
+        else:
+            edges_dir = triples_dir
+            edges_pattern = "triple_edges_*_from_json_without_emb.csv"
+
+        nodes_csvs = list(triples_dir.glob("triple_nodes_*_from_json_without_emb.csv"))
+        edges_csvs = list(edges_dir.glob(edges_pattern))
+        if not nodes_csvs or not edges_csvs:
+            logger.debug(
+                "No triple_nodes (%s) / triple_edges (%s/%s) — skipping endpoint coverage sweep",
+                triples_dir,
+                edges_dir,
+                edges_pattern,
+            )
+            return 0
+
+        nodes_csv = nodes_csvs[0]
+        edges_csv = edges_csvs[0]
+
+        try:
+            with nodes_csv.open(newline="") as f:
+                reader = csv.DictReader(f)
+                node_header = reader.fieldnames or []
+                existing_names = {row["name:ID"] for row in reader if row.get("name:ID")}
+
+            endpoint_names: set[str] = set()
+            with edges_csv.open(newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get(":START_ID"):
+                        endpoint_names.add(row[":START_ID"])
+                    if row.get(":END_ID"):
+                        endpoint_names.add(row[":END_ID"])
+        except (OSError, csv.Error, KeyError) as exc:
+            logger.warning(
+                "Failed to read triple_*.csv for endpoint coverage sweep (%s); skipping",
+                exc,
+            )
+            return 0
+
+        orphans = endpoint_names - existing_names
+        if not orphans:
+            return 0
+
+        with nodes_csv.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=node_header)
+            for name in sorted(orphans):
+                row = dict.fromkeys(node_header, "")
+                row["name:ID"] = name
+                if "type" in node_header:
+                    row["type"] = "entity"
+                writer.writerow(row)
+
+        logger.warning(
+            "Backfilled %d orphan endpoint(s) into %s with type=entity",
+            len(orphans),
+            nodes_csv.name,
+        )
+        return len(orphans)
+
+    def _relabel_synthesized_event_participation(self, output_dir: Path) -> int:
+        """Rewrite atlas-rag's hardcoded event-participation predicate.
+
+        atlas-rag synthesizes (Event, ``"is participated by"``, Entity) edges
+        from the LLM's ``event_entity_relation_dict`` (which has no
+        predicate field). The string is hardcoded in atlas-rag's
+        ``json_to_csv.py`` and ``json_to_graphml.py``, so for non-English
+        corpora we rewrite the relation column in the triple_edges CSVs
+        before ``convert_to_graphml`` reads them. No-op when
+        ``self._config.language`` has no mapping in
+        ``SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG``.
+
+        Args:
+            output_dir: Pipeline output directory (parent of ``atlas_output``).
+
+        Returns:
+            Number of edge rows whose relation was rewritten across all
+            target CSVs (0 if the language has no mapping).
+        """
+        target_predicate = SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_BY_LANG.get(
+            self._config.language
+        )
+        if not target_predicate:
+            return 0
+
+        atlas_output = output_dir / "atlas_output"
+        candidates: list[Path] = []
+        candidates.extend(
+            (atlas_output / "triples_csv").glob("triple_edges_*_from_json_without_emb.csv")
+        )
+        candidates.extend(
+            (atlas_output / "concept_csv").glob("triple_edges_*_from_json_with_concept.csv")
+        )
+        if not candidates:
+            logger.debug(
+                "No triple_edges CSVs in %s — skipping participation relabel sweep",
+                atlas_output,
+            )
+            return 0
+
+        total_rewritten = 0
+        for csv_path in candidates:
+            try:
+                with csv_path.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    fieldnames = reader.fieldnames
+                    if not fieldnames or "relation" not in fieldnames:
+                        continue
+                    rows = list(reader)
+            except (OSError, csv.Error) as exc:
+                logger.warning(
+                    "Failed to read %s for participation relabel (%s); skipping",
+                    csv_path.name,
+                    exc,
+                )
+                continue
+
+            rewritten = 0
+            for row in rows:
+                if row.get("relation") == SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN:
+                    row["relation"] = target_predicate
+                    rewritten += 1
+
+            if rewritten:
+                with csv_path.open("w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                logger.info(
+                    "Relabeled %d %r → %r in %s",
+                    rewritten,
+                    SYNTHESIZED_EVENT_PARTICIPATION_PREDICATE_EN,
+                    target_predicate,
+                    csv_path.name,
+                )
+                total_rewritten += rewritten
+
+        return total_rewritten
 
     def _restore_and_finalize(
         self,

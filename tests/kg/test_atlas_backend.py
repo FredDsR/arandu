@@ -1261,6 +1261,382 @@ class TestResumableConceptGeneration:
         call_kwargs = mock_extractor.generate_concept_csv_temp.call_args[1]
         assert call_kwargs["language"] == "pt"
 
+    def test_phantom_missing_concept_dropped(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Rows in missing_concepts.csv whose node ID isn't in triple_nodes/edges are dropped.
+
+        Regression for the missing-node bug observed in cluster job 779433:
+        atlas-rag's ``generate_concept`` calls ``temp_kg.predecessors(node_id)``
+        for each missing-concepts row and raises ``NetworkXError`` when the
+        node isn't in the graph. The prefilter drops phantom rows before
+        atlas-rag sees them.
+        """
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        missing_csv, concepts_dir, triples_dir = self._setup_dirs(tmp_path)
+
+        # Re-write missing_concepts with a phantom row that isn't in any
+        # triple_*.csv source; the patch should drop it.
+        missing_csv.write_text(
+            "node,description,node_type\n"
+            "Rio Guaíba,grande rio do sul,entity\n"
+            "phantom_node,not in graph anywhere,entity\n"
+            "enchente,evento climático,event\n"
+        )
+
+        # Companion source CSVs the prefilter consults.
+        nodes_csv = triples_dir / "triple_nodes_test_from_json.csv"
+        nodes_csv.write_text("name:ID,type,concepts,synsets,:LABEL\nRio Guaíba,entity,,,Node\n")
+        edges_csv = triples_dir / "triple_edges_test_from_json.csv"
+        edges_csv.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+        )
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river in southern Brazil,entity\nenchente,climatic event,event\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        # Verify the phantom is dropped from the input atlas-rag ultimately sees.
+        # Capture the missing_csv content right before generate_concept_csv_temp is called.
+        captured: dict[str, list[str]] = {}
+
+        def capture_then_write(**kwargs: Any) -> None:
+            with missing_csv.open() as f:
+                captured["names"] = [row[0] for row in csv.reader(f) if row and row[0] != "node"]
+            write_shard(**kwargs)
+
+        mock_extractor.generate_concept_csv_temp.side_effect = capture_then_write
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        # The phantom row must NOT have been visible to atlas-rag.
+        assert "phantom_node" not in captured["names"], (
+            f"phantom row leaked through to atlas-rag: {captured['names']}"
+        )
+        assert "Rio Guaíba" in captured["names"]
+        assert "enchente" in captured["names"]
+
+    def test_no_phantom_drop_when_all_present(self, tmp_path: Path, _mock_atlas_rag: dict) -> None:
+        """Prefilter is a no-op when every missing_concepts row is in the graph."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        missing_csv, concepts_dir, triples_dir = self._setup_dirs(tmp_path)
+
+        # _setup_dirs writes 3 nodes; build matching source CSVs.
+        nodes_csv = triples_dir / "triple_nodes_test_from_json.csv"
+        nodes_csv.write_text(
+            "name:ID,type,concepts,synsets,:LABEL\n"
+            "Rio Guaíba,entity,,,Node\n"
+            "enchente,event,,,Node\n"
+            "afeta,relation,,,Node\n"
+        )
+        edges_csv = triples_dir / "triple_edges_test_from_json.csv"
+        edges_csv.write_text(":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n")
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+        captured: dict[str, list[str]] = {}
+
+        def write_shard(**kwargs: Any) -> None:
+            with missing_csv.open() as f:
+                captured["names"] = [row[0] for row in csv.reader(f) if row and row[0] != "node"]
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        # All 3 rows survive — no false drops.
+        assert set(captured["names"]) == {"Rio Guaíba", "enchente", "afeta"}
+
+    def test_temp_kg_attribute_sweep_backfills_missing_id(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Nodes added to temp_kg without an ``id`` attribute get backfilled.
+
+        Regression for the atlas-rag ``KeyError: 'id'`` crash in
+        ``generate_concept`` line 212 (cluster job 779946) — a code path
+        outside ``_patched_csvs_to_temp_graphml`` adds attributeless nodes
+        and the per-neighbor lookup raises.
+        """
+        import pickle
+
+        import networkx as nx
+
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        # Build a temp_kg with one well-formed node and one attributeless one.
+        kg_dir = tmp_path / "atlas_output" / "kg_graphml"
+        kg_dir.mkdir(parents=True)
+        pkl_path = kg_dir / "test_without_concept.pkl"
+
+        g = nx.DiGraph()
+        g.add_node("good", id="Rio Guaíba", type="entity")
+        g.add_node("bad")  # no attributes — simulates the bug
+        g.add_edge("good", "bad", relation="ref", type="Relation")
+        with pkl_path.open("wb") as f:
+            pickle.dump(g, f)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        patched = constructor._ensure_temp_kg_node_attributes(tmp_path)
+
+        assert patched == 1, f"expected 1 node patched, got {patched}"
+
+        with pkl_path.open("rb") as f:
+            g2 = pickle.load(f)
+        assert g2.nodes["bad"]["id"] == "bad"
+        assert g2.nodes["bad"]["type"] == "entity"
+        # Existing well-formed node untouched.
+        assert g2.nodes["good"]["id"] == "Rio Guaíba"
+        assert g2.nodes["good"]["type"] == "entity"
+
+    def test_temp_kg_attribute_sweep_no_op_when_all_attributes_present(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Sweep returns 0 and does not rewrite the pickle when all nodes are well-formed."""
+        import pickle
+
+        import networkx as nx
+
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        kg_dir = tmp_path / "atlas_output" / "kg_graphml"
+        kg_dir.mkdir(parents=True)
+        pkl_path = kg_dir / "test_without_concept.pkl"
+
+        g = nx.DiGraph()
+        g.add_node("a", id="A", type="entity")
+        g.add_node("b", id="B", type="event")
+        with pkl_path.open("wb") as f:
+            pickle.dump(g, f)
+        mtime_before = pkl_path.stat().st_mtime_ns
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        patched = constructor._ensure_temp_kg_node_attributes(tmp_path)
+
+        assert patched == 0
+        # Pickle should not have been rewritten.
+        assert pkl_path.stat().st_mtime_ns == mtime_before
+
+    def test_temp_kg_attribute_sweep_skipped_when_pickle_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No-op when the pickle directory is empty (defensive)."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        # Create the directory but leave it empty.
+        (tmp_path / "atlas_output" / "kg_graphml").mkdir(parents=True)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        assert constructor._ensure_temp_kg_node_attributes(tmp_path) == 0
+
+    def test_phantom_drop_skipped_when_source_csvs_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Defensive: if triple_nodes/edges CSVs are absent, prefilter is a no-op.
+
+        Triple extraction must run before concept generation, so the source
+        CSVs *should* exist. But if a test or odd resume state leaves them
+        missing, the prefilter should not crash — atlas-rag will surface
+        any actual problem itself.
+        """
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        _missing_csv, concepts_dir, _triples_dir = self._setup_dirs(tmp_path)
+        # Intentionally do NOT create triple_nodes / triple_edges CSVs.
+
+        config = KGConfig(language="pt")
+        constructor = AtlasRagConstructor(config)
+        mock_extractor = MagicMock()
+
+        shard = concepts_dir / "concept_shard_0.csv"
+
+        def write_shard(**kwargs: Any) -> None:
+            shard.write_text(
+                "Rio Guaíba,large river,entity\n"
+                "enchente,climatic event,event\n"
+                "afeta,causal relation,relation\n"
+            )
+
+        mock_extractor.generate_concept_csv_temp.side_effect = write_shard
+
+        # Should NOT raise.
+        constructor._run_concept_generation_with_resume(mock_extractor, tmp_path)
+
+        mock_extractor.generate_concept_csv_temp.assert_called_once()
+
+    def test_endpoint_coverage_sweep_backfills_orphans(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """Endpoints in triple_edges absent from triple_nodes get a backfill row.
+
+        Regression for the atlas-rag ``KeyError: 'type'`` crash in
+        ``csv_to_graphml.py`` line 185 (cluster job 780114) — atlas-rag's
+        ``g.add_edge`` implicitly creates attributeless nodes for any edge
+        endpoint missing from triple_nodes_*.csv.
+        """
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        concept_dir = tmp_path / "atlas_output" / "concept_csv"
+        triples_dir.mkdir(parents=True)
+        concept_dir.mkdir(parents=True)
+
+        nodes_csv = triples_dir / "triple_nodes_test_from_json_without_emb.csv"
+        nodes_csv.write_text("name:ID,type,concepts,synsets,:LABEL\nRio Guaíba,entity,,,Node\n")
+        edges_csv = concept_dir / "triple_edges_test_from_json_with_concept.csv"
+        edges_csv.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+            "enchente,Porto Alegre,atingiu,,,Relation\n"
+        )
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        backfilled = constructor._ensure_triple_node_csv_covers_endpoints(tmp_path)
+
+        assert backfilled == 2, f"expected 2 orphans backfilled, got {backfilled}"
+
+        with nodes_csv.open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        names = {row["name:ID"] for row in rows}
+        assert names == {"Rio Guaíba", "enchente", "Porto Alegre"}
+
+        # Backfilled rows have type=entity and empty other columns.
+        backfilled_rows = [r for r in rows if r["name:ID"] in {"enchente", "Porto Alegre"}]
+        for row in backfilled_rows:
+            assert row["type"] == "entity"
+            assert row["concepts"] == ""
+            assert row["synsets"] == ""
+            assert row[":LABEL"] == ""
+
+    def test_endpoint_coverage_sweep_no_op_when_all_present(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No backfill when every endpoint already has a row."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        concept_dir = tmp_path / "atlas_output" / "concept_csv"
+        triples_dir.mkdir(parents=True)
+        concept_dir.mkdir(parents=True)
+
+        nodes_csv = triples_dir / "triple_nodes_test_from_json_without_emb.csv"
+        nodes_csv.write_text(
+            "name:ID,type,concepts,synsets,:LABEL\n"
+            "Rio Guaíba,entity,,,Node\n"
+            "enchente,event,,,Node\n"
+        )
+        edges_csv = concept_dir / "triple_edges_test_from_json_with_concept.csv"
+        edges_csv.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+        )
+        mtime_before = nodes_csv.stat().st_mtime_ns
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        backfilled = constructor._ensure_triple_node_csv_covers_endpoints(tmp_path)
+
+        assert backfilled == 0
+        assert nodes_csv.stat().st_mtime_ns == mtime_before
+
+    def test_endpoint_coverage_sweep_skipped_when_csvs_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No-op when the source CSVs are absent (defensive)."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        (tmp_path / "atlas_output" / "triples_csv").mkdir(parents=True)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        assert constructor._ensure_triple_node_csv_covers_endpoints(tmp_path) == 0
+
+    @staticmethod
+    def _write_participation_csvs(tmp_path: Path) -> tuple[Path, Path]:
+        triples_dir = tmp_path / "atlas_output" / "triples_csv"
+        concept_dir = tmp_path / "atlas_output" / "concept_csv"
+        triples_dir.mkdir(parents=True)
+        concept_dir.mkdir(parents=True)
+
+        without_emb = triples_dir / "triple_edges_test_from_json_without_emb.csv"
+        without_emb.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Enchente,Rio Guaíba,is participated by,,,Relation\n"
+            "Rio Guaíba,enchente,causou,,,Relation\n"
+            "Enchente,Porto Alegre,is participated by,,,Relation\n"
+        )
+        with_concept = concept_dir / "triple_edges_test_from_json_with_concept.csv"
+        with_concept.write_text(
+            ":START_ID,:END_ID,relation,concepts,synsets,:TYPE\n"
+            "Enchente,Rio Guaíba,is participated by,[],[],Relation\n"
+        )
+        return without_emb, with_concept
+
+    def test_participation_relabel_rewrites_pt_corpus(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """For language=pt, hardcoded English predicate is replaced in both CSVs."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        without_emb, with_concept = self._write_participation_csvs(tmp_path)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        rewritten = constructor._relabel_synthesized_event_participation(tmp_path)
+
+        # 2 in _without_emb + 1 in _with_concept = 3 total.
+        assert rewritten == 3, f"expected 3 relabels, got {rewritten}"
+
+        for path in (without_emb, with_concept):
+            with path.open(newline="") as f:
+                rows = list(csv.DictReader(f))
+            relations = [r["relation"] for r in rows]
+            assert "is participated by" not in relations
+            assert "envolve" in relations
+
+        # The non-synthesized "causou" relation must be untouched.
+        with without_emb.open(newline="") as f:
+            relations = [r["relation"] for r in csv.DictReader(f)]
+        assert "causou" in relations
+
+    def test_participation_relabel_no_op_for_english(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No mapping for language=en → CSVs untouched."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        without_emb, _ = self._write_participation_csvs(tmp_path)
+        mtime_before = without_emb.stat().st_mtime_ns
+
+        constructor = AtlasRagConstructor(KGConfig(language="en"))
+        assert constructor._relabel_synthesized_event_participation(tmp_path) == 0
+        assert without_emb.stat().st_mtime_ns == mtime_before
+
+    def test_participation_relabel_skipped_when_csvs_missing(
+        self, tmp_path: Path, _mock_atlas_rag: dict
+    ) -> None:
+        """No-op when no triple_edges CSVs exist (defensive)."""
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        (tmp_path / "atlas_output" / "triples_csv").mkdir(parents=True)
+
+        constructor = AtlasRagConstructor(KGConfig(language="pt"))
+        assert constructor._relabel_synthesized_event_participation(tmp_path) == 0
+
 
 class TestPatchedCsvsToTempGraphml:
     """Tests for _patched_csvs_to_temp_graphml orphan node handling."""
