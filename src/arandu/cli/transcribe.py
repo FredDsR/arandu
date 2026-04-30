@@ -638,12 +638,16 @@ def judge_transcription(
 
     validator_client = None
     if resolved_model:
-        # Fail fast on unreachable validator before walking the input directory.
-        validator_client = build_validator_client(
-            model_id=resolved_model,
-            provider=validator_provider or judge_config.validator_provider,
-            base_url=validator_base_url or judge_config.validator_base_url,
-        )
+        # Fail fast on invalid or unreachable validator before walking the input directory.
+        try:
+            validator_client = build_validator_client(
+                model_id=resolved_model,
+                provider=validator_provider or judge_config.validator_provider,
+                base_url=validator_base_url or judge_config.validator_base_url,
+            )
+        except ValueError as exc:
+            print_error(str(exc))
+            raise typer.Exit(code=1) from exc
         if not validator_client.is_available():
             print_error(
                 f"Validator provider unreachable: {validator_client.provider.value} "

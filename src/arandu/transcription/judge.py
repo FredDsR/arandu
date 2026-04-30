@@ -65,6 +65,17 @@ def build_validator_client(
         raise ValueError(
             f"Invalid LLM provider: {resolved_provider!r}. Must be one of {valid}."
         ) from exc
+
+    # The 'custom' provider exists specifically to point at a non-default
+    # OpenAI-compatible endpoint. Without an explicit base URL the
+    # underlying LLMClient would silently fall back to OpenAI's default,
+    # which is almost never what the caller wanted.
+    if provider_enum is LLMProvider.CUSTOM and not resolved_base_url:
+        raise ValueError(
+            "provider='custom' requires a base URL. Pass base_url=... or set "
+            "ARANDU_JUDGE_VALIDATOR_BASE_URL / ARANDU_LLM_BASE_URL."
+        )
+
     return LLMClient(
         provider=provider_enum,
         model_id=model_id,

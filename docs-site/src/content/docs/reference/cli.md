@@ -180,7 +180,7 @@ The judge layer scores artifacts (transcriptions, QA pairs) with a composable tw
 
 ### `judge-transcription`
 
-Judge transcription quality with heuristic + LLM criteria. Verdicts are written back into each `*_transcription.json` record under the `validation` field.
+Judge transcription quality with heuristic and (optional) LLM criteria. Verdicts are written back into each `*_transcription.json` record under the `validation` field.
 
 **Usage**:
 ```bash
@@ -195,8 +195,8 @@ arandu judge-transcription INPUT_DIR [OPTIONS]
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--language` | str | `pt` | Expected transcription language (`pt` or `en`) |
-| `--validator-model` | str | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for the LLM filter stage (required) |
-| `--validator-provider` | str | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`) |
+| `--validator-model` | str \| None | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for the LLM filter stage. Omit (and leave the env var unset) to run heuristic-only |
+| `--validator-provider` | str | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`). `custom` requires `--validator-base-url` or `ARANDU_LLM_BASE_URL` |
 | `--validator-base-url` | str | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` | Base URL for the validator provider |
 | `--validator-temperature` | float | from `ARANDU_JUDGE_TEMPERATURE` (0.3) | Sampling temperature for LLM criteria |
 | `--validator-max-tokens` | int | from `ARANDU_JUDGE_MAX_TOKENS` (2048) | Max tokens for LLM criterion responses |
@@ -204,7 +204,23 @@ arandu judge-transcription INPUT_DIR [OPTIONS]
 
 **Heuristic stage**: `content_length_floor` (runs first, can short-circuit) → `script_match` → `repetition` → `content_density` → `segment_quality`.
 
-**LLM stage**: `language_drift` + `hallucination_loop`.
+**LLM stage**: `language_drift` + `hallucination_loop`. Skipped when no validator model is configured.
+
+**Examples**:
+```bash
+# Heuristic-only (no LLM model needed) — fastest, runs entirely on CPU.
+arandu judge-transcription results/
+
+# Heuristics + LLM via Ollama
+arandu judge-transcription results/ --validator-model qwen3:14b
+
+# Heuristics + LLM via an OpenAI-compatible custom endpoint
+ARANDU_LLM_BASE_URL=https://my-llm.example.com/v1 \
+arandu judge-transcription results/ --validator-model openai/gpt-4.1-mini
+
+# Force a fresh pass over every record (default is resume)
+arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
+```
 
 ### `judge-qa`
 
