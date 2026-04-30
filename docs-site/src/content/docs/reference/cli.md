@@ -24,6 +24,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 
 **Command Categories**:
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
+- **Judging**: `judge-transcription`, `judge-qa`
 - **QA Generation**: `generate-cep-qa`
 - **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `rebuild-index`
 
@@ -170,6 +171,61 @@ arandu batch-transcribe input/catalog.csv --workers 4
 # With custom pipeline ID
 arandu batch-transcribe input/catalog.csv --id my-project-001
 ```
+
+---
+
+## Judging Commands
+
+The judge layer scores artifacts (transcriptions, QA pairs) with a composable two-stage pipeline: cheap heuristics first, optional LLM criteria second. The LLM stage is skipped automatically when the heuristic stage rejects.
+
+### `judge-transcription`
+
+Judge transcription quality with heuristic + LLM criteria. Verdicts are written back into each `*_transcription.json` record under the `validation` field.
+
+**Usage**:
+```bash
+arandu judge-transcription INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing `*_transcription.json` files
+
+**Options**:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--language` | str | `pt` | Expected transcription language (`pt` or `en`) |
+| `--validator-model` | str | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for the LLM filter stage (required) |
+| `--validator-provider` | str | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`) |
+| `--validator-base-url` | str | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` | Base URL for the validator provider |
+| `--validator-temperature` | float | from `ARANDU_JUDGE_TEMPERATURE` (0.3) | Sampling temperature for LLM criteria |
+| `--validator-max-tokens` | int | from `ARANDU_JUDGE_MAX_TOKENS` (2048) | Max tokens for LLM criterion responses |
+| `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every record from scratch; `--resume` (default) skips records already carrying a `validation` payload |
+
+**Heuristic stage**: `content_length_floor` (runs first, can short-circuit) → `script_match` → `repetition` → `content_density` → `segment_quality`.
+
+**LLM stage**: `language_drift` + `hallucination_loop`.
+
+### `judge-qa`
+
+Judge QA pair quality (faithfulness, Bloom calibration, informativeness, self-containedness). Verdicts are persisted onto each QA pair.
+
+**Usage**:
+```bash
+arandu judge-qa INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing CEP QA pair JSON files
+
+**Options**:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--language` | str | `pt` | Expected QA language (`pt` or `en`) |
+| `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every pair from scratch; `--resume` (default) skips pairs already carrying a `validation` payload |
+
+LLM model + provider are loaded from `ARANDU_JUDGE_*` env vars (same set as `judge-transcription`).
 
 ---
 

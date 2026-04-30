@@ -161,10 +161,10 @@ Prompts live under `prompts/judge/criteria/language_drift/{pt,en}/prompt.md` and
 
 The pipeline is two filter stages in order:
 
-1. `heuristic_filter` — script match + repetition + content density + segment quality.
+1. `heuristic_filter` — content length floor + script match + repetition + content density + segment quality. The `content_length_floor` criterion runs first and can short-circuit the rest of the heuristic stage.
 2. `llm_filter` — language drift + hallucination loop (only when an `LLMClient` is provided).
 
-If the heuristic stage rejects, the LLM stage is skipped — no wasted LLM calls on transcriptions already flagged by cheap checks.
+If the heuristic stage rejects — including an early rejection from `content_length_floor` — the LLM stage is skipped, so there are no wasted LLM calls on transcriptions already flagged by cheap checks.
 
 ### Programmatic Usage
 

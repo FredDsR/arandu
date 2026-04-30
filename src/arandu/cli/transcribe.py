@@ -570,12 +570,25 @@ def judge_transcription(
         ),
     ] = None,
     validator_temperature: Annotated[
-        float,
+        float | None,
         typer.Option(
             "--validator-temperature",
-            help="Sampling temperature for LLM criteria (default: 0.3).",
+            help=(
+                "Sampling temperature for LLM criteria. Falls back to "
+                "ARANDU_JUDGE_TEMPERATURE (default 0.3) when not set."
+            ),
         ),
-    ] = 0.3,
+    ] = None,
+    validator_max_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--validator-max-tokens",
+            help=(
+                "Max tokens for LLM criterion responses. Falls back to "
+                "ARANDU_JUDGE_MAX_TOKENS (default 2048) when not set."
+            ),
+        ),
+    ] = None,
     rejudge: Annotated[
         bool,
         typer.Option(
@@ -653,10 +666,17 @@ def judge_transcription(
     mode_label = "rejudge" if rejudge else "resume"
     print_info(f"Found {len(json_files)} transcription files (mode: {mode_label})")
 
+    resolved_temperature = (
+        validator_temperature if validator_temperature is not None else judge_config.temperature
+    )
+    resolved_max_tokens = (
+        validator_max_tokens if validator_max_tokens is not None else judge_config.max_tokens
+    )
     judge = TranscriptionJudge(
         language=language,
         validator_client=validator_client,
-        temperature=validator_temperature,
+        temperature=resolved_temperature,
+        max_tokens=resolved_max_tokens,
     )
 
     passed_count = 0

@@ -58,8 +58,15 @@ def build_validator_client(
     llm_config = get_llm_config()
     resolved_base_url = base_url or llm_config.base_url
     resolved_provider = provider or ("custom" if resolved_base_url else "ollama")
+    try:
+        provider_enum = LLMProvider(resolved_provider.lower())
+    except ValueError as exc:
+        valid = sorted(p.value for p in LLMProvider)
+        raise ValueError(
+            f"Invalid LLM provider: {resolved_provider!r}. Must be one of {valid}."
+        ) from exc
     return LLMClient(
-        provider=LLMProvider(resolved_provider),
+        provider=provider_enum,
         model_id=model_id,
         base_url=resolved_base_url,
     )
