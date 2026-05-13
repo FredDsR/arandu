@@ -45,9 +45,6 @@ def chunk(
             ),
         ),
     ] = None,
-    language: Annotated[
-        str, typer.Option("--language", "-l", help="Language hint (ISO 639-1).")
-    ] = "pt",
 ) -> None:
     """Build ChunkSets across one or more chunker views.
 
@@ -69,9 +66,7 @@ def chunk(
         print_warning(f"No JSON files found in {input_dir}")
         return
 
-    print_info(
-        f"Chunking {len(json_files)} record(s) into views: {selected_views}; language={language}"
-    )
+    print_info(f"Chunking {len(json_files)} record(s) into views: {selected_views}")
 
     chunkers = {view_id: get_chunker(view_id) for view_id in selected_views}
 

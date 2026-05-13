@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 # Default chunker view used for CEP generation; matches `cep_4k` in the shared registry.
 CEP_CHUNKER_ID = "cep_4k"
-MAX_CONTEXT_LENGTH = 4000
 
 
 class CEPQAGenerator:

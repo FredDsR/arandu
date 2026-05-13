@@ -169,7 +169,7 @@ class TestCEPQAGenerator:
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test chunking of text shorter than MAX_CONTEXT_LENGTH."""
+        """Test that text shorter than the cep_4k chunk size is emitted as a single chunk."""
         generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
@@ -195,8 +195,7 @@ class TestCEPQAGenerator:
             cep_config=cep_config,
         )
 
-        # Create text longer than MAX_CONTEXT_LENGTH (4000 chars)
-        # by repeating a sentence many times
+        # Create text longer than the cep_4k chunk size (4000 chars) by repeating a sentence.
         sentence = "This is a test sentence that will be repeated many times. "
         long_text = sentence * 100  # ~5800 chars
 
