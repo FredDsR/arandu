@@ -1,710 +1,169 @@
 ---
 title: CLI Reference
-description: Complete reference for all Arandu command-line interface commands.
+description: Command reference for the Arandu CLI.
 ---
 
-Complete reference for all command-line interface commands in Arandu.
+## Command groups
 
-## Table of Contents
+- Transcription: `transcribe`, `drive-transcribe`, `batch-transcribe`
+- Judging: `judge-transcription`, `judge-qa`
+- QA/CEP generation: `generate-cep-qa`
+- Knowledge graph: `build-kg`
+- Run management: `replicate`, `refresh-auth`, `list-runs`, `run-info`, `rebuild-index`, `enrich-metadata`, `info`
+- Reporting: `report`, `serve-report`
 
-1. [Command Overview](#command-overview)
-2. [Transcription Commands](#transcription-commands)
-3. [QA Generation Commands](#qa-generation-commands)
-4. [Utilities Commands](#utilities-commands)
-5. [Usage Examples](#usage-examples)
-6. [Common Patterns](#common-patterns)
+Global flags:
 
----
+- `--help`
+- `--version`
 
-## Command Overview
+## Transcription commands
 
-The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides rich terminal output using [Rich](https://rich.readthedocs.io/).
+### `arandu transcribe FILE_PATH`
 
-**Base Command**: `arandu`
+Transcribe one local media file.
 
-**Command Categories**:
-- **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
-- **Judging**: `judge-transcription`, `judge-qa`
-- **QA Generation**: `generate-cep-qa`
-- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `rebuild-index`
+Key options: `--model-id/-m`, `--output/-o`, `--quantize/-q`, `--cpu`, `--language/-l`.
 
-**Global Options**:
-- `--help` - Show command help
-- `--version` - Show application version
+### `arandu drive-transcribe FILE_ID`
 
----
+Transcribe one Google Drive file and upload the result.
 
-## Transcription Commands
+Key options: `--model-id/-m`, `--credentials/-c`, `--token/-t`, `--quantize/-q`, `--cpu`,
+`--language/-l`.
 
-### `transcribe`
+### `arandu batch-transcribe CATALOG_FILE`
 
-Transcribe a local audio or video file.
+Batch transcription from a catalog CSV.
 
-**Usage**:
-```bash
-arandu transcribe FILE_PATH [OPTIONS]
-```
+Key options: `--output-dir/-o`, `--model-id/-m`, `--credentials/-c`, `--token/-t`,
+`--workers/-w`, `--checkpoint`, `--quantize/-q`, `--cpu`, `--language/-l`, `--id`.
 
-**Arguments**:
-- `FILE_PATH` - Path to the audio/video file to transcribe
+## Judging commands
 
-**Options**:
+Judging runs as a separate step after generation/transcription.
 
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--model-id` | `-m` | str | `openai/whisper-large-v3` | Hugging Face model ID for transcription |
-| `--output` | `-o` | Path | Auto-generated | Output file path for transcription JSON |
-| `--quantize` | `-q` | flag | `False` | Enable 8-bit quantization to reduce VRAM usage |
-| `--cpu` | | flag | `False` | Force CPU execution (disables CUDA/MPS) |
-| `--language` | `-l` | str | Auto-detect | Language code (e.g., 'pt' for Portuguese) |
+### `arandu judge-transcription INPUT_DIR`
 
-**Examples**:
-```bash
-# Basic transcription
-arandu transcribe audio.mp3
+Writes per-record verdicts to each `*_transcription.json` under `validation`
+(`JudgePipelineResult`), and `is_valid` is derived from `validation.passed`.
 
-# With custom model
-arandu transcribe audio.mp3 --model-id openai/whisper-large-v3
-
-# With quantization (reduced VRAM)
-arandu transcribe audio.mp3 --quantize
-
-# Force CPU execution
-arandu transcribe audio.mp3 --cpu
-
-# Specify language
-arandu transcribe audio.mp3 --language pt
-
-# Custom output location
-arandu transcribe audio.mp3 -o results/transcription.json
-```
-
----
-
-### `drive-transcribe`
-
-Transcribe a file from Google Drive. Downloads the file, transcribes it, and uploads the result to the same Drive folder.
-
-**Usage**:
-```bash
-arandu drive-transcribe FILE_ID [OPTIONS]
-```
-
-**Arguments**:
-- `FILE_ID` - Google Drive file ID to transcribe
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--model-id` | `-m` | str | `openai/whisper-large-v3` | Hugging Face model ID |
-| `--credentials` | `-c` | Path | `credentials.json` | Path to Google OAuth2 credentials file |
-| `--token` | `-t` | Path | `token.json` | Path to Google OAuth2 token file |
-| `--quantize` | `-q` | flag | `False` | Enable 8-bit quantization |
-| `--cpu` | | flag | `False` | Force CPU execution |
-| `--language` | `-l` | str | Auto-detect | Language code |
-
-**Examples**:
-```bash
-# Basic usage
-arandu drive-transcribe 1abc123xyz --credentials credentials.json
-
-# With custom model and quantization
-arandu drive-transcribe 1abc123xyz --model-id openai/whisper-large-v3 --quantize
-```
-
----
-
-### `batch-transcribe`
-
-Batch transcribe audio/video files from a catalog CSV with parallel processing and automatic checkpoint/resume capability.
-
-**Usage**:
-```bash
-arandu batch-transcribe CATALOG_FILE [OPTIONS]
-```
-
-**Arguments**:
-- `CATALOG_FILE` - Path to catalog CSV file with Google Drive file metadata
-
-**Required CSV Columns**:
-- `file_id` - Google Drive file ID
-- `name` - File name
-- `mime_type` - MIME type
-- `size_bytes` - File size in bytes
-- `parents` - Parent folder IDs
-- `web_content_link` - Download link
-- `duration_milliseconds` (optional) - Media duration
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | `./results` | Output directory for transcription JSON files |
-| `--model-id` | `-m` | str | `openai/whisper-large-v3` | Hugging Face model ID |
-| `--credentials` | `-c` | Path | `credentials.json` | Path to Google OAuth2 credentials file |
-| `--token` | `-t` | Path | `token.json` | Path to Google OAuth2 token file |
-| `--workers` | `-w` | int | `1` | Number of parallel workers |
-| `--checkpoint` | | Path | `results/checkpoint.json` | Path to checkpoint file |
-| `--quantize` | `-q` | flag | `False` | Enable 8-bit quantization |
-| `--cpu` | | flag | `False` | Force CPU execution |
-| `--language` | `-l` | str | Auto-detect | Language code |
-| `--id` | | str | Auto-generated | Pipeline ID for grouping related steps |
-
-**Examples**:
-```bash
-# Basic batch transcription
-arandu batch-transcribe input/catalog.csv --workers 4
-
-# With custom output directory
-arandu batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
-
-# With quantization and custom model
-arandu batch-transcribe input/catalog.csv \
-    --model-id openai/whisper-large-v3 \
-    --quantize \
-    --workers 4
-
-# Resume interrupted job (uses checkpoint automatically)
-arandu batch-transcribe input/catalog.csv --workers 4
-
-# With custom pipeline ID
-arandu batch-transcribe input/catalog.csv --id my-project-001
-```
-
----
-
-## Judging Commands
-
-The judge layer scores artifacts (transcriptions, QA pairs) with a composable two-stage pipeline: cheap heuristics first, optional LLM criteria second. The LLM stage is skipped automatically when the heuristic stage rejects.
-
-### `judge-transcription`
-
-Judge transcription quality with heuristic and (optional) LLM criteria. Verdicts are written back into each `*_transcription.json` record under the `validation` field.
-
-**Usage**:
-```bash
-arandu judge-transcription INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing `*_transcription.json` files
-
-**Options**:
+Options:
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--language` | str | `pt` | Expected transcription language (`pt` or `en`) |
-| `--validator-model` | str \| None | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for the LLM filter stage. Omit (and leave the env var unset) to run heuristic-only |
-| `--validator-provider` | str | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`). `custom` requires `--validator-base-url` or `ARANDU_LLM_BASE_URL` |
-| `--validator-base-url` | str | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` | Base URL for the validator provider |
-| `--validator-temperature` | float | from `ARANDU_JUDGE_TEMPERATURE` (0.3) | Sampling temperature for LLM criteria |
-| `--validator-max-tokens` | int | from `ARANDU_JUDGE_MAX_TOKENS` (2048) | Max tokens for LLM criterion responses |
-| `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every record from scratch; `--resume` (default) skips records already carrying a `validation` payload |
+|---|---|---|---|
+| `--language/-l` | `str` | `pt` | Expected language for judging |
+| `--validator-model` | `str \| None` | `ARANDU_JUDGE_VALIDATOR_MODEL` | Enables LLM criteria when set |
+| `--validator-provider` | `str \| None` | inferred | Provider (`openai`, `ollama`, `custom`) |
+| `--validator-base-url` | `str \| None` | from env | Base URL for custom/OpenAI-compatible endpoints |
+| `--validator-temperature` | `float \| None` | `ARANDU_JUDGE_TEMPERATURE` | LLM sampling temperature |
+| `--validator-max-tokens` | `int \| None` | `ARANDU_JUDGE_MAX_TOKENS` | Max response tokens |
+| `--rejudge/--resume` | flag | `--resume` | Re-run all records or skip already judged ones |
 
-**Heuristic stage**: `content_length_floor` (runs first, can short-circuit) → `script_match` → `repetition` → `content_density` → `segment_quality`.
+Examples:
 
-**LLM stage**: `language_drift` + `hallucination_loop`. Skipped when no validator model is configured.
-
-**Examples**:
 ```bash
-# Heuristic-only (no LLM model needed) — fastest, runs entirely on CPU.
+# Heuristic-only
 arandu judge-transcription results/
 
-# Heuristics + LLM via Ollama
+# Heuristics + LLM criteria
 arandu judge-transcription results/ --validator-model qwen3:14b
 
-# Heuristics + LLM via an OpenAI-compatible custom endpoint
-ARANDU_LLM_BASE_URL=https://my-llm.example.com/v1 \
-arandu judge-transcription results/ --validator-model openai/gpt-4.1-mini
-
-# Force a fresh pass over every record (default is resume)
+# Force fresh run
 arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
 ```
 
-### `judge-qa`
+### `arandu judge-qa INPUT_DIR`
 
-Judge QA pair quality (faithfulness, Bloom calibration, informativeness, self-containedness). Verdicts are persisted onto each QA pair.
+Judges CEP QA pairs and persists verdicts on each pair in `validation`
+(`JudgePipelineResult`).
 
-**Usage**:
-```bash
-arandu judge-qa INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing CEP QA pair JSON files
-
-**Options**:
+Options:
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--model` / `-m` | str \| None | from `ARANDU_JUDGE_VALIDATOR_MODEL` | Model ID for judge evaluation. Required (CLI flag or env var) |
-| `--provider` | str \| None | from `ARANDU_JUDGE_VALIDATOR_PROVIDER` | LLM provider (`openai`, `ollama`, `custom`). Inferred from `ARANDU_LLM_BASE_URL` when unset (`custom` if set, else `ollama`) |
-| `--base-url` | str \| None | from `ARANDU_JUDGE_VALIDATOR_BASE_URL` / `ARANDU_LLM_BASE_URL` | Custom base URL for OpenAI-compatible endpoints (required for `--provider custom`) |
-| `--language` / `-l` | str | `pt` | Expected QA language (`pt` or `en`) |
-| `--files` | int \| None | (all) | Maximum number of QA files to sample |
-| `--pairs` | int \| None | (all) | Maximum QA pairs to judge per file |
-| `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates every pair from scratch; `--resume` (default) skips pairs already carrying a `validation` payload |
+|---|---|---|---|
+| `--model/-m` | `str \| None` | `ARANDU_JUDGE_VALIDATOR_MODEL` | Judge model (required via flag/env) |
+| `--provider` | `str \| None` | inferred | Provider (`openai`, `ollama`, `custom`) |
+| `--base-url` | `str \| None` | env fallback | Custom/OpenAI-compatible URL |
+| `--language/-l` | `str` | `pt` | Prompt language |
+| `--files` | `int \| None` | all | Max QA files to sample |
+| `--pairs` | `int \| None` | all | Max pairs per file |
+| `--rejudge/--resume` | flag | `--resume` | Re-run all sampled pairs or skip judged pairs |
 
-**Examples**:
+Examples:
+
 ```bash
-# Use ARANDU_JUDGE_VALIDATOR_* env vars from .env
 arandu judge-qa cep_dataset/
-
-# Explicit Ollama
 arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
-
-# OpenAI-compatible custom endpoint (Gemini)
-arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \
-    --base-url https://generativelanguage.googleapis.com/v1beta/openai/
-
-# Sample-bounded run
 arandu judge-qa cep_dataset/ --files 2 --pairs 3
 ```
 
----
+## QA / CEP generation
 
-## QA Generation Commands
+### `arandu generate-cep-qa INPUT_DIR`
 
-### `generate-cep-qa`
+Generates CEP QA pairs from transcription outputs.
 
-Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with Bloom-level scaffolding and LLM-as-a-Judge validation.
+Key options: `--output-dir/-o`, `--provider`, `--model-id/-m`, `--workers/-w`,
+`--questions`, `--temperature`, `--ollama-url`, `--base-url`, `--language/-l`,
+`--bloom-dist`, `--jsonl/--no-jsonl`, `--id`.
 
-**Usage**:
-```bash
-arandu generate-cep-qa INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing transcription JSON files
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | `qa_dataset` | Output directory for CEP QA dataset JSON files |
-| `--provider` | | str | `ollama` | LLM provider: openai, ollama, custom |
-| `--model-id` | `-m` | str | `qwen3:14b` | Model ID for QA generation |
-| `--workers` | `-w` | int | `2` | Number of parallel workers |
-| `--questions` | | int | `10` | Number of QA pairs per document (1-50) |
-| `--temperature` | | float | `0.7` | LLM temperature for generation (0.0-2.0) |
-| `--ollama-url` | | str | `http://localhost:11434/v1` | Ollama API base URL |
-| `--base-url` | | str | `None` | Custom base URL for OpenAI-compatible endpoints |
-| `--language` | `-l` | str | `pt` | Language for prompts: 'pt' or 'en' |
-| `--validate/--no-validate` | | flag | `True` | Enable LLM-as-a-Judge validation |
-| `--validator-model` | | str | `qwen3:14b` | Model ID for validation |
-| `--bloom-dist` | | str | `None` | Bloom level distribution (e.g., 'remember:0.2,understand:0.3') |
-| `--jsonl/--no-jsonl` | | flag | `False` | Export QA pairs to JSONL format for training |
-| `--id` | | str | Auto-resolved | Pipeline ID (auto-resolves transcription outputs) |
-
-**Examples**:
-```bash
-# Basic usage with Ollama
-arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
-
-# With custom Bloom distribution
-arandu generate-cep-qa results/ \
-    --bloom-dist "remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2" \
-    --questions 15
-
-# With OpenAI
-arandu generate-cep-qa results/ \
-    --provider openai \
-    --model-id gpt-4o-mini \
-    --workers 2
-
-# Without validation (faster)
-arandu generate-cep-qa results/ \
-    --no-validate \
-    --workers 4
-
-# With custom validator model
-arandu generate-cep-qa results/ \
-    --validator-model qwen3:14b \
-    --questions 12
-
-# Export to JSONL for KGQA training
-arandu generate-cep-qa results/ \
-    --jsonl \
-    --questions 20
-
-# English prompts
-arandu generate-cep-qa results/ \
-    --language en \
-    --questions 10
-
-# With pipeline ID
-arandu generate-cep-qa results/ --id my-project-001
-```
-
-**Output Structure**:
-```
-qa_dataset/
-├── cep_qa_1abc123xyz.json
-├── cep_qa_2def456uvw.json
-└── cep_qa_checkpoint.json
-```
-
----
-
-## Utilities Commands
-
-### `refresh-auth`
-
-Fully refresh Google OAuth2 authentication token. Deletes existing token and initiates fresh OAuth2 authorization flow.
-
-**Usage**:
-```bash
-arandu refresh-auth [OPTIONS]
-```
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--credentials` | `-c` | Path | `credentials.json` | Path to Google OAuth2 credentials file |
-| `--token` | `-t` | Path | `token.json` | Path to token file to refresh |
-
-**Example**:
-```bash
-arandu refresh-auth --credentials credentials.json --token token.json
-```
-
----
-
-### `info`
-
-Display system information and hardware capabilities.
-
-**Usage**:
-```bash
-arandu info
-```
-
-**Output**:
-- Application version
-- Device type (CPU/CUDA/MPS)
-- CUDA/MPS availability
-- PyTorch version and configuration
-- GPU memory information (if available)
-
-**Example**:
-```bash
-arandu info
-```
-
----
-
-### `list-runs`
-
-List all pipeline runs with status and metadata.
-
-**Usage**:
-```bash
-arandu list-runs [OPTIONS]
-```
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--pipeline` | `-p` | str | All pipelines | Filter by pipeline type: transcription, qa, cep, kg, evaluation |
-| `--results-dir` | `-r` | Path | `./results` | Base results directory |
-
-**Examples**:
-```bash
-# List all runs
-arandu list-runs
-
-# Filter by pipeline type
-arandu list-runs --pipeline transcription
-
-# Custom results directory
-arandu list-runs --results-dir /path/to/results
-```
-
----
-
-### `run-info`
-
-Display detailed information about a specific run including execution environment, hardware info, configuration, and processing statistics.
-
-**Usage**:
-```bash
-arandu run-info RUN_ID [OPTIONS]
-```
-
-**Arguments**:
-- `RUN_ID` - Run ID to display, or "latest" for the most recent run
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--pipeline` | `-p` | str | `transcription` | Pipeline type (required when using "latest") |
-| `--results-dir` | `-r` | Path | `./results` | Base results directory |
-
-**Examples**:
-```bash
-# Display specific run
-arandu run-info transcription_20260211_143022
-
-# Display latest transcription run
-arandu run-info latest --pipeline transcription
-
-# Display latest CEP run
-arandu run-info latest --pipeline cep
-```
-
----
-
-### `rebuild-index`
-
-Rebuild index.json from existing run directories by scanning all pipeline ID directories for run_metadata.json files.
-
-**Usage**:
-```bash
-arandu rebuild-index [OPTIONS]
-```
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--results-dir` | `-r` | Path | `./results` | Base results directory |
-
-**Example**:
-```bash
-arandu rebuild-index --results-dir /path/to/results
-```
-
----
-
-## Usage Examples
-
-### End-to-End Pipeline
-
-Complete pipeline from transcription to CEP QA generation:
+Example:
 
 ```bash
-# Step 1: Batch transcribe files
-arandu batch-transcribe input/catalog.csv \
-    --workers 4 \
-    --quantize \
-    --id etno-001
-
-# Step 2: Judge transcription quality
-arandu judge-transcription results/
-
-# Step 3: Generate CEP QA pairs
-arandu generate-cep-qa results/ \
-    --workers 4 \
-    --questions 12 \
-    --language pt \
-    --id etno-001
-
-# Step 4: List all runs
-arandu list-runs
-
-# Step 5: View run details
-arandu run-info latest --pipeline cep
+arandu generate-cep-qa results/ --output-dir cep_dataset/ --questions 12
 ```
 
-### Resume Interrupted Job
-
-All batch commands support automatic checkpointing:
+Then run QA judging:
 
 ```bash
-# Start batch transcription
-arandu batch-transcribe input/catalog.csv --workers 4
-
-# If interrupted, resume automatically
-arandu batch-transcribe input/catalog.csv --workers 4
-# Will skip already processed files
-
-# CEP generation also supports resume
-arandu generate-cep-qa results/ --workers 4
+arandu judge-qa cep_dataset/
 ```
 
-### Custom LLM Configuration
+## Knowledge graph
 
-Use different LLM providers and models:
+### `arandu build-kg INPUT_DIR`
+
+Builds graph artifacts from transcription outputs.
+
+Key options: `--output-dir/-o`, `--provider`, `--model-id/-m`, `--backend`, `--language/-l`,
+`--temperature`, `--ollama-url`, `--base-url`, `--backend-option`, `--no-concepts`, `--id`.
+
+## Run management and reporting
+
+### Authentication and metadata
+
+- `arandu refresh-auth [--credentials/-c] [--token/-t]`
+- `arandu enrich-metadata INPUT_DIR OUTPUT_DIR [--pipeline-id/--id]`
+
+### Run indexing and inspection
+
+- `arandu info`
+- `arandu list-runs [--pipeline/-p] [--results-dir/-r]`
+- `arandu run-info RUN_ID [--pipeline/-p] [--results-dir/-r]`
+- `arandu rebuild-index [--results-dir/-r]`
+- `arandu replicate SOURCE_PIPELINE_ID [--id] [--results-dir]`
+
+### Reports
+
+- `arandu report [--run-id/--id] [--output/-o] [--no-png] [--results-dir]`
+- `arandu serve-report RESULTS_DIR [--port/-p] [--host] [--no-browser]`
+
+## Common workflow
 
 ```bash
-# With Ollama (default)
-arandu generate-cep-qa results/ \
-    --provider ollama \
-    --model-id qwen3:14b \
-    --workers 4
+# 1) Transcribe
+arandu batch-transcribe input/catalog.csv --workers 4 --id project-001
 
-# With OpenAI
-export OPENAI_API_KEY=sk-...
-arandu generate-cep-qa results/ \
-    --provider openai \
-    --model-id gpt-4o-mini \
-    --workers 2
+# 2) Judge transcriptions
+arandu judge-transcription results/ --validator-model qwen3:14b
 
-# With custom OpenAI-compatible endpoint
-arandu generate-cep-qa results/ \
-    --provider custom \
-    --base-url https://my-vllm-server/v1 \
-    --model-id llama3.1:70b
+# 3) Generate CEP QA
+arandu generate-cep-qa results/ --id project-001
+
+# 4) Judge QA
+arandu judge-qa qa_dataset/ --model qwen3:14b
+
+# 5) Build KG
+arandu build-kg results/ --id project-001
 ```
-
----
-
-## Common Patterns
-
-### Configuration Override
-
-Command-line arguments override environment variables:
-
-```bash
-# Config says ollama, but we override to openai
-export ARANDU_QA_PROVIDER=ollama
-arandu generate-cep-qa results/ --provider openai
-```
-
-### Environment Variables
-
-Set defaults via environment instead of CLI:
-
-```bash
-# Transcription settings
-export ARANDU_MODEL_ID=openai/whisper-large-v3
-export ARANDU_WORKERS=4
-export ARANDU_QUANTIZE=true
-
-# QA settings
-export ARANDU_QA_PROVIDER=ollama
-export ARANDU_QA_MODEL_ID=qwen3:14b
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
-
-# CEP settings
-export ARANDU_CEP_ENABLE_VALIDATION=true
-export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
-
-# Now run with defaults
-arandu batch-transcribe input/catalog.csv
-arandu generate-cep-qa results/
-```
-
-### Pipeline ID Tracking
-
-Use consistent pipeline IDs across related steps:
-
-```bash
-# All steps use same pipeline ID
-PIPELINE_ID="etno-project-001"
-
-arandu batch-transcribe input/catalog.csv --id $PIPELINE_ID
-arandu judge-transcription results/
-arandu generate-cep-qa results/ --id $PIPELINE_ID
-
-# View all runs for this pipeline
-arandu list-runs
-arandu run-info $PIPELINE_ID
-```
-
----
-
-## Error Handling
-
-### Common Errors
-
-**LLM Provider Not Available**:
-```bash
-Error: Ollama server not reachable at http://localhost:11434
-Solution: Start Ollama with 'ollama serve'
-```
-
-**API Key Missing**:
-```bash
-Error: OPENAI_API_KEY environment variable not set
-Solution: export OPENAI_API_KEY=sk-...
-```
-
-**Input Directory Empty**:
-```bash
-Error: No transcription files found in results/
-Solution: Check directory path and ensure files have .json extension
-```
-
-**Checkpoint Corruption**:
-```bash
-Error: Checkpoint file corrupted
-Solution: Delete checkpoint.json and restart the command
-```
-
----
-
-## Tips and Best Practices
-
-### 1. Start Small
-
-Test on sample data before processing full corpus:
-
-```bash
-# Test on 5 files first
-mkdir samples && ls results/*.json | head -5 | xargs -I {} cp {} samples/
-arandu generate-cep-qa samples/ -o qa_test/
-```
-
-### 2. Use Checkpoints
-
-Checkpoints enable automatic resume:
-
-```bash
-# Runs create checkpoints automatically
-arandu batch-transcribe input/catalog.csv --workers 4
-# Creates: results/checkpoint.json
-
-# Resume automatically if interrupted
-arandu batch-transcribe input/catalog.csv --workers 4
-# Skips already processed files
-```
-
-### 3. Monitor Progress
-
-Use pipeline tracking commands:
-
-```bash
-# List all runs
-arandu list-runs
-
-# View latest run details
-arandu run-info latest --pipeline transcription
-
-# Check run statistics
-arandu run-info latest --pipeline cep
-```
-
-### 4. Optimize Workers
-
-Adjust workers based on available resources:
-
-```bash
-# CPU-bound tasks: Use available cores
-arandu generate-cep-qa results/ --workers $(nproc)
-
-# Memory-constrained: Reduce workers
-arandu batch-transcribe catalog.csv --workers 2
-```
-
-### 5. Judge Quality
-
-Always judge transcriptions before downstream tasks:
-
-```bash
-# Judge first
-arandu judge-transcription results/
-
-# Then generate QA
-arandu generate-cep-qa results/ --workers 4
-```
-
----
-
-**Document Version**: 2.0  
-**Last Updated**: 2026-02-11  
-**Status**: Aligned with codebase v0.1.0
