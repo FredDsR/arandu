@@ -217,7 +217,7 @@ class TestCEPQAGenerator:
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test chunking with a single sentence longer than MAX_CONTEXT_LENGTH."""
+        """A single oversize sentence is split into ≤4000-char chunks, not truncated."""
         generator = CEPQAGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
@@ -229,9 +229,13 @@ class TestCEPQAGenerator:
 
         chunks = generator._chunk_text(very_long_sentence)
 
-        # Should be truncated to MAX_CONTEXT_LENGTH
-        assert len(chunks) == 1
-        assert len(chunks[0]) == 4000
+        # New chunker (chonkie cep_4k view) preserves the tail instead of truncating.
+        # Every chunk must be within the 4000-char limit.
+        assert len(chunks) >= 1
+        for chunk in chunks:
+            assert len(chunk) <= 4000
+        # No data loss — combined chunks cover the original text length.
+        assert sum(len(c) for c in chunks) == len(very_long_sentence)
 
     def test_chunk_text_with_sentence_boundaries(
         self,
@@ -262,6 +266,28 @@ class TestCEPQAGenerator:
             if chunk:
                 # Chunks should be reasonable length
                 assert len(chunk) <= 4000
+
+    def test_generated_pairs_carry_chunk_id_and_record_carries_chunker_id(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        sample_transcription: EnrichedRecord,
+    ) -> None:
+        """Generated QA pairs inherit the source chunk_id; record records chunker_id."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        result = generator.generate_qa_pairs(sample_transcription)
+
+        assert result.chunker_id == "cep_4k"
+        assert len(result.qa_pairs) > 0
+        for pair in result.qa_pairs:
+            assert pair.chunk_id is not None
+            assert len(pair.chunk_id) == 16  # sha1[:16]
 
     def test_to_jsonl_format(
         self,

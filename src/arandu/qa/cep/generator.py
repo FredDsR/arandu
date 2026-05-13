@@ -8,22 +8,24 @@ Coordinates the CEP pipeline modules:
 from __future__ import annotations
 
 import logging
-import re
 from collections import Counter
 from typing import TYPE_CHECKING
 
 from arandu.qa.cep.bloom_scaffolding import BloomScaffoldingGenerator
 from arandu.qa.cep.reasoning import ReasoningEnricher
 from arandu.qa.schemas import QAPairCEP, QARecordCEP
+from arandu.shared.chunking.registry import get_chunker
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, QAConfig
+    from arandu.shared.chunking.schemas import Chunk
     from arandu.shared.llm_client import LLMClient
     from arandu.shared.schemas import EnrichedRecord
 
 logger = logging.getLogger(__name__)
 
-# Context window size for chunking
+# Default chunker view used for CEP generation; matches `cep_4k` in the shared registry.
+CEP_CHUNKER_ID = "cep_4k"
 MAX_CONTEXT_LENGTH = 4000
 
 
@@ -80,20 +82,35 @@ class CEPQAGenerator:
 
         logger.info(f"Generating CEP QA pairs for {transcription.file_id} ({len(text)} chars)")
 
-        # Chunk text if too long
-        contexts = self._chunk_text(text)
-        logger.debug(f"Split into {len(contexts)} context chunks")
+        chunks = self._chunk_with_offsets(text, transcription.file_id)
+        logger.debug(f"Split into {len(chunks)} context chunks")
 
-        # Calculate questions per chunk
-        questions_per_chunk = max(1, self.qa_config.questions_per_document // len(contexts))
+        if not chunks:
+            return QARecordCEP(
+                source_file_id=transcription.file_id,
+                source_filename=transcription.name,
+                source_metadata=transcription.source_metadata,
+                transcription_text=text,
+                qa_pairs=[],
+                chunker_id=CEP_CHUNKER_ID,
+                model_id=self.llm_client.model_id,
+                provider=self.llm_client.provider.value,  # type: ignore[arg-type]
+                language=self.cep_config.language,
+                total_pairs=0,
+                bloom_distribution={},
+            )
+
+        questions_per_chunk = max(1, self.qa_config.questions_per_document // len(chunks))
 
         all_pairs: list[QAPairCEP] = []
 
-        for i, context in enumerate(contexts):
+        for i, chunk in enumerate(chunks):
+            context = text[chunk.start_char : chunk.end_char]
+
             num_questions = questions_per_chunk
             if i == 0:
                 # First chunk gets remainder
-                num_questions += self.qa_config.questions_per_document % len(contexts)
+                num_questions += self.qa_config.questions_per_document % len(chunks)
 
             # Module I: Bloom Scaffolding Generation
             pairs = self._bloom_generator.generate(
@@ -107,6 +124,10 @@ class CEPQAGenerator:
             if self.cep_config.enable_reasoning_traces:
                 pairs = self._reasoning_enricher.enrich_batch(pairs, context)
                 logger.debug(f"Chunk {i + 1}: Enriched with reasoning traces")
+
+            # Stamp provenance: every pair generated from this chunk inherits its chunk_id.
+            for pair in pairs:
+                pair.chunk_id = chunk.chunk_id
 
             all_pairs.extend(pairs)
 
@@ -124,6 +145,7 @@ class CEPQAGenerator:
             source_metadata=transcription.source_metadata,
             transcription_text=text,
             qa_pairs=all_pairs,
+            chunker_id=CEP_CHUNKER_ID,
             model_id=self.llm_client.model_id,
             provider=self.llm_client.provider.value,  # type: ignore[arg-type]
             language=self.cep_config.language,
@@ -131,45 +153,33 @@ class CEPQAGenerator:
             bloom_distribution=bloom_dist,
         )
 
+    def _chunk_with_offsets(self, text: str, source_file_id: str) -> list[Chunk]:
+        """Slice ``text`` via the shared ``cep_4k`` chunker.
+
+        Args:
+            text: Full transcription text.
+            source_file_id: ID of the source ``EnrichedRecord`` (stamped on every Chunk).
+
+        Returns:
+            Offsets-only chunks covering the input text.
+        """
+        chunker = get_chunker(CEP_CHUNKER_ID)
+        return chunker.chunk(text, source_file_id=source_file_id)
+
     def _chunk_text(self, text: str) -> list[str]:
-        """Chunk text into manageable contexts.
+        """Return the resolved text of each chunk produced by the ``cep_4k`` chunker.
+
+        Kept as a thin compatibility wrapper around :meth:`_chunk_with_offsets`. New
+        callers should prefer the offsets-aware variant so they can stamp
+        ``chunk_id`` on generated artefacts.
 
         Args:
             text: Full transcription text.
 
         Returns:
-            List of text chunks.
+            List of text chunks (substrings of ``text``).
         """
-        if len(text) <= MAX_CONTEXT_LENGTH:
-            return [text]
-
-        # Split on sentence boundaries
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-
-        chunks: list[str] = []
-        current_chunk: list[str] = []
-        current_length = 0
-
-        for sentence in sentences:
-            sentence_length = len(sentence)
-
-            if current_length + sentence_length > MAX_CONTEXT_LENGTH:
-                if current_chunk:
-                    chunks.append(" ".join(current_chunk))
-                    current_chunk = []
-                    current_length = 0
-
-                if sentence_length > MAX_CONTEXT_LENGTH:
-                    chunks.append(sentence[:MAX_CONTEXT_LENGTH])
-                    continue
-
-            current_chunk.append(sentence)
-            current_length += sentence_length + 1
-
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
-
-        return chunks
+        return [text[c.start_char : c.end_char] for c in self._chunk_with_offsets(text, "inline")]
 
     def _calculate_bloom_distribution(
         self,

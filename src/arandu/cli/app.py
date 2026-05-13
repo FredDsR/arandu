@@ -48,6 +48,7 @@ def main(
 
 
 # Register commands from submodules
+from arandu.cli.chunking import chunk  # noqa: E402
 from arandu.cli.kg import build_kg  # noqa: E402
 from arandu.cli.manage import (  # noqa: E402
     enrich_metadata,
@@ -67,6 +68,7 @@ from arandu.cli.transcribe import (  # noqa: E402
     transcribe,
 )
 
+app.command()(chunk)
 app.command()(transcribe)
 app.command()(drive_transcribe)
 app.command()(batch_transcribe)

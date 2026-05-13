@@ -92,6 +92,10 @@ class QAPairCEP(QAPair, JudgeResultMixin):
     generation_thinking: str | None = Field(
         None, description="Model thinking/reasoning trace for this specific QA pair"
     )
+    chunk_id: str | None = Field(
+        default=None,
+        description="Reference into the source ChunkSet for the chunker view used at generation",
+    )
 
     @model_validator(mode="after")
     def validate_multi_hop(self) -> Self:
@@ -121,6 +125,10 @@ class QARecordCEP(BaseModel):
     )
     transcription_text: str = Field(..., description="Full transcription text")
     qa_pairs: list[QAPairCEP] = Field(..., description="List of CEP-enhanced QA pairs")
+    chunker_id: str = Field(
+        default="cep_4k",
+        description="Identifier of the chunker view used to slice transcription_text",
+    )
     model_id: str = Field(..., description="LLM model used for generation")
     validator_model_id: str | None = Field(
         None, description="LLM model used for validation (if enabled)"
