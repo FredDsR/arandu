@@ -25,9 +25,10 @@ It combines audio/video **transcription**, cognitively-scaffolded **QA generatio
 
 | Feature | Description |
 |---------|-------------|
-| 🎙️ **Transcription** | Whisper-based transcription with Google Drive integration, parallel workers, and automatic quality validation |
-| 🧠 **CEP QA Generation** | Bloom's Taxonomy-scaffolded QA pairs with LLM-as-a-Judge validation |
-| 🕸️ **KG Construction** | AutoSchemaKG-powered entity and relation extraction with GraphML export |
+| **Transcription** | Whisper-based transcription with Google Drive integration, parallel workers, and checkpoint-aware batch processing |
+| ⚖️ **Judging** | Separate `judge-transcription` and `judge-qa` commands with per-record `JudgePipelineResult` persistence |
+| 🧠 **CEP QA Generation** | Bloom's Taxonomy-scaffolded QA pairs with downstream judge integration |
+| 🕸️ **KG Construction** | AutoSchemaKG-powered entity/relation extraction with GraphML export |
 | ✅ **Evaluation** | Retrieval-strategy benchmarking using CEP QA pairs as ground truth |
 
 ## Quick Start
@@ -42,6 +43,9 @@ arandu transcribe audio.mp3
 
 # Generate QA pairs
 arandu generate-cep-qa results/
+
+# Judge QA output
+arandu judge-qa qa_dataset/
 ```
 
 See the [Getting Started guide](/arandu/getting-started/) for full setup instructions.
