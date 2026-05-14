@@ -14,6 +14,7 @@ and joined in cross-arm comparison without re-running the upstream stages.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, model_validator
@@ -67,6 +68,24 @@ class RetrievalRecord(BaseModel):
     passages: list[RetrievedPassage]
     elapsed_ms: float = Field(..., ge=0.0)
     is_answerable: bool
+
+    @model_validator(mode="after")
+    def _passages_within_top_k(self) -> Self:
+        """Enforce the documented invariant ``len(passages) <= top_k``."""
+        if len(self.passages) > self.top_k:
+            raise ValueError(
+                f"len(passages) ({len(self.passages)}) must be <= top_k ({self.top_k})"
+            )
+        return self
+
+    def save(self, path: str | Path) -> None:
+        """Serialize this record to ``path`` as JSON."""
+        Path(path).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> Self:
+        """Load a record from ``path``."""
+        return cls.model_validate_json(Path(path).read_text())
 
 
 class AnswerRecord(RetrievalRecord, JudgeResultMixin):

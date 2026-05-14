@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path  # noqa: TC003 — used as a parameter type at runtime
+
 import pytest
 from pydantic import ValidationError
 
@@ -99,6 +101,38 @@ class TestRetrievalRecord:
         loaded = RetrievalRecord.model_validate_json(dumped)
         assert [p.chunk_id for p in loaded.passages] == ["a" * 16, "b" * 16]
         assert [p.rank for p in loaded.passages] == [0, 1]
+
+    def test_rejects_passages_longer_than_top_k(self) -> None:
+        # Documented invariant: len(passages) <= top_k.
+        many = [_passage(chunk_id=f"c{i:015d}", rank=i) for i in range(5)]
+        with pytest.raises(ValidationError, match=r"top_k"):
+            _record(top_k=3, passages=many)
+
+    def test_accepts_passages_equal_to_top_k(self) -> None:
+        many = [_passage(chunk_id=f"c{i:015d}", rank=i) for i in range(3)]
+        r = _record(top_k=3, passages=many)
+        assert len(r.passages) == 3
+
+    def test_accepts_fewer_passages_than_top_k(self) -> None:
+        # Retriever may run out of candidates before reaching top_k.
+        r = _record(top_k=10, passages=[_passage()])
+        assert len(r.passages) == 1
+
+    def test_save_load_round_trip(self, tmp_path: Path) -> None:
+        path = tmp_path / "record.json"
+        r = _record(
+            passages=[
+                _passage(chunk_id="a" * 16, rank=0, score=2.5),
+                _passage(chunk_id="b" * 16, rank=1, score=1.5),
+            ],
+        )
+        r.save(path)
+        loaded = RetrievalRecord.load(path)
+        assert loaded.retriever_id == r.retriever_id
+        assert loaded.chunker_id == r.chunker_id
+        assert loaded.top_k == r.top_k
+        assert [p.chunk_id for p in loaded.passages] == ["a" * 16, "b" * 16]
+        assert [p.score for p in loaded.passages] == [2.5, 1.5]
 
 
 class TestAnswerRecord:
