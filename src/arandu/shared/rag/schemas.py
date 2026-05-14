@@ -52,7 +52,7 @@ class RetrievalRecord(BaseModel):
         qa_pair_id: Composite identifier shared between :class:`QAPairCEP` and
             ``NonAnswerableItem`` (e.g. ``"<file_id>:<chunk_id>:<idx>"``).
         question: Verbatim question text as fed to the retriever.
-        retriever_id: Stable identifier of the retriever arm (e.g. ``"bm25_bm25_512t"``).
+        retriever_id: Stable identifier of the retriever arm (e.g. ``"bm25_512t"``).
         chunker_id: Identifier of the chunker view this retrieval ran against.
         top_k: Number of passages requested. ``len(passages) <= top_k``.
         passages: Ranked passages. May be empty (the NullRetriever returns ``[]``).

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import TYPE_CHECKING
 
@@ -68,6 +69,16 @@ class TestBM25BuildIndex:
         assert "built_at" in manifest  # ISO timestamp
         assert manifest["chunk_ids"] == [c.chunk_id for c in chunks]
 
+    def test_manifest_records_sha256_of_pickle(self, tmp_path: Path) -> None:
+        chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
+        BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
+        manifest = json.loads((index_dir / MANIFEST_FILENAME).read_text())
+        assert "sha256" in manifest
+        # SHA-256 must match the actual pickle bytes on disk
+        actual = hashlib.sha256((index_dir / INDEX_FILENAME).read_bytes()).hexdigest()
+        assert manifest["sha256"] == actual
+        assert len(manifest["sha256"]) == 64  # SHA-256 hex digest length
+
     def test_creates_parent_directory(self, tmp_path: Path) -> None:
         chunks, resolver, _ = _build_corpus_fixture(tmp_path)
         nested = tmp_path / "a" / "b" / "c"  # multiple missing levels
@@ -87,10 +98,32 @@ class TestBM25BuildIndex:
 
 class TestBM25LoadAndConfig:
     def test_loads_index_via_constructor(self, tmp_path: Path) -> None:
+        # CHUNKER_ID="bm25_test" already starts with the family prefix; retriever_id is identical.
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        assert retriever.retriever_id == f"bm25_{CHUNKER_ID}"
+        assert retriever.retriever_id == CHUNKER_ID
+
+    def test_retriever_id_prepends_family_when_chunker_id_lacks_prefix(
+        self, tmp_path: Path
+    ) -> None:
+        # A non-bm25 chunker view (e.g. `cep_4k`) needs the family prefix added so that
+        # the same chunker indexed by different retrievers stays distinguishable.
+        chunker_id = "cep_4k"
+        chunks = [
+            Chunk(
+                chunk_id="chk_0000000000000",
+                source_file_id=SOURCE_ID,
+                chunker_id=chunker_id,
+                start_char=0,
+                end_char=20,
+            )
+        ]
+        resolver = ChunkResolver(text_loader=lambda _fid: "Some content here.")
+        index_dir = tmp_path / "retrieval_indexes" / chunker_id / "bm25"
+        BM25Retriever.build_index(chunks, resolver, index_dir, chunker_id, language="pt")
+        retriever = BM25Retriever(index_dir=index_dir, chunker_id=chunker_id)
+        assert retriever.retriever_id == "bm25_cep_4k"
 
     def test_satisfies_retriever_protocol(self, tmp_path: Path) -> None:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
@@ -124,6 +157,27 @@ class TestBM25LoadAndConfig:
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         with pytest.raises(ValueError, match="language mismatch"):
             BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID, language="en")
+
+    def test_load_rejects_tampered_pickle(self, tmp_path: Path) -> None:
+        # Append a byte to bm25.pkl after build — sha256 in manifest will not match.
+        # The integrity check must fire BEFORE pickle.load to prevent RCE on bad blobs.
+        chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
+        BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
+        pkl = index_dir / INDEX_FILENAME
+        pkl.write_bytes(pkl.read_bytes() + b"\x00")
+        with pytest.raises(ValueError, match="sha256 mismatch"):
+            BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
+
+    def test_load_rejects_manifest_without_sha256(self, tmp_path: Path) -> None:
+        # Hand-edited or pre-integrity-check manifests must be rejected. Fail closed:
+        # silently loading would defeat the integrity guarantee.
+        chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
+        BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
+        manifest = json.loads((index_dir / MANIFEST_FILENAME).read_text())
+        del manifest["sha256"]
+        (index_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest))
+        with pytest.raises(ValueError, match="sha256"):
+            BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
 
 
 class TestBM25Retrieve:
