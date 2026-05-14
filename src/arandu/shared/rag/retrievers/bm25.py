@@ -69,20 +69,24 @@ class BM25Retriever:
         Args:
             index_dir: Directory containing ``bm25.pkl`` and ``manifest.json``
                 (typically ``retrieval_indexes/<chunker_id>/bm25/``).
-            chunker_id: Chunker view ID this index was built from. Used to
-                derive ``retriever_id`` and not validated against the manifest.
-            language: ``"pt"`` or ``"en"``. Selects the tokenizer applied to
-                queries; should match the language used at index-build time.
+            chunker_id: Chunker view ID this index was built from. Must match
+                the value recorded in the manifest; mismatch raises ``ValueError``.
+            language: ``"pt"`` or ``"en"``. Must match the language used at
+                index-build time (recorded in the manifest); mismatch would
+                silently destroy ranking quality, so it raises ``ValueError``.
 
         Raises:
             FileNotFoundError: If ``index_dir`` lacks either index file.
-            ValueError: If ``language`` is unsupported.
+            ValueError: If ``language`` is unsupported, or if either
+                ``chunker_id`` or ``language`` disagrees with the manifest.
         """
         self.retriever_id = f"bm25_{chunker_id}"
         self._chunker_id = chunker_id
         self._language = language
         self._tokenize = _make_tokenizer(language)
-        self._bm25, self._chunk_ids = self._load_index(index_dir)
+        self._bm25, self._chunk_ids = self._load_index(
+            index_dir, expected_chunker_id=chunker_id, expected_language=language
+        )
 
     @classmethod
     def build_index(
@@ -125,7 +129,11 @@ class BM25Retriever:
         (index_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest, indent=2))
 
     @staticmethod
-    def _load_index(index_dir: Path) -> tuple[BM25Okapi, list[str]]:
+    def _load_index(
+        index_dir: Path,
+        expected_chunker_id: str,
+        expected_language: str,
+    ) -> tuple[BM25Okapi, list[str]]:
         idx_path = index_dir / INDEX_FILENAME
         mfst_path = index_dir / MANIFEST_FILENAME
         if not idx_path.exists() or not mfst_path.exists():
@@ -133,9 +141,22 @@ class BM25Retriever:
                 f"BM25 index not found at {index_dir} "
                 f"(expected '{INDEX_FILENAME}' and '{MANIFEST_FILENAME}')."
             )
+        manifest = json.loads(mfst_path.read_text())
+        if manifest["chunker_id"] != expected_chunker_id:
+            raise ValueError(
+                f"chunker_id mismatch: index at {index_dir} was built for "
+                f"{manifest['chunker_id']!r}, but constructor received "
+                f"{expected_chunker_id!r}."
+            )
+        if manifest["language"] != expected_language:
+            raise ValueError(
+                f"language mismatch: index at {index_dir} was tokenized with "
+                f"{manifest['language']!r}, but constructor received "
+                f"{expected_language!r}. Loading with a different language would "
+                f"silently destroy ranking quality."
+            )
         with idx_path.open("rb") as f:
             bm25 = pickle.load(f)
-        manifest = json.loads(mfst_path.read_text())
         return bm25, manifest["chunk_ids"]
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:

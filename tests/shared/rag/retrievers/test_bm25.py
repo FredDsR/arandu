@@ -110,6 +110,21 @@ class TestBM25LoadAndConfig:
         with pytest.raises(FileNotFoundError, match="BM25 index"):
             BM25Retriever(index_dir=idx_dir, chunker_id=CHUNKER_ID)
 
+    def test_chunker_id_mismatch_raises(self, tmp_path: Path) -> None:
+        # Index built for CHUNKER_ID; load with a different chunker_id must fail loudly.
+        # Silent acceptance would corrupt retriever_id labels in RetrievalRecord.
+        chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
+        BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
+        with pytest.raises(ValueError, match="chunker_id mismatch"):
+            BM25Retriever(index_dir=index_dir, chunker_id="bm25_other", language="pt")
+
+    def test_language_mismatch_raises(self, tmp_path: Path) -> None:
+        # Index tokenized as Portuguese; load with English would silently destroy ranking.
+        chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
+        BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
+        with pytest.raises(ValueError, match="language mismatch"):
+            BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID, language="en")
+
 
 class TestBM25Retrieve:
     def test_retrieve_returns_at_most_top_k(self, tmp_path: Path) -> None:
