@@ -50,10 +50,15 @@ class BM25Retriever:
     """BM25 retriever over a chunker view.
 
     The retriever loads a pre-built index from ``index_dir`` (produced by
-    :meth:`build_index`). The ``retriever_id`` is ``f"bm25_{chunker_id}"``;
-    different chunk-size sweeps (``bm25_512t``, ``bm25_1024t``, ``bm25_4k``)
-    therefore produce distinct retriever IDs in the resulting
-    :class:`~arandu.shared.rag.schemas.RetrievalRecord`.
+    :meth:`build_index`). The ``retriever_id`` is ``f"bm25_{chunker_id}"`` —
+    the leading ``bm25_`` encodes the retriever family and the ``chunker_id``
+    encodes the view. Chunker IDs in this codebase already prefix their
+    intended retriever family (e.g. ``bm25_512t``, ``bm25_1024t``, ``bm25_4k``
+    for the chunk-size sweep), so the resulting retriever IDs are
+    double-prefixed by design: ``bm25_bm25_512t`` etc. This matches the
+    example documented on :class:`~arandu.shared.rag.schemas.RetrievalRecord`
+    and lets downstream grouping distinguish e.g. BM25 over ``cep_4k`` chunks
+    (``bm25_cep_4k``) from NetworkX over the same view (``networkx_cep_4k``).
     """
 
     retriever_id: str

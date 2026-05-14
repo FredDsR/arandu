@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-Tokenizer = "Callable[[str], list[str]]"
-
 
 def _whitespace_tokenize(text: str) -> list[str]:
     """Tokenize via NFKC + lowercase + punctuation-strip + whitespace split.
