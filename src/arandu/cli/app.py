@@ -49,7 +49,7 @@ def main(
 
 # Register commands from submodules
 from arandu.cli.chunking import chunk  # noqa: E402
-from arandu.cli.kg import build_kg  # noqa: E402
+from arandu.cli.kg import build_kg, kg_link_passages  # noqa: E402
 from arandu.cli.manage import (  # noqa: E402
     enrich_metadata,
     info,
@@ -77,6 +77,7 @@ app.command()(generate_cep_qa)
 app.command()(judge_transcription)
 app.command()(judge_qa)
 app.command()(build_kg)
+app.command()(kg_link_passages)
 app.command()(replicate)
 app.command()(info)
 app.command()(list_runs)
