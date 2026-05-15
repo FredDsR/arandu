@@ -4,18 +4,30 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path  # noqa: TC003 — used as a parameter type at runtime
+from typing import TYPE_CHECKING
 
 import pytest
 from typer.testing import CliRunner
 
 from arandu.cli.app import app
 from arandu.shared.chunking.schemas import ChunkSet
+from arandu.shared.schemas import PipelineType, RunStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
+
+
+@pytest.fixture
+def results_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect ResultsManager base dir to a temp path for the duration of one test."""
+    base = tmp_path / "results"
+    monkeypatch.setenv("ARANDU_RESULTS_BASE_DIR", str(base))
+    return base
 
 
 def _write_enriched_record(dir_: Path, file_id: str, text: str) -> Path:
@@ -41,46 +53,43 @@ def _write_enriched_record(dir_: Path, file_id: str, text: str) -> Path:
     return path
 
 
-class TestArandruChunkCli:
-    def test_chunk_writes_chunkset_per_source(self, runner: CliRunner, tmp_path: Path) -> None:
-        in_dir = tmp_path / "results"
+class TestArandruChunkPathLayout:
+    """Outputs land under `results/<pipeline_id>/chunk/outputs/<chunker_id>/<file_id>.json`."""
+
+    def test_writes_chunkset_per_source_under_chunker_subdir(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
         in_dir.mkdir()
-        out_dir = tmp_path / "chunks"
+        _write_enriched_record(in_dir, "src_a", "Esta é uma frase de teste. " * 50)
+        _write_enriched_record(in_dir, "src_b", "Outra frase. " * 30)
 
-        text_a = "Esta é uma frase de teste. " * 50  # ~1350 chars
-        _write_enriched_record(in_dir, "src_a", text_a)
-        text_b = "Outra frase. " * 30
-        _write_enriched_record(in_dir, "src_b", text_b)
-
-        result = runner.invoke(app, ["chunk", str(in_dir), "-o", str(out_dir), "--view", "cep_4k"])
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
 
-        # One ChunkSet per source file
-        out_a = out_dir / "src_a.json"
-        out_b = out_dir / "src_b.json"
-        assert out_a.exists()
-        assert out_b.exists()
+        outputs = results_base / "run_x" / "chunk" / "outputs" / "cep_4k"
+        assert (outputs / "src_a.json").exists()
+        assert (outputs / "src_b.json").exists()
 
-        cs_a = ChunkSet.load(out_a)
-        assert cs_a.source_file_id == "src_a"
-        assert "cep_4k" in cs_a.views
-        assert len(cs_a.view("cep_4k")) >= 1
+        cs = ChunkSet.load(outputs / "src_a.json")
+        assert cs.source_file_id == "src_a"
+        assert set(cs.views) == {"cep_4k"}
+        assert len(cs.view("cep_4k")) >= 1
 
-    def test_chunk_supports_multiple_views(self, runner: CliRunner, tmp_path: Path) -> None:
-        in_dir = tmp_path / "results"
+    def test_multiple_views_emit_one_file_per_view(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
         in_dir.mkdir()
-        out_dir = tmp_path / "chunks"
-
-        text = "Esta é uma frase de teste. " * 200  # ~5400 chars
-        _write_enriched_record(in_dir, "src_a", text)
+        _write_enriched_record(in_dir, "src_a", "Esta é uma frase de teste. " * 200)
 
         result = runner.invoke(
             app,
             [
                 "chunk",
                 str(in_dir),
-                "-o",
-                str(out_dir),
+                "--id",
+                "run_x",
                 "--view",
                 "cep_4k",
                 "--view",
@@ -89,41 +98,127 @@ class TestArandruChunkCli:
         )
         assert result.exit_code == 0, result.output
 
-        cs = ChunkSet.load(out_dir / "src_a.json")
-        assert set(cs.views) == {"cep_4k", "nx_2k"}
+        cep_path = results_base / "run_x" / "chunk" / "outputs" / "cep_4k" / "src_a.json"
+        nx_path = results_base / "run_x" / "chunk" / "outputs" / "nx_2k" / "src_a.json"
+        assert cep_path.exists()
+        assert nx_path.exists()
 
-    def test_chunk_records_source_text_sha256(self, runner: CliRunner, tmp_path: Path) -> None:
-        in_dir = tmp_path / "results"
+        # Each emitted ChunkSet carries exactly its own view, not the union.
+        assert set(ChunkSet.load(cep_path).views) == {"cep_4k"}
+        assert set(ChunkSet.load(nx_path).views) == {"nx_2k"}
+
+    def test_auto_generates_pipeline_id_when_not_passed(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        # Mirrors ResultsManager's local-id pattern (YYYYMMDD_HHMMSS_local).
+        # We don't assert the format, only that a run dir was created and its
+        # name is reported in the CLI output.
+        in_dir = tmp_path / "in"
         in_dir.mkdir()
-        out_dir = tmp_path / "chunks"
+        _write_enriched_record(in_dir, "src_a", "frase. " * 20)
 
+        result = runner.invoke(app, ["chunk", str(in_dir), "--view", "cep_4k"])
+        assert result.exit_code == 0, result.output
+
+        run_dirs = [d for d in results_base.iterdir() if d.is_dir()]
+        assert len(run_dirs) == 1, f"expected one run dir, got {run_dirs}"
+        run_dir = run_dirs[0]
+        assert (run_dir / "chunk" / "outputs" / "cep_4k" / "src_a.json").exists()
+
+
+class TestArandruChunkResultsManagerWiring:
+    """The CLI emits the standard stage triplet: outputs/, checkpoint, run_metadata."""
+
+    def test_emits_run_metadata_json(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
+
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
+        assert result.exit_code == 0, result.output
+
+        meta_path = results_base / "run_x" / "chunk" / "run_metadata.json"
+        assert meta_path.exists()
+        meta = json.loads(meta_path.read_text())
+        assert meta["run_id"] == "run_x"
+        assert meta["pipeline_id"] == "run_x"
+        assert meta["pipeline_type"] == PipelineType.CHUNK.value
+        assert meta["status"] == RunStatus.COMPLETED.value
+        assert "config" in meta
+
+    def test_emits_checkpoint_with_completed_file_ids(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
+        _write_enriched_record(in_dir, "src_b", "frase. " * 10)
+
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
+        assert result.exit_code == 0, result.output
+
+        ckpt_path = results_base / "run_x" / "chunk" / "chunk_checkpoint.json"
+        assert ckpt_path.exists()
+        ckpt = json.loads(ckpt_path.read_text())
+        # CheckpointManager's persisted shape includes a completed set.
+        completed = ckpt.get("completed_files") or ckpt.get("completed") or []
+        assert set(completed) >= {"src_a", "src_b"}
+
+    def test_emits_pipeline_json_at_run_root(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
+
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
+        assert result.exit_code == 0, result.output
+
+        pjson = results_base / "run_x" / "pipeline.json"
+        assert pjson.exists()
+        payload = json.loads(pjson.read_text())
+        assert payload["pipeline_id"] == "run_x"
+        assert PipelineType.CHUNK.value in payload["steps_run"]
+
+
+class TestArandruChunkContentInvariants:
+    """Per-view ChunkSet contents are preserved across the path migration."""
+
+    def test_chunk_records_source_text_sha256(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
         text = "Esta é uma frase de teste. " * 20
         _write_enriched_record(in_dir, "src_a", text)
 
-        result = runner.invoke(app, ["chunk", str(in_dir), "-o", str(out_dir), "--view", "cep_4k"])
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
 
-        cs = ChunkSet.load(out_dir / "src_a.json")
+        cs = ChunkSet.load(results_base / "run_x" / "chunk" / "outputs" / "cep_4k" / "src_a.json")
         expected_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
         assert cs.source_text_sha256 == expected_sha
 
-    def test_chunk_rejects_unknown_view(self, runner: CliRunner, tmp_path: Path) -> None:
-        in_dir = tmp_path / "results"
+    def test_rejects_unknown_view(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
         in_dir.mkdir()
         _write_enriched_record(in_dir, "src_a", "text")
 
-        result = runner.invoke(
-            app,
-            ["chunk", str(in_dir), "-o", str(tmp_path / "chunks"), "--view", "garbage"],
-        )
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "garbage"])
         assert result.exit_code != 0
         assert "Unknown chunker_id" in result.output or "garbage" in result.output
 
-    def test_chunk_handles_empty_input_dir(self, runner: CliRunner, tmp_path: Path) -> None:
-        in_dir = tmp_path / "results"
+    def test_handles_empty_input_dir(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
         in_dir.mkdir()
-        out_dir = tmp_path / "chunks"
 
-        result = runner.invoke(app, ["chunk", str(in_dir), "-o", str(out_dir), "--view", "cep_4k"])
-        # Empty input should complete cleanly with a warning
+        result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0
+        # No source files → no outputs subdir contents, but the stage scaffolding still lands.
+        assert (results_base / "run_x" / "chunk" / "run_metadata.json").exists()
