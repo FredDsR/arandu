@@ -16,6 +16,7 @@ Before making any changes:
 4. **Docstrings**: Use Google style for all public functions/classes
 5. **Testing**: Write tests and run pytest before committing
 6. **No `print()`**: Use Rich console utilities (`print_info`, `print_error`, etc.)
+7. **Persistence**: Pipeline stages write under `results/<run-id>/<stage>/outputs/` via `ResultsManager`. Never default a stage's output to a flat top-level directory — see [Results Directory Layout](docs/development/architecture.md#results-directory-layout)
 
 ## Standard Development Workflow
 
@@ -344,6 +345,7 @@ uv run arandu --help
 | **Line Length** | 100 characters max | Enforced by Ruff |
 | **Output** | Rich console only | `print_info()`, never `print()` |
 | **LLM Calls** | Unified `LLMClient` | Never use provider SDKs directly |
+| **Persistence** | `results/<run-id>/<stage>/outputs/` via `ResultsManager` | See [Results Directory Layout](docs/development/architecture.md#results-directory-layout) |
 | **Design** | DRY, SOLID, KISS, YAGNI | See Design Principles |
 
 ## References
