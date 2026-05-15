@@ -28,7 +28,7 @@ Arandu is a comprehensive pipeline for processing ethnographic media collections
 - **Rich CLI**: Beautiful command-line interface with progress bars and structured output
 - **Structured Output**: JSON output with transcription text, timestamps, and metadata
 - **Transcription Quality Validation**: Heuristic-based quality scoring detecting wrong language/script, repetition, suspicious patterns, and empty content
-- **Results Versioning**: Pipeline-ID-first directory layout with comprehensive run metadata and execution environment tracking
+- **Results Versioning**: Pipeline-ID-first directory layout with comprehensive run metadata and execution environment tracking — every run lives at `results/<run-id>/`, with each stage as a child subdir carrying `<stage>_checkpoint.json`, `run_metadata.json`, and `outputs/` (see [Results Directory Layout](docs/development/architecture.md#results-directory-layout))
 
 ### CEP QA Generation
 - **Cognitive Elicitation Pipeline (CEP)**: Generate QA pairs with Bloom's Taxonomy scaffolding (remember, understand, analyze, evaluate)

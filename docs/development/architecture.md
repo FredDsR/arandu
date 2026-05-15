@@ -10,11 +10,12 @@
 
 1. [Architecture Overview](#architecture-overview)
 2. [Checkpoint System Pattern](#checkpoint-system-pattern)
-3. [Batch Processing Pattern](#batch-processing-pattern)
-4. [Worker Initialization Pattern](#worker-initialization-pattern)
-5. [CLI Command Pattern](#cli-command-pattern)
-6. [Error Handling Pattern](#error-handling-pattern)
-7. [Applying Patterns to Phase 2](#applying-patterns-to-phase-2)
+3. [Results Directory Layout](#results-directory-layout)
+4. [Batch Processing Pattern](#batch-processing-pattern)
+5. [Worker Initialization Pattern](#worker-initialization-pattern)
+6. [CLI Command Pattern](#cli-command-pattern)
+7. [Error Handling Pattern](#error-handling-pattern)
+8. [Applying Patterns to Phase 2](#applying-patterns-to-phase-2)
 
 ---
 
@@ -130,6 +131,43 @@ completed, total = checkpoint.get_progress()
 2. **Thread-safe**: Can be called from multiple processes (file-based locking)
 3. **Corruption handling**: Invalid checkpoint files fall back to fresh start
 4. **Set conversion**: Converts list ↔ set for JSON serialization
+
+---
+
+## Results Directory Layout
+
+### Location
+
+`src/arandu/shared/results_manager.py` — `ResultsManager` is the single writer for everything under `results/`. Schema contracts live in `src/arandu/shared/schemas.py` (`PipelineMetadata`, `RunMetadata`, `PipelineType`, `RunStatus`).
+
+### Purpose
+
+Give every pipeline run a self-describing home on disk so different stages can compose without overwriting each other, and so a fresh agent can re-derive the state of a run by reading files instead of code.
+
+### The convention
+
+Every run is a directory under `results/`, named with the run's `pipeline_id` (an opaque ID; locally that is `YYYYMMDD_HHMMSS_local`, on SLURM it is `YYYYMMDD_HHMMSS_slurm_<partition>_<job_id>`). The `pipeline_id` is the run identifier — pipeline ID and run ID are the same value.
+
+Every stage of the run lives as a child subdirectory of the run dir, named after the stage (the value of its `PipelineType`: `transcription`, `cep`, `kg`, `qa`, `evaluation`, etc.). Each stage subdirectory has the same shape, regardless of which stage it is:
+
+- A `<stage>_checkpoint.json` (or `checkpoint.json` for transcription, kept for historical reasons) — the `CheckpointManager` state file. This is what `mark_completed()` and `mark_failed()` write to; only its contents differ between stages, never its location.
+- A `run_metadata.json` — a `RunMetadata` snapshot capturing `started_at`, `ended_at`, `status` (`RunStatus`), the `ConfigSnapshot` of whatever `BaseSettings`/`BaseModel` the stage was given, the `HardwareInfo`, the `ExecutionEnvironment` (local vs SLURM, partition, job id), the arandu version, and progress counters (`completed_items`, `failed_items`, `total_items`).
+- An `outputs/` subdirectory — the only part of a stage's footprint that is stage-specific. Anything domain-specific (transcription JSONs, CEP QA records, KG GraphML, atlas-rag intermediates, retrieval JSONL, etc.) goes here.
+
+The run root carries one extra file, `pipeline.json` — a `PipelineMetadata` document. It records the `pipeline_id`, `created_at`, the list of `steps_run` accumulated as each stage attaches to the run, and the `schema_version`. When a new stage attaches to an existing run, `ResultsManager.create_run` appends its step name to `pipeline.json` rather than rewriting the file.
+
+The `results/` root itself carries a single aggregate file, `index.json`, which the manager rewrites under an `fcntl` exclusive lock every time a run completes (`complete_run` or `register_external_run`). Each entry summarises one stage of one run; CLI commands like `arandu list-runs` and `arandu run-info` read this index.
+
+### What this means in practice
+
+- **A stage never writes outside its run.** If you are extending the codebase with a new stage, instantiate a `ResultsManager(base_results_dir, pipeline_type, pipeline_id=...)`, call `create_run(config)`, and write artifacts under `manager.outputs_dir`. Do not default a CLI flag to a flat top-level directory like `Path("chunks")` — that defeats the convention and breaks cross-stage lookups.
+- **A stage can find peer stages by `pipeline_id` alone.** `ResultsManager.resolve_outputs(base_dir, pipeline_id, PipelineType.X)` and `resolve_latest_outputs(base_dir, PipelineType.X)` are the two lookups; downstream stages should resolve their inputs through them rather than accepting raw paths.
+- **Resumability is per-stage, not per-run.** Each stage's checkpoint lives next to its `run_metadata.json`, so re-running a stage on the same `pipeline_id` resumes that stage without disturbing siblings.
+- **The convention is uniform.** Only the stage name and the contents of `outputs/` vary between stages. The two metadata siblings are always present and always named the same way.
+
+### Extensions
+
+Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieval_indexes`, `retrieval`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`. See `docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md` §11 for the binding spec, in particular §11.0 which restates this convention for Phase C.
 
 ---
 
