@@ -140,8 +140,14 @@ class TestAranduChunkCounterSemantics:
         result = runner.invoke(
             app,
             [
-                "chunk", str(in_dir), "--id", "run_x",
-                "--view", "cep_4k", "--view", "nx_2k",
+                "chunk",
+                str(in_dir),
+                "--id",
+                "run_x",
+                "--view",
+                "cep_4k",
+                "--view",
+                "nx_2k",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -166,18 +172,14 @@ class TestAranduChunkResumability:
         _write_enriched_record(in_dir, "src_b", "frase. " * 10)
 
         # First run: chunk both sources.
-        first = runner.invoke(
-            app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"]
-        )
+        first = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert first.exit_code == 0, first.output
 
         outputs = results_base / "run_x" / "chunk" / "outputs" / "cep_4k"
         first_mtime = (outputs / "src_a.json").stat().st_mtime_ns
 
         # Second run: same --id; checkpoint says both are completed → both skipped.
-        second = runner.invoke(
-            app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"]
-        )
+        second = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert second.exit_code == 0, second.output
         assert "Resumed: 2 source(s) already completed" in second.output
 
