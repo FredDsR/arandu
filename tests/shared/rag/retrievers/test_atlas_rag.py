@@ -66,6 +66,7 @@ class TestAtlasRagRetrieverConstructorValidation:
             AtlasRagRetriever(
                 kg_outputs_dir=tmp_path / "nonexistent",
                 llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
                 sentence_encoder=MagicMock(),
                 sentence_encoder_model="m",
             )
@@ -78,6 +79,7 @@ class TestAtlasRagRetrieverConstructorValidation:
             AtlasRagRetriever(
                 kg_outputs_dir=kg_outputs_dir,
                 llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
                 sentence_encoder=MagicMock(),
                 sentence_encoder_model="m",
             )
@@ -92,6 +94,7 @@ class TestAtlasRagRetrieverConstructorValidation:
             AtlasRagRetriever(
                 kg_outputs_dir=kg_outputs_dir,
                 llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
                 sentence_encoder=MagicMock(),
                 sentence_encoder_model="m",
             )
@@ -153,3 +156,132 @@ class TestAtlasRagRetrieverRetrieve:
         instance.retriever_id = "atlas_rag_test"
         instance._retrieve_with_scores = MagicMock(return_value=[])  # type: ignore[method-assign]
         assert isinstance(instance, Retriever)
+
+
+# -- manifest integrity (Copilot review on PR #101) ----------------------
+
+
+def _write_minimal_precompute(
+    tmp_path: Path,
+    *,
+    sentence_encoder_model: str = "m",
+    keyword: str = "transcriptions.json",
+    include_events: bool = False,
+    include_concept: bool = True,
+    write_graphml_sha: bool = True,
+    write_artifact_sha: bool = True,
+    graphml_bytes: bytes = b"<graphml>fake</graphml>",
+) -> Path:
+    """Build a minimal kg_outputs_dir with manifest + (optional) sha fields.
+
+    Used to drive the integrity-check tests without paying the embedding
+    build cost. The pickles are placeholder bytes — the constructor will
+    surface sha mismatches before any `pickle.load` runs.
+    """
+    import hashlib
+    import json
+
+    kg_outputs_dir = tmp_path / "atlas_output"
+    precompute = kg_outputs_dir / "precompute"
+    (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
+    precompute.mkdir(parents=True)
+
+    graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
+    graphml_path.write_bytes(graphml_bytes)
+
+    encoder_short = sentence_encoder_model.split("/")[-1]
+    flags = f"event{include_events}_concept{include_concept}"
+    artifacts = {
+        "node_embeddings": precompute / f"{keyword}_{flags}_{encoder_short}_node_embeddings.pkl",
+        "edge_embeddings": precompute / f"{keyword}_{flags}_{encoder_short}_edge_embeddings.pkl",
+        "node_list": precompute / f"{keyword}_{flags}_node_list.pkl",
+        "edge_list": precompute / f"{keyword}_{flags}_edge_list.pkl",
+        "text_embeddings": precompute / f"{keyword}_{encoder_short}_text_embeddings.pkl",
+        "text_dict": precompute / f"{keyword}_original_text_dict_with_node_id.pkl",
+    }
+    # Placeholder pickle bodies; never reach `pickle.load` if sha check fires first.
+    placeholder = b"placeholder-pickle-bytes"
+    for path in artifacts.values():
+        path.write_bytes(placeholder)
+
+    manifest: dict[str, object] = {
+        "kg_outputs_dir": str(kg_outputs_dir),
+        "keyword": keyword,
+        "include_events": include_events,
+        "include_concept": include_concept,
+        "sentence_encoder_model": sentence_encoder_model,
+        "built_at": "2026-05-20T00:00:00Z",
+    }
+    if write_graphml_sha:
+        manifest["graphml_sha256"] = hashlib.sha256(graphml_bytes).hexdigest()
+    if write_artifact_sha:
+        manifest["artifact_sha256"] = {
+            label: hashlib.sha256(path.read_bytes()).hexdigest()
+            for label, path in artifacts.items()
+        }
+    (precompute / "manifest.json").write_text(json.dumps(manifest))
+    return kg_outputs_dir
+
+
+class TestAtlasRagManifestIntegrity:
+    """Drift detection: stale precompute or tampered pickles must fail loudly."""
+
+    def test_graphml_sha_mismatch_raises(self, tmp_path: Path) -> None:
+        # Manifest records a graphml sha; the on-disk graphml has different
+        # bytes. The constructor must refuse to load before touching any
+        # pickle (the precompute is stale relative to the rebuilt KG).
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Tamper with the graphml after building the manifest.
+        graphml = kg_outputs_dir / "kg_graphml" / "transcriptions.json_graph.graphml"
+        graphml.write_bytes(b"<graphml>DIFFERENT</graphml>")
+
+        with pytest.raises(ValueError, match="graphml sha256 mismatch"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_manifest_without_graphml_sha_rejected(self, tmp_path: Path) -> None:
+        # Hand-edited / pre-integrity-check manifests must be rejected; silent
+        # loading would defeat the drift-detection guarantee.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_graphml_sha=False)
+        with pytest.raises(ValueError, match="no 'graphml_sha256'"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_tampered_pickle_raises_before_load(self, tmp_path: Path) -> None:
+        # An attacker (or a partial-copy) flips bytes in one pickle but the
+        # graphml is intact. sha check must fire BEFORE pickle.load — i.e.
+        # we never execute the tampered payload's __reduce__.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Append a byte to one pickle after the manifest was written.
+        tampered = next((kg_outputs_dir / "precompute").glob("*node_embeddings.pkl"))
+        tampered.write_bytes(tampered.read_bytes() + b"\x00")
+
+        with pytest.raises(ValueError, match="sha256 mismatch"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_manifest_without_artifact_sha_rejected(self, tmp_path: Path) -> None:
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_artifact_sha=False)
+        with pytest.raises(ValueError, match="no sha256 for artifact"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )

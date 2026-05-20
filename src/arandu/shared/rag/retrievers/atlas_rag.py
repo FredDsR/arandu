@@ -66,6 +66,7 @@ class AtlasRagRetriever:
         self,
         kg_outputs_dir: Path,
         llm_client: Any,
+        llm_model_id: str,
         sentence_encoder: Any,
         sentence_encoder_model: str,
         keyword: str = "transcriptions.json",
@@ -84,6 +85,10 @@ class AtlasRagRetriever:
                 atlas-rag's ``LLMGenerator``. The unified ``LLMClient``'s
                 ``.client`` is compatible (see
                 :mod:`arandu.kg.atlas_backend`).
+            llm_model_id: Model identifier passed to atlas-rag's
+                ``LLMGenerator`` (e.g. ``"qwen3:14b"``). The unified
+                ``LLMClient`` exposes this as ``.model_id``; callers
+                using ``LLMClient`` should forward that value here.
             sentence_encoder: An atlas-rag ``BaseEmbeddingModel`` instance.
             sentence_encoder_model: Model identifier; must match the model
                 used at :meth:`build_index` time.
@@ -113,6 +118,7 @@ class AtlasRagRetriever:
                 f"atlas-rag retriever manifest not found at {manifest_path}. "
                 f"Rebuild the precompute via AtlasRagRetriever.build_index."
             )
+        graphml_path = kg_outputs_dir / GRAPHML_SUBDIR / f"{keyword}_graph.graphml"
         manifest = json.loads(manifest_path.read_text())
         self._validate_manifest(
             manifest,
@@ -120,6 +126,7 @@ class AtlasRagRetriever:
             expected_keyword=keyword,
             expected_include_events=include_events,
             expected_include_concept=include_concept,
+            graphml_path=graphml_path,
         )
 
         self.retriever_id = retriever_id or self.DEFAULT_RETRIEVER_ID
@@ -129,13 +136,15 @@ class AtlasRagRetriever:
 
         data = self._load_data_dict(
             precompute_dir=precompute_dir,
-            graphml_path=kg_outputs_dir / GRAPHML_SUBDIR / f"{keyword}_graph.graphml",
+            graphml_path=graphml_path,
             sentence_encoder_model=sentence_encoder_model,
             include_events=include_events,
             include_concept=include_concept,
+            artifact_sha256=manifest.get("artifact_sha256", {}),
         )
         self._inner = self._build_inner_retriever(
             llm_client=llm_client,
+            llm_model_id=llm_model_id,
             sentence_encoder=sentence_encoder,
             data=data,
         )
@@ -181,17 +190,62 @@ class AtlasRagRetriever:
             include_concept=include_concept,
         )
 
-        graphml_sha = hashlib.sha256(graphml_path.read_bytes()).hexdigest()
+        # Record sha256 of every artifact the retriever will pickle.load on
+        # construction, mirroring the BM25 retriever's integrity model. Used
+        # by `_load_data_dict` to fail before `pickle.load` if any artifact
+        # has changed or been tampered with.
+        artifact_paths = cls._artifact_paths(
+            precompute_dir=precompute_dir,
+            keyword=keyword,
+            sentence_encoder_model=sentence_encoder_model,
+            include_events=include_events,
+            include_concept=include_concept,
+        )
+        artifact_sha256 = {
+            relname: hashlib.sha256(path.read_bytes()).hexdigest()
+            for relname, path in artifact_paths.items()
+        }
+
         manifest = {
             "kg_outputs_dir": str(kg_outputs_dir),
             "keyword": keyword,
             "include_events": include_events,
             "include_concept": include_concept,
             "sentence_encoder_model": sentence_encoder_model,
-            "graphml_sha256": graphml_sha,
+            "graphml_sha256": hashlib.sha256(graphml_path.read_bytes()).hexdigest(),
+            "artifact_sha256": artifact_sha256,
             "built_at": datetime.now(UTC).isoformat(),
         }
         (precompute_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest, indent=2))
+
+    @staticmethod
+    def _artifact_paths(
+        *,
+        precompute_dir: Path,
+        keyword: str,
+        sentence_encoder_model: str,
+        include_events: bool,
+        include_concept: bool,
+    ) -> dict[str, Path]:
+        """Map a stable artifact label to its on-disk path.
+
+        Filenames mirror ``atlas_rag.vectorstore.create_graph_index.create_embeddings_and_index``
+        exactly. The label keys are what end up in
+        ``manifest["artifact_sha256"]`` so `_load_data_dict` can verify
+        integrity without re-deriving filenames from arguments.
+        """
+        encoder_short = sentence_encoder_model.split("/")[-1]
+        flags = f"event{include_events}_concept{include_concept}"
+        return {
+            "node_embeddings": precompute_dir
+            / f"{keyword}_{flags}_{encoder_short}_node_embeddings.pkl",
+            "edge_embeddings": precompute_dir
+            / f"{keyword}_{flags}_{encoder_short}_edge_embeddings.pkl",
+            "node_list": precompute_dir / f"{keyword}_{flags}_node_list.pkl",
+            "edge_list": precompute_dir / f"{keyword}_{flags}_edge_list.pkl",
+            "text_embeddings": precompute_dir / f"{keyword}_{encoder_short}_text_embeddings.pkl",
+            "text_dict": precompute_dir / f"{keyword}_original_text_dict_with_node_id.pkl",
+        }
 
     @staticmethod
     def _validate_manifest(
@@ -201,6 +255,7 @@ class AtlasRagRetriever:
         expected_keyword: str,
         expected_include_events: bool,
         expected_include_concept: bool,
+        graphml_path: Path,
     ) -> None:
         for field, expected in (
             ("sentence_encoder_model", expected_model),
@@ -216,69 +271,89 @@ class AtlasRagRetriever:
                     f"pass matching args."
                 )
 
-    @staticmethod
+        # KG drift: if the graphml has been rebuilt without re-running
+        # build_index, the embeddings index nodes that may no longer exist.
+        # Detect this loudly — silent stale precompute would corrupt PPR.
+        recorded_graphml_sha = manifest.get("graphml_sha256")
+        if recorded_graphml_sha is None:
+            raise ValueError(
+                "atlas-rag manifest has no 'graphml_sha256' field — refusing "
+                "to load an unverifiable precompute. Rebuild the index."
+            )
+        actual_graphml_sha = hashlib.sha256(graphml_path.read_bytes()).hexdigest()
+        if actual_graphml_sha != recorded_graphml_sha:
+            raise ValueError(
+                f"graphml sha256 mismatch at {graphml_path}: manifest records "
+                f"{recorded_graphml_sha[:12]}…, computed {actual_graphml_sha[:12]}… "
+                f"— the KG was rebuilt without rebuilding the precompute. "
+                f"Rerun AtlasRagRetriever.build_index."
+            )
+
+    @classmethod
     def _load_data_dict(
+        cls,
         *,
         precompute_dir: Path,
         graphml_path: Path,
         sentence_encoder_model: str,
         include_events: bool,
         include_concept: bool,
+        artifact_sha256: dict[str, str],
     ) -> dict[str, Any]:
         """Load embeddings + graph into the dict ``HippoRAGRetriever`` expects.
 
-        Filenames mirror ``atlas_rag.vectorstore.create_graph_index.create_embeddings_and_index``
-        exactly — drift here is a load-time error.
+        Each pickle artifact is integrity-verified against the manifest's
+        ``artifact_sha256`` map before ``pickle.load`` is called — mirrors
+        BM25's tamper-detection model and prevents arbitrary-code-execution
+        if the precompute dir is influenced by an untrusted writer.
         """
         import networkx as nx
 
-        encoder_short = sentence_encoder_model.split("/")[-1]
-        flags = f"event{include_events}_concept{include_concept}"
         keyword = graphml_path.stem.replace("_graph", "")
-        node_emb_path = precompute_dir / f"{keyword}_{flags}_{encoder_short}_node_embeddings.pkl"
-        edge_emb_path = precompute_dir / f"{keyword}_{flags}_{encoder_short}_edge_embeddings.pkl"
-        node_list_path = precompute_dir / f"{keyword}_{flags}_node_list.pkl"
-        edge_list_path = precompute_dir / f"{keyword}_{flags}_edge_list.pkl"
-        text_emb_path = precompute_dir / f"{keyword}_{encoder_short}_text_embeddings.pkl"
-        text_dict_path = precompute_dir / f"{keyword}_original_text_dict_with_node_id.pkl"
+        artifacts = cls._artifact_paths(
+            precompute_dir=precompute_dir,
+            keyword=keyword,
+            sentence_encoder_model=sentence_encoder_model,
+            include_events=include_events,
+            include_concept=include_concept,
+        )
 
-        for required in (
-            node_emb_path,
-            edge_emb_path,
-            node_list_path,
-            edge_list_path,
-            text_emb_path,
-            text_dict_path,
-            graphml_path,
-        ):
-            if not required.exists():
+        for path in (*artifacts.values(), graphml_path):
+            if not path.exists():
                 raise FileNotFoundError(
-                    f"atlas-rag retriever artifact missing: {required}. "
+                    f"atlas-rag retriever artifact missing: {path}. "
                     f"Rebuild the precompute via AtlasRagRetriever.build_index."
                 )
 
-        with node_emb_path.open("rb") as f:
-            node_embeddings = pickle.load(f)
-        with edge_emb_path.open("rb") as f:
-            edge_embeddings = pickle.load(f)
-        with node_list_path.open("rb") as f:
-            node_list = pickle.load(f)
-        with edge_list_path.open("rb") as f:
-            edge_list = pickle.load(f)
-        with text_emb_path.open("rb") as f:
-            text_embeddings = pickle.load(f)
-        with text_dict_path.open("rb") as f:
-            text_dict = pickle.load(f)
+        loaded: dict[str, Any] = {}
+        for label, path in artifacts.items():
+            recorded = artifact_sha256.get(label)
+            if recorded is None:
+                raise ValueError(
+                    f"atlas-rag manifest has no sha256 for artifact "
+                    f"{label!r} — refusing to load an unverifiable pickle. "
+                    f"Rebuild the index."
+                )
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual != recorded:
+                raise ValueError(
+                    f"sha256 mismatch on {path}: manifest records "
+                    f"{recorded[:12]}…, computed {actual[:12]}… — artifact "
+                    f"may be corrupted or tampered. Rebuild the index."
+                )
+            with path.open("rb") as f:
+                loaded[label] = pickle.load(f)
+
         with graphml_path.open("rb") as f:
             kg = nx.read_graphml(f)
 
         return {
-            "node_embeddings": node_embeddings,
-            "edge_embeddings": edge_embeddings,
-            "node_list": node_list,
-            "edge_list": edge_list,
-            "text_embeddings": text_embeddings,
-            "text_dict": text_dict,
+            "node_embeddings": loaded["node_embeddings"],
+            "edge_embeddings": loaded["edge_embeddings"],
+            "node_list": loaded["node_list"],
+            "edge_list": loaded["edge_list"],
+            "text_embeddings": loaded["text_embeddings"],
+            "text_dict": loaded["text_dict"],
             "KG": kg,
         }
 
@@ -286,6 +361,7 @@ class AtlasRagRetriever:
     def _build_inner_retriever(
         *,
         llm_client: Any,
+        llm_model_id: str,
         sentence_encoder: Any,
         data: dict[str, Any],
     ) -> Any:
@@ -295,7 +371,7 @@ class AtlasRagRetriever:
 
         llm_generator = LLMGenerator(
             client=llm_client,
-            model_name=getattr(llm_client, "_arandu_model_id", "unknown"),
+            model_name=llm_model_id,
         )
         return HippoRAGRetriever(
             llm_generator=llm_generator,
