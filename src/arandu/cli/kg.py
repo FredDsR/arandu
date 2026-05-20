@@ -8,8 +8,9 @@ from typing import Annotated, Any
 import typer
 from pydantic import ValidationError
 
+from arandu.kg.passage_offsets import link_passages
 from arandu.utils.console import console
-from arandu.utils.logger import print_error, print_success
+from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 
 def build_kg(
@@ -173,3 +174,49 @@ def build_kg(
     except Exception as e:
         print_error(f"Knowledge graph construction failed: {e}")
         raise typer.Exit(code=1) from e
+
+
+def kg_link_passages(
+    pipeline_id: Annotated[
+        str,
+        typer.Option(
+            "--id",
+            help=(
+                "Pipeline ID for the run. Resolves the KG outputs at "
+                "results/<id>/kg/outputs/atlas_output/kg_extraction/ and the "
+                "source transcriptions at results/<id>/transcription/outputs/."
+            ),
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            help=(
+                "Override the default sidecar path (results/<id>/kg/outputs/passage_offsets.json)."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Map atlas-rag passages back to char offsets in source ``EnrichedRecord`` space.
+
+    Reads every atlas-rag ``kg_extraction/*.json`` record for the given run,
+    strips the atlas-injected ``[Contexto…][Transcrição]\\n`` header, and
+    anchors the chunk text against ``EnrichedRecord.transcription_text``.
+    Emits a ``PassageOffsetSidecar`` (default location:
+    ``results/<id>/kg/outputs/passage_offsets.json``) that brings atlas-rag
+    passages into the same coordinate space as BM25 / NetworkX chunks.
+    """
+    try:
+        sidecar = link_passages(pipeline_id=pipeline_id, output=output)
+    except FileNotFoundError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    print_info(f"Linked {len(sidecar.offsets)} passage(s).")
+    if sidecar.unmatched:
+        print_warning(
+            f"{len(sidecar.unmatched)} passage(s) unmatched — see "
+            f"`unmatched` field in the sidecar for audit."
+        )
+    print_success("Passage offset sidecar written.")
