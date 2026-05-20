@@ -280,3 +280,45 @@ class TestLinkPassages:
         assert sidecar.unmatched == []
         assert len(sidecar.offsets) == 1
         assert sidecar.offsets[0].source_file_id == "src_a"
+
+
+class TestLinkPassagesEdgeCases:
+    """Regression coverage for Copilot-flagged edge cases (PR #100 review)."""
+
+    def test_header_only_chunk_recorded_as_unmatched_not_validation_error(
+        self, tmp_path: Path
+    ) -> None:
+        # An atlas record whose `original_text` is exactly the header (no body)
+        # would strip to an empty needle. Old code: `source_text.find("")` → 0,
+        # `end_char=0`, PassageOffset(gt=0) ValidationError aborts the run.
+        # New: empty/whitespace-only needle is recorded as unmatched.
+        pid = "header_only_run"
+        base = tmp_path / "results"
+        tr_out = base / pid / "transcription" / "outputs"
+        tr_out.mkdir(parents=True)
+        _write_enriched_record(tr_out, "src_a", "Source text exists.")
+        kg_ext = base / pid / "kg" / "outputs" / "atlas_output" / "kg_extraction"
+        _write_kg_extraction_jsonl(
+            kg_ext,
+            [{"id": "src_a", "original_text": _HEADER, "metadata": {"lang": "pt"}}],
+        )
+
+        sidecar = link_passages(pipeline_id=pid, base_dir=base)
+        # Must not raise; must surface the degenerate passage under unmatched.
+        assert sidecar.offsets == []
+        assert sidecar.unmatched == ["src_a:0"]
+
+    def test_missing_kg_extraction_dir_fails_fast_not_silently_empty(self, tmp_path: Path) -> None:
+        # Without this guard, a wrong backend or moved outputs produced a
+        # seemingly-valid empty sidecar — a false-success artifact.
+        pid = "incomplete_kg_run"
+        base = tmp_path / "results"
+        tr_out = base / pid / "transcription" / "outputs"
+        tr_out.mkdir(parents=True)
+        _write_enriched_record(tr_out, "src_a", "Source text.")
+
+        # Create kg/outputs/ but NOT atlas_output/kg_extraction/ underneath it.
+        (base / pid / "kg" / "outputs").mkdir(parents=True)
+
+        with pytest.raises(FileNotFoundError, match="kg_extraction directory not found"):
+            link_passages(pipeline_id=pid, base_dir=base)

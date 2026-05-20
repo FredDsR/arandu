@@ -94,25 +94,28 @@ def _iter_atlas_passages(kg_extraction_dir: Path) -> Iterator[_AtlasPassage]:
         return
     chunk_idx: Counter[str] = Counter()
     for jsonl_path in sorted(kg_extraction_dir.glob("*.json")):
-        for line in jsonl_path.read_text().splitlines():
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("Skipping unparseable line in %s", jsonl_path)
-                continue
-            file_id = rec.get("id")
-            text = rec.get("original_text")
-            if not file_id or not text:
-                continue
-            idx = chunk_idx[file_id]
-            chunk_idx[file_id] += 1
-            yield _AtlasPassage(
-                passage_id=f"{file_id}:{idx}",
-                source_file_id=file_id,
-                text=text,
-            )
+        # Stream line-by-line so the mapper stays memory-friendly on large KG runs
+        # (a single extraction file can hold thousands of records at thesis scale).
+        with jsonl_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("Skipping unparseable line in %s", jsonl_path)
+                    continue
+                file_id = rec.get("id")
+                text = rec.get("original_text")
+                if not file_id or not text:
+                    continue
+                idx = chunk_idx[file_id]
+                chunk_idx[file_id] += 1
+                yield _AtlasPassage(
+                    passage_id=f"{file_id}:{idx}",
+                    source_file_id=file_id,
+                    text=text,
+                )
 
 
 def _strip_atlas_header(text: str) -> str:
@@ -145,7 +148,7 @@ def _load_source_text(transcription_dir: Path, file_id: str) -> str | None:
         if candidate.exists():
             try:
                 record = EnrichedRecord.model_validate_json(candidate.read_text())
-            except Exception as exc:  # noqa: BLE001 — surface schema drift but keep linking
+            except Exception as exc:
                 logger.warning("Skipping invalid EnrichedRecord %s: %s", candidate, exc)
                 return None
             return record.transcription_text
@@ -236,8 +239,11 @@ def link_passages(
         The ``PassageOffsetSidecar`` written to disk.
 
     Raises:
-        FileNotFoundError: If the transcription or kg output directory is
-            missing for ``pipeline_id``.
+        FileNotFoundError: If the transcription / kg outputs / atlas-rag
+            extraction directory is missing for ``pipeline_id``. Failing fast
+            on a missing ``kg_extraction/`` is intentional — silently writing
+            an empty sidecar would be a false-success artifact for callers
+            (wrong backend, incomplete KG run, moved outputs).
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
     transcription_dir = base / pipeline_id / "transcription" / "outputs"
@@ -251,6 +257,13 @@ def link_passages(
     if not kg_outputs_dir.exists():
         raise FileNotFoundError(
             f"kg outputs not found for pipeline_id {pipeline_id!r}: {kg_outputs_dir}"
+        )
+    if not kg_extraction_dir.exists():
+        raise FileNotFoundError(
+            f"atlas-rag kg_extraction directory not found for pipeline_id "
+            f"{pipeline_id!r}: {kg_extraction_dir}. The KG stage either used a "
+            f"non-atlas backend, was interrupted before extraction, or its "
+            f"outputs were moved."
         )
 
     offsets: list[PassageOffset] = []
@@ -272,6 +285,17 @@ def link_passages(
             continue
 
         needle = _strip_atlas_header(passage.text)
+        # If the atlas record carried only the injected header (degenerate
+        # chunk), `needle` is empty / whitespace. `str.find("")` returns 0,
+        # which would yield `end_char=0` and fail `PassageOffset.end_char (gt=0)`
+        # validation, aborting the whole run. Treat as unmatched instead.
+        if not needle.strip():
+            logger.warning(
+                "Skipping passage %s — chunk text is empty after header strip",
+                passage.passage_id,
+            )
+            unmatched.append(passage.passage_id)
+            continue
         idx = source_text.find(needle)
         if idx != -1:
             offsets.append(
