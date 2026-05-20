@@ -191,6 +191,7 @@ class PipelineType(StrEnum):
     """Enum representing the different pipeline types."""
 
     TRANSCRIPTION = "transcription"
+    CHUNK = "chunk"
     QA = "qa"
     CEP = "cep"
     KG = "kg"
