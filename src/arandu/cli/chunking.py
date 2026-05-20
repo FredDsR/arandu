@@ -72,11 +72,23 @@ def chunk(
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
 
-    if result.written == 0 and result.skipped == 0:
+    if (
+        result.sources_processed == 0
+        and result.sources_resumed == 0
+        and result.skipped == 0
+    ):
         print_warning(f"No JSON files found in {input_dir}")
         return
 
     if result.skipped:
         print_warning(f"Skipped {result.skipped} unreadable / non-EnrichedRecord file(s).")
+    if result.sources_resumed:
+        print_info(
+            f"Resumed: {result.sources_resumed} source(s) already completed in checkpoint."
+        )
     print_info(f"Run ID: {result.pipeline_id}")
-    print_success(f"Wrote {result.written} ChunkSet(s) to {result.run_dir}/outputs/")
+    print_success(
+        f"Wrote {result.chunk_sets_written} ChunkSet(s) "
+        f"({result.sources_processed} source(s), {len(selected_views)} view(s)) "
+        f"to {result.run_dir}/outputs/"
+    )

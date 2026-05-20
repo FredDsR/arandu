@@ -126,6 +126,65 @@ class TestArandruChunkPathLayout:
         assert (run_dir / "chunk" / "outputs" / "cep_4k" / "src_a.json").exists()
 
 
+class TestArandruChunkCounterSemantics:
+    """Counter was ambiguous for multi-view runs — split into source vs artifact counts."""
+
+    def test_multi_view_run_reports_artifact_count_not_source_count(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        _write_enriched_record(in_dir, "src_a", "frase. " * 30)
+        _write_enriched_record(in_dir, "src_b", "frase. " * 30)
+
+        result = runner.invoke(
+            app,
+            [
+                "chunk", str(in_dir), "--id", "run_x",
+                "--view", "cep_4k", "--view", "nx_2k",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        # CLI must surface the on-disk artifact count, not the source count,
+        # so multi-view runs don't undercount.
+        out = result.output
+        assert "Wrote 4 ChunkSet(s)" in out, out  # 2 sources * 2 views
+        assert "2 source(s)" in out
+        assert "2 view(s)" in out
+
+
+class TestArandruChunkResumability:
+    """The chunk stage resumes from checkpoint like sibling orchestrators."""
+
+    def test_second_run_with_same_id_skips_completed_sources(
+        self, runner: CliRunner, tmp_path: Path, results_base: Path
+    ) -> None:
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
+        _write_enriched_record(in_dir, "src_b", "frase. " * 10)
+
+        # First run: chunk both sources.
+        first = runner.invoke(
+            app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"]
+        )
+        assert first.exit_code == 0, first.output
+
+        outputs = results_base / "run_x" / "chunk" / "outputs" / "cep_4k"
+        first_mtime = (outputs / "src_a.json").stat().st_mtime_ns
+
+        # Second run: same --id; checkpoint says both are completed → both skipped.
+        second = runner.invoke(
+            app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"]
+        )
+        assert second.exit_code == 0, second.output
+        assert "Resumed: 2 source(s) already completed" in second.output
+
+        # File was not re-written.
+        assert (outputs / "src_a.json").stat().st_mtime_ns == first_mtime
+
+
 class TestArandruChunkResultsManagerWiring:
     """The CLI emits the standard stage triplet: outputs/, checkpoint, run_metadata."""
 

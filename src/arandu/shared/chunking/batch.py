@@ -43,11 +43,21 @@ class ChunkBatchConfig(BaseModel):
 
 
 class ChunkBatchResult(BaseModel):
-    """In-process return value summarising what the orchestrator wrote."""
+    """In-process return value summarising what the orchestrator processed.
+
+    ``sources_processed`` is the unit-of-work count (one EnrichedRecord =
+    one source) used for checkpoint and progress tracking; this matches the
+    semantics of the sibling orchestrators (transcription / qa / kg).
+    ``chunk_sets_written`` is the on-disk artifact count and diverges from
+    sources whenever more than one view is requested
+    (``chunk_sets_written == sources_processed * len(views)``).
+    """
 
     pipeline_id: str
     run_dir: str
-    written: int = 0
+    sources_processed: int = 0
+    sources_resumed: int = 0
+    chunk_sets_written: int = 0
     skipped: int = 0
 
 
@@ -108,7 +118,8 @@ def run_chunk_batch(
             run_dir=str(results_mgr.run_dir),
         )
 
-    written = 0
+    sources_processed = 0
+    sources_resumed = 0
     skipped = 0
     failed = 0
     for json_file in json_files:
@@ -117,6 +128,14 @@ def run_chunk_batch(
         except ValidationError as exc:
             logger.debug("Skipping non-EnrichedRecord file %s: %s", json_file, exc)
             skipped += 1
+            continue
+
+        # Resume mid-run: skip sources the checkpoint already marks completed
+        # (mirrors transcription / qa / kg orchestrators). For chunking this
+        # rarely matters at <1 s/file, but the convention preserves consistency
+        # and avoids re-writing artifacts on idempotent retries.
+        if checkpoint.is_completed(record.file_id):
+            sources_resumed += 1
             continue
 
         text = record.transcription_text
@@ -142,14 +161,19 @@ def run_chunk_batch(
             continue
 
         checkpoint.mark_completed(record.file_id)
-        written += 1
+        sources_processed += 1
 
-    results_mgr.update_progress(written, failed, len(json_files))
+    # Progress is reported in source units (mirrors sibling orchestrators).
+    # Already-resumed sources count toward "completed" so progress is monotonic
+    # across rerun invocations.
+    results_mgr.update_progress(sources_processed + sources_resumed, failed, len(json_files))
     results_mgr.complete_run(success=(failed == 0))
 
     return ChunkBatchResult(
         pipeline_id=results_mgr._pipeline_id or "",
         run_dir=str(results_mgr.run_dir),
-        written=written,
+        sources_processed=sources_processed,
+        sources_resumed=sources_resumed,
+        chunk_sets_written=sources_processed * len(views),
         skipped=skipped,
     )
