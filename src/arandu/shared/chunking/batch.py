@@ -114,7 +114,7 @@ def run_chunk_batch(
         results_mgr.update_progress(0, 0, 0)
         results_mgr.complete_run(success=True)
         return ChunkBatchResult(
-            pipeline_id=results_mgr._pipeline_id or "",
+            pipeline_id=results_mgr.metadata.pipeline_id,
             run_dir=str(results_mgr.run_dir),
         )
 
@@ -170,7 +170,7 @@ def run_chunk_batch(
     results_mgr.complete_run(success=(failed == 0))
 
     return ChunkBatchResult(
-        pipeline_id=results_mgr._pipeline_id or "",
+        pipeline_id=results_mgr.metadata.pipeline_id,
         run_dir=str(results_mgr.run_dir),
         sources_processed=sources_processed,
         sources_resumed=sources_resumed,

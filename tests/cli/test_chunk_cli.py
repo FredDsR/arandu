@@ -53,7 +53,7 @@ def _write_enriched_record(dir_: Path, file_id: str, text: str) -> Path:
     return path
 
 
-class TestArandruChunkPathLayout:
+class TestAranduChunkPathLayout:
     """Outputs land under `results/<pipeline_id>/chunk/outputs/<chunker_id>/<file_id>.json`."""
 
     def test_writes_chunkset_per_source_under_chunker_subdir(
@@ -126,7 +126,7 @@ class TestArandruChunkPathLayout:
         assert (run_dir / "chunk" / "outputs" / "cep_4k" / "src_a.json").exists()
 
 
-class TestArandruChunkCounterSemantics:
+class TestAranduChunkCounterSemantics:
     """Counter was ambiguous for multi-view runs — split into source vs artifact counts."""
 
     def test_multi_view_run_reports_artifact_count_not_source_count(
@@ -154,7 +154,7 @@ class TestArandruChunkCounterSemantics:
         assert "2 view(s)" in out
 
 
-class TestArandruChunkResumability:
+class TestAranduChunkResumability:
     """The chunk stage resumes from checkpoint like sibling orchestrators."""
 
     def test_second_run_with_same_id_skips_completed_sources(
@@ -185,7 +185,7 @@ class TestArandruChunkResumability:
         assert (outputs / "src_a.json").stat().st_mtime_ns == first_mtime
 
 
-class TestArandruChunkResultsManagerWiring:
+class TestAranduChunkResultsManagerWiring:
     """The CLI emits the standard stage triplet: outputs/, checkpoint, run_metadata."""
 
     def test_emits_run_metadata_json(
@@ -242,7 +242,7 @@ class TestArandruChunkResultsManagerWiring:
         assert PipelineType.CHUNK.value in payload["steps_run"]
 
 
-class TestArandruChunkContentInvariants:
+class TestAranduChunkContentInvariants:
     """Per-view ChunkSet contents are preserved across the path migration."""
 
     def test_chunk_records_source_text_sha256(
