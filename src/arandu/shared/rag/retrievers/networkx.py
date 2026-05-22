@@ -1,0 +1,389 @@
+"""NetworkX subgraph retriever — graph sanity baseline (Phase C spec §4.5).
+
+Joel's framing for Phase C: this arm exists to disentangle "graph quality"
+from "retrieval-tool quality." It uses the SAME KG as :class:`AtlasRagRetriever`
+but a deliberately simpler retrieval algorithm — exact + token-overlap entity
+linking against node labels, a k-hop ego subgraph walk, and passage-mention
+frequency scoring. The atlas-rag minus NetworkX delta is then an estimate of
+atlas-rag's tool-quality contribution holding KG constant.
+
+Implementation notes:
+
+- Pure-python, no atlas-rag dependency. Loads ``kg.graphml`` directly via
+  ``networkx.read_graphml`` — works without the ``--extra kg`` install.
+- The retriever walks an UNDIRECTED ego graph (`nx.ego_graph(..., undirected=True)`)
+  from the entity-linked seed nodes. The KG itself is a directed atlas-rag
+  graph; direction is dropped because mentions / relations both flow in
+  meaningful ways for our scoring purpose.
+- Returned ``chunk_id`` is the passage node's ``id`` attribute (the
+  atlas-rag-prepended passage text), matching what
+  :class:`AtlasRagRetriever.retrieve` returns. Downstream judges that need
+  source-text offsets use the ``passage_offsets.json`` sidecar emitted by
+  ``arandu kg-link-passages`` (PR #100) — neither retriever does that
+  mapping itself.
+- Empty entity-link (no question token overlaps any node label) → returns
+  ``[]`` cleanly. Joel's "graph-floor" guarantee.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import unicodedata
+from collections import Counter, defaultdict
+from pathlib import Path  # noqa: TC003
+from typing import TYPE_CHECKING
+
+import networkx as nx
+
+from arandu.shared.rag.schemas import RetrievedPassage
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+logger = logging.getLogger(__name__)
+
+
+_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+_LINKABLE_TYPES: frozenset[str] = frozenset({"entity", "event", "concept"})
+_MIN_TOKEN_LEN = 3
+_DEFAULT_MAX_POSTINGS = 200
+
+# Short, hand-curated PT + EN stopword list. We deliberately keep this tiny
+# (the most common articles, prepositions, conjunctions, copulas) rather than
+# pulling in spaCy's full list — the NetworkX retriever's role is the sanity
+# baseline, and a small list gives most of the signal-vs-noise improvement
+# without the dependency. The first smoke against `test-kg-04` (a 14k-node
+# KG) without any filtering linked common tokens like "a"/"que"/"de" to
+# thousands of entities, producing identical query results across very
+# different questions in ~25 min wall time per query.
+_STOPWORDS: frozenset[str] = frozenset(
+    {
+        # Portuguese
+        "a",
+        "o",
+        "as",
+        "os",
+        "um",
+        "uma",
+        "uns",
+        "umas",
+        "de",
+        "do",
+        "da",
+        "dos",
+        "das",
+        "no",
+        "na",
+        "nos",
+        "nas",
+        "em",
+        "por",
+        "para",
+        "com",
+        "sem",
+        "sob",
+        "sobre",
+        "ate",
+        "até",
+        "e",
+        "ou",
+        "mas",
+        "porem",
+        "porém",
+        "que",
+        "se",
+        "como",
+        "quando",
+        "onde",
+        "qual",
+        "quais",
+        "quem",
+        "porque",
+        "porquê",
+        "eu",
+        "tu",
+        "ele",
+        "ela",
+        "nós",
+        "vos",
+        "vós",
+        "eles",
+        "elas",
+        "meu",
+        "minha",
+        "teu",
+        "tua",
+        "seu",
+        "sua",
+        "nosso",
+        "nossa",
+        "este",
+        "esta",
+        "esse",
+        "essa",
+        "aquele",
+        "aquela",
+        "isto",
+        "isso",
+        "aquilo",
+        "ser",
+        "ter",
+        "estar",
+        "haver",
+        "ir",
+        "vir",
+        "fazer",
+        "é",
+        "foi",
+        "era",
+        "são",
+        "está",
+        "estão",
+        "tem",
+        "têm",
+        "ha",
+        "há",
+        "muito",
+        "muitos",
+        "muita",
+        "muitas",
+        "pouco",
+        "poucos",
+        "todo",
+        "todos",
+        "não",
+        "nao",
+        "sim",
+        "já",
+        "ja",
+        "ainda",
+        "também",
+        "tambem",
+        # English (queries may mix PT/EN in this corpus)
+        "an",
+        "the",
+        "of",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "with",
+        "by",
+        "from",
+        "into",
+        "about",
+        "and",
+        "or",
+        "but",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "i",
+        "you",
+        "he",
+        "she",
+        "it",
+        "we",
+        "they",
+        "this",
+        "that",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "not",
+        "yes",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "when",
+        "where",
+        "why",
+        "how",
+    }
+)
+
+
+def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
+    """Whitespace + punctuation split, lowercased + NFKC-normalised.
+
+    When ``filter_stopwords`` is true, tokens in :data:`_STOPWORDS` and tokens
+    shorter than :data:`_MIN_TOKEN_LEN` are dropped. We do NOT filter at
+    index-build time (node labels keep all tokens so multi-word names like
+    "rio Uruguai" remain linkable when the question mentions only the rare
+    half); only the QUERY tokens are filtered, so a question composed only
+    of stopwords degenerates to an empty entity link and the graph-floor
+    guarantee fires (returns ``[]``).
+    """
+    normalised = unicodedata.normalize("NFKC", text).casefold()
+    tokens = _TOKEN_RE.findall(normalised)
+    if filter_stopwords:
+        tokens = [t for t in tokens if t not in _STOPWORDS and len(t) >= _MIN_TOKEN_LEN]
+    return tokens
+
+
+class NetworkXRetriever:
+    """K-hop subgraph retriever over an atlas-rag-built KG.
+
+    Attributes:
+        retriever_id: Stable identifier; defaults to ``networkx_khop``.
+    """
+
+    RETRIEVER_FAMILY = "networkx"
+    DEFAULT_RETRIEVER_ID = "networkx_khop"
+
+    retriever_id: str
+
+    def __init__(
+        self,
+        graphml_path: Path,
+        k_hop: int = 2,
+        max_postings: int = _DEFAULT_MAX_POSTINGS,
+        retriever_id: str | None = None,
+    ) -> None:
+        """Load the KG and pre-build the entity-label index.
+
+        Args:
+            graphml_path: Path to ``kg.graphml`` produced by ``arandu build-kg``.
+            k_hop: Ego-graph radius used at retrieval time. Must be ``>= 1``.
+            max_postings: A poor-person's IDF threshold. Tokens whose
+                inverted-index posting list exceeds this size are treated
+                as too common and dropped from the entity link. Bounds the
+                worst-case subgraph size: with ``max_postings=200`` and
+                ``k_hop=2`` the per-query work stays in the seconds-range
+                on a 14k-node KG. Without it, common-but-topical tokens
+                like "enchente" (which name-matches thousands of entities
+                in a flood-themed corpus) blow the ego-graph up to most of
+                the giant component, producing identical results across
+                very different questions in minutes-per-query.
+            retriever_id: Optional override of :attr:`DEFAULT_RETRIEVER_ID`.
+
+        Raises:
+            FileNotFoundError: If ``graphml_path`` does not exist.
+            ValueError: If ``k_hop < 1`` or ``max_postings < 1``.
+        """
+        if not graphml_path.exists():
+            raise FileNotFoundError(f"kg.graphml not found at {graphml_path}")
+        if k_hop < 1:
+            raise ValueError(f"k_hop must be >= 1, got {k_hop}")
+        if max_postings < 1:
+            raise ValueError(f"max_postings must be >= 1, got {max_postings}")
+
+        self.retriever_id = retriever_id or self.DEFAULT_RETRIEVER_ID
+        self._k_hop = k_hop
+        self._max_postings = max_postings
+        self._kg: nx.DiGraph = nx.read_graphml(str(graphml_path))
+
+        # Token-level inverted index: token → set of linkable node_ids whose
+        # label tokenizes to include that token. Lets entity-link be O(Q)
+        # where Q is the question's distinct token count, instead of
+        # O(N * Q) over every node every query.
+        self._token_to_nodes: dict[str, set[str]] = defaultdict(set)
+        self._passage_text: dict[str, str] = {}
+        for node_id, attrs in self._kg.nodes(data=True):
+            node_type = attrs.get("type")
+            label = attrs.get("id", "")
+            if node_type in _LINKABLE_TYPES:
+                for token in _tokenize(label):
+                    self._token_to_nodes[token].add(node_id)
+            elif node_type == "passage":
+                self._passage_text[node_id] = label
+
+    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+        """Run the entity-link + k-hop + frequency-scoring pipeline.
+
+        Args:
+            question: Natural-language query.
+            top_k: Maximum number of passages to return.
+
+        Returns:
+            A list of :class:`RetrievedPassage` with consecutive
+            zero-indexed ranks and monotonically non-increasing scores.
+            Empty entity link → empty list (graph-floor guarantee).
+        """
+        seeds = self._entity_link(question)
+        if not seeds:
+            return []
+
+        # Union the k-hop ego graph of each seed. NetworkX's `ego_graph`
+        # returns a copy already; we union node IDs only.
+        subgraph_nodes: set[str] = set()
+        for seed in seeds:
+            ego = nx.ego_graph(self._kg, seed, radius=self._k_hop, undirected=True)
+            subgraph_nodes.update(ego.nodes)
+
+        # Passage scoring: a passage counts only if its NODE is in the
+        # subgraph (i.e. reachable from a seed within k_hop edges). The
+        # score is how many other subgraph nodes reference it via
+        # `file_id` (atlas-rag's mention-attribution convention; cf.
+        # `kg/atlas_backend.py`). Limiting "candidate passages" to those
+        # actually in the subgraph is what makes the `k_hop` knob
+        # meaningful — without it, any seed entity would surface its own
+        # passage regardless of edge connectivity, defeating the
+        # "graph-quality vs retrieval-tool" decomposition this baseline
+        # exists to test.
+        candidate_passages = {n for n in subgraph_nodes if n in self._passage_text}
+        passage_counts: Counter[str] = Counter()
+        for node_id in subgraph_nodes:
+            if node_id in candidate_passages:
+                # Don't count a passage's own self-mention.
+                continue
+            file_id_attr = self._kg.nodes[node_id].get("file_id", "")
+            if not file_id_attr:
+                continue
+            for pid in (p.strip() for p in file_id_attr.split(",")):
+                if pid and pid in candidate_passages:
+                    passage_counts[pid] += 1
+
+        if not passage_counts:
+            return []
+
+        ranked = passage_counts.most_common(top_k)
+        max_count = ranked[0][1]
+        return [
+            RetrievedPassage(
+                chunk_id=self._passage_text[passage_node_id],
+                rank=rank,
+                score=count / max_count,
+                retriever_meta={
+                    "score_method": "node_freq_khop",
+                    "k_hop": self._k_hop,
+                },
+            )
+            for rank, (passage_node_id, count) in enumerate(ranked)
+        ]
+
+    def _entity_link(self, question: str) -> Iterable[str]:
+        """Find seed nodes whose label tokens overlap the question's tokens.
+
+        Token-level intersection — a question token "Uruguai" hits any
+        linkable node whose label tokenizes to include "uruguai" (case-
+        folded). Returns deduplicated node IDs. Empty when no token matches
+        (graph-floor guarantee fires upstream).
+
+        Query tokens are filtered via :func:`_tokenize`'s stopword mode so
+        common particles like "que" / "a" / "de" don't link to thousands of
+        unrelated entities. Node-label tokens at index-build time are NOT
+        stopword-filtered so multi-word names like "rio Uruguai" remain
+        linkable when the question mentions only the rare half ("Uruguai").
+        """
+        question_tokens = set(_tokenize(question, filter_stopwords=True))
+        if not question_tokens:
+            return []
+        seeds: set[str] = set()
+        for token in question_tokens:
+            postings = self._token_to_nodes.get(token, ())
+            if len(postings) > self._max_postings:
+                # Token is too common in the KG — likely a topical word that
+                # would explode the seed set. Skip it (IDF-style threshold).
+                continue
+            seeds.update(postings)
+        return seeds
