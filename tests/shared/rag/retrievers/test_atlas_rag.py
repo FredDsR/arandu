@@ -166,7 +166,7 @@ def _write_minimal_precompute(
     *,
     sentence_encoder_model: str = "m",
     keyword: str = "transcriptions.json",
-    include_events: bool = False,
+    include_events: bool = True,
     include_concept: bool = True,
     write_graphml_sha: bool = True,
     write_artifact_sha: bool = True,
@@ -274,6 +274,60 @@ class TestAtlasRagManifestIntegrity:
                 sentence_encoder=MagicMock(),
                 sentence_encoder_model="m",
             )
+
+    def test_build_index_rejects_invalid_combo_before_calling_upstream(
+        self, tmp_path: Path
+    ) -> None:
+        # atlas-rag's create_embeddings_and_index raises a cryptic ValueError
+        # on the (False, True) combo deep in its body; defend with a clearer
+        # error before we even try to call it.
+        kg_outputs_dir = tmp_path / "atlas_output"
+        (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
+        (kg_outputs_dir / "kg_graphml" / "transcriptions.json_graph.graphml").write_bytes(
+            b"<graphml/>"
+        )
+
+        with pytest.raises(ValueError, match="does not support"):
+            AtlasRagRetriever.build_index(
+                kg_outputs_dir=kg_outputs_dir,
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+                include_events=False,
+                include_concept=True,
+            )
+
+    def test_patch_orphan_file_ids_injects_sentinel(self) -> None:
+        # Real-world: `kg/atlas_backend.py` with qwen3:14b PT prompts emits
+        # event nodes without a `file_id` attribute (4446 of 4451 in
+        # test-kg-04). atlas-rag's HippoRAGRetriever.__init__ reads
+        # `node["file_id"]` unconditionally and crashes with KeyError;
+        # injecting the `concept_file` sentinel keeps PPR working without
+        # polluting passage scoring (the retriever already filters that
+        # sentinel in its passage-aggregation loop).
+        import networkx as nx
+
+        kg = nx.DiGraph()
+        kg.add_node("entity_a", type="entity", file_id="src_a")
+        kg.add_node("event_orphan", type="event")  # NO file_id
+        kg.add_node("event_with_src", type="event", file_id="src_b")
+        kg.add_node("passage_a", type="passage", file_id="src_a")
+
+        patched = AtlasRagRetriever._patch_orphan_file_ids(kg)
+
+        assert patched == 1
+        assert kg.nodes["event_orphan"]["file_id"] == "concept_file"
+        # Pre-existing values must be untouched.
+        assert kg.nodes["entity_a"]["file_id"] == "src_a"
+        assert kg.nodes["event_with_src"]["file_id"] == "src_b"
+        assert kg.nodes["passage_a"]["file_id"] == "src_a"
+
+    def test_patch_orphan_file_ids_no_op_when_all_present(self) -> None:
+        import networkx as nx
+
+        kg = nx.DiGraph()
+        kg.add_node("n1", type="entity", file_id="src_a")
+        kg.add_node("n2", type="passage", file_id="src_b")
+        assert AtlasRagRetriever._patch_orphan_file_ids(kg) == 0
 
     def test_manifest_without_artifact_sha_rejected(self, tmp_path: Path) -> None:
         kg_outputs_dir = _write_minimal_precompute(tmp_path, write_artifact_sha=False)

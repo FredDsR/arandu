@@ -70,7 +70,7 @@ class AtlasRagRetriever:
         sentence_encoder: Any,
         sentence_encoder_model: str,
         keyword: str = "transcriptions.json",
-        include_events: bool = False,
+        include_events: bool = True,
         include_concept: bool = True,
         retriever_id: str | None = None,
     ) -> None:
@@ -156,7 +156,7 @@ class AtlasRagRetriever:
         sentence_encoder: Any,
         sentence_encoder_model: str,
         keyword: str = "transcriptions.json",
-        include_events: bool = False,
+        include_events: bool = True,
         include_concept: bool = True,
     ) -> None:
         """Compute embeddings + faiss indexes for the KG at ``kg_outputs_dir``.
@@ -166,10 +166,26 @@ class AtlasRagRetriever:
         ``<kg_outputs_dir>/precompute/`` plus a wrapper manifest at
         ``<kg_outputs_dir>/precompute/manifest.json``.
 
+        ``include_events`` and ``include_concept`` control which node types
+        participate in the node embedding set. Atlas-rag accepts only three
+        of the four combinations (``(False, True)`` raises upstream) — we
+        defend that here with a clearer error. Defaults to ``(True, True)``,
+        matching how the project's KG is constructed (events + concepts +
+        entities) per :mod:`arandu.kg.atlas_backend`.
+
         Raises:
             FileNotFoundError: If the source graphml is missing.
+            ValueError: If ``(include_events, include_concept) == (False, True)``,
+                which atlas-rag rejects.
         """
-        from atlas_rag.vectorstore.create_graph_index import create_embeddings_and_index
+        # Validate args BEFORE importing atlas-rag so the error fires cleanly
+        # in environments where the `kg` extra is not installed (e.g. CI).
+        if not include_events and include_concept:
+            raise ValueError(
+                "atlas-rag does not support include_events=False with "
+                "include_concept=True. Valid combinations are: "
+                "(False, False), (True, False), or (True, True)."
+            )
 
         graphml_path = kg_outputs_dir / GRAPHML_SUBDIR / f"{keyword}_graph.graphml"
         if not graphml_path.exists():
@@ -177,6 +193,8 @@ class AtlasRagRetriever:
                 f"atlas-rag source graphml not found at {graphml_path}. "
                 f"Build the KG via `arandu build-kg` first."
             )
+
+        from atlas_rag.vectorstore.create_graph_index import create_embeddings_and_index
 
         precompute_dir = kg_outputs_dir / PRECOMPUTE_DIR_NAME
         precompute_dir.mkdir(parents=True, exist_ok=True)
@@ -346,6 +364,7 @@ class AtlasRagRetriever:
 
         with graphml_path.open("rb") as f:
             kg = nx.read_graphml(f)
+        cls._patch_orphan_file_ids(kg)
 
         return {
             "node_embeddings": loaded["node_embeddings"],
@@ -356,6 +375,36 @@ class AtlasRagRetriever:
             "text_dict": loaded["text_dict"],
             "KG": kg,
         }
+
+    @staticmethod
+    def _patch_orphan_file_ids(kg: Any) -> int:
+        """Inject the ``concept_file`` sentinel on KG nodes missing ``file_id``.
+
+        Atlas-rag's :class:`HippoRAGRetriever.__init__` reads
+        ``node["file_id"]`` unconditionally on every node, but our KG
+        construction (`kg/atlas_backend.py` with qwen3:14b on PT prompts)
+        emits **event nodes without a `file_id` attribute** — 4446 of 4451
+        event nodes in ``test-kg-04``. The retriever's ``retrieve()`` already
+        skips nodes whose ``file_id == "concept_file"`` (atlas-rag's
+        own sentinel for orphan/concept nodes that shouldn't contribute
+        to passage scoring), so injecting that value lets the orphan events
+        survive into the graph + participate in PPR traversal without
+        muddying passage probabilities.
+
+        Returns the number of nodes patched. Callers may log it if useful.
+        """
+        patched = 0
+        for _, attrs in kg.nodes(data=True):
+            if "file_id" not in attrs:
+                attrs["file_id"] = "concept_file"
+                patched += 1
+        if patched:
+            logger.info(
+                "Patched %d KG node(s) missing 'file_id' with the "
+                "'concept_file' sentinel (atlas-rag compatibility shim).",
+                patched,
+            )
+        return patched
 
     @staticmethod
     def _build_inner_retriever(
