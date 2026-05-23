@@ -130,6 +130,34 @@ def _strip_atlas_header(text: str) -> str:
     return text[idx + len(_HEADER_END_MARKER) :]
 
 
+def build_passage_text_to_atlas_passage_id(
+    kg_extraction_dir: Path,
+) -> dict[str, str]:
+    """Map each atlas-rag passage's ``original_text`` to its synthesized passage_id.
+
+    The atlas-rag KG stores passage *texts* as a node attribute (``id`` on
+    passage nodes); the ``passage_offsets.json`` sidecar uses a
+    ``<source_file_id>:<chunk_index>`` form. Retrievers that ride on
+    HippoRAG / NetworkX need to convert from one to the other so
+    ``RetrievedPassage.chunk_id`` carries the spec's stable identifier
+    rather than an opaque text blob.
+
+    The mapping uses the same JSONL iterator as :func:`link_passages` —
+    chunk indices are assigned by JSONL position per source file_id, so
+    the result is byte-identical to what
+    :class:`PassageOffsetSidecar.offsets` was built against (assuming
+    the same ``kg_extraction_dir`` is consulted).
+
+    Args:
+        kg_extraction_dir: Path to ``results/<id>/kg/outputs/atlas_output/kg_extraction/``.
+
+    Returns:
+        A ``{original_text: "<source_file_id>:<chunk_index>"}`` dict.
+        Empty if the directory is missing or contains no parseable records.
+    """
+    return {p.text: p.passage_id for p in _iter_atlas_passages(kg_extraction_dir)}
+
+
 def _load_source_text(transcription_dir: Path, file_id: str) -> str | None:
     """Load ``EnrichedRecord.transcription_text`` for ``file_id`` from disk.
 

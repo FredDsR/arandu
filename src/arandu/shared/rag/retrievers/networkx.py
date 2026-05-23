@@ -15,12 +15,15 @@ Implementation notes:
   from the entity-linked seed nodes. The KG itself is a directed atlas-rag
   graph; direction is dropped because mentions / relations both flow in
   meaningful ways for our scoring purpose.
-- Returned ``chunk_id`` is the passage node's ``id`` attribute (the
-  atlas-rag-prepended passage text), matching what
-  :class:`AtlasRagRetriever.retrieve` returns. Downstream judges that need
-  source-text offsets use the ``passage_offsets.json`` sidecar emitted by
-  ``arandu kg-link-passages`` (PR #100) — neither retriever does that
-  mapping itself.
+- Returned ``chunk_id`` is the atlas-rag synthesized passage_id
+  (``<source_file_id>:<chunk_index>``) — same namespace as the
+  ``passage_offsets.json`` sidecar from PR #100, so downstream judges
+  that consult offsets can join directly. The bridge from KG passage
+  node text to that ID is built once at construction via
+  :func:`arandu.kg.passage_offsets.build_passage_text_to_atlas_passage_id`.
+  Passages whose KG node text has no matching ``kg_extraction`` record
+  (rare; happens if the JSONL was pruned or the KG was rebuilt against
+  a different corpus snapshot) are dropped from results.
 - Empty entity-link (no question token overlaps any node label) → returns
   ``[]`` cleanly. Joel's "graph-floor" guarantee.
 """
@@ -36,6 +39,7 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
+from arandu.kg.passage_offsets import build_passage_text_to_atlas_passage_id
 from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
@@ -244,15 +248,23 @@ class NetworkXRetriever:
 
     def __init__(
         self,
-        graphml_path: Path,
+        kg_outputs_dir: Path,
+        keyword: str = "transcriptions.json",
         k_hop: int = 2,
         max_postings: int = _DEFAULT_MAX_POSTINGS,
         retriever_id: str | None = None,
     ) -> None:
-        """Load the KG and pre-build the entity-label index.
+        """Load the KG, the ``passage_text → passage_id`` map, and the entity-label index.
 
         Args:
-            graphml_path: Path to ``kg.graphml`` produced by ``arandu build-kg``.
+            kg_outputs_dir: The atlas-rag output dir, typically
+                ``results/<pipeline_id>/kg/outputs/atlas_output/``. Must
+                contain ``kg_graphml/<keyword>_graph.graphml`` and
+                ``kg_extraction/*.json``. Same layout the
+                :class:`AtlasRagRetriever` expects.
+            keyword: atlas-rag's filename pattern; defaults to the project
+                convention ``"transcriptions.json"`` (cf.
+                :mod:`arandu.kg.atlas_backend`).
             k_hop: Ego-graph radius used at retrieval time. Must be ``>= 1``.
             max_postings: A poor-person's IDF threshold. Tokens whose
                 inverted-index posting list exceeds this size are treated
@@ -267,20 +279,40 @@ class NetworkXRetriever:
             retriever_id: Optional override of :attr:`DEFAULT_RETRIEVER_ID`.
 
         Raises:
-            FileNotFoundError: If ``graphml_path`` does not exist.
+            FileNotFoundError: If the graphml or the ``kg_extraction/``
+                directory is missing under ``kg_outputs_dir``.
             ValueError: If ``k_hop < 1`` or ``max_postings < 1``.
         """
-        if not graphml_path.exists():
-            raise FileNotFoundError(f"kg.graphml not found at {graphml_path}")
         if k_hop < 1:
             raise ValueError(f"k_hop must be >= 1, got {k_hop}")
         if max_postings < 1:
             raise ValueError(f"max_postings must be >= 1, got {max_postings}")
 
+        graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
+        if not graphml_path.exists():
+            raise FileNotFoundError(f"kg.graphml not found at {graphml_path}")
+        kg_extraction_dir = kg_outputs_dir / "kg_extraction"
+        if not kg_extraction_dir.exists():
+            raise FileNotFoundError(
+                f"kg_extraction dir not found at {kg_extraction_dir}. "
+                f"Required to bridge KG passage nodes to atlas-rag's "
+                f"synthesized passage_id namespace."
+            )
+
         self.retriever_id = retriever_id or self.DEFAULT_RETRIEVER_ID
         self._k_hop = k_hop
         self._max_postings = max_postings
         self._kg: nx.DiGraph = nx.read_graphml(str(graphml_path))
+
+        # passage_text → "<source_file_id>:<chunk_index>" — built from the
+        # same JSONL iterator that powers `arandu kg-link-passages`, so the
+        # IDs we hand out are byte-identical to the ones in
+        # `passage_offsets.json`. The downstream `passage_coverage`
+        # offset-variant judge consults that sidecar; sharing the
+        # namespace here is what lets it find our results.
+        self._text_to_passage_id: dict[str, str] = build_passage_text_to_atlas_passage_id(
+            kg_extraction_dir
+        )
 
         # Token-level inverted index: token → set of linkable node_ids whose
         # label tokenizes to include that token. Lets entity-link be O(Q)
@@ -346,11 +378,36 @@ class NetworkXRetriever:
         if not passage_counts:
             return []
 
-        ranked = passage_counts.most_common(top_k)
+        # Convert KG passage-node hashes to atlas-rag synthesized passage_ids
+        # (``<source_file_id>:<chunk_index>`` — same namespace as
+        # `passage_offsets.json` from PR #100). KG passage nodes that have no
+        # matching `kg_extraction` JSONL record are dropped — they're either
+        # corpus-snapshot drift or atlas-rag-internal nodes without a
+        # downstream identity, and surfacing them in `RetrievedPassage`
+        # would carry an opaque hash that can't be joined with the offset
+        # sidecar the judges consult.
+        ranked: list[tuple[str, int]] = []
+        for passage_node_id, count in passage_counts.most_common():
+            text = self._passage_text[passage_node_id]
+            atlas_passage_id = self._text_to_passage_id.get(text)
+            if atlas_passage_id is None:
+                logger.debug(
+                    "Skipping KG passage node %s — no matching kg_extraction "
+                    "record (text-equality miss).",
+                    passage_node_id,
+                )
+                continue
+            ranked.append((atlas_passage_id, count))
+            if len(ranked) >= top_k:
+                break
+
+        if not ranked:
+            return []
+
         max_count = ranked[0][1]
         return [
             RetrievedPassage(
-                chunk_id=self._passage_text[passage_node_id],
+                chunk_id=atlas_passage_id,
                 rank=rank,
                 score=count / max_count,
                 retriever_meta={
@@ -358,7 +415,7 @@ class NetworkXRetriever:
                     "k_hop": self._k_hop,
                 },
             )
-            for rank, (passage_node_id, count) in enumerate(ranked)
+            for rank, (atlas_passage_id, count) in enumerate(ranked)
         ]
 
     def _entity_link(self, question: str) -> Iterable[str]:
