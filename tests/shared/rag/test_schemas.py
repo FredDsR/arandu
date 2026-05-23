@@ -21,12 +21,14 @@ def _passage(
     rank: int = 0,
     score: float = 1.2,
     retriever_meta: dict[str, object] | None = None,
+    payload: str | None = None,
 ) -> RetrievedPassage:
     return RetrievedPassage(
         chunk_id=chunk_id,
         rank=rank,
         score=score,
         retriever_meta=retriever_meta or {},
+        payload=payload,
     )
 
 
@@ -66,6 +68,27 @@ class TestRetrievedPassage:
         # BM25 / cosine variants can produce negative or zero scores; don't gate on sign.
         p = _passage(score=-0.5)
         assert p.score == -0.5
+
+    def test_payload_defaults_none(self) -> None:
+        # Existing retrievers (BM25, atlas-rag, NetworkX, Null) don't set payload;
+        # the field must default to None so they continue working unchanged.
+        p = _passage()
+        assert p.payload is None
+
+    def test_payload_carries_arbitrary_string(self) -> None:
+        # Used by retrievers that emit non-chunk content (e.g. linearized KG
+        # triples). When set, the Answerer uses payload verbatim instead of
+        # resolving chunk_id → source-text via offsets.
+        triple = "[PERSON] Maria --[VIVE_EM]--> [LOCATION] Barra do Ribeiro"
+        p = _passage(payload=triple)
+        assert p.payload == triple
+
+    def test_payload_roundtrips_through_json(self) -> None:
+        # The container persists RetrievedPassage to JSONL via RetrievalRecord;
+        # payload must survive serialize/deserialize for the Answerer to read it.
+        original = _passage(payload="some triple text")
+        roundtripped = type(original).model_validate_json(original.model_dump_json())
+        assert roundtripped.payload == "some triple text"
 
 
 class TestRetrievalRecord:
