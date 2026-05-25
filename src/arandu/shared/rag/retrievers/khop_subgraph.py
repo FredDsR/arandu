@@ -347,6 +347,11 @@ class KHopSubgraphRetriever:
             zero-indexed ranks and monotonically non-increasing scores.
             Empty entity link → empty list (graph-floor guarantee).
         """
+        if top_k <= 0:
+            # Contract: caller may pass top_k=0 to disable an arm without
+            # branching elsewhere. Return [] cleanly rather than letting
+            # the build-then-cap loop yield a stray record.
+            return []
         seeds = self._entity_link(question)
         if not seeds:
             return []

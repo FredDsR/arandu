@@ -467,6 +467,12 @@ class AtlasRagRetriever:
             is atlas-rag's ``passage_id``; offsets are looked up via the
             ``passage_offsets.json`` sidecar by downstream judges.
         """
+        if top_k <= 0:
+            # Contract: caller may pass top_k=0 to disable an arm without
+            # branching elsewhere. Return [] cleanly rather than letting
+            # the bridge loop's `len(out) >= 0` short-circuit yield a
+            # stray record.
+            return []
         scored = self._retrieve_with_scores(question, top_k=top_k)
         return _atlas_results_to_retrieved_passages(scored)
 
