@@ -9,8 +9,9 @@ atlas-rag's tool-quality contribution holding KG constant.
 
 Implementation notes:
 
-- Pure-python, no atlas-rag dependency. Loads ``kg.graphml`` directly via
-  ``networkx.read_graphml`` — works without the ``--extra kg`` install.
+- Pure-python, no atlas-rag dependency. Loads the atlas-rag GraphML
+  (``kg_graphml/<keyword>_graph.graphml`` under ``kg_outputs_dir``) directly
+  via ``networkx.read_graphml`` — works without the ``--extra kg`` install.
 - The retriever walks an UNDIRECTED ego graph (`nx.ego_graph(..., undirected=True)`)
   from the entity-linked seed nodes. The KG itself is a directed atlas-rag
   graph; direction is dropped because mentions / relations both flow in
@@ -290,7 +291,7 @@ class NetworkXRetriever:
 
         graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
         if not graphml_path.exists():
-            raise FileNotFoundError(f"kg.graphml not found at {graphml_path}")
+            raise FileNotFoundError(f"atlas-rag GraphML not found at {graphml_path}")
         kg_extraction_dir = kg_outputs_dir / "kg_extraction"
         if not kg_extraction_dir.exists():
             raise FileNotFoundError(
@@ -413,6 +414,7 @@ class NetworkXRetriever:
                 retriever_meta={
                     "score_method": "node_freq_khop",
                     "k_hop": self._k_hop,
+                    "max_postings": self._max_postings,
                 },
             )
             for rank, (atlas_passage_id, count) in enumerate(ranked)

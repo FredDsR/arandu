@@ -102,8 +102,11 @@ class AtlasRagRetriever:
 
         Raises:
             FileNotFoundError: If ``kg_outputs_dir``, the precompute dir,
-                the manifest, or any precomputed artifact is missing.
-            ValueError: If the manifest disagrees with constructor args.
+                the manifest, the ``kg_extraction`` subdir, or any
+                precomputed artifact is missing.
+            ValueError: If the manifest disagrees with constructor args,
+                or if ``kg_extraction`` is present but contains no
+                parseable records (empty passage_text→passage_id bridge).
         """
         if not kg_outputs_dir.exists():
             raise FileNotFoundError(f"atlas-rag kg outputs dir not found: {kg_outputs_dir}")
@@ -120,6 +123,15 @@ class AtlasRagRetriever:
                 f"Rebuild the precompute via AtlasRagRetriever.build_index."
             )
         graphml_path = kg_outputs_dir / GRAPHML_SUBDIR / f"{keyword}_graph.graphml"
+        kg_extraction_dir = kg_outputs_dir / "kg_extraction"
+        if not kg_extraction_dir.exists():
+            raise FileNotFoundError(
+                f"atlas-rag kg_extraction dir not found at {kg_extraction_dir}. "
+                f"Required to bridge KG passage nodes to atlas-rag's "
+                f"synthesized passage_id namespace; without it every "
+                f"RetrievedPassage would carry an opaque KG hash that can't "
+                f"be joined with passage_offsets.json."
+            )
         manifest = json.loads(manifest_path.read_text())
         self._validate_manifest(
             manifest,
@@ -140,9 +152,14 @@ class AtlasRagRetriever:
         # namespace used by `passage_offsets.json` (PR #100). Upstream's
         # HippoRAG returns passage TEXT for each match; we look it up here to
         # emit a stable, sidecar-joinable `RetrievedPassage.chunk_id`.
-        self._text_to_passage_id = build_passage_text_to_atlas_passage_id(
-            kg_outputs_dir / "kg_extraction"
-        )
+        self._text_to_passage_id = build_passage_text_to_atlas_passage_id(kg_extraction_dir)
+        if not self._text_to_passage_id:
+            raise ValueError(
+                f"kg_extraction at {kg_extraction_dir} contained no parseable "
+                f"records — passage_text→passage_id bridge is empty and every "
+                f"retrieval would silently drop all results. Rebuild the KG "
+                f"via `arandu build-kg`."
+            )
 
         data = self._load_data_dict(
             precompute_dir=precompute_dir,

@@ -258,6 +258,7 @@ def _write_minimal_precompute(
     include_concept: bool = True,
     write_graphml_sha: bool = True,
     write_artifact_sha: bool = True,
+    write_kg_extraction: bool = True,
     graphml_bytes: bytes = b"<graphml>fake</graphml>",
 ) -> Path:
     """Build a minimal kg_outputs_dir with manifest + (optional) sha fields.
@@ -273,6 +274,12 @@ def _write_minimal_precompute(
     precompute = kg_outputs_dir / "precompute"
     (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
     precompute.mkdir(parents=True)
+    if write_kg_extraction:
+        extraction = kg_outputs_dir / "kg_extraction"
+        extraction.mkdir(parents=True)
+        (extraction / "records.json").write_text(
+            json.dumps({"id": "src_x", "original_text": "placeholder passage text"}) + "\n"
+        )
 
     graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
     graphml_path.write_bytes(graphml_bytes)
@@ -420,6 +427,39 @@ class TestAtlasRagManifestIntegrity:
     def test_manifest_without_artifact_sha_rejected(self, tmp_path: Path) -> None:
         kg_outputs_dir = _write_minimal_precompute(tmp_path, write_artifact_sha=False)
         with pytest.raises(ValueError, match="no sha256 for artifact"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_missing_kg_extraction_dir_raises(self, tmp_path: Path) -> None:
+        # Without kg_extraction/, the passage_text → passage_id bridge is
+        # empty and every retrieval silently drops all results. The
+        # constructor must fail fast so the stable chunk_id contract that
+        # downstream judges (passage_offsets.json sidecar) depend on stays
+        # observable.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_kg_extraction=False)
+        with pytest.raises(FileNotFoundError, match="kg_extraction"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_empty_kg_extraction_raises(self, tmp_path: Path) -> None:
+        # kg_extraction/ exists but has no parseable records → the
+        # passage_text→passage_id map is empty. Same failure mode as a
+        # missing dir, surfaced loudly so the operator sees it.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Wipe the placeholder record we wrote in the fixture.
+        for f in (kg_outputs_dir / "kg_extraction").glob("*.json"):
+            f.unlink()
+        with pytest.raises(ValueError, match="no parseable records"):
             AtlasRagRetriever(
                 kg_outputs_dir=kg_outputs_dir,
                 llm_client=MagicMock(),

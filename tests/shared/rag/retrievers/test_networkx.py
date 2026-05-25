@@ -217,9 +217,13 @@ class TestNetworkXRetrieverRetrieve:
 
     def test_retriever_meta_records_score_method(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2, max_postings=50)
         results = retriever.retrieve("enchente", top_k=1)
-        assert results[0].retriever_meta == {"score_method": "node_freq_khop", "k_hop": 2}
+        assert results[0].retriever_meta == {
+            "score_method": "node_freq_khop",
+            "k_hop": 2,
+            "max_postings": 50,
+        }
 
     def test_empty_entity_link_returns_empty(self, tmp_path: Path) -> None:
         # Joel's graph-floor guarantee: a question with NO recognizable
