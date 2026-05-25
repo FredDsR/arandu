@@ -37,6 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING, Any
 
+from arandu.kg.passage_offsets import build_passage_text_to_atlas_passage_id
 from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
@@ -101,8 +102,11 @@ class AtlasRagRetriever:
 
         Raises:
             FileNotFoundError: If ``kg_outputs_dir``, the precompute dir,
-                the manifest, or any precomputed artifact is missing.
-            ValueError: If the manifest disagrees with constructor args.
+                the manifest, the ``kg_extraction`` subdir, or any
+                precomputed artifact is missing.
+            ValueError: If the manifest disagrees with constructor args,
+                or if ``kg_extraction`` is present but contains no
+                parseable records (empty passage_text→passage_id bridge).
         """
         if not kg_outputs_dir.exists():
             raise FileNotFoundError(f"atlas-rag kg outputs dir not found: {kg_outputs_dir}")
@@ -119,6 +123,15 @@ class AtlasRagRetriever:
                 f"Rebuild the precompute via AtlasRagRetriever.build_index."
             )
         graphml_path = kg_outputs_dir / GRAPHML_SUBDIR / f"{keyword}_graph.graphml"
+        kg_extraction_dir = kg_outputs_dir / "kg_extraction"
+        if not kg_extraction_dir.exists():
+            raise FileNotFoundError(
+                f"atlas-rag kg_extraction dir not found at {kg_extraction_dir}. "
+                f"Required to bridge KG passage nodes to atlas-rag's "
+                f"synthesized passage_id namespace; without it every "
+                f"RetrievedPassage would carry an opaque KG hash that can't "
+                f"be joined with passage_offsets.json."
+            )
         manifest = json.loads(manifest_path.read_text())
         self._validate_manifest(
             manifest,
@@ -133,6 +146,20 @@ class AtlasRagRetriever:
         self._kg_outputs_dir = kg_outputs_dir
         self._sentence_encoder_model = sentence_encoder_model
         self._keyword = keyword
+
+        # passage_text → "<source_file_id>:<chunk_index>" — bridges atlas-rag's
+        # internal KG-passage-text identity to the synthesized passage_id
+        # namespace used by `passage_offsets.json` (PR #100). Upstream's
+        # HippoRAG returns passage TEXT for each match; we look it up here to
+        # emit a stable, sidecar-joinable `RetrievedPassage.chunk_id`.
+        self._text_to_passage_id = build_passage_text_to_atlas_passage_id(kg_extraction_dir)
+        if not self._text_to_passage_id:
+            raise ValueError(
+                f"kg_extraction at {kg_extraction_dir} contained no parseable "
+                f"records — passage_text→passage_id bridge is empty and every "
+                f"retrieval would silently drop all results. Rebuild the KG "
+                f"via `arandu build-kg`."
+            )
 
         data = self._load_data_dict(
             precompute_dir=precompute_dir,
@@ -485,10 +512,43 @@ class AtlasRagRetriever:
                 for node_id in inner.file_id_to_node_id.get(file_id, ()):
                     passage_probs[node_id] = passage_probs.get(node_id, 0.0) + weight
 
-        ranked = sorted(passage_probs.items(), key=lambda x: x[1], reverse=True)[:top_k]
-        return [
-            (inner.text_id_to_node_name[passage_id], float(score)) for passage_id, score in ranked
-        ]
+        # Pull more candidates than top_k because some may have no
+        # `kg_extraction` bridge and need to be dropped. Walk the full ranked
+        # list lazily, accumulating only successfully-bridged results.
+        ranked_all = sorted(passage_probs.items(), key=lambda x: x[1], reverse=True)
+        return self._bridge_to_atlas_passage_ids(ranked_all, top_k=top_k)
+
+    def _bridge_to_atlas_passage_ids(
+        self, ranked: list[tuple[str, float]], *, top_k: int
+    ) -> list[tuple[str, float]]:
+        """Convert ``(kg_passage_node, score)`` pairs to ``(<source_file_id>:<idx>, score)``.
+
+        For each ranked KG passage node, look up the passage text via the
+        inner retriever's ``text_id_to_node_name`` then bridge to atlas-rag's
+        synthesized passage_id via ``self._text_to_passage_id``. Passages
+        whose text has no matching ``kg_extraction`` JSONL record are
+        dropped — surfacing them with an opaque KG hash would defeat the
+        ``passage_offsets.json`` join the downstream judges depend on.
+
+        Walks the full ranked list lazily and stops at ``top_k`` successful
+        bridges, so a sparse bridge map doesn't shrink the result silently
+        when un-bridgeable passages happen to rank highest.
+        """
+        out: list[tuple[str, float]] = []
+        for kg_passage_id, score in ranked:
+            text = self._inner.text_id_to_node_name[kg_passage_id]
+            atlas_passage_id = self._text_to_passage_id.get(text)
+            if atlas_passage_id is None:
+                logger.debug(
+                    "Skipping KG passage %s — no matching kg_extraction "
+                    "record (text-equality miss).",
+                    kg_passage_id,
+                )
+                continue
+            out.append((atlas_passage_id, float(score)))
+            if len(out) >= top_k:
+                break
+        return out
 
 
 def _atlas_results_to_retrieved_passages(

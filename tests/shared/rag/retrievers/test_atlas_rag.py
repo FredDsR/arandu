@@ -158,6 +158,94 @@ class TestAtlasRagRetrieverRetrieve:
         assert isinstance(instance, Retriever)
 
 
+# -- chunk_id namespace bridge (PR #102 follow-up to PR #101) ------------
+
+
+class TestAtlasRagPassageIdBridge:
+    """``_bridge_to_atlas_passage_ids`` swaps KG passage text for the sidecar's passage_id form.
+
+    `RetrievedPassage.chunk_id` is documented as "Reference into the source
+    ChunkSet" — a stable identifier. Upstream HippoRAG returns passage TEXT
+    (via `text_id_to_node_name`), so the bridge step looks up that text in
+    the ``passage_text → "<source_file_id>:<chunk_index>"`` map built from
+    the same JSONL iterator that powers `arandu kg-link-passages`.
+    """
+
+    def _make_instance(
+        self, text_to_passage_id: dict[str, str], text_id_to_node_name: dict[str, str]
+    ) -> AtlasRagRetriever:
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        instance._text_to_passage_id = text_to_passage_id
+        inner = MagicMock()
+        inner.text_id_to_node_name = text_id_to_node_name
+        instance._inner = inner
+        return instance
+
+    def test_bridge_swaps_text_for_synthesized_passage_id(self) -> None:
+        # Upstream returned 2 KG passage hashes; bridge maps each via
+        # text_id_to_node_name → passage text → text_to_passage_id.
+        instance = self._make_instance(
+            text_to_passage_id={
+                "passage A text": "src_a:0",
+                "passage B text": "src_b:1",
+            },
+            text_id_to_node_name={
+                "kg_pa": "passage A text",
+                "kg_pb": "passage B text",
+            },
+        )
+        out = instance._bridge_to_atlas_passage_ids([("kg_pa", 0.9), ("kg_pb", 0.5)], top_k=5)
+        assert out == [("src_a:0", 0.9), ("src_b:1", 0.5)]
+
+    def test_bridge_drops_unmapped_passages(self) -> None:
+        # kg_pb text is missing from the bridge map (corpus-snapshot drift,
+        # e.g. KG built but JSONL pruned). Must be dropped — surfacing an
+        # opaque KG hash would break the downstream judges' offset join.
+        instance = self._make_instance(
+            text_to_passage_id={"passage A text": "src_a:0"},
+            text_id_to_node_name={
+                "kg_pa": "passage A text",
+                "kg_pb": "passage B text",
+            },
+        )
+        out = instance._bridge_to_atlas_passage_ids([("kg_pa", 0.9), ("kg_pb", 0.5)], top_k=5)
+        assert out == [("src_a:0", 0.9)]
+
+    def test_bridge_walks_past_unmapped_to_reach_top_k(self) -> None:
+        # If the top-ranked passages are un-bridgeable, the bridge must keep
+        # walking down the list until it has `top_k` successful bridges (or
+        # the ranking is exhausted). Otherwise a sparse bridge map could
+        # silently shrink the result set.
+        instance = self._make_instance(
+            text_to_passage_id={"good": "src_good:0"},
+            text_id_to_node_name={
+                "kg_bad1": "missing1",
+                "kg_bad2": "missing2",
+                "kg_good": "good",
+            },
+        )
+        out = instance._bridge_to_atlas_passage_ids(
+            [("kg_bad1", 0.9), ("kg_bad2", 0.7), ("kg_good", 0.5)], top_k=1
+        )
+        assert out == [("src_good:0", 0.5)]
+
+    def test_bridge_respects_top_k(self) -> None:
+        instance = self._make_instance(
+            text_to_passage_id={
+                "t1": "src_a:0",
+                "t2": "src_a:1",
+                "t3": "src_a:2",
+            },
+            text_id_to_node_name={"k1": "t1", "k2": "t2", "k3": "t3"},
+        )
+        out = instance._bridge_to_atlas_passage_ids(
+            [("k1", 0.9), ("k2", 0.7), ("k3", 0.5)], top_k=2
+        )
+        assert len(out) == 2
+        assert [pid for pid, _ in out] == ["src_a:0", "src_a:1"]
+
+
 # -- manifest integrity (Copilot review on PR #101) ----------------------
 
 
@@ -170,6 +258,7 @@ def _write_minimal_precompute(
     include_concept: bool = True,
     write_graphml_sha: bool = True,
     write_artifact_sha: bool = True,
+    write_kg_extraction: bool = True,
     graphml_bytes: bytes = b"<graphml>fake</graphml>",
 ) -> Path:
     """Build a minimal kg_outputs_dir with manifest + (optional) sha fields.
@@ -185,6 +274,12 @@ def _write_minimal_precompute(
     precompute = kg_outputs_dir / "precompute"
     (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
     precompute.mkdir(parents=True)
+    if write_kg_extraction:
+        extraction = kg_outputs_dir / "kg_extraction"
+        extraction.mkdir(parents=True)
+        (extraction / "records.json").write_text(
+            json.dumps({"id": "src_x", "original_text": "placeholder passage text"}) + "\n"
+        )
 
     graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
     graphml_path.write_bytes(graphml_bytes)
@@ -332,6 +427,39 @@ class TestAtlasRagManifestIntegrity:
     def test_manifest_without_artifact_sha_rejected(self, tmp_path: Path) -> None:
         kg_outputs_dir = _write_minimal_precompute(tmp_path, write_artifact_sha=False)
         with pytest.raises(ValueError, match="no sha256 for artifact"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_missing_kg_extraction_dir_raises(self, tmp_path: Path) -> None:
+        # Without kg_extraction/, the passage_text → passage_id bridge is
+        # empty and every retrieval silently drops all results. The
+        # constructor must fail fast so the stable chunk_id contract that
+        # downstream judges (passage_offsets.json sidecar) depend on stays
+        # observable.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_kg_extraction=False)
+        with pytest.raises(FileNotFoundError, match="kg_extraction"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_empty_kg_extraction_raises(self, tmp_path: Path) -> None:
+        # kg_extraction/ exists but has no parseable records → the
+        # passage_text→passage_id map is empty. Same failure mode as a
+        # missing dir, surfaced loudly so the operator sees it.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Wipe the placeholder record we wrote in the fixture.
+        for f in (kg_outputs_dir / "kg_extraction").glob("*.json"):
+            f.unlink()
+        with pytest.raises(ValueError, match="no parseable records"):
             AtlasRagRetriever(
                 kg_outputs_dir=kg_outputs_dir,
                 llm_client=MagicMock(),
