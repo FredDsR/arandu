@@ -43,6 +43,12 @@ class EmbedderSettings(BaseSettings):
         api_key_env: Name of the env var holding the Gemini API key.
             Defaults to ``GEMINI_API_KEY`` — matching the smoke script's
             convention. Ignored for sentence-transformers.
+        max_retries: ``openai.OpenAI(max_retries=...)`` value used for the
+            Gemini client. Default 8 because a 75k-embedding build (the
+            ``test-kg-04`` smoke) hits Gemini's 429s often enough that
+            the OpenAI SDK's default of 2 retries causes partial failures.
+            The smoke script ran clean with 8. Ignored for
+            sentence-transformers.
     """
 
     provider: EmbedderProvider = Field(
@@ -56,6 +62,14 @@ class EmbedderSettings(BaseSettings):
     api_key_env: str = Field(
         default="GEMINI_API_KEY",
         description="Env var name holding the Gemini API key (ignored for local providers).",
+    )
+    max_retries: int = Field(
+        default=8,
+        ge=0,
+        description=(
+            "OpenAI SDK max_retries for the Gemini client. Higher than the SDK "
+            "default (2) because large embedding builds hit 429s under quota."
+        ),
     )
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_EMBEDDER_", extra="ignore")
@@ -95,7 +109,11 @@ def build_embedder(settings: EmbedderSettings) -> Any:
         # works in envs without `openai` installed.
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, base_url=_GEMINI_OPENAI_BASE_URL)
+        client = OpenAI(
+            api_key=api_key,
+            base_url=_GEMINI_OPENAI_BASE_URL,
+            max_retries=settings.max_retries,
+        )
         return GeminiEmbedder(client=client, model=settings.model)
 
     if settings.provider == "sentence_transformers":

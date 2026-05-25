@@ -91,12 +91,19 @@ class TestKgBuildRetrieverIndexCli:
         results_base: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # If precompute/manifest.json already exists, the helper returns
-        # early without calling atlas-rag's expensive build.
+        # If precompute/manifest.json already exists AND matches the
+        # requested params, the helper returns early without calling
+        # atlas-rag's expensive build.
         atlas_dir = _seed_atlas_kg(results_base)
         precompute = atlas_dir / "precompute"
         precompute.mkdir()
-        (precompute / "manifest.json").write_text(json.dumps({"sentinel": True}))
+        compatible_manifest = {
+            "keyword": "transcriptions.json",
+            "include_events": True,
+            "include_concept": True,
+            "sentence_encoder_model": "gemini-embedding-001",
+        }
+        (precompute / "manifest.json").write_text(json.dumps(compatible_manifest))
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         with patch("arandu.kg.retriever_index.AtlasRagRetriever.build_index") as mock_build:
@@ -105,7 +112,39 @@ class TestKgBuildRetrieverIndexCli:
         assert result.exit_code == 0, result.output
         mock_build.assert_not_called()
         # Existing manifest is preserved untouched.
-        assert json.loads((precompute / "manifest.json").read_text()) == {"sentinel": True}
+        assert json.loads((precompute / "manifest.json").read_text()) == compatible_manifest
+
+    def test_existing_manifest_mismatch_raises_with_rebuild_hint(
+        self,
+        runner: CliRunner,
+        results_base: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Manifest was built with include_events=True but the user invokes
+        # with --no-include-events. Silent reuse would defer the error to
+        # retrieve-time; surface it here with a --rebuild hint.
+        atlas_dir = _seed_atlas_kg(results_base)
+        precompute = atlas_dir / "precompute"
+        precompute.mkdir()
+        stale_manifest = {
+            "keyword": "transcriptions.json",
+            "include_events": True,
+            "include_concept": True,
+            "sentence_encoder_model": "gemini-embedding-001",
+        }
+        (precompute / "manifest.json").write_text(json.dumps(stale_manifest))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        with patch("arandu.kg.retriever_index.AtlasRagRetriever.build_index") as mock_build:
+            result = runner.invoke(
+                app,
+                ["kg-build-retriever-index", "--id", "run_x", "--no-include-events"],
+            )
+
+        assert result.exit_code == 1
+        assert "include_events" in result.output
+        assert "--rebuild" in result.output
+        mock_build.assert_not_called()
 
     def test_rebuild_flag_forces_call_even_with_existing_manifest(
         self,

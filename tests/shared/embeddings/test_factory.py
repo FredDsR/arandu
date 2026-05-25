@@ -17,6 +17,9 @@ class TestEmbedderSettings:
         assert s.provider == "gemini"
         assert s.model == "gemini-embedding-001"
         assert s.api_key_env == "GEMINI_API_KEY"
+        # max_retries=8 is calibrated against the test-kg-04 smoke; the SDK
+        # default (2) is too low for 75k-embedding builds under Gemini's quota.
+        assert s.max_retries == 8
 
     def test_provider_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ARANDU_EMBEDDER_PROVIDER", "sentence_transformers")
@@ -50,6 +53,19 @@ class TestBuildEmbedder:
         _, kwargs = mock_openai.call_args
         assert kwargs["api_key"] == "test-key"
         assert "generativelanguage.googleapis.com" in kwargs["base_url"]
+        # max_retries is forwarded so large embedding builds survive 429s
+        # under Gemini's quota (the SDK's default of 2 is too low for
+        # 75k-embedding runs — the smoke script uses 8).
+        assert kwargs["max_retries"] == 8
+
+    def test_max_retries_override_via_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        settings = EmbedderSettings(provider="gemini", model="m", max_retries=15)
+
+        with patch("openai.OpenAI") as mock_openai:
+            build_embedder(settings)
+
+        assert mock_openai.call_args.kwargs["max_retries"] == 15
 
     def test_sentence_transformers_dispatches_to_atlas_rag_model(
         self, monkeypatch: pytest.MonkeyPatch

@@ -14,6 +14,7 @@ precompute lands on disk: ``results/<id>/kg/outputs/atlas_output/precompute/``.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from arandu.shared.config import ResultsConfig
@@ -26,6 +27,50 @@ from arandu.shared.rag.retrievers.atlas_rag import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _check_manifest_compatible(
+    manifest_path: Path,
+    *,
+    keyword: str,
+    include_events: bool,
+    include_concept: bool,
+    sentence_encoder_model: str,
+) -> None:
+    """Raise ValueError if the on-disk manifest disagrees with the requested params.
+
+    Without this check, a precompute built with one set of flags would be
+    silently reused when ``arandu kg-build-retriever-index`` is invoked
+    with different ones. ``AtlasRagRetriever.__init__`` would later catch
+    the mismatch, but the operator's mental model "I just rebuilt this"
+    would be wrong — surface it here instead, pointing them at ``--rebuild``.
+    """
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"Existing manifest at {manifest_path} is unreadable: {exc}. "
+            f"Pass --rebuild to regenerate."
+        ) from exc
+
+    mismatches: list[str] = []
+    for field, expected in (
+        ("keyword", keyword),
+        ("include_events", include_events),
+        ("include_concept", include_concept),
+        ("sentence_encoder_model", sentence_encoder_model),
+    ):
+        if manifest.get(field) != expected:
+            mismatches.append(
+                f"  {field}: manifest={manifest.get(field)!r}, requested={expected!r}"
+            )
+    if mismatches:
+        joined = "\n".join(mismatches)
+        raise ValueError(
+            f"Existing precompute at {manifest_path.parent}/ was built with different "
+            f"parameters than requested:\n{joined}\n"
+            f"Pass --rebuild to regenerate, or invoke with matching parameters."
+        )
 
 
 def build_retriever_index(
@@ -62,8 +107,12 @@ def build_retriever_index(
             :meth:`AtlasRagRetriever.build_index` defends that with a
             clearer error before invoking upstream.
         rebuild: If False (default), skip the build when a manifest already
-            exists at the target precompute path. If True, force a fresh
-            build (atlas-rag will overwrite the existing pickles).
+            exists at the target precompute path AND its recorded
+            parameters match the requested ones. If the existing manifest
+            disagrees with the request, raise :class:`ValueError` rather
+            than silently reusing an incompatible precompute. If True,
+            force a fresh build regardless (atlas-rag overwrites the
+            existing pickles).
 
     Returns:
         The precompute directory path (``.../atlas_output/precompute/``).
@@ -73,6 +122,10 @@ def build_retriever_index(
             for ``pipeline_id`` are missing.
         RuntimeError: From :func:`build_embedder` if a cloud embedder is
             requested without its API key env var set.
+        ValueError: If an existing manifest at the target path was built
+            with different ``keyword`` / ``include_events`` /
+            ``include_concept`` / ``sentence_encoder_model`` than
+            requested. Pass ``rebuild=True`` to regenerate.
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
     kg_outputs_dir = base / pipeline_id / "kg" / "outputs"
@@ -91,12 +144,24 @@ def build_retriever_index(
             f"before graphml emission."
         )
 
+    settings = embedder_settings if embedder_settings is not None else EmbedderSettings()
+
     precompute_dir = atlas_output_dir / PRECOMPUTE_DIR_NAME
     manifest_path = precompute_dir / MANIFEST_FILENAME
     if manifest_path.exists() and not rebuild:
+        # Validate the on-disk manifest matches what was requested. Silent
+        # reuse on mismatch would defer the error to retrieve-time when
+        # AtlasRagRetriever.__init__ runs its own validation — surface it
+        # now so the operator's "I just rebuilt this" mental model is right.
+        _check_manifest_compatible(
+            manifest_path,
+            keyword=keyword,
+            include_events=include_events,
+            include_concept=include_concept,
+            sentence_encoder_model=settings.model,
+        )
         return precompute_dir
 
-    settings = embedder_settings if embedder_settings is not None else EmbedderSettings()
     encoder = build_embedder(settings)
 
     AtlasRagRetriever.build_index(
