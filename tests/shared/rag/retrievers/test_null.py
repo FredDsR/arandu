@@ -19,7 +19,7 @@ class TestNullRetriever:
 
     def test_retrieve_returns_empty_regardless_of_top_k(self) -> None:
         # Includes top_k=0 to lock the uniform contract across all
-        # retriever arms (cf. fix/top-k-zero-contract).
+        # retriever arms.
         retriever = NullRetriever()
         for k in (0, 1, 5, 100):
             assert retriever.retrieve("qualquer pergunta", top_k=k) == []
