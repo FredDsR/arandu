@@ -77,7 +77,13 @@ def retrieve(
     Reads QA pairs from ``results/<id>/cep/outputs/`` and (when present)
     non-answerable items from ``results/<id>/nonanswerable/outputs/``;
     emits one ``RetrievalRecord`` per (arm, question) tuple under
-    ``results/<id>/retrieve/outputs/<arm>/<source>/<qa_pair_id>.json``.
+    ``results/<id>/retrieve/outputs/<arm>/<source>/<safe_qa_pair_id>.json``.
+
+    The on-disk ``safe_qa_pair_id`` is the schema's ``qa_pair_id`` with
+    ``":"`` replaced by ``"__"`` for cross-platform path safety (the
+    composite carries ``"<file_id>:<chunk_id>:<idx>"``). The
+    ``RetrievalRecord.qa_pair_id`` field inside each file preserves the
+    original colons.
 
     Arm-specific knobs (chunker view, k-hop radius, ...) are read from
     ``ARANDU_BM25_*`` / ``ARANDU_KHOP_*`` env vars; see the per-arm

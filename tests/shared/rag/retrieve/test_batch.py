@@ -157,6 +157,32 @@ class TestRunRetrieveBatchValidation:
             )
 
 
+class TestAtlasRagDeferred:
+    def test_atlas_rag_arm_logs_deferred_message_without_blocking_other_arms(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # atlas_rag is in ALL_ARMS so the batch-runner validation accepts
+        # it, but the factory raises ValueError with the "deferred to a
+        # follow-up PR" message. That error is caught by the per-arm
+        # build-with-logging path; the run continues with other arms.
+        import logging
+
+        _seed_cep(tmp_path)
+        with caplog.at_level(logging.ERROR, logger="arandu.shared.rag.retrieve.batch"):
+            result = run_retrieve_batch(
+                pipeline_id="run_x",
+                arms=["atlas_rag", "null"],
+                top_k=5,
+                base_dir=tmp_path,
+            )
+
+        # null arm completes both questions; atlas_rag fails both.
+        assert result.retrievals_written == 2
+        assert result.retrievals_failed >= 2
+        # The user gets a logged hint pointing at the follow-up PR.
+        assert any("not wired in this PR" in r.message for r in caplog.records)
+
+
 class TestPerArmFailureIsolation:
     def test_one_arm_missing_prereq_doesnt_block_others(self, tmp_path: Path) -> None:
         # BM25 arm without chunks fails at retriever construction; the

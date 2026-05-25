@@ -18,11 +18,23 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ArmName = Literal["bm25", "khop_passage", "khop_triple", "null"]
+ArmName = Literal["bm25", "atlas_rag", "khop_passage", "khop_triple", "null"]
 
 # Stable ordering — drives the CLI's default arm set + the iteration
 # order in the batch runner. Keeps benchmark output reproducible.
-ALL_ARMS: tuple[ArmName, ...] = ("bm25", "khop_passage", "khop_triple", "null")
+#
+# ``atlas_rag`` is recognized but not yet wired in this PR: the factory
+# routes it to a clear "deferred to a follow-up PR" error. Including it
+# in the catalog so ``--arm atlas_rag`` produces the helpful error
+# message rather than an unknown-arm rejection at the batch-runner
+# validation layer. The CLI's ``_DEFAULT_ARMS`` filter excludes it.
+ALL_ARMS: tuple[ArmName, ...] = (
+    "bm25",
+    "atlas_rag",
+    "khop_passage",
+    "khop_triple",
+    "null",
+)
 
 
 class Bm25RetrieveSettings(BaseSettings):

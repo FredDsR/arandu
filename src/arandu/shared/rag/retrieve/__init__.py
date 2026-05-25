@@ -13,6 +13,7 @@ Per-arm settings classes live in :mod:`arandu.shared.rag.retrieve.settings`
 and read ``ARANDU_*`` env vars via Pydantic Settings.
 """
 
+from arandu.shared.rag.retrieve.batch import run_retrieve_batch
 from arandu.shared.rag.retrieve.factory import build_retriever
 from arandu.shared.rag.retrieve.loader import QuestionRecord, load_questions
 from arandu.shared.rag.retrieve.settings import (
@@ -28,4 +29,5 @@ __all__ = [
     "QuestionRecord",
     "build_retriever",
     "load_questions",
+    "run_retrieve_batch",
 ]

@@ -15,7 +15,10 @@ class TestArmCatalog:
     def test_known_arms(self) -> None:
         # The CLI's default arm set + the batch runner's validation both
         # key off this tuple. Drift would silently break either path.
-        assert ALL_ARMS == ("bm25", "khop_passage", "khop_triple", "null")
+        # atlas_rag is recognized (so --arm atlas_rag routes to the
+        # factory's clear "deferred PR" error) but excluded from the
+        # CLI's default set until its LLM-client wiring lands.
+        assert ALL_ARMS == ("bm25", "atlas_rag", "khop_passage", "khop_triple", "null")
 
 
 class TestBm25Settings:
