@@ -18,8 +18,10 @@ class TestNullRetriever:
         assert retriever.retrieve("Em que ano ocorreu a enchente?", top_k=10) == []
 
     def test_retrieve_returns_empty_regardless_of_top_k(self) -> None:
+        # Includes top_k=0 to lock the uniform contract across all
+        # retriever arms.
         retriever = NullRetriever()
-        for k in (1, 5, 100):
+        for k in (0, 1, 5, 100):
             assert retriever.retrieve("qualquer pergunta", top_k=k) == []
 
     def test_retrieve_returns_empty_for_empty_question(self) -> None:

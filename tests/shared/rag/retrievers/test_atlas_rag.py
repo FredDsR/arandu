@@ -157,6 +157,19 @@ class TestAtlasRagRetrieverRetrieve:
         instance._retrieve_with_scores = MagicMock(return_value=[])  # type: ignore[method-assign]
         assert isinstance(instance, Retriever)
 
+    def test_top_k_zero_returns_empty_without_calling_inner(self) -> None:
+        # Uniform contract across all retriever arms: top_k <= 0 → [].
+        # The bridge loop's `len(out) >= 0` would have short-circuited
+        # AFTER appending one record (silent contract violation). The
+        # early guard also avoids calling the expensive PPR seam.
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        instance._retrieve_with_scores = MagicMock(  # type: ignore[method-assign]
+            return_value=[("p1", 0.9)]
+        )
+        assert instance.retrieve("some question", top_k=0) == []
+        instance._retrieve_with_scores.assert_not_called()
+
 
 # -- chunk_id namespace bridge (PR #102 follow-up to PR #101) ------------
 

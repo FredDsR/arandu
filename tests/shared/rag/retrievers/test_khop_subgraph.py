@@ -177,6 +177,16 @@ class TestKHopSubgraphRetrieverRetrieve:
         results = retriever.retrieve("rio enchente barragem", top_k=1)
         assert len(results) == 1
 
+    def test_top_k_zero_returns_empty(self, tmp_path: Path) -> None:
+        # Uniform contract across all retriever arms: top_k <= 0 → [].
+        # Previously, the build-then-cap loop appended a record on iteration
+        # 1, then `len(ranked) >= 0` broke — but the record was already in
+        # the list, so retrieve() silently returned 1 record when 0 were
+        # requested. Now guarded with an early `if top_k <= 0: return []`.
+        path = _write_kg_layout(_build_minimal_kg(), tmp_path)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
+        assert retriever.retrieve("rio enchente", top_k=0) == []
+
     def test_chunk_id_is_atlas_passage_id_not_text(self, tmp_path: Path) -> None:
         # Per the `RetrievedPassage.chunk_id` docstring it must be a
         # "reference into the source ChunkSet" — i.e. a stable identifier,

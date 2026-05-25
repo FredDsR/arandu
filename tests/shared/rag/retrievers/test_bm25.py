@@ -188,6 +188,16 @@ class TestBM25Retrieve:
         results = retriever.retrieve("enchente", top_k=2)
         assert len(results) == 2
 
+    def test_top_k_zero_returns_empty(self, tmp_path: Path) -> None:
+        # Uniform contract across all retriever arms: top_k <= 0 → [].
+        # BM25's `argsort()[:0]` already produces [], but locking it here
+        # prevents future refactors from drifting away from the contract
+        # the other arms enforce explicitly.
+        chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
+        BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
+        retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
+        assert retriever.retrieve("enchente", top_k=0) == []
+
     def test_retrieve_returns_ranked_zero_indexed(self, tmp_path: Path) -> None:
         # "Itaqui Maria" — each token appears in exactly one doc (idf > 0), so the
         # ranking is non-degenerate and scores monotonically decrease.
