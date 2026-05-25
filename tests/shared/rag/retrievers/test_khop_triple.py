@@ -95,7 +95,7 @@ class TestKHopTripleRetrieverProtocol:
 # -- constructor validation ---------------------------------------------
 
 
-class TestNetworkXTripleConstructorValidation:
+class TestKHopTripleConstructorValidation:
     def test_missing_graphml_raises(self, tmp_path: Path) -> None:
         kg_outputs_dir = tmp_path / "atlas_output"
         (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
@@ -117,7 +117,15 @@ class TestNetworkXTripleConstructorValidation:
 # -- retrieve() behaviour ------------------------------------------------
 
 
-class TestNetworkXTripleRetrieve:
+class TestKHopTripleRetrieve:
+    def test_top_k_zero_returns_empty_not_indexerror(self, tmp_path: Path) -> None:
+        # Defensive: if the caller passes top_k <= 0, the retriever must
+        # return [] cleanly. Without the guard, `ranked = triples[:0]` is
+        # empty and `ranked[0]` would raise IndexError on the next line.
+        path = _write_kg_layout(_build_triple_kg(), tmp_path)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        assert retriever.retrieve("Onde Maria mora?", top_k=0) == []
+
     def test_emits_linearized_triples_via_payload(self, tmp_path: Path) -> None:
         # Question links to "Maria" → seeds at e_maria. k_hop=2 reaches her
         # entity neighbours. Triples emitted as payload, chunk_id is a

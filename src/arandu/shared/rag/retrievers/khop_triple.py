@@ -27,7 +27,6 @@ offset-based source-text resolution.
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 import unicodedata
 from collections import defaultdict
@@ -40,8 +39,6 @@ from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-
-logger = logging.getLogger(__name__)
 
 
 # The shared helpers (tokenizer, stopwords, postings cap) are duplicated from
@@ -271,6 +268,11 @@ class KHopTripleRetriever:
 
         triples.sort(key=lambda t: t[1], reverse=True)
         ranked = triples[:top_k]
+        if not ranked:
+            # Caller passed top_k <= 0. The sibling KHopSubgraphRetriever
+            # would slice to empty too — return cleanly rather than letting
+            # `ranked[0]` raise IndexError.
+            return []
         max_score = ranked[0][1] or 1.0  # avoid division by zero on degenerate KGs
         return [
             RetrievedPassage(
