@@ -47,7 +47,7 @@ class RetrievedPassage(BaseModel):
             offset / ChunkSet lookup. When set, the Answerer uses
             ``payload`` verbatim as the prompt context for this record,
             bypassing offset resolution. Use cases: KG-triple
-            linearization (``NetworkXTripleRetriever``), LLM-summarized
+            linearization (``KHopTripleRetriever``), LLM-summarized
             chunks, or any retriever whose output isn't a sliceable span
             of source text. Downstream judging that operates on offsets
             (``passage_coverage`` offset variant) skips records where

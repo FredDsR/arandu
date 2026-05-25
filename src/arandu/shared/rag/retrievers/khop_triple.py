@@ -1,6 +1,6 @@
-"""NetworkX triple-injection retriever — preserves methodology §6.4 paradigm.
+"""K-hop triple-injection retriever — preserves methodology §6.4 paradigm.
 
-Sibling of :class:`NetworkXRetriever`. Same entity-link + k-hop machinery,
+Sibling of :class:`KHopSubgraphRetriever`. Same entity-link + k-hop machinery,
 but emits **linearized triples** instead of passage references — the
 ``[type1] head_label --[relation]--> [type2] tail_label`` form described
 in ``docs/methodology.md §6.4`` Stage 2. The methodology's pre-Phase-C
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 # The shared helpers (tokenizer, stopwords, postings cap) are duplicated from
-# :mod:`arandu.shared.rag.retrievers.networkx` rather than imported. Reason:
+# :mod:`arandu.shared.rag.retrievers.khop_subgraph` rather than imported. Reason:
 # the constants are private (`_TOKEN_RE`, `_STOPWORDS`, etc.) and the user
 # may want them to evolve independently. A follow-up refactor can extract
 # them into a sibling helper module once both retrievers stabilise.
@@ -100,7 +100,7 @@ _STOPWORDS: frozenset[str] = frozenset(
 def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
     """Whitespace + punctuation split, NFKC-normalised, casefolded.
 
-    Mirrors :func:`arandu.shared.rag.retrievers.networkx._tokenize` so the
+    Mirrors :func:`arandu.shared.rag.retrievers.khop_subgraph._tokenize` so the
     entity-link stage produces identical seeds across both retrievers.
     """
     normalised = unicodedata.normalize("NFKC", text).casefold()
@@ -130,19 +130,19 @@ def _format_triple(
     return f"[{head_type}] {head_label} --[{relation}]--> [{tail_type}] {tail_label}"
 
 
-class NetworkXTripleRetriever:
+class KHopTripleRetriever:
     """Triple-injection variant of the NetworkX subgraph retriever.
 
-    Same entity-link + k-hop seeding as :class:`NetworkXRetriever`, but
+    Same entity-link + k-hop seeding as :class:`KHopSubgraphRetriever`, but
     emits linearized triples (``[type] head --[rel]--> [type] tail``) via
     ``RetrievedPassage.payload`` rather than passage references.
 
     Attributes:
-        retriever_id: Stable identifier; defaults to ``networkx_triple``.
+        retriever_id: Stable identifier; defaults to ``khop_triple``.
     """
 
-    RETRIEVER_FAMILY = "networkx_triple"
-    DEFAULT_RETRIEVER_ID = "networkx_triple"
+    RETRIEVER_FAMILY = "khop"
+    DEFAULT_RETRIEVER_ID = "khop_triple"
 
     retriever_id: str
 
@@ -158,7 +158,7 @@ class NetworkXTripleRetriever:
 
         Args:
             kg_outputs_dir: The atlas-rag output dir, same shape as
-                :class:`NetworkXRetriever` and :class:`AtlasRagRetriever`.
+                :class:`KHopSubgraphRetriever` and :class:`AtlasRagRetriever`.
                 Must contain ``kg_graphml/<keyword>_graph.graphml``. Unlike
                 the passage retrievers, no ``kg_extraction/`` access is
                 needed — this retriever operates purely on the graphml.
@@ -166,7 +166,7 @@ class NetworkXTripleRetriever:
             k_hop: Ego-graph radius. Must be ``>= 1``.
             max_postings: IDF-style threshold for the entity link
                 (drops question tokens that hit more than this many
-                linkable nodes). See :class:`NetworkXRetriever` for the
+                linkable nodes). See :class:`KHopSubgraphRetriever` for the
                 calibration rationale.
             retriever_id: Optional override of :attr:`DEFAULT_RETRIEVER_ID`.
 
@@ -287,7 +287,7 @@ class NetworkXTripleRetriever:
         ]
 
     def _entity_link(self, question: str) -> Iterable[str]:
-        """Identical contract to :meth:`NetworkXRetriever._entity_link`."""
+        """Identical contract to :meth:`KHopSubgraphRetriever._entity_link`."""
         question_tokens = set(_tokenize(question, filter_stopwords=True))
         if not question_tokens:
             return []

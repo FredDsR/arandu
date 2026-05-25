@@ -1,4 +1,4 @@
-"""Tests for ``shared/rag/retrievers/networkx_triple.py`` — triple-injection variant."""
+"""Tests for ``shared/rag/retrievers/khop_triple.py`` — triple-injection variant."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import networkx as nx
 import pytest
 
 from arandu.shared.rag.protocol import Retriever
-from arandu.shared.rag.retrievers.networkx_triple import NetworkXTripleRetriever
+from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,20 +75,20 @@ def _write_kg_layout(kg: nx.DiGraph, tmp_path: Path) -> Path:
 # -- naming + Protocol ---------------------------------------------------
 
 
-class TestNetworkXTripleRetrieverId:
+class TestKHopTripleRetrieverId:
     def test_default_id(self) -> None:
-        assert NetworkXTripleRetriever.RETRIEVER_FAMILY == "networkx_triple"
-        assert NetworkXTripleRetriever.DEFAULT_RETRIEVER_ID == "networkx_triple"
+        assert KHopTripleRetriever.RETRIEVER_FAMILY == "khop"
+        assert KHopTripleRetriever.DEFAULT_RETRIEVER_ID == "khop_triple"
 
 
-class TestNetworkXTripleRetrieverProtocol:
+class TestKHopTripleRetrieverProtocol:
     def test_class_exposes_retrieve(self) -> None:
-        assert hasattr(NetworkXTripleRetriever, "retrieve")
-        assert callable(NetworkXTripleRetriever.retrieve)
+        assert hasattr(KHopTripleRetriever, "retrieve")
+        assert callable(KHopTripleRetriever.retrieve)
 
     def test_instance_satisfies_protocol(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         assert isinstance(retriever, Retriever)
 
 
@@ -101,17 +101,17 @@ class TestNetworkXTripleConstructorValidation:
         (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
         # graphml file itself is missing
         with pytest.raises(FileNotFoundError, match="graphml"):
-            NetworkXTripleRetriever(kg_outputs_dir=kg_outputs_dir, k_hop=2)
+            KHopTripleRetriever(kg_outputs_dir=kg_outputs_dir, k_hop=2)
 
     def test_invalid_k_hop_raises(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
         with pytest.raises(ValueError, match="k_hop"):
-            NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=0)
+            KHopTripleRetriever(kg_outputs_dir=path, k_hop=0)
 
     def test_invalid_max_postings_raises(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
         with pytest.raises(ValueError, match="max_postings"):
-            NetworkXTripleRetriever(kg_outputs_dir=path, max_postings=0)
+            KHopTripleRetriever(kg_outputs_dir=path, max_postings=0)
 
 
 # -- retrieve() behaviour ------------------------------------------------
@@ -123,7 +123,7 @@ class TestNetworkXTripleRetrieve:
         # entity neighbours. Triples emitted as payload, chunk_id is a
         # synthesised sha1-keyed handle.
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("Onde Maria mora?", top_k=10)
 
         assert results, "expected non-empty triple list for in-KG question"
@@ -144,7 +144,7 @@ class TestNetworkXTripleRetrieve:
         # would produce multi-paragraph "triples" that defeat the
         # structured-context purpose.
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("Maria", top_k=20)
 
         for r in results:
@@ -165,7 +165,7 @@ class TestNetworkXTripleRetrieve:
         # to preserve the methodology §6.4 "semantic relation between
         # entities" paradigm.
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         # Question links to e_pesca via "pesca", which neighbours the
         # concept node c_artesanal via `has_concept`. The concept edge
         # must be skipped.
@@ -183,7 +183,7 @@ class TestNetworkXTripleRetrieve:
 
     def test_rank_and_score_shape(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("Maria Barra", top_k=5)
         assert results
         assert [r.rank for r in results] == list(range(len(results)))
@@ -194,7 +194,7 @@ class TestNetworkXTripleRetrieve:
 
     def test_retriever_meta_records_score_method(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("Maria", top_k=1)
         assert results[0].retriever_meta == {
             "score_method": "seed_proximity",
@@ -203,7 +203,7 @@ class TestNetworkXTripleRetrieve:
 
     def test_top_k_caps_result_size(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         # The fixture has 5 entity-only triples; asking for 2 must clamp.
         results = retriever.retrieve("Maria Barra rio", top_k=2)
         assert len(results) == 2
@@ -211,7 +211,7 @@ class TestNetworkXTripleRetrieve:
     def test_empty_entity_link_returns_empty(self, tmp_path: Path) -> None:
         # Graph-floor guarantee — same as the passage NetworkX arm.
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         assert retriever.retrieve("totally unrelated foobar xyzzy", top_k=5) == []
 
     def test_chunk_id_is_synthetic_not_offset_resolvable(self, tmp_path: Path) -> None:
@@ -220,7 +220,7 @@ class TestNetworkXTripleRetrieve:
         # judges that consult passage_offsets.json must skip records where
         # `payload` is set (per the schema docstring).
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("Maria", top_k=3)
         assert results
         for r in results:
@@ -244,7 +244,7 @@ class TestNetworkXTripleRetrieve:
         kg.add_edge("e_a", "e_a", relation="self_referential")  # self-loop
         kg.add_edge("e_a", "e_b", relation="connects_to")  # real edge
         path = _write_kg_layout(kg, tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=1)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=1)
         results = retriever.retrieve("Alpha", top_k=5)
         assert results
         # No triple should have Alpha on both sides.
@@ -275,7 +275,7 @@ class TestNetworkXTripleRetrieve:
         kg.add_edge("e_far", "e_hub", relation="distant_link")
         path = _write_kg_layout(kg, tmp_path)
 
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=3)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=3)
         results = retriever.retrieve("seedlabel", top_k=10)
         assert results
 
@@ -297,7 +297,7 @@ class TestNetworkXTripleRetrieve:
         kg.add_node("e_b", type="entity", id="Beta")
         kg.add_edge("e_a", "e_b")  # no `relation` attr
         path = _write_kg_layout(kg, tmp_path)
-        retriever = NetworkXTripleRetriever(kg_outputs_dir=path, k_hop=1)
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=1)
         results = retriever.retrieve("Alpha", top_k=5)
         assert results
         assert any("related_to" in r.payload for r in results)
