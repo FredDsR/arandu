@@ -1,11 +1,16 @@
-"""NetworkX subgraph retriever — graph sanity baseline (Phase C spec §4.5).
+"""K-hop subgraph retriever — graph sanity baseline (Phase C spec §4.5).
 
 Joel's framing for Phase C: this arm exists to disentangle "graph quality"
 from "retrieval-tool quality." It uses the SAME KG as :class:`AtlasRagRetriever`
 but a deliberately simpler retrieval algorithm — exact + token-overlap entity
 linking against node labels, a k-hop ego subgraph walk, and passage-mention
-frequency scoring. The atlas-rag minus NetworkX delta is then an estimate of
+frequency scoring. The atlas-rag minus k-hop delta is then an estimate of
 atlas-rag's tool-quality contribution holding KG constant.
+
+The "k-hop" family also covers the triple-emitting sibling
+(:class:`KHopTripleRetriever`); both share the entity-link + k-hop machinery
+and differ only in what they return to the Answerer (passages vs linearized
+triples).
 
 Implementation notes:
 
@@ -235,15 +240,15 @@ def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
     return tokens
 
 
-class NetworkXRetriever:
+class KHopSubgraphRetriever:
     """K-hop subgraph retriever over an atlas-rag-built KG.
 
     Attributes:
-        retriever_id: Stable identifier; defaults to ``networkx_khop``.
+        retriever_id: Stable identifier; defaults to ``khop_passage``.
     """
 
-    RETRIEVER_FAMILY = "networkx"
-    DEFAULT_RETRIEVER_ID = "networkx_khop"
+    RETRIEVER_FAMILY = "khop"
+    DEFAULT_RETRIEVER_ID = "khop_passage"
 
     retriever_id: str
 

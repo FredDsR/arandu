@@ -1,4 +1,9 @@
-"""Tests for ``shared/rag/retrievers/networkx.py`` — graph sanity baseline (spec §4.5)."""
+"""Tests for ``shared/rag/retrievers/khop_subgraph.py`` — graph sanity baseline (spec §4.5).
+
+Joel's "graph-floor" arm: entity-link → k-hop ego graph → passage-mention
+frequency scoring. Tests cover constructor validation, retrieve() behaviour,
+chunk_id bridging, stopword/postings-cap filtering, and k_hop containment.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,7 @@ import networkx as nx
 import pytest
 
 from arandu.shared.rag.protocol import Retriever
-from arandu.shared.rag.retrievers.networkx import NetworkXRetriever
+from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -94,29 +99,29 @@ def _write_kg_layout(
 # -- naming + Protocol --------------------------------------------------
 
 
-class TestNetworkXRetrieverId:
+class TestKHopSubgraphRetrieverId:
     """`retriever_id` follows the family-prefix convention from BM25 + atlas-rag."""
 
     def test_default_id(self) -> None:
-        assert NetworkXRetriever.RETRIEVER_FAMILY == "networkx"
-        assert NetworkXRetriever.DEFAULT_RETRIEVER_ID == "networkx_khop"
+        assert KHopSubgraphRetriever.RETRIEVER_FAMILY == "khop"
+        assert KHopSubgraphRetriever.DEFAULT_RETRIEVER_ID == "khop_passage"
 
 
-class TestNetworkXRetrieverProtocol:
+class TestKHopSubgraphRetrieverProtocol:
     def test_class_exposes_retrieve(self) -> None:
-        assert hasattr(NetworkXRetriever, "retrieve")
-        assert callable(NetworkXRetriever.retrieve)
+        assert hasattr(KHopSubgraphRetriever, "retrieve")
+        assert callable(KHopSubgraphRetriever.retrieve)
 
     def test_constructed_instance_satisfies_protocol(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         assert isinstance(retriever, Retriever)
 
 
 # -- constructor validation ---------------------------------------------
 
 
-class TestNetworkXRetrieverConstructorValidation:
+class TestKHopSubgraphRetrieverConstructorValidation:
     def test_missing_graphml_raises(self, tmp_path: Path) -> None:
         # Build a kg_outputs_dir with the kg_extraction subdir present but
         # NO graphml. The constructor must surface the missing graphml
@@ -124,7 +129,7 @@ class TestNetworkXRetrieverConstructorValidation:
         kg_outputs_dir = tmp_path / "atlas_output"
         (kg_outputs_dir / "kg_extraction").mkdir(parents=True)
         with pytest.raises(FileNotFoundError, match="graphml"):
-            NetworkXRetriever(kg_outputs_dir=kg_outputs_dir, k_hop=2)
+            KHopSubgraphRetriever(kg_outputs_dir=kg_outputs_dir, k_hop=2)
 
     def test_missing_kg_extraction_dir_raises(self, tmp_path: Path) -> None:
         # If only the graphml exists, no passage_id bridge can be built →
@@ -137,21 +142,21 @@ class TestNetworkXRetrieverConstructorValidation:
             b'<?xml version="1.0"?><graphml/>'
         )
         with pytest.raises(FileNotFoundError, match="kg_extraction"):
-            NetworkXRetriever(kg_outputs_dir=kg_outputs_dir, k_hop=2)
+            KHopSubgraphRetriever(kg_outputs_dir=kg_outputs_dir, k_hop=2)
 
     def test_invalid_k_hop_raises(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         with pytest.raises(ValueError, match="k_hop"):
-            NetworkXRetriever(kg_outputs_dir=path, k_hop=0)
+            KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=0)
 
 
 # -- retrieve() behaviour ------------------------------------------------
 
 
-class TestNetworkXRetrieverRetrieve:
+class TestKHopSubgraphRetrieverRetrieve:
     def test_returns_passages_in_score_order(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         # "rio" + "enchente" both point at p_a; "barragem" points at p_b.
         # Question mentions only rio/enchente → p_a should rank ahead of p_b.
         results = retriever.retrieve("Quando foi a enchente do rio?", top_k=3)
@@ -168,7 +173,7 @@ class TestNetworkXRetrieverRetrieve:
 
     def test_top_k_caps_result_size(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("rio enchente barragem", top_k=1)
         assert len(results) == 1
 
@@ -180,7 +185,7 @@ class TestNetworkXRetrieverRetrieve:
         # kg_extraction JSONL. Verify chunk_id matches that namespace AND
         # is NOT the passage text.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("rio Uruguai enchente", top_k=5)
         assert results, "expected non-empty results for in-KG question"
         for r in results:
@@ -210,14 +215,14 @@ class TestNetworkXRetrieverRetrieve:
             kg_extraction_records=[{"id": "p_in_jsonl", "original_text": "text in jsonl"}],
         )
 
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("alpha beta", top_k=5)
         # Only p_in_jsonl makes it through.
         assert [r.chunk_id for r in results] == ["p_in_jsonl:0"]
 
     def test_retriever_meta_records_score_method(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2, max_postings=50)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2, max_postings=50)
         results = retriever.retrieve("enchente", top_k=1)
         assert results[0].retriever_meta == {
             "score_method": "node_freq_khop",
@@ -230,7 +235,7 @@ class TestNetworkXRetrieverRetrieve:
         # entities (none of its tokens overlap any node label) must yield []
         # cleanly — no exception, no hallucinated passages.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("totally unrelated foobar xyzzy", top_k=5)
         assert results == []
 
@@ -240,7 +245,7 @@ class TestNetworkXRetrieverRetrieve:
         # tokenize node labels and match per-token, so a single-token query
         # still hits.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("Uruguai", top_k=3)
         assert any(r.chunk_id == "p_a:0" for r in results)
 
@@ -261,7 +266,7 @@ class TestNetworkXRetrieverRetrieve:
         path = _write_kg_layout(kg, tmp_path)
 
         # max_postings=4 < 5 → "common" gets dropped; "raretoken" survives.
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=1, max_postings=4)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1, max_postings=4)
         results = retriever.retrieve("common common raretoken", top_k=5)
         # "raretoken" still links e_rare → passage scored via the surviving seed.
         assert any(r.chunk_id == "p_x:0" for r in results)
@@ -279,7 +284,7 @@ class TestNetworkXRetrieverRetrieve:
         # because every question's "a" / "que" / "de" linked to most
         # entities.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=2)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         results = retriever.retrieve("que e a do em", top_k=5)
         assert results == []
 
@@ -287,7 +292,7 @@ class TestNetworkXRetrieverRetrieve:
 # -- k_hop containment ---------------------------------------------------
 
 
-class TestNetworkXKHopContainment:
+class TestKHopContainment:
     """k_hop bounds how far the subgraph walk reaches."""
 
     def test_distant_entity_excluded_at_k_hop_1(self, tmp_path: Path) -> None:
@@ -303,9 +308,9 @@ class TestNetworkXKHopContainment:
         kg.add_edge("far", "p_far")
         path = _write_kg_layout(kg, tmp_path)
 
-        retriever = NetworkXRetriever(kg_outputs_dir=path, k_hop=1)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1)
         assert retriever.retrieve("mid_token", top_k=5) == []
 
-        retriever3 = NetworkXRetriever(kg_outputs_dir=path, k_hop=3)
+        retriever3 = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=3)
         results3 = retriever3.retrieve("mid_token", top_k=5)
         assert any(r.chunk_id == "p_far:0" for r in results3)
