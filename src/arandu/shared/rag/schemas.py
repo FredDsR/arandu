@@ -29,7 +29,12 @@ class RetrievedPassage(BaseModel):
     """A single ranked passage returned by a :class:`Retriever`.
 
     Attributes:
-        chunk_id: Reference into the source :class:`ChunkSet` for the chunker view.
+        chunk_id: Stable identifier for the retrieved unit. For passage
+            retrievers this references the source :class:`ChunkSet` for
+            the chunker view (resolvable via offsets). For retrievers that
+            emit non-chunk content (e.g. linearized KG triples), the
+            ``chunk_id`` is a synthetic key (no offset resolution
+            possible) and ``payload`` carries the raw content.
         rank: 0-indexed position in the ranked list (lower is better).
         score: Retriever-native relevance score. Sign and magnitude depend on
             the backend (BM25-Okapi, cosine, PPR-weighted), so callers must
@@ -37,12 +42,29 @@ class RetrievedPassage(BaseModel):
         retriever_meta: Backend-specific metadata (PPR weights, BM25 score
             components, embedding model, etc.). Free-form by design — never
             consumed by downstream judging.
+        payload: Raw retrieved content. When ``None`` (the default), the
+            Answerer resolves ``chunk_id`` → source text via the standard
+            offset / ChunkSet lookup. When set, the Answerer uses
+            ``payload`` verbatim as the prompt context for this record,
+            bypassing offset resolution. Use cases: KG-triple
+            linearization (``KHopTripleRetriever``), LLM-summarized
+            chunks, or any retriever whose output isn't a sliceable span
+            of source text. Downstream judging that operates on offsets
+            (``passage_coverage`` offset variant) skips records where
+            ``payload`` is set, since they have no source-text grounding.
     """
 
     chunk_id: str = Field(..., min_length=1)
     rank: int = Field(..., ge=0)
     score: float
     retriever_meta: dict[str, object] = Field(default_factory=dict)
+    payload: str | None = Field(
+        default=None,
+        description=(
+            "Optional raw content overriding offset-based resolution. "
+            "Set by retrievers emitting non-chunk content (e.g. triples)."
+        ),
+    )
 
 
 class RetrievalRecord(BaseModel):
