@@ -39,12 +39,12 @@ import os
 import time
 from pathlib import Path
 
-import numpy as np
 from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from arandu.shared.embeddings import GeminiEmbedder
 from arandu.shared.rag.retrievers.atlas_rag import (
     PRECOMPUTE_DIR_NAME,
     AtlasRagRetriever,
@@ -58,68 +58,6 @@ SMOKE_QUESTIONS: list[str] = [
     "Como o rio Uruguai se comportou durante a enchente de 2024?",
     "Onde fica a estrada que foi reconstruída segundo D. Silvia?",
 ]
-
-
-# ----------------------------------------------------------------------
-# Gemini embedding shim (duck-typed against atlas-rag's BaseEmbeddingModel).
-# ----------------------------------------------------------------------
-
-
-class GeminiEmbedder:
-    """Adapter exposing Gemini embeddings via atlas-rag's encoder interface.
-
-    atlas-rag only calls `sentence_encoder.encode(batch, normalize_embeddings=bool)`
-    so we duck-type rather than subclass `BaseEmbeddingModel` (which would force
-    a heavier dependency on the atlas-rag class hierarchy).
-
-    Uses Gemini's OpenAI-compatible endpoint, so the same `OpenAI` client works
-    for both LLM completions and embeddings — no new SDK in the dependency tree.
-
-    Two layers of throttle handling for Gemini's quotas:
-
-    - **Batch size cap.** Gemini's BatchEmbedContentsRequest limits each call
-      to 100 inputs, but atlas-rag hands us batches of 256. We fan each call
-      out into Gemini-sized sub-requests.
-    - **Per-minute pacing + retry.** Gemini's paid-tier embed quota is
-      ~3000 RPM. We sleep `_PACING_SLEEP_S` between sub-requests to stay
-      well under, and rely on the openai SDK's built-in `Retry-After`
-      honouring (raised via `max_retries`) for any stragglers.
-    """
-
-    _GEMINI_BATCH_MAX = 100
-    _PACING_SLEEP_S = 0.05  # 20 RPS ≪ 50 RPS (the 3000 RPM ceiling)
-
-    def __init__(self, client: OpenAI, model: str) -> None:
-        self._client = client
-        self._model = model
-
-    def encode(
-        self,
-        sentences: list[str],
-        normalize_embeddings: bool = False,
-        **_kwargs: object,  # atlas-rag passes `query_type` etc.; ignore.
-    ) -> np.ndarray:
-        """Encode sentences into a 2D `(batch, dim)` numpy array.
-
-        Upstream's `HippoRAGRetriever.query2edge` calls
-        `np.linalg.norm(query_emb, axis=1, keepdims=True)` and
-        `edge_embeddings @ query_emb[0].T`, both of which require a 2D
-        ndarray. `list[ndarray]` works for the build-time `.extend()`
-        pattern but breaks query-time math — so we always return 2D.
-        """
-        if not sentences:
-            return np.zeros((0, 0), dtype=np.float32)
-        vectors: list[np.ndarray] = []
-        for start in range(0, len(sentences), self._GEMINI_BATCH_MAX):
-            sub = sentences[start : start + self._GEMINI_BATCH_MAX]
-            resp = self._client.embeddings.create(model=self._model, input=sub)
-            vectors.extend(np.array(d.embedding, dtype=np.float32) for d in resp.data)
-            if start + self._GEMINI_BATCH_MAX < len(sentences):
-                time.sleep(self._PACING_SLEEP_S)
-        arr = np.stack(vectors).astype(np.float32)
-        if normalize_embeddings:
-            arr = arr / np.linalg.norm(arr, axis=1, keepdims=True)
-        return arr
 
 
 def make_sentence_transformers_encoder(model_name: str) -> object:

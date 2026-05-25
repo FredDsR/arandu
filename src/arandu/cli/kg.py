@@ -9,6 +9,8 @@ import typer
 from pydantic import ValidationError
 
 from arandu.kg.passage_offsets import link_passages
+from arandu.kg.retriever_index import build_retriever_index
+from arandu.shared.embeddings import EmbedderSettings
 from arandu.utils.console import console
 from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
@@ -220,3 +222,91 @@ def kg_link_passages(
             f"`unmatched` field in the sidecar for audit."
         )
     print_success("Passage offset sidecar written.")
+
+
+def kg_build_retriever_index(
+    pipeline_id: Annotated[
+        str,
+        typer.Option(
+            "--id",
+            help=(
+                "Pipeline ID for the run. Resolves the atlas-rag KG outputs at "
+                "results/<id>/kg/outputs/atlas_output/ and writes the precompute "
+                "under .../precompute/."
+            ),
+        ),
+    ],
+    keyword: Annotated[
+        str,
+        typer.Option(
+            "--keyword",
+            help="atlas-rag filename pattern (defaults to project convention).",
+        ),
+    ] = "transcriptions.json",
+    include_events: Annotated[
+        bool,
+        typer.Option(
+            "--include-events/--no-include-events",
+            help="Include event nodes in the embedded set. Defaults to True.",
+        ),
+    ] = True,
+    include_concept: Annotated[
+        bool,
+        typer.Option(
+            "--include-concept/--no-include-concept",
+            help="Include concept nodes in the embedded set. Defaults to True.",
+        ),
+    ] = True,
+    rebuild: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild",
+            help=(
+                "Force a fresh build even if `precompute/manifest.json` already "
+                "exists. Without this flag, an existing precompute is reused."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Build the atlas-rag retriever's precomputed index for a run.
+
+    The precompute (node/edge/text pickles + integrity manifest) lives under
+    ``results/<id>/kg/outputs/atlas_output/precompute/`` and is consumed by
+    ``arandu retrieve --arm atlas_rag``. The build cost is non-trivial —
+    ~75k embeddings on test-kg-04 take ~5 minutes via Gemini and cost
+    ~$0.05 — so this is a dedicated step kept out of ``arandu retrieve``'s
+    hot path.
+
+    Embedder provider + model are read from ``ARANDU_EMBEDDER_*`` env
+    vars (see :class:`arandu.shared.embeddings.EmbedderSettings`).
+    Defaults to Gemini with ``gemini-embedding-001``; switch to
+    ``ARANDU_EMBEDDER_PROVIDER=sentence_transformers`` for local GPU.
+    """
+    try:
+        settings = EmbedderSettings()
+    except ValidationError as exc:
+        print_error(f"Invalid embedder settings: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    print_info(f"Embedder: provider={settings.provider!r}, model={settings.model!r}")
+
+    try:
+        precompute_dir = build_retriever_index(
+            pipeline_id=pipeline_id,
+            embedder_settings=settings,
+            keyword=keyword,
+            include_events=include_events,
+            include_concept=include_concept,
+            rebuild=rebuild,
+        )
+    except FileNotFoundError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    except RuntimeError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        print_error(f"Invalid build configuration: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    print_success(f"Retriever index ready at {precompute_dir}/")
