@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
 from arandu.qa.schemas import QARecordCEP
 
@@ -30,6 +30,40 @@ logger = logging.getLogger(__name__)
 
 
 QuestionSource = Literal["cep", "nonanswerable"]
+
+
+class _NonAnswerableItem(BaseModel):
+    """Provisional schema for one non-answerable item.
+
+    Mirrors the spec §10.3 description of ``NonAnswerableItem`` shape
+    until the producer (``arandu generate-non-answerable``, still in
+    flight) lands and pins the canonical schema. When that producer
+    ships, this stub gets deleted in favour of the real model.
+
+    Accepts the spec field names plus a few likely aliases via
+    :class:`AliasChoices` so we don't have to second-guess the producer's
+    eventual field naming. Each ``AliasChoices`` tries its options in
+    order; first hit wins.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    qa_pair_id: str = Field(..., validation_alias=AliasChoices("qa_pair_id", "id"), min_length=1)
+    question: str = Field(..., min_length=1)
+    source_file_id: str = Field(
+        ...,
+        validation_alias=AliasChoices("source_file_id", "source_gdrive_id"),
+        min_length=1,
+    )
+    chunker_id: str = Field(default="unknown")
+
+
+class _NonAnswerableBatch(BaseModel):
+    """File-level wrapper around a list of :class:`_NonAnswerableItem`."""
+
+    model_config = {"extra": "ignore"}
+
+    items: list[_NonAnswerableItem] = Field(default_factory=list)
 
 
 class QuestionRecord(BaseModel):
@@ -51,6 +85,7 @@ class QuestionRecord(BaseModel):
             generation). The retrieve stage records this on each
             :class:`RetrievalRecord` to preserve the chunker → retriever
             provenance.
+
     """
 
     qa_pair_id: str = Field(..., min_length=1)
@@ -79,6 +114,7 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
 
     Raises:
         FileNotFoundError: If ``cep_dir`` does not exist.
+
     """
     if not cep_dir.exists():
         raise FileNotFoundError(
@@ -108,7 +144,7 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
     for path in sorted(cep_dir.glob("*.json")):
         try:
             record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (OSError, ValidationError) as exc:
             logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
             continue
         for idx, pair in enumerate(record.qa_pairs):
@@ -126,33 +162,24 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
 def _iter_nonanswerable_questions(nonanswerable_dir: Path) -> Iterator[QuestionRecord]:
     """Yield non-answerable items as :class:`QuestionRecord`.
 
-    Defensive shape: the non-answerable stage doesn't exist on disk yet,
-    so the schema we load against is the spec-described one but read
-    permissively (skip unrecognized files). Once
-    ``arandu generate-non-answerable`` lands and pins the schema, this
-    helper can tighten.
+    Files are parsed as :class:`_NonAnswerableBatch`. Items missing
+    required fields (qa_pair_id, question, source_file_id) are dropped
+    by Pydantic validation rather than silently skipped with manual
+    ``.get()`` calls — the validation error is logged at file scope so
+    operators can spot malformed inputs.
     """
-    import json
-
     for path in sorted(nonanswerable_dir.glob("*.json")):
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            batch = _NonAnswerableBatch.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValidationError) as exc:
             logger.warning("Skipping unreadable non-answerable file %s: %s", path, exc)
             continue
-        for item in payload.get("items", []):
-            qa_pair_id = item.get("qa_pair_id") or item.get("id")
-            question = item.get("question")
-            source_file_id = item.get("source_file_id") or item.get("source_gdrive_id")
-            chunker_id = item.get("chunker_id", "unknown")
-            if not (qa_pair_id and question and source_file_id):
-                logger.debug("Skipping incomplete non-answerable item in %s", path)
-                continue
+        for item in batch.items:
             yield QuestionRecord(
-                qa_pair_id=qa_pair_id,
-                question=question,
+                qa_pair_id=item.qa_pair_id,
+                question=item.question,
                 is_answerable=False,
                 source="nonanswerable",
-                source_file_id=source_file_id,
-                chunker_id=chunker_id,
+                source_file_id=item.source_file_id,
+                chunker_id=item.chunker_id,
             )

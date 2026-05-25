@@ -47,6 +47,7 @@ class RetrieveBatchConfig(BaseModel):
         arms: Ordered list of arm names this run targeted.
         top_k: Passages per question per arm.
         rebuild_index: Whether arm-side indexes were forcibly rebuilt.
+
     """
 
     pipeline_id: str
@@ -68,6 +69,7 @@ class RetrieveBatchResult(BaseModel):
             during retrieval. Failures are logged with full context;
             the run continues so a single bad arm doesn't kill the whole
             batch.
+
     """
 
     pipeline_id: str
@@ -115,6 +117,7 @@ def run_retrieve_batch(
             prerequisite) are missing for ``pipeline_id``.
         ValueError: If ``arms`` is empty or contains an unknown name,
             or ``top_k < 1``.
+
     """
     if not arms:
         raise ValueError("Must request at least one arm; got empty list.")
@@ -187,6 +190,13 @@ def run_retrieve_batch(
                     top_k=top_k,
                 )
             except Exception as exc:
+                # Deliberately broad: each Retriever implementation has its
+                # own failure surface (atlas-rag's PPR, BM25's tokenizer,
+                # NetworkX's graph ops, …). Catching narrowly would force
+                # this module to know each retriever's internals, breaking
+                # the Protocol abstraction. The per-(arm, qa_pair) isolation
+                # contract takes precedence — log + continue + mark failed
+                # so one bad question doesn't kill the rest of the batch.
                 logger.exception(
                     "Retrieval failed for arm=%s qa_pair_id=%s: %s",
                     arm,

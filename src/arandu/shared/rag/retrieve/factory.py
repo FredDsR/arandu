@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
 from arandu.shared.chunking.resolver import ChunkResolver
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.config import ResultsConfig
@@ -73,6 +75,7 @@ def build_retriever(
             are missing for ``pipeline_id``.
         ValueError: For ``arm="atlas_rag"`` (not yet wired) or unknown
             arm names.
+
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
 
@@ -168,7 +171,7 @@ def _load_chunks(chunk_dir: Path, chunker_id: str) -> list[Chunk]:
     for path in sorted(chunk_dir.glob("*.json")):
         try:
             chunk_set = ChunkSet.model_validate_json(path.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (OSError, ValidationError) as exc:
             logger.warning("Skipping unreadable ChunkSet %s: %s", path, exc)
             continue
         if chunker_id not in chunk_set.views:

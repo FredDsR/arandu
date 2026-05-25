@@ -46,6 +46,7 @@ class Bm25RetrieveSettings(BaseSettings):
             (the chunking stage emits one directory per view it ran).
             Defaults to ``"cep_4k"`` — the project's primary view, used
             by the CEP QA generator.
+
     """
 
     chunker_id: str = Field(
@@ -77,6 +78,7 @@ class KHopRetrieveSettings(BaseSettings):
         keyword: atlas-rag's filename pattern for the graphml. Defaults
             to project convention ``"transcriptions.json"`` (see
             :mod:`arandu.kg.atlas_backend`).
+
     """
 
     k_hop: int = Field(

@@ -30,6 +30,13 @@ _DEFAULT_ARMS: tuple[str, ...] = tuple(a for a in ALL_ARMS if a != "atlas_rag")
 
 
 def retrieve(
+    # `--id` is REQUIRED here (no default), unlike `arandu chunk` where it's
+    # optional + auto-generated. Rationale: retrieve consumes a populated run
+    # (cep/ + kg/ + chunk/ stages must already exist) and emits records that
+    # downstream judges join against the run id. An auto-generated id would
+    # silently create an empty `retrieve/` tree under a brand-new run dir
+    # — confusing operationally. Pinning to an explicit id forces the caller
+    # to point at the right upstream run.
     pipeline_id: Annotated[
         str,
         typer.Option(
