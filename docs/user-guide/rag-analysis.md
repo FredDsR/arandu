@@ -70,8 +70,8 @@ are the per-arm rates and means.
 
 | Column | Direction | Formula | What it tells you |
 |---|---|---|---|
-| **n_TA+TC** | — | TC + FA count | Size of the answerable subset that produced data (TC) plus over-caution (FA). |
-| **n_TA+FC** | — | TA + FC count | Size of the non-answerable subset that produced data. |
+| **n_answerable** | — | `TC + FA` | Number of judged answerable items for this arm (whether the system committed or abstained). |
+| **n_nonanswerable** | — | `TA + FC` | Number of judged non-answerable items for this arm. |
 | **KC ↑** | higher is better | `mean(correctness × faithfulness)` over TC | Knowledge coverage — does the system get the *right* answer using the *retrieved* context? |
 | **Hallucination ↓** | lower is better | `FC / (FC + TA)` | When the question is unanswerable, how often does the system fabricate an answer? |
 | **Over-caution ↓** | lower is better | `FA / (FA + TC)` | When the question is answerable, how often does the system refuse? |
@@ -127,7 +127,7 @@ sits given the sample size. Two rules of thumb:
 1. **Overlapping CIs ≈ no significant difference.** If arm A reports
    `0.12 [0.08, 0.17]` and arm B reports `0.15 [0.10, 0.20]`, the bands
    overlap — you can't conclude A < B from this run.
-2. **Narrow CIs require many records.** If `n_TA+FC = 50` the bands will
+2. **Narrow CIs require many records.** If `n_nonanswerable = 50` the bands will
    be wide regardless of how low the rate is. Don't read precision into
    small strata.
 

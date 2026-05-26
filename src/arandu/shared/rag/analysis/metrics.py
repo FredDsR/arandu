@@ -81,7 +81,7 @@ def aggregate_arm(
             counted as ``"unknown"`` in the confusion matrix and
             EXCLUDED from rate/mean denominators (so a single judge
             failure doesn't skew the headline numbers).
-        slice_name: Slice label (``"joint"``, ``"bloom=remember"``,
+        slice_name: Slice label (``"joint"``, ``"bloom_level=remember"``,
             …). Echoed onto the result so tables can group by it.
 
     Returns:

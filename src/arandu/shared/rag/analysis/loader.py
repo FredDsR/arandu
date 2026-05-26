@@ -38,8 +38,9 @@ def build_cross_cut_map(cep_dir: Path) -> dict[str, CrossCutMeta]:
             fields.
 
     Returns:
-        Flat dict. Empty if ``cep_dir`` is absent (analysis falls back
-        to an "all" pseudo-stratum in that case, with a warning).
+        Flat dict. Empty if ``cep_dir`` is absent or no files parse;
+        the batch layer then emits the joint table only (no Bloom or
+        question-type sub-tables) and logs a warning.
     """
     out: dict[str, CrossCutMeta] = {}
     if not cep_dir.exists():

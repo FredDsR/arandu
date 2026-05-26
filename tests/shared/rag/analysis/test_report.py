@@ -51,7 +51,7 @@ def test_render_handles_bloom_and_question_type_tables(tmp_path: Path) -> None:
     records = [
         make_answer(qa_pair_id="r:c:0", retriever_id="bm25"),
     ]
-    metrics = aggregate_arm("bm25", records, slice_name="bloom=remember")
+    metrics = aggregate_arm("bm25", records, slice_name="bloom_level=remember")
     report = AnalysisReport(
         pipeline_id="run-x",
         joint={"bm25": metrics},

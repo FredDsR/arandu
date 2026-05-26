@@ -63,10 +63,10 @@ def _table_1_joint(joint: dict[str, ArmMetrics]) -> str:
     header = (
         "## Table 1 — Per-arm joint-benchmark metrics\n"
         "\n"
-        "| Arm | n_TA+TC | n_TA+FC | KC ↑ | Hallucination ↓ | Over-caution ↓ "
-        "| Abstention F1 ↑ | Passage cov (judge) ↑ |\n"
-        "|-----|---------|---------|------|-----------------|----------------"
-        "|-----------------|-----------------------|"
+        "| Arm | n_answerable | n_nonanswerable | KC ↑ | Hallucination ↓ "
+        "| Over-caution ↓ | Abstention F1 ↑ | Passage cov (judge) ↑ |\n"
+        "|-----|--------------|-----------------|------|-----------------"
+        "|----------------|-----------------|-----------------------|"
     )
     rows = [header]
     for arm in sorted(joint):
