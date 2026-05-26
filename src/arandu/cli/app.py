@@ -48,6 +48,7 @@ def main(
 
 
 # Register commands from submodules
+from arandu.cli.answer import answer  # noqa: E402
 from arandu.cli.chunking import chunk  # noqa: E402
 from arandu.cli.kg import build_kg, kg_build_retriever_index, kg_link_passages  # noqa: E402
 from arandu.cli.manage import (  # noqa: E402
@@ -81,6 +82,7 @@ app.command()(build_kg)
 app.command()(kg_link_passages)
 app.command()(kg_build_retriever_index)
 app.command()(retrieve)
+app.command()(answer)
 app.command()(replicate)
 app.command()(info)
 app.command()(list_runs)

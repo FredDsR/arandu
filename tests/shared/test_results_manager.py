@@ -770,7 +770,16 @@ class TestPipelineType:
 
     def test_all_pipeline_types(self) -> None:
         """Test all pipeline types are defined."""
-        expected = {"transcription", "chunk", "qa", "cep", "kg", "retrieve", "evaluation"}
+        expected = {
+            "transcription",
+            "chunk",
+            "qa",
+            "cep",
+            "kg",
+            "retrieve",
+            "answers",
+            "evaluation",
+        }
         actual = {p.value for p in PipelineType}
         assert actual == expected
 
