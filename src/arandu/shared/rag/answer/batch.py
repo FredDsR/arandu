@@ -208,6 +208,17 @@ def _build_llm_client(settings: AnswererSettings) -> LLMClient:
             f"to be set. Either set it, or switch ARANDU_ANSWERER_PROVIDER to 'ollama'."
         )
 
+    # The 'custom' provider exists specifically to point at a non-default
+    # OpenAI-compatible endpoint. Without an explicit base URL the
+    # underlying LLMClient would silently fall back to OpenAI's default,
+    # potentially sending data to the wrong provider — mirrors the guard
+    # in `transcription/judge.py`.
+    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
+        raise ValueError(
+            "provider='custom' requires a base URL. Set ARANDU_ANSWERER_BASE_URL "
+            "or pass base_url=... explicitly."
+        )
+
     return LLMClient(
         provider=provider_enum,
         model_id=settings.model_id,

@@ -155,6 +155,20 @@ class TestBuildLlmClientFailures:
         with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
+    def test_custom_provider_without_base_url_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The 'custom' provider exists to point LLMClient at a
+        # non-default OpenAI-compatible endpoint. Without an explicit
+        # base_url, LLMClient would silently fall back to OpenAI proper —
+        # potentially leaking benchmark data to the wrong provider.
+        # Mirrors the guard in transcription/judge.py.
+        _seed_retrieve_outputs(tmp_path)
+        monkeypatch.setenv("OPENAI_API_KEY", "test")
+        settings = AnswererSettings(provider="custom", base_url=None)
+        with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
+            run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
+
 
 class TestTopKCap:
     def test_settings_top_k_caps_passages_before_packing(
