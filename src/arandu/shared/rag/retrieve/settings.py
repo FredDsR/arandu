@@ -15,10 +15,16 @@ the existing :class:`arandu.shared.embeddings.EmbedderSettings`.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from typing import Self
+
+
+_GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 ArmName = Literal["bm25", "atlas_rag", "khop_passage", "khop_triple", "null"]
 
@@ -104,8 +110,14 @@ class AtlasRagRetrieveSettings(BaseSettings):
         description="Env var name holding the LLM API key.",
     )
     base_url: str | None = Field(
-        default="https://generativelanguage.googleapis.com/v1beta/openai/",
-        description="Base URL for OpenAI-compatible endpoints. Use Gemini's URL by default.",
+        default=None,
+        description=(
+            "Base URL for OpenAI-compatible endpoints. When unset, defaults "
+            "are applied per-provider in the post-init validator: openai "
+            "defaults to Gemini's compatibility URL (the project's primary "
+            "cloud path); ollama leaves it None so LLMClient picks its own "
+            "localhost default; custom requires an explicit value."
+        ),
     )
     keyword: str = Field(
         default="transcriptions.json",
@@ -121,6 +133,33 @@ class AtlasRagRetrieveSettings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_ATLAS_RAG_", extra="ignore")
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _normalize_provider(cls, v: str) -> str:
+        """Normalize provider to lowercase so env-var case doesn't break dispatch."""
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+    @model_validator(mode="after")
+    def _default_base_url_per_provider(self) -> Self:
+        """Apply per-provider base_url defaults when the user hasn't set one.
+
+        Without this, the field-level default of ``None`` would leave Gemini
+        users with no base URL (LLMClient's PROVIDER_URLS[openai] is also
+        None — OpenAI proper). Setting the project's primary cloud path
+        here keeps the "just works" UX without baking the URL into a default
+        that would override the ollama path's localhost endpoint.
+        """
+        if self.base_url is not None:
+            return self
+        if self.provider == "openai":
+            object.__setattr__(self, "base_url", _GEMINI_OPENAI_BASE_URL)
+        # ollama: leave None — LLMClient will use http://localhost:11434/v1.
+        # custom: leave None — the factory will surface a clear error if
+        # LLMClient can't resolve a URL.
+        return self
 
 
 class KHopRetrieveSettings(BaseSettings):

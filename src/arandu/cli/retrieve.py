@@ -51,9 +51,8 @@ def retrieve(
         typer.Option(
             "--arm",
             help=(
-                "Retriever arm; repeatable. Known: "
-                + ", ".join(ALL_ARMS)
-                + f". Defaults to all 5 arms ({', '.join(_DEFAULT_ARMS)})."
+                f"Retriever arm; repeatable. Known: {', '.join(ALL_ARMS)}. "
+                f"Defaults to: {', '.join(_DEFAULT_ARMS)}."
             ),
         ),
     ] = None,

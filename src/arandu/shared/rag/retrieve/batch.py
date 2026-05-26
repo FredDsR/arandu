@@ -109,8 +109,20 @@ def run_retrieve_batch(
             instantiated from env when omitted.
         khop_settings: K-hop arm settings (k_hop, max_postings, keyword).
             Defaults instantiated from env when omitted.
+        atlas_rag_settings: atlas-rag arm settings (LLM provider/model/
+            api_key/base_url + keyword/include_events/include_concept).
+            Only consulted when ``"atlas_rag"`` is in ``arms``; the CLI
+            passes ``None`` otherwise to avoid eagerly reading
+            ``ARANDU_ATLAS_RAG_*`` env vars for runs that don't use the
+            arm.
+        embedder_settings: Sentence-encoder choice for the atlas-rag arm.
+            Ignored by the other arms. Defaults are instantiated inside
+            :func:`build_retriever` from ``ARANDU_EMBEDDER_*`` when
+            omitted.
         rebuild_index: Force arm-side index rebuilds where supported
-            (BM25 only; k-hop arms build state in-memory).
+            (BM25 only; k-hop arms build state in-memory; atlas-rag's
+            precompute is rebuilt via
+            ``arandu kg-build-retriever-index --rebuild``).
         base_dir: Override the project ``results/`` root.
 
     Returns:

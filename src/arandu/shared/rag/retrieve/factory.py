@@ -268,8 +268,20 @@ def _build_atlas_rag(
             f"the atlas-rag retriever reads at retrieve time)."
         )
 
+    # Settings validator has already lowercased `provider` and applied
+    # the per-provider base_url default; here we coerce to the enum and
+    # use it for the API-key check so the comparison is exhaustive
+    # rather than string-fragile.
+    try:
+        provider_enum = LLMProvider(settings.provider)
+    except ValueError as exc:
+        raise ValueError(
+            f"Unknown atlas_rag provider {settings.provider!r}. "
+            f"Valid: {[p.value for p in LLMProvider]}."
+        ) from exc
+
     api_key = os.environ.get(settings.api_key_env)
-    if not api_key and settings.provider != "ollama":
+    if not api_key and provider_enum is not LLMProvider.OLLAMA:
         # Ollama lets a bogus key through; cloud providers don't.
         raise RuntimeError(
             f"atlas_rag arm requested but {settings.api_key_env} is unset. "
@@ -277,7 +289,7 @@ def _build_atlas_rag(
         )
 
     llm_client = LLMClient(
-        provider=LLMProvider(settings.provider),
+        provider=provider_enum,
         model_id=settings.model_id,
         api_key=api_key,
         base_url=settings.base_url,
