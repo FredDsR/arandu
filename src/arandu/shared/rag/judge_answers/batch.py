@@ -28,7 +28,6 @@ from arandu.shared.rag.judge_answers.audit import (
     detect_disagreement,
     write_audit_log,
 )
-from arandu.shared.rag.judge_answers.chunks import build_retrieved_chunks_map
 from arandu.shared.rag.judge_answers.gold_lookup import GoldRecord, build_gold_lookup
 from arandu.shared.rag.judge_answers.judge import AnswerJudge
 from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
@@ -39,18 +38,10 @@ from arandu.shared.schemas import PipelineType
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from arandu.shared.chunking.schemas import Chunk
-
 logger = logging.getLogger(__name__)
 
 
 CHECKPOINT_FILENAME = "judge_answers_checkpoint.json"
-
-# τ_abstention per spec §6.4. The abstention criterion's config records
-# this as its threshold; the audit step also pulls it from the criterion
-# verdict so the audit reflects whatever value shipped with the prompt
-# config (single source of truth).
-_DEFAULT_ABSTENTION_THRESHOLD = 0.7
 
 
 class JudgeAnswersBatchConfig(BaseModel):
@@ -81,7 +72,7 @@ def run_judge_answers_batch(
     base_dir: Path | None = None,
     rejudge: bool = False,
 ) -> JudgeAnswersBatchResult:
-    """Run the 4-criterion judge over every ``AnswerRecord`` for ``pipeline_id``.
+    """Run the 4-criterion LLM judge over every ``AnswerRecord`` for ``pipeline_id``.
 
     Args:
         pipeline_id: Run identifier. The answers stage must be populated.
@@ -113,18 +104,11 @@ def run_judge_answers_batch(
     llm_client = _build_llm_client(resolved_settings)
     judge = AnswerJudge(llm_client=llm_client, settings=resolved_settings)
 
-    gold_lookup = build_gold_lookup(
-        cep_dir=base / pipeline_id / "cep" / "outputs",
-        chunk_outputs_root=base / pipeline_id / "chunk" / "outputs",
-    )
+    gold_lookup = build_gold_lookup(cep_dir=base / pipeline_id / "cep" / "outputs")
     passage_text = build_passage_text_map(
         chunk_dirs=_chunk_view_dirs(base / pipeline_id / "chunk" / "outputs"),
         passage_offsets_path=base / pipeline_id / "kg" / "outputs" / "passage_offsets.json",
         transcription_dir=base / pipeline_id / "transcription" / "outputs",
-    )
-    retrieved_chunks = build_retrieved_chunks_map(
-        chunk_outputs_root=base / pipeline_id / "chunk" / "outputs",
-        passage_offsets_path=base / pipeline_id / "kg" / "outputs" / "passage_offsets.json",
     )
 
     config = JudgeAnswersBatchConfig(
@@ -187,7 +171,6 @@ def run_judge_answers_batch(
                 answer=answer,
                 gold=gold,
                 passage_text=passage_text,
-                retrieved_chunks=retrieved_chunks,
             )
         except Exception as exc:
             # Per-record isolation: log + continue per spec §6.6's
@@ -210,7 +193,11 @@ def run_judge_answers_batch(
         written += 1
 
         if resolved_settings.abstention_disagreement_audit:
-            disagreement = detect_disagreement(judged, threshold=_DEFAULT_ABSTENTION_THRESHOLD)
+            # detect_disagreement reads τ_abstention from the criterion's
+            # own CriterionScore.threshold — single source of truth, so
+            # the audit reflects whatever value shipped with the prompt
+            # config rather than a separately-tracked constant.
+            disagreement = detect_disagreement(judged)
             if disagreement is not None:
                 disagreements.append(disagreement)
 
@@ -272,24 +259,22 @@ def _judge_one(
     answer: AnswerRecord,
     gold: GoldRecord,
     passage_text: dict[str, str],
-    retrieved_chunks: dict[str, Chunk],
 ) -> AnswerRecord:
-    """Run all 4 criteria + offset_coverage; attach verdict to the record."""
+    """Run the 4 LLM criteria; attach verdict to the record.
+
+    Every kwarg below is consumed by at least one criterion's prompt
+    template (via ``string.Template.safe_substitute``). Criteria that
+    don't reference a given kwarg silently ignore it.
+    """
     passages_text = _format_passages(answer, passage_text)
-    retrieved_chunk_objs = [
-        retrieved_chunks[p.chunk_id] for p in answer.passages if p.chunk_id in retrieved_chunks
-    ]
     pipeline_result = judge.evaluate(
         question=gold.question,
         gold_answer=gold.gold_answer,
         system_answer=answer.answer_text or "",
         passages_text=passages_text,
-        passages=answer.passages,
         abstained=str(answer.abstained).lower(),
         answer_text=answer.answer_text or "",
         rationale=answer.rationale,
-        gold_chunk=gold.gold_chunk,
-        retrieved_passages=retrieved_chunk_objs,
     )
     return answer.model_copy(update={"validation": pipeline_result})
 

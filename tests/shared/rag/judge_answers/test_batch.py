@@ -112,9 +112,6 @@ class TestRunJudgeAnswersBatch:
                             "passage_coverage": CriterionScore(
                                 score=0.0, threshold=0.5, rationale="no passages"
                             ),
-                            "offset_coverage": CriterionScore(
-                                score=0.0, threshold=0.5, rationale="0 retrieved chunks"
-                            ),
                         }
                     )
                 },
@@ -146,7 +143,7 @@ class TestRunJudgeAnswersBatch:
         assert rec.validation is not None
         scores = rec.validation.stage_results["answer_judge"].criterion_scores
         assert "abstention" in scores
-        assert "offset_coverage" in scores
+        assert "passage_coverage" in scores
         # The answerer's audit fields are preserved on the joined record.
         assert rec.abstained is True
         assert rec.answer_text is None

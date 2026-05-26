@@ -1,9 +1,9 @@
-"""``arandu judge-answers`` machinery — 4-criterion judge over AnswerRecord artifacts.
+"""``arandu judge-answers`` machinery — 4-criterion LLM judge over AnswerRecord artifacts.
 
 Spec §6. Public entry points:
 
 - :func:`run_judge_answers_batch` — CLI driver.
-- :class:`AnswerJudge` — pipeline composition (4 criteria in score mode).
+- :class:`AnswerJudge` — pipeline composition (4 LLM criteria in score mode).
 - :class:`JudgeAnswersSettings` — Pydantic settings.
 """
 

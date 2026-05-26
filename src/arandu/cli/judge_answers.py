@@ -1,4 +1,4 @@
-"""CLI command: ``arandu judge-answers`` — run the 4-criterion judge over AnswerRecords.
+"""CLI command: ``arandu judge-answers`` — run the 4-criterion LLM judge over AnswerRecords.
 
 Reads ``results/<id>/answers/outputs/<arm>/<source>/*.json`` and emits
 judged copies under ``results/<id>/judge_answers/outputs/<arm>/<source>/``
@@ -30,10 +30,10 @@ def judge_answers(
         typer.Option(
             "--id",
             help=(
-                "Pipeline ID for the run. The answers/, cep/, and chunk/ stages "
-                "must already be populated. The judge needs the CEP records for "
-                "gold answers + chunks, and the chunk/ + passage_offsets sidecar "
-                "for the deterministic offset_coverage criterion."
+                "Pipeline ID for the run. The answers/ and cep/ stages "
+                "must already be populated. The judge consumes AnswerRecord "
+                "artifacts and joins them against CEP records for the gold "
+                "question + answer."
             ),
         ),
     ],
@@ -48,15 +48,15 @@ def judge_answers(
         ),
     ] = False,
 ) -> None:
-    """Run the 4-criterion judge over every AnswerRecord in a populated run.
+    """Run the 4-criterion LLM judge over every AnswerRecord in a populated run.
 
-    Persists per-criterion verdicts via `JudgeResultMixin.validation` on
-    each `AnswerRecord` copy under `judge_answers/outputs/<arm>/<source>/`.
-    The deterministic `offset_coverage` heuristic runs alongside the four
-    LLM criteria so analysis can compare semantic vs literal retrieval-
-    coverage signals.
+    Criteria: ``passage_coverage``, ``abstention``, ``answer_correctness``,
+    ``answer_faithfulness``. All run in ``score`` mode (none reject);
+    verdicts persist via :class:`JudgeResultMixin.validation` on each
+    :class:`AnswerRecord` copy under
+    ``judge_answers/outputs/<arm>/<source>/``.
 
-    Judge LLM configuration is read from `ARANDU_JUDGE_ANSWERS_*` env
+    Judge LLM configuration is read from ``ARANDU_JUDGE_ANSWERS_*`` env
     vars; see :class:`JudgeAnswersSettings` for fields.
     """
     settings = JudgeAnswersSettings()

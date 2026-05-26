@@ -60,18 +60,18 @@ class TestDetectDisagreement:
     def test_agreement_returns_none(self) -> None:
         # answerer abstained AND judge says abstain (score >= 0.7) → agree.
         answer = _judged_answer(abstained=True, judge_score=0.9)
-        assert detect_disagreement(answer, threshold=0.7) is None
+        assert detect_disagreement(answer) is None
 
     def test_agreement_on_non_abstention(self) -> None:
         # answerer committed AND judge says committed (score < 0.7) → agree.
         answer = _judged_answer(abstained=False, judge_score=0.2)
-        assert detect_disagreement(answer, threshold=0.7) is None
+        assert detect_disagreement(answer) is None
 
     def test_answerer_abstains_judge_disagrees(self) -> None:
         # answerer flagged abstained=True, but the judge thinks the text
         # contains a substantive claim (score < threshold).
         answer = _judged_answer(abstained=True, judge_score=0.1)
-        out = detect_disagreement(answer, threshold=0.7)
+        out = detect_disagreement(answer)
         assert out is not None
         assert out.disagreement_type == "answerer_abstains_judge_disagrees"
         assert out.answerer_abstained is True
@@ -81,7 +81,7 @@ class TestDetectDisagreement:
         # Inverse: answerer committed to an answer, but the judge reads
         # the text as a hedge / refusal (score >= threshold).
         answer = _judged_answer(abstained=False, judge_score=0.9)
-        out = detect_disagreement(answer, threshold=0.7)
+        out = detect_disagreement(answer)
         assert out is not None
         assert out.disagreement_type == "answerer_commits_judge_says_abstain"
         assert out.answerer_abstained is False
@@ -90,7 +90,47 @@ class TestDetectDisagreement:
         # Unjudged records (validation=None) can't contribute to the audit.
         answer = _judged_answer(abstained=True, judge_score=0.9)
         unjudged = answer.model_copy(update={"validation": None})
-        assert detect_disagreement(unjudged, threshold=0.7) is None
+        assert detect_disagreement(unjudged) is None
+
+    def test_judge_error_flagged_as_its_own_disagreement_type(self) -> None:
+        # When the abstention criterion errored (score is None), the row
+        # is emitted with disagreement_type="judge_error" so the auditor
+        # sees the gap rather than silently treating None as "judge agrees".
+        record = _judged_answer(abstained=False, judge_score=0.5)
+        # Replace the score with an errored one.
+        errored_validation = JudgePipelineResult(
+            stage_results={
+                "answer_judge": JudgeStepResult(
+                    criterion_scores={
+                        "abstention": CriterionScore(
+                            score=None,
+                            threshold=0.7,
+                            rationale="",
+                            error="LLM timeout",
+                        )
+                    }
+                )
+            },
+            passed=True,
+        )
+        record = record.model_copy(update={"validation": errored_validation})
+
+        out = detect_disagreement(record)
+        assert out is not None
+        assert out.disagreement_type == "judge_error"
+        assert out.judge_score is None
+        assert out.judge_threshold == 0.7
+
+    def test_recorded_threshold_matches_decision_threshold(self) -> None:
+        # If the abstention prompt config ships a non-default threshold,
+        # both the decision AND the recorded `judge_threshold` field must
+        # use that value (single source of truth — CriterionScore.threshold).
+        # answerer abstained, score 0.85 with threshold 0.5 → judge also
+        # says abstain → no disagreement. If the function ignored the
+        # criterion's threshold and used a hardcoded 0.7, this would
+        # falsely flag a disagreement.
+        answer = _judged_answer(abstained=True, judge_score=0.85, threshold=0.5)
+        assert detect_disagreement(answer) is None
 
 
 class TestWriteAuditLog:

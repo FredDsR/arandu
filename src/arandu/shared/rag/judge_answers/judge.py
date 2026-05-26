@@ -1,17 +1,28 @@
-"""``AnswerJudge`` — 4-criterion pipeline composition (spec §6.6).
+"""``AnswerJudge`` — 4-criterion LLM pipeline composition (spec §6.6).
 
 All criteria run in ``score`` mode (none reject); the pipeline's role
 is to attach verdicts to each :class:`AnswerRecord` for later analysis.
-The deterministic ``offset_coverage`` heuristic criterion runs alongside
-the four LLM criteria so analysis can compare semantic vs literal
-retrieval-coverage signals.
+
+Note on scope: spec §6.3 also describes a deterministic
+``offset_coverage`` variant alongside the LLM ``passage_coverage``.
+The deterministic variant is intentionally **not** wired here:
+
+- The thesis's research question is semantic ("did retrieval support a
+  faithful tacit-knowledge answer?"), not extractive (literal-byte
+  overlap with the gold chunk).
+- The triple-arm retriever emits content in :attr:`RetrievedPassage.payload`
+  with no ``(start_char, end_char)``; char-overlap would systematically
+  zero it out, biasing the cross-arm comparison.
+- The Phase C ``KC = correctness * faithfulness`` metric doesn't read
+  it, so its only role would be downstream analysis — and a standalone
+  script can recompute char-overlap from the persisted records if a
+  robustness sanity check ever needs it.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from arandu.qa.criteria import OffsetCoverageCriterion
 from arandu.shared.judge import (
     BaseJudge,
     JudgePipeline,
@@ -26,9 +37,7 @@ if TYPE_CHECKING:
 
 
 # Spec §6.6 — order matches the pipeline composition described there.
-# All four LLM criteria load from ``prompts/judge/criteria/<name>/``;
-# the heuristic ``offset_coverage`` is registered as a custom criterion
-# alongside the LLM passage_coverage so analysis carries both signals.
+# All four LLM criteria load from ``prompts/judge/criteria/<name>/``.
 _LLM_CRITERIA = (
     "passage_coverage",
     "abstention",
@@ -38,7 +47,7 @@ _LLM_CRITERIA = (
 
 
 class AnswerJudge(BaseJudge):
-    """Drive the 4-criterion judge pipeline over one :class:`AnswerRecord`.
+    """Drive the 4-criterion LLM judge pipeline over one :class:`AnswerRecord`.
 
     Attributes:
         factory: The :class:`LLMCriterionFactory` used to load LLM
@@ -60,22 +69,17 @@ class AnswerJudge(BaseJudge):
             max_tokens=settings.max_tokens,
         )
         self._settings = settings
-        # Register the deterministic offset_coverage variant BEFORE pipeline
-        # construction so JudgeStep can resolve it by name alongside the
-        # LLM criteria.
-        self.factory.register_custom_criterion(OffsetCoverageCriterion())
         super().__init__()  # calls _build_pipeline()
 
     def _build_pipeline(self) -> JudgePipeline:
-        """Assemble the 4 LLM criteria + offset_coverage into one score-mode stage.
+        """Assemble the 4 LLM criteria into one score-mode stage.
 
         All-in-one stage rather than four single-criterion stages because
         the judges don't gate each other (no filter mode); a single stage
         avoids redundant ``JudgePipelineResult`` machinery and gives the
         analysis stage one flat ``criterion_scores`` dict to consume.
         """
-        criteria: list[str] = [*_LLM_CRITERIA, "offset_coverage"]
-        step = JudgeStep(criteria=criteria, factory=self.factory)
+        step = JudgeStep(criteria=list(_LLM_CRITERIA), factory=self.factory)
         return JudgePipeline(
             stages=[JudgeStage(name="answer_judge", step=step, mode="score")],
         )

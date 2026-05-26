@@ -35,11 +35,15 @@ class AbstentionDisagreement(BaseModel):
         answerer_abstained: The structured ``abstained`` flag from the
             answerer's :class:`AnswererOutput`.
         judge_score: Score from the abstention judge criterion. ``None``
-            when the criterion errored (still flagged so the auditor
-            sees the gap).
-        judge_threshold: τ_abstention (default 0.7).
-        disagreement_type: ``"answerer_abstains_judge_disagrees"`` or
-            ``"answerer_commits_judge_says_abstain"``.
+            when the criterion errored; the audit row is still emitted
+            (with ``disagreement_type="judge_error"``) so failures stay
+            visible to the auditor.
+        judge_threshold: τ_abstention — pulled from the criterion's own
+            :attr:`CriterionScore.threshold` so the recorded value and
+            the decision threshold are the same field.
+        disagreement_type: ``"answerer_abstains_judge_disagrees"``,
+            ``"answerer_commits_judge_says_abstain"``, or
+            ``"judge_error"`` when the criterion didn't produce a score.
         answer_text: Verbatim answer text (helps the auditor judge
             without round-tripping back to the AnswerRecord).
         rationale: Answerer's rationale (same).
@@ -55,18 +59,25 @@ class AbstentionDisagreement(BaseModel):
     rationale: str = Field(default="")
 
 
-def detect_disagreement(answer: AnswerRecord, threshold: float) -> AbstentionDisagreement | None:
+def detect_disagreement(answer: AnswerRecord) -> AbstentionDisagreement | None:
     """Compare answerer's flag against the abstention judge's verdict.
 
     Args:
         answer: An :class:`AnswerRecord` that has been judged (its
-            ``validation`` field is populated).
-        threshold: τ_abstention. Items where the judge score crosses
-            this threshold are considered "judge says abstain".
+            ``validation`` field is populated). The criterion's own
+            :attr:`CriterionScore.threshold` is used both for the
+            decision AND for the recorded ``judge_threshold`` — single
+            source of truth, so config edits affect the audit without
+            having to propagate the new value separately.
 
     Returns:
-        :class:`AbstentionDisagreement` when the two signals disagree;
-        ``None`` when they agree (or when the judge didn't run).
+        :class:`AbstentionDisagreement` in three cases:
+        - answerer abstained but judge thinks the text is a committal answer
+        - answerer committed but judge reads the text as a refusal
+        - the criterion errored (judge score is ``None``) — flagged so
+          the auditor sees the gap rather than silently treating None
+          as "judge agrees"
+        Otherwise ``None`` (judge didn't run, or both signals agree).
     """
     if answer.validation is None:
         return None
@@ -75,13 +86,27 @@ def detect_disagreement(answer: AnswerRecord, threshold: float) -> AbstentionDis
         score = step.criterion_scores.get(_ABSTENTION_CRITERION)
         if score is None:
             continue
-        judge_says_abstain = score.score is not None and score.score >= threshold
+        # Treat criterion errors as their own disagreement category so
+        # they aren't silently lumped in with "judge agrees".
+        if score.score is None:
+            return AbstentionDisagreement(
+                qa_pair_id=answer.qa_pair_id,
+                retriever_id=answer.retriever_id,
+                answerer_abstained=answer.abstained,
+                judge_score=None,
+                judge_threshold=score.threshold,
+                disagreement_type="judge_error",
+                answer_text=answer.answer_text,
+                rationale=answer.rationale,
+            )
+        judge_says_abstain = score.score >= score.threshold
         if answer.abstained == judge_says_abstain:
             return None
-        if answer.abstained and not judge_says_abstain:
-            disagreement_type = "answerer_abstains_judge_disagrees"
-        else:
-            disagreement_type = "answerer_commits_judge_says_abstain"
+        disagreement_type = (
+            "answerer_abstains_judge_disagrees"
+            if answer.abstained
+            else "answerer_commits_judge_says_abstain"
+        )
         return AbstentionDisagreement(
             qa_pair_id=answer.qa_pair_id,
             retriever_id=answer.retriever_id,

@@ -16,9 +16,12 @@ class JudgeAnswersSettings(BaseSettings):
     the Answerer's own systematic biases are self-validated.
 
     Attributes:
-        provider: LLM provider for the four LLM-based criteria. Defaults
-            to ``"ollama"`` to mirror the Answerer's primary thesis path;
-            flip to ``"openai"`` (Gemini) for cloud runs.
+        provider: LLM provider for the four LLM-based criteria.
+            Defaults to ``"ollama"`` to mirror the Answerer's primary
+            thesis path. For cloud runs targeting OpenAI proper use
+            ``"openai"``; for OpenAI-compatible endpoints (Gemini's
+            ``/v1beta/openai/`` compatibility URL, vLLM, etc.) use
+            ``"custom"`` and set ``base_url`` accordingly.
         model_id: Model identifier.
         api_key_env: Env var holding the API key. Ignored for ollama.
         base_url: Base URL override. ``None`` lets ``LLMClient`` pick its
