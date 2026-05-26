@@ -198,6 +198,7 @@ class PipelineType(StrEnum):
     RETRIEVE = "retrieve"
     ANSWERS = "answers"
     JUDGE_ANSWERS = "judge_answers"
+    ANALYSIS = "analysis"
     EVALUATION = "evaluation"
 
 
