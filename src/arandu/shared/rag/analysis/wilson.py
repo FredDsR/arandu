@@ -2,12 +2,12 @@
 
 Pure-math implementation; no ``statsmodels`` / ``scipy`` dependency. The
 spec calls for ``statsmodels.stats.proportion.proportion_confint(method="wilson")``
-which uses exactly this closed form — keeping it inline avoids dragging
+which uses exactly this closed form - keeping it inline avoids dragging
 in a heavy stats dep for a 6-line formula.
 
 Wilson is preferred over the normal-approximation CI for small ``n``
 and for proportions near 0 or 1, where the normal approximation breaks
-down (the thesis cares about both — abstention rates can be near zero;
+down (the thesis cares about both - abstention rates can be near zero;
 strata can be small per Bloom level).
 """
 

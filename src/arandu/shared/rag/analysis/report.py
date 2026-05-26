@@ -47,7 +47,7 @@ def write_report(outputs_dir: Path, report: AnalysisReport) -> tuple[Path, Path]
 def _render_markdown(report: AnalysisReport) -> str:
     """Render Markdown tables matching the spec §8.8 mock layout."""
     parts: list[str] = [
-        f"# RAG Analysis Report — {report.pipeline_id}",
+        f"# RAG Analysis Report - {report.pipeline_id}",
         "",
         _table_1_joint(report.joint),
     ]
@@ -59,9 +59,9 @@ def _render_markdown(report: AnalysisReport) -> str:
 
 
 def _table_1_joint(joint: dict[str, ArmMetrics]) -> str:
-    """Table 1 — per-arm joint-benchmark metrics."""
+    """Table 1 - per-arm joint-benchmark metrics."""
     header = (
-        "## Table 1 — Per-arm joint-benchmark metrics\n"
+        "## Table 1 - Per-arm joint-benchmark metrics\n"
         "\n"
         "| Arm | n_answerable | n_nonanswerable | KC ↑ | Hallucination ↓ "
         "| Over-caution ↓ | Abstention F1 ↑ | Passage cov (judge) ↑ |\n"
@@ -85,9 +85,9 @@ def _table_1_joint(joint: dict[str, ArmMetrics]) -> str:
 
 
 def _table_2_bloom(by_bloom: dict[str, dict[str, ArmMetrics]]) -> str:
-    """Table 2 — Bloom-stratified KC."""
+    """Table 2 - Bloom-stratified KC."""
     all_levels = sorted({level for arm in by_bloom.values() for level in arm})
-    header = "## Table 2 — Bloom-stratified Knowledge Coverage (KC)\n\n"
+    header = "## Table 2 - Bloom-stratified Knowledge Coverage (KC)\n\n"
     header += "| Arm | " + " | ".join(all_levels) + " |\n"
     header += "|" + "-----|" * (len(all_levels) + 1)
     rows = [header]
@@ -101,9 +101,9 @@ def _table_2_bloom(by_bloom: dict[str, dict[str, ArmMetrics]]) -> str:
 
 
 def _table_question_type(by_type: dict[str, dict[str, ArmMetrics]]) -> str:
-    """Table — question-type-stratified KC."""
+    """Table - question-type-stratified KC."""
     all_types = sorted({qt for arm in by_type.values() for qt in arm})
-    header = "## Table 3 — Question-type-stratified Knowledge Coverage (KC)\n\n"
+    header = "## Table 3 - Question-type-stratified Knowledge Coverage (KC)\n\n"
     header += "| Arm | " + " | ".join(all_types) + " |\n"
     header += "|" + "-----|" * (len(all_types) + 1)
     rows = [header]

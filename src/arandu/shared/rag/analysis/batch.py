@@ -143,7 +143,7 @@ def _build_cross_cut_metrics(
     """Aggregate per-arm metrics keyed by ``attr`` (bloom_level | question_type).
 
     Records without a cross-cut entry are skipped from the stratified
-    tables — they still appear in the joint aggregator because the
+    tables - they still appear in the joint aggregator because the
     joint slice has no strata dependency.
     """
     nested: dict[str, dict[str, list[AnswerRecord]]] = defaultdict(lambda: defaultdict(list))

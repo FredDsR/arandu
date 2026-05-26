@@ -143,7 +143,7 @@ def _proportion(numerator: int, denominator: int) -> ProportionMetric:
     """Build a :class:`ProportionMetric` with Wilson 95% CI.
 
     Empty denominator yields ``value=None`` and a ``(0.0, 0.0)`` band
-    — the report layer renders these as "n/a" rather than misleading
+    - the report layer renders these as "n/a" rather than misleading
     zero rates.
     """
     if denominator == 0:

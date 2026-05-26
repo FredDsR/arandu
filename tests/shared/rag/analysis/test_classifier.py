@@ -21,7 +21,7 @@ def _record(
     """Build a minimal judged AnswerRecord for classifier tests.
 
     ``judge_abstention_score=None`` simulates a judge-error row (the
-    criterion ran but errored — score field is None).
+    criterion ran but errored - score field is None).
     """
     validation = JudgePipelineResult(
         stage_results={

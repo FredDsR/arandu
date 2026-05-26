@@ -1,4 +1,4 @@
-"""CLI command: ``arandu rag-analysis`` — emit cross-arm comparison tables.
+"""CLI command: ``arandu rag-analysis`` - emit cross-arm comparison tables.
 
 Aggregates judged :class:`AnswerRecord` artifacts produced by ``arandu
 judge-answers`` into per-arm TA/TC/FA/FC counts, Wilson-95% CIs, and
@@ -37,9 +37,9 @@ def rag_analysis(
 
     Output structure under ``results/<id>/analysis/outputs/``:
 
-    - ``report.json`` — :class:`AnalysisReport` with per-arm
+    - ``report.json`` - :class:`AnalysisReport` with per-arm
       confusion matrices, Wilson CIs, and stratified breakdowns.
-    - ``tables.md`` — human-readable Markdown tables matching the
+    - ``tables.md`` - human-readable Markdown tables matching the
       thesis chapter's reporting layout.
     """
     print_info(f"Run: {pipeline_id}")

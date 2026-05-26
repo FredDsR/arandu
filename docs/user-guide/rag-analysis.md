@@ -35,7 +35,7 @@ analysis/
 
 The CEP outputs (`results/<pipeline_id>/cep/outputs/`) are consulted for
 Bloom-level and question-type cross-cuts. If they're absent the run still
-succeeds — you get the joint table only and a warning in the log.
+succeeds - you get the joint table only and a warning in the log.
 
 ---
 
@@ -48,8 +48,8 @@ abstention judge's verdict.
 
 |                      | **Answerable**                             | **Non-answerable**                |
 |----------------------|--------------------------------------------|-----------------------------------|
-| **Abstained**        | False Abstention (**FA**) — over-cautious  | True Abstention (**TA**) — correct |
-| **Committed**        | True Commitment (**TC**) — scored by KC    | False Commitment (**FC**) — **hallucination** |
+| **Abstained**        | False Abstention (**FA**) - over-cautious  | True Abstention (**TA**) - correct |
+| **Committed**        | True Commitment (**TC**) - scored by KC    | False Commitment (**FC**) - **hallucination** |
 
 A record is "abstained for analysis" only when **both** the answerer and the
 judge agree. If they disagree the record is treated as committed (the
@@ -58,7 +58,7 @@ disagreement is independently logged by `judge-answers` in
 
 **`unknown`** is a fifth class for records where the abstention judge errored
 or did not run. Unknown records are kept in the confusion-matrix count but
-excluded from rate and mean denominators — they would otherwise skew the
+excluded from rate and mean denominators - they would otherwise skew the
 headline numbers from a single judge failure.
 
 ---
@@ -70,15 +70,15 @@ are the per-arm rates and means.
 
 | Column | Direction | Formula | What it tells you |
 |---|---|---|---|
-| **n_answerable** | — | `TC + FA` | Number of judged answerable items for this arm (whether the system committed or abstained). |
-| **n_nonanswerable** | — | `TA + FC` | Number of judged non-answerable items for this arm. |
-| **KC ↑** | higher is better | `mean(correctness × faithfulness)` over TC | Knowledge coverage — does the system get the *right* answer using the *retrieved* context? |
+| **n_answerable** | - | `TC + FA` | Number of judged answerable items for this arm (whether the system committed or abstained). |
+| **n_nonanswerable** | - | `TA + FC` | Number of judged non-answerable items for this arm. |
+| **KC ↑** | higher is better | `mean(correctness × faithfulness)` over TC | Knowledge coverage - does the system get the *right* answer using the *retrieved* context? |
 | **Hallucination ↓** | lower is better | `FC / (FC + TA)` | When the question is unanswerable, how often does the system fabricate an answer? |
 | **Over-caution ↓** | lower is better | `FA / (FA + TC)` | When the question is answerable, how often does the system refuse? |
 | **Abstention F1 ↑** | higher is better | F1 over TA / FA / FC | One number summarising "how well does this arm know when to abstain?" |
 | **Passage cov ↑** | higher is better | `mean(passage_coverage)` | LLM-judged: do the retrieved passages contain the supporting evidence? |
 
-Each proportion cell is rendered as `value [lower, upper]` — the Wilson 95%
+Each proportion cell is rendered as `value [lower, upper]` - the Wilson 95%
 confidence interval. `n/a` means the denominator was zero (e.g. an arm with
 no non-answerable items has no hallucination rate to compute).
 
@@ -92,7 +92,7 @@ no non-answerable items has no hallucination rate to compute).
 | Abstention F1 | > 0.75 | < 0.50 |
 | Passage coverage | > 0.65 | < 0.40 |
 
-These ranges are heuristic targets for the ethnographic corpus — they are
+These ranges are heuristic targets for the ethnographic corpus - they are
 **not** thresholds for accepting an arm. The thesis claim is comparative
 (arm A vs arm B on the same benchmark), not absolute.
 
@@ -106,7 +106,7 @@ well:
 - Correctness 0.5, faithfulness 0.9 → KC 0.45 (close answer, supported by passages).
 - Correctness 0.9, faithfulness 0.9 → KC 0.81 (the target).
 
-The mean is taken over **TC records only** — abstained records don't contribute
+The mean is taken over **TC records only** - abstained records don't contribute
 to KC because there's no answer to score.
 
 ### The hallucination / over-caution trade-off
@@ -126,7 +126,7 @@ sits given the sample size. Two rules of thumb:
 
 1. **Overlapping CIs ≈ no significant difference.** If arm A reports
    `0.12 [0.08, 0.17]` and arm B reports `0.15 [0.10, 0.20]`, the bands
-   overlap — you can't conclude A < B from this run.
+   overlap - you can't conclude A < B from this run.
 2. **Narrow CIs require many records.** If `n_nonanswerable = 50` the bands will
    be wide regardless of how low the rate is. Don't read precision into
    small strata.
@@ -147,7 +147,7 @@ Use this table to answer questions like:
 - *Does the triple-arm retriever underperform on lower-Bloom (factual recall) questions?*
 - *Does atlas-rag's advantage concentrate on multi-hop (`analyze` / `evaluate`) items?*
 
-Cells are scalar KC means — no confidence intervals here. With small per-stratum
+Cells are scalar KC means - no confidence intervals here. With small per-stratum
 `n`, single-cell comparisons are suggestive, not conclusive.
 
 ---
@@ -201,7 +201,7 @@ report.by_question_type["atlas_rag"]["conceptual"].knowledge_coverage.mean
 
 ## Known limitations
 
-These are intentional first-cut scope — tracked for follow-up PRs:
+These are intentional first-cut scope - tracked for follow-up PRs:
 
 - **Paired McNemar's tests** for arm-vs-arm significance (spec §8.4). Needs
   `statsmodels`; today, use CI overlap as a heuristic.
@@ -215,7 +215,7 @@ These are intentional first-cut scope — tracked for follow-up PRs:
   non-answerable items only when the CEP / non-answerable source provides
   them; the wider experiment is tracked under the `nonanswerable-experiment` task.
 - **Deterministic offset-overlap** (`offset_coverage`) was dropped from the
-  judge stage during PR #110 review — the thesis question is semantic, not
+  judge stage during PR #110 review - the thesis question is semantic, not
   extractive, and the triple-arm retriever has no character offsets. The
   judge LLM scores passage coverage instead; `passage_coverage` in the
   report comes from that judge.
@@ -224,7 +224,7 @@ These are intentional first-cut scope — tracked for follow-up PRs:
 
 ## Related
 
-- [CLI reference](cli-reference.md) — full command list.
-- [Evaluation](evaluation.md) — legacy QA + KG evaluation (unchanged).
+- [CLI reference](cli-reference.md) - full command list.
+- [Evaluation](evaluation.md) - legacy QA + KG evaluation (unchanged).
 - [`docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md`](../superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md)
-  — Phase C design spec; §8 is the analysis-stage methodology.
+  - Phase C design spec; §8 is the analysis-stage methodology.

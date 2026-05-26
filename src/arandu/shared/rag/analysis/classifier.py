@@ -21,7 +21,7 @@ The unified abstention rule from spec §6.4:
 
 i.e. both signals must agree to classify a record as abstained. When
 they disagree the record is treated as committed for the confusion
-matrix — that's conservative for hallucination scoring, and the
+matrix - that's conservative for hallucination scoring, and the
 disagreement is independently recorded by the judge_answers stage's
 abstention audit.
 """

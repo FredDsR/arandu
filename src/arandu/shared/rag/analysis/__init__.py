@@ -1,10 +1,10 @@
-"""``arandu rag-analysis`` machinery — confusion-matrix + per-arm metrics over judged AnswerRecords.
+"""``arandu rag-analysis`` machinery - confusion-matrix + per-arm metrics over judged AnswerRecords.
 
 Spec §8. Public entry points:
 
-- :func:`run_rag_analysis_batch` — CLI driver.
-- :func:`classify_record` — TA/TC/FA/FC labelling per spec §8.1.
-- :func:`wilson_ci` — Wilson 95% confidence interval for a binary proportion.
+- :func:`run_rag_analysis_batch` - CLI driver.
+- :func:`classify_record` - TA/TC/FA/FC labelling per spec §8.1.
+- :func:`wilson_ci` - Wilson 95% confidence interval for a binary proportion.
 
 Out of scope in this PR's first cut (deferred to follow-ups):
 
