@@ -148,7 +148,7 @@ Give every pipeline run a self-describing home on disk so different stages can c
 
 Every run is a directory under `results/`, named with the run's `pipeline_id` (an opaque ID; locally that is `YYYYMMDD_HHMMSS_local`, on SLURM it is `YYYYMMDD_HHMMSS_slurm_<partition>_<job_id>`). The `pipeline_id` is the run identifier — pipeline ID and run ID are the same value.
 
-Every stage of the run lives as a child subdirectory of the run dir, named after the stage (the value of its `PipelineType`: `transcription`, `cep`, `kg`, `qa`, `evaluation`, etc.). Each stage subdirectory has the same shape, regardless of which stage it is:
+Every stage of the run lives as a child subdirectory of the run dir, named after the stage (the value of its `PipelineType`: `transcription`, `cep`, `kg`, `qa`, `retrieve`, `evaluation`, etc.). Each stage subdirectory has the same shape, regardless of which stage it is:
 
 - A `<stage>_checkpoint.json` (or `checkpoint.json` for transcription, kept for historical reasons) — the `CheckpointManager` state file. This is what `mark_completed()` and `mark_failed()` write to; only its contents differ between stages, never its location.
 - A `run_metadata.json` — a `RunMetadata` snapshot capturing `started_at`, `ended_at`, `status` (`RunStatus`), the `ConfigSnapshot` of whatever `BaseSettings`/`BaseModel` the stage was given, the `HardwareInfo`, the `ExecutionEnvironment` (local vs SLURM, partition, job id), the arandu version, and progress counters (`completed_items`, `failed_items`, `total_items`).
@@ -167,7 +167,18 @@ The `results/` root itself carries a single aggregate file, `index.json`, which 
 
 ### Extensions
 
-Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieval_indexes`, `retrieval`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`. See `docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md` §11 for the binding spec, in particular §11.0 which restates this convention for Phase C.
+Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieve`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`. See `docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md` §11 for the binding spec, in particular §11.0 which restates this convention for Phase C.
+
+#### The `retrieve` stage
+
+`arandu retrieve --id <pipeline_id>` runs one or more retriever arms over a populated run and persists `RetrievalRecord` artifacts. The stage's footprint:
+
+- `results/<id>/retrieve/retrieve_checkpoint.json` — composite keys `"<arm>::<qa_pair_id>"` so resume works across arm sets (re-running the same `--id` with a subset of arms doesn't replay completed tuples).
+- `results/<id>/retrieve/run_metadata.json` — the standard `RunMetadata` snapshot, plus the `RetrieveBatchConfig` (arms, top_k, rebuild flag).
+- `results/<id>/retrieve/indexes/bm25_<chunker_id>/` — BM25's pickled index, built lazily on first use and reused across reruns. K-hop arms build their state in-memory from the KG graphml at construction time and have no on-disk index footprint.
+- `results/<id>/retrieve/outputs/<arm_id>/<source>/<safe_qa_pair_id>.json` — one `RetrievalRecord` per (arm, question) tuple. `<source>` is `cep` or `nonanswerable`. `<safe_qa_pair_id>` is the schema's `qa_pair_id` with `":"` replaced by `"__"` for cross-platform path safety; the `RetrievalRecord.qa_pair_id` field INSIDE the file preserves the original colons.
+
+Atlas-rag's precompute lives under `results/<id>/kg/outputs/atlas_output/precompute/`, NOT under `retrieve/indexes/`. Rationale: the precompute is intrinsic to the KG (depends on the graphml's sha256), not to the benchmark run that consumes it. `arandu kg-build-retriever-index` builds it; `arandu retrieve` only reads it.
 
 ---
 

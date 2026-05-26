@@ -61,6 +61,7 @@ from arandu.cli.manage import (  # noqa: E402
 )
 from arandu.cli.qa import generate_cep_qa, judge_qa  # noqa: E402
 from arandu.cli.report import report, serve_report  # noqa: E402
+from arandu.cli.retrieve import retrieve  # noqa: E402
 from arandu.cli.transcribe import (  # noqa: E402
     batch_transcribe,
     drive_transcribe,
@@ -79,6 +80,7 @@ app.command()(judge_qa)
 app.command()(build_kg)
 app.command()(kg_link_passages)
 app.command()(kg_build_retriever_index)
+app.command()(retrieve)
 app.command()(replicate)
 app.command()(info)
 app.command()(list_runs)

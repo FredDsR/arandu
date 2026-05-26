@@ -27,35 +27,30 @@ offset-based source-text resolution.
 from __future__ import annotations
 
 import hashlib
-import re
-import unicodedata
 from collections import defaultdict
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
 import networkx as nx
 
+from arandu.shared.rag.retrievers._khop_common import (
+    _DEFAULT_MAX_POSTINGS,
+    _LINKABLE_TYPES,
+    _tokenize,
+)
 from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-# The shared helpers (tokenizer, stopwords, postings cap) are duplicated from
-# :mod:`arandu.shared.rag.retrievers.khop_subgraph` rather than imported. Reason:
-# the constants are private (`_TOKEN_RE`, `_STOPWORDS`, etc.) and the user
-# may want them to evolve independently. A follow-up refactor can extract
-# them into a sibling helper module once both retrievers stabilise.
-_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
-# Concept nodes ARE linkable (a question may name a concept directly), but
-# are EXCLUDED from triple endpoints below — see `_TRIPLE_ENDPOINT_TYPES`.
-_LINKABLE_TYPES: frozenset[str] = frozenset({"entity", "event", "concept"})
-# Triple endpoints deliberately exclude `concept` nodes. atlas-rag's
-# conceptualization stage (AutoSchemaKG schema induction, see
-# `kg/atlas_backend.py` + methodology §5.3) attaches every entity to its
-# concept(s) via `has_concept` edges — a star pattern where the concept
-# node accumulates extremely high in-degree. With endpoint-degree
-# scoring, those `entity --[has_concept]--> concept` edges dominate any
+# Triple endpoints deliberately exclude `concept` nodes (which ARE in
+# the shared :data:`_LINKABLE_TYPES`). atlas-rag's conceptualization
+# stage (AutoSchemaKG schema induction, see `kg/atlas_backend.py` +
+# methodology §5.3) attaches every entity to its concept(s) via
+# `has_concept` edges — a star pattern where the concept node
+# accumulates extremely high in-degree. With endpoint-degree scoring,
+# those `entity --[has_concept]--> concept` edges dominate any
 # question's top-k results because the concept is a hub, not because
 # the relation is semantically relevant.
 #
@@ -66,45 +61,7 @@ _LINKABLE_TYPES: frozenset[str] = frozenset({"entity", "event", "concept"})
 # (2026-05-23) without this exclusion returned identical top-3
 # `has_concept` triples for every question.
 _TRIPLE_ENDPOINT_TYPES: frozenset[str] = frozenset({"entity", "event"})
-_MIN_TOKEN_LEN = 3
-_DEFAULT_MAX_POSTINGS = 200
 _INFINITY = 10**9  # sentinel for "unreachable from any seed" in distance dicts
-
-_STOPWORDS: frozenset[str] = frozenset(
-    {
-        "a", "o", "as", "os", "um", "uma", "uns", "umas",
-        "de", "do", "da", "dos", "das", "no", "na", "nos", "nas",
-        "em", "por", "para", "com", "sem", "sob", "sobre", "ate", "até",
-        "e", "ou", "mas", "porem", "porém", "que", "se", "como", "quando",
-        "onde", "qual", "quais", "quem", "porque", "porquê",
-        "eu", "tu", "ele", "ela", "nós", "vos", "vós", "eles", "elas",
-        "meu", "minha", "teu", "tua", "seu", "sua", "nosso", "nossa",
-        "este", "esta", "esse", "essa", "aquele", "aquela", "isto", "isso", "aquilo",
-        "ser", "ter", "estar", "haver", "ir", "vir", "fazer",
-        "é", "foi", "era", "são", "está", "estão", "tem", "têm", "ha", "há",
-        "muito", "muitos", "muita", "muitas", "pouco", "poucos", "todo", "todos",
-        "não", "nao", "sim", "já", "ja", "ainda", "também", "tambem",
-        "an", "the", "of", "in", "on", "at", "to", "for", "with",
-        "by", "from", "into", "about", "and", "or", "but",
-        "is", "are", "was", "were", "be", "been", "being",
-        "i", "you", "he", "she", "it", "we", "they", "this", "that",
-        "does", "did", "have", "has", "had",
-        "not", "yes", "what", "which", "who", "whom", "when", "where", "why", "how",
-    }
-)  # fmt: skip
-
-
-def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
-    """Whitespace + punctuation split, NFKC-normalised, casefolded.
-
-    Mirrors :func:`arandu.shared.rag.retrievers.khop_subgraph._tokenize` so the
-    entity-link stage produces identical seeds across both retrievers.
-    """
-    normalised = unicodedata.normalize("NFKC", text).casefold()
-    tokens = _TOKEN_RE.findall(normalised)
-    if filter_stopwords:
-        tokens = [t for t in tokens if t not in _STOPWORDS and len(t) >= _MIN_TOKEN_LEN]
-    return tokens
 
 
 def _format_triple(
