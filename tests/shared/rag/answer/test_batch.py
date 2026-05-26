@@ -1,8 +1,8 @@
 """Integration test for the answerer batch runner.
 
-Stubs the LLMClient + the embedder factory so the test doesn't actually
-hit a model — verifies the read/write contract end-to-end against a
-fixture run that mimics what ``arandu retrieve`` produces.
+Stubs ``LLMClient`` so the tests never actually hit a model — verifies
+the read/write contract end-to-end against a fixture run that mimics
+what ``arandu retrieve`` produces.
 """
 
 from __future__ import annotations
@@ -83,10 +83,18 @@ class TestRunAnswerBatch:
         assert rec.abstained is True
         assert rec.answer_text is None
         assert rec.rationale.startswith("No passages")
-        # answerer_meta carries the audit trail.
+        # answerer_meta carries the audit trail + settings snapshot.
         assert rec.answerer_meta["attempts"] == 1
         assert rec.answerer_meta["language"] == "pt"
         assert rec.answerer_meta["packed_passages"] == 0
+        assert rec.answerer_meta["passages_after_top_k"] == 0
+        # Settings snapshot persisted per-record so attribution survives
+        # even if run-level metadata is later moved or split.
+        assert rec.answerer_meta["provider"] == "ollama"
+        assert rec.answerer_meta["top_k"] == 10
+        assert rec.answerer_meta["max_tokens"] == 1024
+        assert rec.answerer_meta["max_context_tokens"] == 8192
+        assert rec.answerer_meta["prompt_overhead_tokens"] == 350
         assert rec.answerer_model == "qwen3:14b"
 
     def test_missing_retrieve_dir_raises(
@@ -146,6 +154,68 @@ class TestBuildLlmClientFailures:
         settings = AnswererSettings(provider="openai", api_key_env="OPENAI_API_KEY")
         with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
+
+
+class TestTopKCap:
+    def test_settings_top_k_caps_passages_before_packing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Retrieval returned 5 passages; answerer settings top_k=2 must
+        # cap to the first 2 BEFORE the token-budget pack runs. Without
+        # this cap, the answerer would consider every passage the
+        # retriever returned regardless of the per-run constant from
+        # spec §5.7's ARANDU_ANSWERER_TOP_K.
+        out_dir = tmp_path / "run_x" / "retrieve" / "outputs" / "khop_triple" / "cep"
+        out_dir.mkdir(parents=True)
+        passages = [
+            RetrievedPassage(
+                chunk_id=f"triple:{i}",
+                rank=i,
+                score=1.0 - i * 0.1,
+                payload=f"triple_payload_{i}",
+            )
+            for i in range(5)
+        ]
+        record = RetrievalRecord(
+            qa_pair_id="src_a:chk_00:0",
+            question="q",
+            retriever_id="khop_triple",
+            chunker_id="cep_4k",
+            top_k=5,
+            passages=passages,
+            elapsed_ms=1.0,
+            is_answerable=True,
+        )
+        record.save(out_dir / "src_a__chk_00__0.json")
+        settings = AnswererSettings(provider="ollama", top_k=2)
+
+        with patch("arandu.shared.rag.answer.batch.LLMClient") as mock_llm_cls:
+            inner = MagicMock()
+            inner.generate_structured.return_value = AnswererOutput(
+                abstained=False, answer="a", rationale="r"
+            )
+            mock_llm_cls.return_value = inner
+            run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
+
+        # Inspect what the answerer saw — only the first 2 payloads.
+        prompt = inner.generate_structured.call_args.kwargs["prompt"]
+        assert "triple_payload_0" in prompt
+        assert "triple_payload_1" in prompt
+        assert "triple_payload_2" not in prompt
+        assert "triple_payload_3" not in prompt
+
+        # And the persisted record reflects the cap.
+        rec = AnswerRecord.load(
+            tmp_path
+            / "run_x"
+            / "answers"
+            / "outputs"
+            / "khop_triple"
+            / "cep"
+            / "src_a__chk_00__0.json"
+        )
+        assert rec.answerer_meta["passages_after_top_k"] == 2
+        assert rec.answerer_meta["top_k"] == 2
 
 
 class TestPayloadPassThrough:

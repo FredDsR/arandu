@@ -245,9 +245,17 @@ def _answer_one(
     passage_text: dict[str, str],
     resolved_settings: AnswererSettings,
 ) -> AnswerRecord:
-    """Pack passages, run the answerer, and assemble the persistable record."""
+    """Pack passages, run the answerer, and assemble the persistable record.
+
+    Caps ``retrieval.passages`` at ``settings.top_k`` BEFORE the token-budget
+    pack so the answerer is constrained to the same per-question fan-out
+    regardless of how many passages the retriever returned (the methodology
+    constant from spec §5.7's ``ARANDU_ANSWERER_TOP_K`` knob). The budget
+    pack then trims further if even ``top_k`` passages exceed the context.
+    """
+    capped_passages = retrieval.passages[: resolved_settings.top_k]
     packed = pack_passages(
-        retrieval.passages,
+        capped_passages,
         passage_text=passage_text,
         max_context_tokens=resolved_settings.max_context_tokens,
         prompt_overhead_tokens=resolved_settings.prompt_overhead_tokens,
@@ -275,9 +283,20 @@ def _answer_one(
         answerer_model=resolved_settings.model_id,
         answerer_temperature=resolved_settings.temperature,
         answerer_meta={
+            # LLM retry audit (attempts, final_temperature, fallback_reason if any).
             **meta,
+            # Pack diagnostics — how many passages survived the top_k + token budget.
+            "passages_after_top_k": len(capped_passages),
             "packed_passages": len(packed),
+            # Settings snapshot — persisted on each record so reruns can
+            # attribute outputs back to configuration even if run_metadata.json
+            # is moved, lost, or carries an updated snapshot from a later run.
             "language": resolved_settings.language,
+            "provider": resolved_settings.provider,
+            "top_k": resolved_settings.top_k,
+            "max_tokens": resolved_settings.max_tokens,
+            "max_context_tokens": resolved_settings.max_context_tokens,
+            "prompt_overhead_tokens": resolved_settings.prompt_overhead_tokens,
         },
     )
     return answer_record
