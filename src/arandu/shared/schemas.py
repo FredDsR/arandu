@@ -196,6 +196,7 @@ class PipelineType(StrEnum):
     CEP = "cep"
     KG = "kg"
     RETRIEVE = "retrieve"
+    ANSWERS = "answers"
     EVALUATION = "evaluation"
 
 
