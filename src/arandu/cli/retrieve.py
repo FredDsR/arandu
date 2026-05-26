@@ -16,6 +16,7 @@ import typer
 from arandu.shared.rag.retrieve.batch import run_retrieve_batch
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
+    AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
 )
@@ -24,9 +25,7 @@ from arandu.utils.logger import print_error, print_info, print_success, print_wa
 logger = logging.getLogger(__name__)
 
 
-# All ALL_ARMS members EXCEPT atlas_rag; atlas_rag joins the default set in a
-# follow-up PR once its LLM-client wiring lands.
-_DEFAULT_ARMS: tuple[str, ...] = tuple(a for a in ALL_ARMS if a != "atlas_rag")
+_DEFAULT_ARMS: tuple[str, ...] = ALL_ARMS
 
 
 def retrieve(
@@ -54,8 +53,7 @@ def retrieve(
             help=(
                 "Retriever arm; repeatable. Known: "
                 + ", ".join(ALL_ARMS)
-                + f". Defaults to: {', '.join(_DEFAULT_ARMS)}. "
-                + "atlas_rag is currently disabled (LLM-client wiring deferred)."
+                + f". Defaults to all 5 arms ({', '.join(_DEFAULT_ARMS)})."
             ),
         ),
     ] = None,
@@ -99,6 +97,7 @@ def retrieve(
     selected_arms = list(arms) if arms else list(_DEFAULT_ARMS)
     bm25_settings = Bm25RetrieveSettings()
     khop_settings = KHopRetrieveSettings()
+    atlas_rag_settings = AtlasRagRetrieveSettings() if "atlas_rag" in selected_arms else None
 
     print_info(f"Run: {pipeline_id}")
     print_info(f"Arms: {', '.join(selected_arms)}")
@@ -106,6 +105,11 @@ def retrieve(
         print_info(f"BM25 chunker: {bm25_settings.chunker_id}")
     if any(a.startswith("khop_") for a in selected_arms):
         print_info(f"K-hop: k_hop={khop_settings.k_hop}, max_postings={khop_settings.max_postings}")
+    if atlas_rag_settings is not None:
+        print_info(
+            f"atlas_rag LLM: provider={atlas_rag_settings.provider}, "
+            f"model={atlas_rag_settings.model_id}"
+        )
 
     try:
         result = run_retrieve_batch(
@@ -114,6 +118,7 @@ def retrieve(
             top_k=top_k,
             bm25_settings=bm25_settings,
             khop_settings=khop_settings,
+            atlas_rag_settings=atlas_rag_settings,
             rebuild_index=rebuild_index,
         )
     except FileNotFoundError as exc:

@@ -1,14 +1,16 @@
 """Per-arm settings for ``arandu retrieve``.
 
 Each retriever arm exposes a distinct set of knobs (chunker view, k-hop
-radius, postings cap, …). Rather than overload one CLI command with a
-union of all knobs, each arm has its own :class:`BaseSettings` subclass
-(env prefix ``ARANDU_<ARM>_``). The CLI instantiates only the settings
-classes for arms it was asked to run.
+radius, postings cap, LLM/embedder for atlas-rag's NER + edge filter,
+…). Rather than overload one CLI command with a union of all knobs,
+each arm has its own :class:`BaseSettings` subclass (env prefix
+``ARANDU_<ARM>_``). The CLI instantiates only the settings classes for
+arms it was asked to run.
 
-Atlas-rag's settings live in a follow-up PR — that arm needs an LLM
-client + sentence encoder at retrieve time and is intentionally kept
-out of this PR's scope.
+Atlas-rag is the only arm that hits the network at retrieve time (NER
+step in front of PPR). It needs an :class:`LLMClient` and a sentence
+encoder; configuration lives in :class:`AtlasRagRetrieveSettings` plus
+the existing :class:`arandu.shared.embeddings.EmbedderSettings`.
 """
 
 from __future__ import annotations
@@ -55,6 +57,70 @@ class Bm25RetrieveSettings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_BM25_", extra="ignore")
+
+
+class AtlasRagRetrieveSettings(BaseSettings):
+    """Knobs for the atlas-rag (HippoRAG-style) arm.
+
+    atlas-rag uses an LLM at retrieve time for the NER step that
+    identifies entities in the query before personalized PageRank
+    seeding. The provider + model + base_url are read from
+    ``ARANDU_ATLAS_RAG_*`` env vars; the sentence encoder is read
+    separately from ``ARANDU_EMBEDDER_*`` (the same vars the
+    ``arandu kg-build-retriever-index`` command uses, so the encoder
+    that built the precompute matches the one used to embed queries).
+
+    Attributes:
+        provider: LLM provider for the NER step. ``"openai"``,
+            ``"ollama"``, or ``"custom"``. Defaults to ``"openai"`` —
+            the Gemini-compatible endpoint is the project's cloud path
+            (set ``base_url`` to the Gemini URL when using it).
+        model_id: Model identifier passed to the LLMClient (e.g.
+            ``"gemini-2.5-flash"`` on Gemini, ``"qwen3:14b"`` on Ollama).
+        api_key_env: Name of the env var holding the LLM API key. The
+            CLI reads this env var when constructing the LLMClient.
+        base_url: Optional explicit base URL. Required for ``custom``
+            provider; ignored for ``openai``/``ollama`` defaults.
+        keyword: atlas-rag's filename pattern. Defaults to project
+            convention ``"transcriptions.json"`` (must match the value
+            used at index-build time).
+        include_events: Whether event nodes participate in the embedded
+            node set. Must match the value used at index-build time —
+            mismatches are caught by atlas-rag's manifest validator.
+        include_concept: Whether concept nodes participate. Same
+            mismatch-detection contract as ``include_events``.
+    """
+
+    provider: str = Field(
+        default="openai",
+        description="LLM provider for the NER step: openai, ollama, custom.",
+    )
+    model_id: str = Field(
+        default="gemini-2.5-flash",
+        description="Model identifier (e.g. gemini-2.5-flash, qwen3:14b).",
+    )
+    api_key_env: str = Field(
+        default="GEMINI_API_KEY",
+        description="Env var name holding the LLM API key.",
+    )
+    base_url: str | None = Field(
+        default="https://generativelanguage.googleapis.com/v1beta/openai/",
+        description="Base URL for OpenAI-compatible endpoints. Use Gemini's URL by default.",
+    )
+    keyword: str = Field(
+        default="transcriptions.json",
+        description="atlas-rag filename pattern (must match index build).",
+    )
+    include_events: bool = Field(
+        default=True,
+        description="Include event nodes in the embedded set.",
+    )
+    include_concept: bool = Field(
+        default=True,
+        description="Include concept nodes in the embedded set.",
+    )
+
+    model_config = SettingsConfigDict(env_prefix="ARANDU_ATLAS_RAG_", extra="ignore")
 
 
 class KHopRetrieveSettings(BaseSettings):

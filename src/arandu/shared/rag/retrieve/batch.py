@@ -20,6 +20,7 @@ from arandu.shared.rag.retrieve.loader import load_questions
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
     ArmName,
+    AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
 )
@@ -30,6 +31,7 @@ from arandu.shared.schemas import PipelineType
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from arandu.shared.embeddings import EmbedderSettings
     from arandu.shared.rag.protocol import Retriever
     from arandu.shared.rag.retrieve.loader import QuestionRecord
 
@@ -86,6 +88,8 @@ def run_retrieve_batch(
     *,
     bm25_settings: Bm25RetrieveSettings | None = None,
     khop_settings: KHopRetrieveSettings | None = None,
+    atlas_rag_settings: AtlasRagRetrieveSettings | None = None,
+    embedder_settings: EmbedderSettings | None = None,
     rebuild_index: bool = False,
     base_dir: Path | None = None,
 ) -> RetrieveBatchResult:
@@ -168,6 +172,8 @@ def run_retrieve_batch(
             pipeline_id=pipeline_id,
             bm25_settings=bm25_settings,
             khop_settings=khop_settings,
+            atlas_rag_settings=atlas_rag_settings,
+            embedder_settings=embedder_settings,
             base_dir=base,
             rebuild_index=rebuild_index,
         )
@@ -236,30 +242,36 @@ def _build_with_logging(
     pipeline_id: str,
     bm25_settings: Bm25RetrieveSettings | None,
     khop_settings: KHopRetrieveSettings | None,
+    atlas_rag_settings: AtlasRagRetrieveSettings | None,
+    embedder_settings: EmbedderSettings | None,
     base_dir: Path,
     rebuild_index: bool,
 ) -> Retriever | None:
     """Construct a retriever for ``arm``; log + return ``None`` on failure.
 
-    Per-arm build failures (missing index, missing KG outputs, ...) are
-    logged with full context. Returning ``None`` lets the batch runner
-    continue with the next arm rather than aborting the whole run.
+    Per-arm build failures (missing index, missing KG outputs, missing
+    API key, …) are logged with full context. Returning ``None`` lets
+    the batch runner continue with the next arm rather than aborting
+    the whole run.
     """
-    settings: Bm25RetrieveSettings | KHopRetrieveSettings | None = None
+    settings: Bm25RetrieveSettings | KHopRetrieveSettings | AtlasRagRetrieveSettings | None = None
     if arm == "bm25":
         settings = bm25_settings
     elif arm in ("khop_passage", "khop_triple"):
         settings = khop_settings
+    elif arm == "atlas_rag":
+        settings = atlas_rag_settings
 
     try:
         return build_retriever(
             arm,
             pipeline_id=pipeline_id,
             settings=settings,
+            embedder_settings=embedder_settings,
             base_dir=base_dir,
             rebuild_index=rebuild_index,
         )
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         logger.error("Failed to build %s arm for pipeline %s: %s", arm, pipeline_id, exc)
         return None
 

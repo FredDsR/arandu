@@ -6,6 +6,7 @@ import pytest
 
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
+    AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
 )
@@ -51,3 +52,26 @@ class TestKHopSettings:
         # in the retriever stack.
         with pytest.raises(ValueError, match="greater than or equal to 1"):
             KHopRetrieveSettings(k_hop=0)
+
+
+class TestAtlasRagSettings:
+    def test_defaults(self) -> None:
+        # Defaults assume the Gemini cloud path (matches the project's
+        # primary smoke configuration); switch to ollama for PCAD.
+        s = AtlasRagRetrieveSettings(_env_file=None)
+        assert s.provider == "openai"
+        assert s.model_id == "gemini-2.5-flash"
+        assert s.api_key_env == "GEMINI_API_KEY"
+        assert "generativelanguage.googleapis.com" in (s.base_url or "")
+        assert s.keyword == "transcriptions.json"
+        assert s.include_events is True
+        assert s.include_concept is True
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ARANDU_ATLAS_RAG_PROVIDER", "ollama")
+        monkeypatch.setenv("ARANDU_ATLAS_RAG_MODEL_ID", "qwen3:14b")
+        monkeypatch.setenv("ARANDU_ATLAS_RAG_BASE_URL", "http://localhost:11434/v1")
+        s = AtlasRagRetrieveSettings()
+        assert s.provider == "ollama"
+        assert s.model_id == "qwen3:14b"
+        assert s.base_url == "http://localhost:11434/v1"
