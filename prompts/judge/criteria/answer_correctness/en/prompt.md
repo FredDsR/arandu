@@ -14,4 +14,4 @@ $gold_answer
 SYSTEM ANSWER:
 $system_answer
 
-Respond in JSON with fields: score (float between 0 and 1) and rationale (1-2 sentence string).
+Respond in JSON with fields: score (float between 0 and 1) and rationale (1-2 sentences).

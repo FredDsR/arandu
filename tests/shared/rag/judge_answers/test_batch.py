@@ -198,6 +198,68 @@ class TestRunJudgeAnswersBatch:
             assert second.judgments_written == 0
             assert second.judgments_resumed == 1
 
+    def test_audit_count_cumulative_across_resume(self, tmp_path: Path) -> None:
+        # Bug fix from PR #110 second-pass review: the audit log must
+        # reflect ALL disagreements in the run's judged outputs, not
+        # just those detected in this invocation. On resume, the loop
+        # skips already-completed records, but their disagreements
+        # still belong in the audit. The runner now walks all judged
+        # outputs at audit time so the count + on-disk JSONL stay
+        # cumulative.
+        _seed_answers(tmp_path)
+        _seed_cep(tmp_path)
+        settings = JudgeAnswersSettings(provider="ollama")
+
+        # First run: judge returns abstention=0.1 (committal text per
+        # judge) while answerer.abstained=True → disagreement.
+        with (
+            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
+        ):
+            judge = MagicMock()
+            judge.evaluate.return_value = JudgePipelineResult(
+                stage_results={
+                    "answer_judge": JudgeStepResult(
+                        criterion_scores={
+                            "abstention": CriterionScore(
+                                score=0.1, threshold=0.7, rationale="committal"
+                            ),
+                        }
+                    )
+                },
+                passed=True,
+            )
+            mock_judge_cls.return_value = judge
+
+            first = run_judge_answers_batch(
+                pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+            assert first.abstention_disagreements == 1
+            audit_path = tmp_path / "run_x" / "judge_answers" / "outputs" / "abstention_audit.jsonl"
+            assert audit_path.exists()
+            lines_after_first = audit_path.read_text().strip().split("\n")
+            assert len(lines_after_first) == 1
+
+        # Second run: same fixture, no new judging happens (resume),
+        # but the audit must still reflect the disagreement that's on
+        # disk from the first run.
+        with (
+            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
+        ):
+            judge = MagicMock()
+            mock_judge_cls.return_value = judge
+            second = run_judge_answers_batch(
+                pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+
+        assert second.judgments_written == 0
+        assert second.judgments_resumed == 1
+        # The audit count + on-disk file are still cumulative.
+        assert second.abstention_disagreements == 1
+        assert audit_path.exists()
+        assert len(audit_path.read_text().strip().split("\n")) == 1
+
     def test_rejudge_clears_checkpoint(self, tmp_path: Path) -> None:
         _seed_answers(tmp_path)
         _seed_cep(tmp_path)

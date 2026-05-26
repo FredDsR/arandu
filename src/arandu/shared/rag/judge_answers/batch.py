@@ -139,7 +139,6 @@ def run_judge_answers_batch(
     written = 0
     resumed = 0
     failed = 0
-    disagreements: list[AbstentionDisagreement] = []
     for record_path in answer_paths:
         ckpt_key = _checkpoint_key(record_path)
         if checkpoint.is_completed(ckpt_key):
@@ -192,17 +191,18 @@ def run_judge_answers_batch(
         checkpoint.mark_completed(ckpt_key)
         written += 1
 
-        if resolved_settings.abstention_disagreement_audit:
-            # detect_disagreement reads τ_abstention from the criterion's
-            # own CriterionScore.threshold — single source of truth, so
-            # the audit reflects whatever value shipped with the prompt
-            # config rather than a separately-tracked constant.
-            disagreement = detect_disagreement(judged)
-            if disagreement is not None:
-                disagreements.append(disagreement)
-
+    # Build the audit from EVERY judged record on disk, not just this
+    # invocation's newly-judged ones. On a resume run, the loop above
+    # skips already-completed records but their disagreements still
+    # belong in the audit; deriving from disk guarantees the audit is
+    # always cumulative + consistent with what's actually persisted.
+    # `detect_disagreement` reads τ_abstention from each criterion's
+    # own CriterionScore.threshold — single source of truth.
+    disagreements_count = 0
     if resolved_settings.abstention_disagreement_audit:
+        disagreements = _collect_all_disagreements(results_mgr.outputs_dir)
         write_audit_log(results_mgr.outputs_dir, disagreements)
+        disagreements_count = len(disagreements)
 
     results_mgr.update_progress(written + resumed, failed, len(answer_paths))
     results_mgr.complete_run(success=(failed == 0))
@@ -213,8 +213,29 @@ def run_judge_answers_batch(
         judgments_written=written,
         judgments_resumed=resumed,
         judgments_failed=failed,
-        abstention_disagreements=len(disagreements),
+        abstention_disagreements=disagreements_count,
     )
+
+
+def _collect_all_disagreements(outputs_dir: Path) -> list[AbstentionDisagreement]:
+    """Walk every judged record under ``outputs_dir`` and collect disagreements.
+
+    Layout: ``<outputs_dir>/<arm>/<source>/<file>.json``. Unreadable
+    records are skipped (logged at warning level); their absence from
+    the audit list is acceptable because the failure was already
+    recorded on the run's checkpoint when they failed to judge.
+    """
+    out: list[AbstentionDisagreement] = []
+    for path in sorted(outputs_dir.glob("*/*/*.json")):
+        try:
+            judged = AnswerRecord.load(path)
+        except (OSError, ValidationError) as exc:
+            logger.warning("Skipping unreadable judged AnswerRecord %s: %s", path, exc)
+            continue
+        disagreement = detect_disagreement(judged)
+        if disagreement is not None:
+            out.append(disagreement)
+    return out
 
 
 def _build_llm_client(settings: JudgeAnswersSettings) -> LLMClient:

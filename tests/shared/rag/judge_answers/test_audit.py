@@ -139,6 +139,24 @@ class TestWriteAuditLog:
         assert result is None
         assert not (tmp_path / "abstention_audit.jsonl").exists()
 
+    def test_empty_disagreements_removes_stale_audit(self, tmp_path: Path) -> None:
+        # Bug fix from PR #110 review: a prior run produced an audit;
+        # a re-judge produced zero disagreements. The stale file must
+        # be removed so downstream consumers don't read disagreements
+        # that no longer reflect the current judged state.
+        audit_path = tmp_path / "abstention_audit.jsonl"
+        audit_path.write_text(
+            '{"qa_pair_id": "stale", "retriever_id": "x", '
+            '"answerer_abstained": true, "judge_score": 0.1, '
+            '"judge_threshold": 0.7, "disagreement_type": "judge_error", '
+            '"answer_text": null, "rationale": ""}\n'
+        )
+        assert audit_path.exists()
+
+        result = write_audit_log(tmp_path, [])
+        assert result is None
+        assert not audit_path.exists()
+
     def test_writes_one_jsonl_row_per_disagreement(self, tmp_path: Path) -> None:
         rows = [
             AbstentionDisagreement(

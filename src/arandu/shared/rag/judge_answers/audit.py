@@ -123,19 +123,33 @@ def detect_disagreement(answer: AnswerRecord) -> AbstentionDisagreement | None:
 def write_audit_log(outputs_dir: Path, disagreements: list[AbstentionDisagreement]) -> Path | None:
     """Emit JSONL of disagreements to ``<outputs_dir>/abstention_audit.jsonl``.
 
+    Caller contract: pass the FULL set of disagreements for the run
+    (not just newly-detected ones on a resume), since this function
+    overwrites in mode ``"w"``. The batch runner walks all judged
+    outputs to build that complete list — see
+    :func:`run_judge_answers_batch`.
+
     Args:
         outputs_dir: The judge_answers stage's outputs dir.
-        disagreements: All flagged rows from this run.
+        disagreements: All flagged rows for this run (cumulative).
 
     Returns:
         The audit file path when at least one disagreement was found;
-        ``None`` when the list is empty (no file written — silence on
-        the happy path).
+        ``None`` when the list is empty (the file is also REMOVED if it
+        exists from a prior run, so a stale audit doesn't persist past
+        a re-judge that produced zero disagreements).
     """
-    if not disagreements:
-        logger.info("No abstention disagreements detected; skipping audit log.")
-        return None
     audit_path = outputs_dir / _AUDIT_FILENAME
+    if not disagreements:
+        if audit_path.exists():
+            audit_path.unlink()
+            logger.info(
+                "No disagreements detected this run; removed stale audit at %s.",
+                audit_path,
+            )
+        else:
+            logger.info("No abstention disagreements detected; no audit log written.")
+        return None
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     with audit_path.open("w", encoding="utf-8") as f:
         for row in disagreements:
