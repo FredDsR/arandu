@@ -197,6 +197,7 @@ class PipelineType(StrEnum):
     KG = "kg"
     RETRIEVE = "retrieve"
     ANSWERS = "answers"
+    JUDGE_ANSWERS = "judge_answers"
     EVALUATION = "evaluation"
 
 

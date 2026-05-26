@@ -778,6 +778,7 @@ class TestPipelineType:
             "kg",
             "retrieve",
             "answers",
+            "judge_answers",
             "evaluation",
         }
         actual = {p.value for p in PipelineType}
