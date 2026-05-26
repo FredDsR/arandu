@@ -157,14 +157,15 @@ class TestRunRetrieveBatchValidation:
             )
 
 
-class TestAtlasRagDeferred:
-    def test_atlas_rag_arm_logs_deferred_message_without_blocking_other_arms(
+class TestAtlasRagMissingPrerequisites:
+    def test_atlas_rag_arm_logs_missing_precompute_without_blocking_other_arms(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         # atlas_rag is in ALL_ARMS so the batch-runner validation accepts
-        # it, but the factory raises ValueError with the "deferred to a
-        # follow-up PR" message. That error is caught by the per-arm
-        # build-with-logging path; the run continues with other arms.
+        # it. With no KG / no precompute on disk, the factory raises
+        # FileNotFoundError pointing at `arandu kg-build-retriever-index`.
+        # That error is caught by the per-arm build-with-logging path;
+        # the run continues with other arms.
         import logging
 
         _seed_cep(tmp_path)
@@ -179,8 +180,8 @@ class TestAtlasRagDeferred:
         # null arm completes both questions; atlas_rag fails both.
         assert result.retrievals_written == 2
         assert result.retrievals_failed >= 2
-        # The user gets a logged hint pointing at the follow-up PR.
-        assert any("not wired in this PR" in r.message for r in caplog.records)
+        # The user gets a logged hint pointing at the build command.
+        assert any("atlas-rag KG outputs not found" in r.message for r in caplog.records)
 
 
 class TestPerArmFailureIsolation:

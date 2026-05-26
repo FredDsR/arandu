@@ -2,16 +2,14 @@
 
 The CLI passes a flat ``(arm, pipeline_id, settings, rebuild_index)`` to
 :func:`build_retriever`; this module hides the per-arm wiring (chunk
-loading + BM25 index build, KG path resolution, …).
-
-Atlas-rag arm dispatch is intentionally **not** wired here — that arm
-needs an LLM client + sentence encoder at retrieve time and is the
-subject of a follow-up PR. Requesting it now raises ``ValueError``.
+loading + BM25 index build, KG path resolution, LLM client + sentence
+encoder for atlas-rag, …).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -19,9 +17,17 @@ from pydantic import ValidationError
 from arandu.shared.chunking.resolver import ChunkResolver
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.config import ResultsConfig
+from arandu.shared.embeddings import EmbedderSettings, build_embedder
+from arandu.shared.llm_client import LLMClient, LLMProvider
 from arandu.shared.rag.retrieve.settings import (
+    AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
+)
+from arandu.shared.rag.retrievers.atlas_rag import (
+    MANIFEST_FILENAME,
+    PRECOMPUTE_DIR_NAME,
+    AtlasRagRetriever,
 )
 from arandu.shared.rag.retrievers.bm25 import BM25Retriever
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
@@ -41,40 +47,54 @@ logger = logging.getLogger(__name__)
 _BM25_INDEX_FILENAME = "bm25.pkl"
 
 
+RetrieveSettings = Bm25RetrieveSettings | KHopRetrieveSettings | AtlasRagRetrieveSettings
+
+
 def build_retriever(
     arm: ArmName,
     *,
     pipeline_id: str,
-    settings: Bm25RetrieveSettings | KHopRetrieveSettings | None = None,
+    settings: RetrieveSettings | None = None,
+    embedder_settings: EmbedderSettings | None = None,
     base_dir: Path | None = None,
     rebuild_index: bool = False,
 ) -> Retriever:
     """Construct the retriever for ``arm`` against ``pipeline_id``'s artifacts.
 
     Args:
-        arm: One of ``"bm25"``, ``"khop_passage"``, ``"khop_triple"``,
-            ``"null"``. ``"atlas_rag"`` raises ``ValueError`` (deferred
-            to a follow-up PR).
+        arm: One of ``"bm25"``, ``"atlas_rag"``, ``"khop_passage"``,
+            ``"khop_triple"``, ``"null"``.
         pipeline_id: The run identifier; all paths resolve relative to
             ``<base_dir>/<pipeline_id>/``.
         settings: Arm-specific settings instance. For ``null``, ignored.
             For ``bm25``, must be :class:`Bm25RetrieveSettings`; for
-            k-hop arms, :class:`KHopRetrieveSettings`. Defaults are
-            instantiated when omitted.
+            k-hop arms, :class:`KHopRetrieveSettings`; for atlas-rag,
+            :class:`AtlasRagRetrieveSettings`. Defaults are instantiated
+            when omitted.
+        embedder_settings: Sentence-encoder choice (atlas-rag arm only,
+            ignored otherwise). Defaults to :class:`EmbedderSettings()`,
+            which reads ``ARANDU_EMBEDDER_*`` env vars — the same vars
+            ``arandu kg-build-retriever-index`` consumes, so the encoder
+            that built the precompute matches the one used to embed
+            queries at retrieve time.
         base_dir: Project ``results/`` root. Defaults to
             ``ResultsConfig().base_dir``.
         rebuild_index: Force-rebuild arm-side indexes (BM25 pickle only;
             no-op for k-hop and null, which build their state in-memory
-            from the KG/graphml at construction).
+            from the KG/graphml at construction; for atlas-rag the
+            precompute is the responsibility of
+            ``arandu kg-build-retriever-index``).
 
     Returns:
         A retriever instance satisfying :class:`Retriever`.
 
     Raises:
-        FileNotFoundError: If required artifacts (chunks, KG outputs)
-            are missing for ``pipeline_id``.
-        ValueError: For ``arm="atlas_rag"`` (not yet wired) or unknown
-            arm names.
+        FileNotFoundError: If required artifacts (chunks, KG outputs,
+            atlas-rag precompute) are missing for ``pipeline_id``.
+        RuntimeError: From :func:`build_embedder` (atlas-rag arm) if the
+            embedder API key is unset, or from the atlas-rag LLM
+            construction if its API key env var is unset.
+        ValueError: For unknown arm names or invalid arm/settings combos.
 
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
@@ -112,10 +132,17 @@ def build_retriever(
         )
 
     if arm == "atlas_rag":
-        raise ValueError(
-            "atlas_rag arm is not wired in this PR. It requires an LLM client + "
-            "sentence encoder at retrieve time, which depends on a Phase C task "
-            "still in flight. Pass --arm bm25/khop_passage/khop_triple/null instead."
+        atlas_settings = (
+            settings
+            if isinstance(settings, AtlasRagRetrieveSettings)
+            else AtlasRagRetrieveSettings()
+        )
+        emb_settings = embedder_settings if embedder_settings is not None else EmbedderSettings()
+        return _build_atlas_rag(
+            pipeline_id=pipeline_id,
+            base_dir=base,
+            settings=atlas_settings,
+            embedder_settings=emb_settings,
         )
 
     raise ValueError(f"Unknown arm {arm!r}.")
@@ -208,3 +235,74 @@ def _build_chunk_resolver(*, pipeline_id: str, base_dir: Path) -> ChunkResolver:
         return record.transcription_text
 
     return ChunkResolver(text_loader=_load_text)
+
+
+def _build_atlas_rag(
+    *,
+    pipeline_id: str,
+    base_dir: Path,
+    settings: AtlasRagRetrieveSettings,
+    embedder_settings: EmbedderSettings,
+) -> AtlasRagRetriever:
+    """Construct :class:`AtlasRagRetriever` for ``pipeline_id``.
+
+    Verifies the precompute exists (built separately by
+    ``arandu kg-build-retriever-index``), constructs the LLM client + the
+    sentence encoder, and dispatches to the retriever's constructor —
+    which then runs its own integrity validation against the manifest
+    (graphml sha + per-pickle sha + flag-mismatch checks).
+    """
+    atlas_output_dir = base_dir / pipeline_id / "kg" / "outputs" / "atlas_output"
+    if not atlas_output_dir.exists():
+        raise FileNotFoundError(
+            f"atlas-rag KG outputs not found for pipeline_id {pipeline_id!r}: "
+            f"{atlas_output_dir}. Run `arandu build-kg --id {pipeline_id}` first."
+        )
+
+    precompute_manifest = atlas_output_dir / PRECOMPUTE_DIR_NAME / MANIFEST_FILENAME
+    if not precompute_manifest.exists():
+        raise FileNotFoundError(
+            f"atlas-rag precompute manifest not found at {precompute_manifest}. "
+            f"Run `arandu kg-build-retriever-index --id {pipeline_id}` first "
+            f"(this is the LLM-spending step that builds the embeddings index "
+            f"the atlas-rag retriever reads at retrieve time)."
+        )
+
+    # Settings validator has already lowercased `provider` and applied
+    # the per-provider base_url default; here we coerce to the enum and
+    # use it for the API-key check so the comparison is exhaustive
+    # rather than string-fragile.
+    try:
+        provider_enum = LLMProvider(settings.provider)
+    except ValueError as exc:
+        raise ValueError(
+            f"Unknown atlas_rag provider {settings.provider!r}. "
+            f"Valid: {[p.value for p in LLMProvider]}."
+        ) from exc
+
+    api_key = os.environ.get(settings.api_key_env)
+    if not api_key and provider_enum is not LLMProvider.OLLAMA:
+        # Ollama lets a bogus key through; cloud providers don't.
+        raise RuntimeError(
+            f"atlas_rag arm requested but {settings.api_key_env} is unset. "
+            f"Set it or switch ARANDU_ATLAS_RAG_PROVIDER to 'ollama'."
+        )
+
+    llm_client = LLMClient(
+        provider=provider_enum,
+        model_id=settings.model_id,
+        api_key=api_key,
+        base_url=settings.base_url,
+    )
+    encoder = build_embedder(embedder_settings)
+
+    return AtlasRagRetriever(
+        kg_outputs_dir=atlas_output_dir,
+        llm_client=llm_client.client,
+        llm_model_id=llm_client.model_id,
+        sentence_encoder=encoder,
+        sentence_encoder_model=embedder_settings.model,
+        keyword=settings.keyword,
+        include_events=settings.include_events,
+        include_concept=settings.include_concept,
+    )

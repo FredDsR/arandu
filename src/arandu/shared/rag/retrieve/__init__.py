@@ -18,12 +18,14 @@ from arandu.shared.rag.retrieve.factory import build_retriever
 from arandu.shared.rag.retrieve.loader import QuestionRecord, load_questions
 from arandu.shared.rag.retrieve.settings import (
     ArmName,
+    AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
 )
 
 __all__ = [
     "ArmName",
+    "AtlasRagRetrieveSettings",
     "Bm25RetrieveSettings",
     "KHopRetrieveSettings",
     "QuestionRecord",
