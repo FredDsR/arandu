@@ -32,6 +32,7 @@ from arandu.shared.judge import (
 )
 
 if TYPE_CHECKING:
+    from arandu.shared.judge.schemas import JudgePipelineResult
     from arandu.shared.llm_client import LLMClient
     from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
 
@@ -44,6 +45,13 @@ _LLM_CRITERIA = (
     "answer_correctness",
     "answer_faithfulness",
 )
+
+# Non-answerable items have no gold answer, so correctness / faithfulness /
+# passage_coverage are undefined for them. Only ``abstention`` is meaningful
+# (it decides TA vs FC in the analysis confusion matrix), so they are judged
+# on that criterion alone. The abstention prompt reads only the system's
+# ``abstained`` flag, answer text, and rationale — no gold needed.
+_ABSTENTION_ONLY = ("abstention",)
 
 
 class AnswerJudge(BaseJudge):
@@ -78,8 +86,34 @@ class AnswerJudge(BaseJudge):
         the judges don't gate each other (no filter mode); a single stage
         avoids redundant ``JudgePipelineResult`` machinery and gives the
         analysis stage one flat ``criterion_scores`` dict to consume.
+
+        Also builds a sibling abstention-only pipeline (same stage name,
+        so the analysis classifier finds the ``abstention`` score the same
+        way) for non-answerable items, which have no gold answer.
         """
+        self._abstention_pipeline = JudgePipeline(
+            stages=[
+                JudgeStage(
+                    name="answer_judge",
+                    step=JudgeStep(criteria=list(_ABSTENTION_ONLY), factory=self.factory),
+                    mode="score",
+                )
+            ],
+        )
         step = JudgeStep(criteria=list(_LLM_CRITERIA), factory=self.factory)
         return JudgePipeline(
             stages=[JudgeStage(name="answer_judge", step=step, mode="score")],
         )
+
+    def evaluate_abstention_only(self, **kwargs: object) -> JudgePipelineResult:
+        """Run only the ``abstention`` criterion (for non-answerable items).
+
+        Args:
+            **kwargs: Template parameters for the abstention prompt
+                (``abstained``, ``answer_text``, ``rationale``).
+
+        Returns:
+            A :class:`JudgePipelineResult` whose single stage carries the
+            ``abstention`` :class:`CriterionScore`.
+        """
+        return self._abstention_pipeline.evaluate(**kwargs)

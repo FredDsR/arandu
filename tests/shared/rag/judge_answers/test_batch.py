@@ -165,6 +165,77 @@ class TestRunJudgeAnswersBatch:
         assert result.judgments_written == 0
         assert result.judgments_failed >= 1
 
+    def test_nonanswerable_judged_via_abstention_only(self, tmp_path: Path) -> None:
+        # A non-answerable item (is_answerable=False) has no CEP gold, but
+        # must still be judged on abstention alone — not skipped. Here the
+        # system committed (abstained=False) on a non-answerable question,
+        # so the abstention score is low (an FC / hallucination).
+        out_dir = tmp_path / "run_x" / "answers" / "outputs" / "bm25" / "nonanswerable"
+        out_dir.mkdir(parents=True)
+        record = AnswerRecord(
+            qa_pair_id="src_a:chk_aa:0:nonans",
+            question="Onde Joana mora?",
+            retriever_id="bm25",
+            chunker_id="cep_4k",
+            top_k=5,
+            passages=[],
+            elapsed_ms=1.0,
+            is_answerable=False,
+            answer_text="Em Itaqui.",
+            abstained=False,
+            rationale="Committed despite no support.",
+            answerer_model="qwen3:14b",
+            answerer_temperature=0.2,
+        )
+        record.save(out_dir / "src_a__chk_aa__0__nonans.json")
+        # Deliberately no _seed_cep: non-answerable items need no gold.
+        settings = JudgeAnswersSettings(provider="ollama")
+
+        with (
+            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
+        ):
+            judge = MagicMock()
+            judge.evaluate_abstention_only.return_value = JudgePipelineResult(
+                stage_results={
+                    "answer_judge": JudgeStepResult(
+                        criterion_scores={
+                            "abstention": CriterionScore(
+                                score=0.1, threshold=0.7, rationale="substantive claim"
+                            ),
+                        }
+                    )
+                },
+                passed=False,
+            )
+            mock_judge_cls.return_value = judge
+
+            result = run_judge_answers_batch(
+                pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+
+        assert result.judgments_written == 1
+        assert result.judgments_failed == 0
+        # The abstention-only path ran; the 4-criterion path did not.
+        judge.evaluate_abstention_only.assert_called_once()
+        judge.evaluate.assert_not_called()
+
+        judged_path = (
+            tmp_path
+            / "run_x"
+            / "judge_answers"
+            / "outputs"
+            / "bm25"
+            / "nonanswerable"
+            / "src_a__chk_aa__0__nonans.json"
+        )
+        rec = AnswerRecord.load(judged_path)
+        assert rec.validation is not None
+        scores = rec.validation.stage_results["answer_judge"].criterion_scores
+        assert "abstention" in scores
+        assert "answer_correctness" not in scores  # no gold → not scored
+        assert rec.is_answerable is False
+
     def test_resume_skips_completed_records(self, tmp_path: Path) -> None:
         _seed_answers(tmp_path)
         _seed_cep(tmp_path)

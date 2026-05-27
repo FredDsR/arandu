@@ -50,11 +50,13 @@ def judge_answers(
 ) -> None:
     """Run the 4-criterion LLM judge over every AnswerRecord in a populated run.
 
-    Criteria: ``passage_coverage``, ``abstention``, ``answer_correctness``,
-    ``answer_faithfulness``. All run in ``score`` mode (none reject);
-    verdicts persist via :class:`JudgeResultMixin.validation` on each
-    :class:`AnswerRecord` copy under
-    ``judge_answers/outputs/<arm>/<source>/``.
+    Answerable items run all four criteria (``passage_coverage``,
+    ``abstention``, ``answer_correctness``, ``answer_faithfulness``) in
+    ``score`` mode (none reject). Non-answerable items (from
+    ``arandu generate-non-answerable``) have no gold answer and run the
+    ``abstention`` criterion alone. Verdicts persist via
+    :class:`JudgeResultMixin.validation` on each :class:`AnswerRecord`
+    copy under ``judge_answers/outputs/<arm>/<source>/``.
 
     Judge LLM configuration is read from ``ARANDU_JUDGE_ANSWERS_*`` env
     vars; see :class:`JudgeAnswersSettings` for fields.

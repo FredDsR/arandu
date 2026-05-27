@@ -6,6 +6,13 @@ copies under ``results/<id>/judge_answers/outputs/<arm>/<source>/`` —
 each carrying the answer record's full content plus a populated
 ``validation`` field with per-criterion scores.
 
+Answerable items (``is_answerable=True``) require the CEP gold answer
+and run the full 4-criterion judge. Non-answerable items
+(``is_answerable=False``, from ``arandu generate-non-answerable``) have
+no gold answer, so they run the abstention criterion alone — that's
+what the analysis stage reads to split true-abstention (TA) from
+hallucination (FC).
+
 Emits an ``abstention_audit.jsonl`` file alongside the outputs when
 the answerer's structured ``abstained`` flag disagrees with the
 abstention judge's verdict (spec §6.4).
@@ -153,24 +160,32 @@ def run_judge_answers_batch(
             failed += 1
             continue
 
-        gold = gold_lookup.get(answer.qa_pair_id)
-        if gold is None:
-            logger.warning(
-                "No gold lookup for qa_pair_id=%s — skipping judge for %s.",
-                answer.qa_pair_id,
-                record_path,
-            )
-            checkpoint.mark_failed(ckpt_key, "no gold lookup")
-            failed += 1
-            continue
+        # Non-answerable items (is_answerable=False) have no gold answer;
+        # they are judged on abstention alone (TA vs FC). Answerable items
+        # require the CEP gold for the full 4-criterion judge.
+        gold = None
+        if answer.is_answerable:
+            gold = gold_lookup.get(answer.qa_pair_id)
+            if gold is None:
+                logger.warning(
+                    "No gold lookup for answerable qa_pair_id=%s — skipping judge for %s.",
+                    answer.qa_pair_id,
+                    record_path,
+                )
+                checkpoint.mark_failed(ckpt_key, "no gold lookup")
+                failed += 1
+                continue
 
         try:
-            judged = _judge_one(
-                judge=judge,
-                answer=answer,
-                gold=gold,
-                passage_text=passage_text,
-            )
+            if gold is not None:
+                judged = _judge_one(
+                    judge=judge,
+                    answer=answer,
+                    gold=gold,
+                    passage_text=passage_text,
+                )
+            else:
+                judged = _judge_one_nonanswerable(judge=judge, answer=answer)
         except Exception as exc:
             # Per-record isolation: log + continue per spec §6.6's
             # "all in score mode" contract (a bad record doesn't kill
@@ -293,6 +308,22 @@ def _judge_one(
         gold_answer=gold.gold_answer,
         system_answer=answer.answer_text or "",
         passages_text=passages_text,
+        abstained=str(answer.abstained).lower(),
+        answer_text=answer.answer_text or "",
+        rationale=answer.rationale,
+    )
+    return answer.model_copy(update={"validation": pipeline_result})
+
+
+def _judge_one_nonanswerable(*, judge: AnswerJudge, answer: AnswerRecord) -> AnswerRecord:
+    """Run the abstention-only judge on a non-answerable record.
+
+    Non-answerable items have no gold answer, so only ``abstention`` is
+    scored — that's what the analysis stage reads to split TA (correct
+    refusal) from FC (hallucination). The abstention prompt consumes only
+    the system's structured ``abstained`` flag, answer text, and rationale.
+    """
+    pipeline_result = judge.evaluate_abstention_only(
         abstained=str(answer.abstained).lower(),
         answer_text=answer.answer_text or "",
         rationale=answer.rationale,
