@@ -96,6 +96,8 @@ def run_generate_non_answerable_batch(
     Raises:
         FileNotFoundError: If the CEP stage outputs aren't present.
         RuntimeError: If a cloud-provider API key env var is unset.
+        ValueError: If the configured provider is unknown, or
+            ``provider='custom'`` is set without a ``base_url``.
     """
     resolved = settings if settings is not None else NonAnswerableSettings()
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
@@ -141,32 +143,48 @@ def run_generate_non_answerable_batch(
 
     built = 0
     resumed = 0
-    failed = 0
     for seed in seeds:
         key = seed.parent_qa_pair_id
         if checkpoint.is_completed(key) or key in checkpoint.state.failed_files:
             resumed += 1
             continue
-        item = perturb_to_non_answerable(
-            seed,
-            kg_node_set=kg_node_set,
-            corpus_index=corpus_index,
-            llm=llm_client,
-            language=resolved.language,
-            base_temperature=resolved.base_temperature,
-            max_retries=resolved.retry_max,
-        )
+        try:
+            item = perturb_to_non_answerable(
+                seed,
+                kg_node_set=kg_node_set,
+                corpus_index=corpus_index,
+                llm=llm_client,
+                language=resolved.language,
+                base_temperature=resolved.base_temperature,
+                max_retries=resolved.retry_max,
+            )
+        except Exception as exc:
+            # Per-seed isolation (mirrors the answer/judge batch loops): a
+            # transient LLM/network failure on one seed must not abort the
+            # whole ~400-call run. Record it and move on; resume re-attempts.
+            logger.exception("Perturbation crashed for %s: %s", key, exc)
+            checkpoint.mark_failed(key, f"perturbation error: {exc}")
+            continue
         if item is None:
             checkpoint.mark_failed(key, "no valid swap after retries")
-            failed += 1
             continue
         item_path = items_dir / f"{_safe_name(key)}.json"
         item_path.write_text(item.model_dump_json(indent=2), encoding="utf-8")
         checkpoint.mark_completed(key)
         built += 1
 
+    # Derive the headline counts from the checkpoint over THIS run's seed
+    # set, so a resume reports the same completed/failed split as the
+    # original run (rather than folding prior failures into "resumed").
+    seed_keys = [seed.parent_qa_pair_id for seed in seeds]
+    completed_keys = {key for key in seed_keys if checkpoint.is_completed(key)}
+    failed_count = sum(1 for key in seed_keys if key in checkpoint.state.failed_files)
+    # success_rate is over the current seed set; completed_keys is a subset
+    # of seed_keys, so it can never exceed 1.0 even when items/ on disk
+    # holds extras from a larger prior run.
+    success_rate = len(completed_keys) / len(seeds) if seeds else 0.0
+
     items = _collect_items(items_dir)
-    success_rate = len(items) / len(seeds) if seeds else 0.0
     dataset = NonAnswerableDataset(
         items=items,
         seed_cep_dataset=str(cep_dir),
@@ -179,7 +197,7 @@ def run_generate_non_answerable_batch(
     dataset_path = results_mgr.outputs_dir / "dataset.json"
     dataset.save(dataset_path)
 
-    results_mgr.update_progress(built + resumed, failed, len(seeds))
+    results_mgr.update_progress(len(completed_keys), failed_count, len(seeds))
     results_mgr.complete_run(success=True)
 
     return NonAnswerableBatchResult(
@@ -190,7 +208,7 @@ def run_generate_non_answerable_batch(
         items_built=built,
         dataset_items=len(items),
         seeds_skipped_resumed=resumed,
-        seeds_failed=failed,
+        seeds_failed=failed_count,
         success_rate=success_rate,
     )
 

@@ -23,7 +23,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MIN_ALPHA_TOKEN_LEN = 3
+# Tokens shorter than this are skipped (drops articles/prepositions like
+# "de", "em", "as"). Applied inclusively: a token of exactly this length
+# is kept.
+_MIN_ALPHA_TOKEN_LEN = 4
 
 
 def _normalize(text: str) -> str:
@@ -102,14 +105,14 @@ class SourceCorpusIndex:
             self._spans |= {
                 _normalize(tok.text)
                 for tok in doc
-                if tok.is_alpha and len(tok.text) > _MIN_ALPHA_TOKEN_LEN
+                if tok.is_alpha and len(tok.text) >= _MIN_ALPHA_TOKEN_LEN
             }
             return
         # Fallback: whitespace alpha-token bag (no NER).
         self._spans |= {
             _normalize(tok)
             for tok in text.split()
-            if tok.isalpha() and len(tok) > _MIN_ALPHA_TOKEN_LEN
+            if tok.isalpha() and len(tok) >= _MIN_ALPHA_TOKEN_LEN
         }
 
 

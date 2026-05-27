@@ -33,17 +33,17 @@ QuestionSource = Literal["cep", "nonanswerable"]
 
 
 class _NonAnswerableItem(BaseModel):
-    """Provisional schema for one non-answerable item.
+    """Narrow read-model for one non-answerable item.
 
-    Mirrors the spec §10.3 description of ``NonAnswerableItem`` shape
-    until the producer (``arandu generate-non-answerable``, still in
-    flight) lands and pins the canonical schema. When that producer
-    ships, this stub gets deleted in favour of the real model.
-
-    Accepts the spec field names plus a few likely aliases via
-    :class:`AliasChoices` so we don't have to second-guess the producer's
-    eventual field naming. Each ``AliasChoices`` tries its options in
-    order; first hit wins.
+    The producer (``arandu generate-non-answerable``) writes the full
+    :class:`~arandu.qa.non_answerable.schemas.NonAnswerableItem`, but the
+    retrieve stage only needs four fields to build a query stream. This
+    stub is kept deliberately narrow (ISP) and tolerant: ``extra="ignore"``
+    drops the producer's analysis-only fields (``bloom_level``,
+    ``swapped_entity``, ``parent_qa_pair_id``, …) and the
+    :class:`AliasChoices` decouple retrieve from non-breaking field
+    renames upstream. Each ``AliasChoices`` tries its options in order;
+    first hit wins.
     """
 
     model_config = {"extra": "ignore"}

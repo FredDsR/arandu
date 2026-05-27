@@ -11,6 +11,8 @@ from arandu.qa.non_answerable.batch import run_generate_non_answerable_batch
 from arandu.qa.non_answerable.schemas import NonAnswerableDataset, PerturbationOutput
 from arandu.qa.non_answerable.settings import NonAnswerableSettings
 
+from .conftest import make_pair, write_cep_record
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -128,3 +130,60 @@ def test_regenerate_clears_and_rebuilds(
     )
     assert result.items_built == 2
     assert patched_llm.calls == calls_after_first + 2  # re-perturbed every seed
+
+
+class _RaisingLLM:
+    """generate_structured always raises a non-StructuredOutputError (e.g. RetryError)."""
+
+    def generate_structured(self, *args: object, **kwargs: object) -> object:
+        raise RuntimeError("simulated transient API failure")
+
+
+def test_perturbation_crash_is_isolated_not_fatal(
+    tmp_path: Path, cep_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A non-StructuredOutputError (e.g. tenacity RetryError wrapping an API
+    # error) must not abort the whole batch: each seed is isolated, marked
+    # failed, and a dataset.json is still written.
+    monkeypatch.setattr(batch_mod, "_build_llm_client", lambda _s: _RaisingLLM())
+    base = tmp_path / "results"
+    result = run_generate_non_answerable_batch("run-x", base_dir=base, settings=_settings())
+    assert result.items_built == 0
+    assert result.seeds_failed == 2
+    assert result.success_rate == 0.0
+    assert (base / "run-x" / "non_answerable" / "outputs" / "dataset.json").exists()
+
+
+def test_reduced_seeds_on_resume_does_not_exceed_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Run 1 completes 3 same-Bloom seeds; a resume with seeds_per_bloom=1
+    # samples a subset already on disk. success_rate must stay <= 1.0
+    # (len(items)=3 on disk, len(current seeds)=1) rather than crash the
+    # NonAnswerableDataset validator.
+    fake = _FakeLLM()
+    monkeypatch.setattr(batch_mod, "_build_llm_client", lambda _s: fake)
+    base = tmp_path / "results"
+    cep = base / "run-y" / "cep" / "outputs"
+    write_cep_record(
+        cep,
+        source_file_id="src1",
+        pairs=[
+            make_pair(question=f"q{i} Maria?", bloom_level="remember", chunk_id=f"c{i}")
+            for i in range(3)
+        ],
+    )
+
+    first = run_generate_non_answerable_batch(
+        "run-y", base_dir=base, settings=NonAnswerableSettings(provider="ollama", seeds_per_bloom=3)
+    )
+    assert first.items_built == 3
+    assert first.dataset_items == 3
+
+    second = run_generate_non_answerable_batch(
+        "run-y", base_dir=base, settings=NonAnswerableSettings(provider="ollama", seeds_per_bloom=1)
+    )
+    assert second.seed_count == 1
+    assert second.dataset_items == 3  # all prior items still on disk
+    assert 0.0 <= second.success_rate <= 1.0
+    assert second.success_rate == 1.0  # the 1 sampled seed was already completed

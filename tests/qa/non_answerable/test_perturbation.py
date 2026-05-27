@@ -60,6 +60,8 @@ class _AlwaysContains:
 
 
 class TestPerturb:
+    """Tests for ``perturb_to_non_answerable`` swap + verification."""
+
     def test_valid_swap_builds_item(self) -> None:
         output = PerturbationOutput(
             original_entity="Maria",
@@ -157,6 +159,8 @@ class TestPerturb:
 
 
 class TestStratifiedSeedSample:
+    """Tests for Bloom-stratified seed sampling over validated CEP pairs."""
+
     def test_only_validated_pairs_eligible(self, tmp_path: Path) -> None:
         cep = tmp_path / "cep"
         write_cep_record(

@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 
 class TestLoadKgNodeSet:
+    """Tests for loading the normalized KG node label set from GraphML."""
+
     def test_reads_labels_lowercased(self, tmp_path: Path) -> None:
         graph = nx.DiGraph()
         graph.add_node("n0", label="Maria")
@@ -55,6 +57,8 @@ def _write_transcription(transcription_dir: Path, *, file_id: str, text: str) ->
 
 
 class TestSourceCorpusIndex:
+    """Tests for the source-corpus membership gate (NER + token fallback)."""
+
     def test_token_fallback_indexes_alpha_tokens(self, tmp_path: Path, monkeypatch: object) -> None:
         # Force the no-spaCy fallback so the test is deterministic + fast.
         monkeypatch.setattr(ci, "_portuguese_nlp", lambda: None)  # type: ignore[attr-defined]

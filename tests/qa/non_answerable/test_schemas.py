@@ -33,6 +33,8 @@ def _item(qa_pair_id: str = "src:chk:0:nonans") -> NonAnswerableItem:
 
 
 class TestNonAnswerableItem:
+    """Tests for the NonAnswerableItem invariants."""
+
     def test_is_answerable_pinned_false(self) -> None:
         assert _item().is_answerable is False
 
@@ -51,6 +53,8 @@ class TestNonAnswerableItem:
 
 
 class TestNonAnswerableDataset:
+    """Tests for NonAnswerableDataset round-trip + field bounds."""
+
     def test_round_trip(self, tmp_path: Path) -> None:
         dataset = NonAnswerableDataset(
             items=[_item()],
