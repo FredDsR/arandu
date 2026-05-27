@@ -1,7 +1,21 @@
-"""``AnswerJudge`` — 4-criterion LLM pipeline composition (spec §6.6).
+"""``AnswerJudge`` — gated answer-judging pipeline (spec §6.6).
 
-All criteria run in ``score`` mode (none reject); the pipeline's role
-is to attach verdicts to each :class:`AnswerRecord` for later analysis.
+Three stages, run in order:
+
+1. ``abstention`` (LLM, ``score`` mode) — always recorded. This is the
+   TA/TC/FA/FC signal the analysis stage reads, so it must survive even
+   when later stages are skipped.
+2. ``commitment_gate`` (heuristic, ``filter`` mode) — passes only for a
+   True-Commitment candidate (answerable + committed). A reject
+   short-circuits the gold-scoring stage. Deterministic, no LLM call.
+3. ``gold_scoring`` (LLM, ``score`` mode) — ``answer_correctness``,
+   ``answer_faithfulness``, ``passage_coverage``. These need a gold
+   answer + a committed answer, so they run only for TC items.
+
+This gating replaces the earlier "run all four criteria unconditionally"
+composition: it stops scoring correctness/faithfulness on abstained
+answers (where ``answer_text`` is None) per spec §6.1/§6.2, and lets
+non-answerable items be judged on abstention alone (no gold needed).
 
 Note on scope: spec §6.3 also describes a deterministic
 ``offset_coverage`` variant alongside the LLM ``passage_coverage``.
@@ -30,24 +44,26 @@ from arandu.shared.judge import (
     JudgeStep,
     LLMCriterionFactory,
 )
+from arandu.shared.rag.judge_answers.heuristic import CommitmentGateCriterion
 
 if TYPE_CHECKING:
     from arandu.shared.llm_client import LLMClient
     from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
 
 
-# Spec §6.6 — order matches the pipeline composition described there.
-# All four LLM criteria load from ``prompts/judge/criteria/<name>/``.
-_LLM_CRITERIA = (
-    "passage_coverage",
-    "abstention",
+# Stage 1: the abstention signal, always recorded.
+_ABSTENTION_CRITERIA = ("abstention",)
+# Stage 3: gold-requiring criteria, run only for True-Commitment items.
+# All load from ``prompts/judge/criteria/<name>/``.
+_GOLD_CRITERIA = (
     "answer_correctness",
     "answer_faithfulness",
+    "passage_coverage",
 )
 
 
 class AnswerJudge(BaseJudge):
-    """Drive the 4-criterion LLM judge pipeline over one :class:`AnswerRecord`.
+    """Drive the gated answer-judging pipeline over one :class:`AnswerRecord`.
 
     Attributes:
         factory: The :class:`LLMCriterionFactory` used to load LLM
@@ -72,14 +88,21 @@ class AnswerJudge(BaseJudge):
         super().__init__()  # calls _build_pipeline()
 
     def _build_pipeline(self) -> JudgePipeline:
-        """Assemble the 4 LLM criteria into one score-mode stage.
+        """Assemble the abstention -> commitment-gate -> gold-scoring pipeline.
 
-        All-in-one stage rather than four single-criterion stages because
-        the judges don't gate each other (no filter mode); a single stage
-        avoids redundant ``JudgePipelineResult`` machinery and gives the
-        analysis stage one flat ``criterion_scores`` dict to consume.
+        The commitment gate (heuristic, filter mode) sits between the
+        always-recorded abstention stage and the gold-requiring stage, so
+        correctness/faithfulness/passage_coverage run only for True-
+        Commitment items. Stage names are distinct so the analysis stage
+        still finds the ``abstention`` score by criterion name.
         """
-        step = JudgeStep(criteria=list(_LLM_CRITERIA), factory=self.factory)
+        abstention_step = JudgeStep(criteria=list(_ABSTENTION_CRITERIA), factory=self.factory)
+        gate_step = JudgeStep(criteria=[CommitmentGateCriterion()])
+        gold_step = JudgeStep(criteria=list(_GOLD_CRITERIA), factory=self.factory)
         return JudgePipeline(
-            stages=[JudgeStage(name="answer_judge", step=step, mode="score")],
+            stages=[
+                JudgeStage(name="abstention", step=abstention_step, mode="score"),
+                JudgeStage(name="commitment_gate", step=gate_step, mode="filter"),
+                JudgeStage(name="gold_scoring", step=gold_step, mode="score"),
+            ],
         )
