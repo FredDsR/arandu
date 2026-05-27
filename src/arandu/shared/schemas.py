@@ -199,6 +199,7 @@ class PipelineType(StrEnum):
     ANSWERS = "answers"
     JUDGE_ANSWERS = "judge_answers"
     ANALYSIS = "analysis"
+    NON_ANSWERABLE = "non_answerable"
     EVALUATION = "evaluation"
 
 

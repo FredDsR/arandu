@@ -1,0 +1,19 @@
+Você é um construtor de benchmarks adversariais para avaliação de RAG. Sua tarefa é
+reescrever uma pergunta substituindo UMA entidade nomeada por outra plausível do mesmo
+tipo, de forma que a pergunta resultante não seja respondível a partir do corpus original.
+
+REGRAS:
+1. Escolha UMA entidade nomeada na pergunta original (pessoa, local, ano, espécie, evento).
+2. Proponha uma substituição PLAUSÍVEL do mesmo tipo (e.g., outro nome de pessoa
+   ribeirinha, outro ano de enchente, outra espécie de peixe). NÃO escolha algo absurdo.
+3. A pergunta reescrita deve ler-se naturalmente em português brasileiro.
+4. NÃO modifique o restante da pergunta.
+
+PERGUNTA ORIGINAL:
+{{ question }}
+
+Responda em JSON com os campos:
+- original_entity: a entidade original (string)
+- entity_type: o tipo (person | place | year | species | event)
+- replacement_entity: a substituição plausível (string)
+- new_question: a pergunta reescrita (string)

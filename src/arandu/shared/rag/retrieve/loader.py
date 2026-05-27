@@ -4,9 +4,9 @@ The retrieve stage iterates two source datasets:
 
 - **CEP QA**: per-source ``QARecordCEP`` files at ``results/<id>/cep/outputs/*.json``.
   Each record holds many :class:`QAPairCEP` items; we iterate them.
-- **Non-answerable** (optional, when the ``nonanswerable`` stage has
-  populated): at ``results/<id>/nonanswerable/outputs/`` — silently
-  skipped when absent (that stage is still in development).
+- **Non-answerable** (optional, when the ``non_answerable`` stage has
+  populated): at ``results/<id>/non_answerable/outputs/`` - silently
+  skipped when absent.
 
 Both produce :class:`QuestionRecord` rows, distinguished by ``source``
 (``"cep"`` or ``"nonanswerable"``). The retrieve batch runner emits
@@ -33,17 +33,17 @@ QuestionSource = Literal["cep", "nonanswerable"]
 
 
 class _NonAnswerableItem(BaseModel):
-    """Provisional schema for one non-answerable item.
+    """Narrow read-model for one non-answerable item.
 
-    Mirrors the spec §10.3 description of ``NonAnswerableItem`` shape
-    until the producer (``arandu generate-non-answerable``, still in
-    flight) lands and pins the canonical schema. When that producer
-    ships, this stub gets deleted in favour of the real model.
-
-    Accepts the spec field names plus a few likely aliases via
-    :class:`AliasChoices` so we don't have to second-guess the producer's
-    eventual field naming. Each ``AliasChoices`` tries its options in
-    order; first hit wins.
+    The producer (``arandu generate-non-answerable``) writes the full
+    :class:`~arandu.qa.non_answerable.schemas.NonAnswerableItem`, but the
+    retrieve stage only needs four fields to build a query stream. This
+    stub is kept deliberately narrow (ISP) and tolerant: ``extra="ignore"``
+    drops the producer's analysis-only fields (``bloom_level``,
+    ``swapped_entity``, ``parent_qa_pair_id``, …) and the
+    :class:`AliasChoices` decouple retrieve from non-breaking field
+    renames upstream. Each ``AliasChoices`` tries its options in order;
+    first hit wins.
     """
 
     model_config = {"extra": "ignore"}
@@ -101,11 +101,10 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
 
     Args:
         cep_dir: ``results/<id>/cep/outputs/``. Each ``*.json`` is a
-            :class:`QARecordCEP`. ``FileNotFoundError`` if missing —
+            :class:`QARecordCEP`. ``FileNotFoundError`` if missing -
             CEP is required for any retrieve run.
-        nonanswerable_dir: ``results/<id>/nonanswerable/outputs/``. When
-            ``None`` or non-existent, silently skipped (the stage that
-            populates this is still in development).
+        nonanswerable_dir: ``results/<id>/non_answerable/outputs/``. When
+            ``None`` or non-existent, silently skipped.
 
     Returns:
         Flat list of :class:`QuestionRecord` rows. CEP rows first, in

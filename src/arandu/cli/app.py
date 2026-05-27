@@ -61,6 +61,7 @@ from arandu.cli.manage import (  # noqa: E402
     replicate,
     run_info,
 )
+from arandu.cli.non_answerable import generate_non_answerable  # noqa: E402
 from arandu.cli.qa import generate_cep_qa, judge_qa  # noqa: E402
 from arandu.cli.rag_analysis import rag_analysis  # noqa: E402
 from arandu.cli.report import report, serve_report  # noqa: E402
@@ -87,6 +88,7 @@ app.command()(retrieve)
 app.command()(answer)
 app.command()(judge_answers)
 app.command()(rag_analysis)
+app.command()(generate_non_answerable)
 app.command()(replicate)
 app.command()(info)
 app.command()(list_runs)
