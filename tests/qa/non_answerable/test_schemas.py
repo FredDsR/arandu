@@ -24,6 +24,7 @@ def _item(qa_pair_id: str = "src:chk:0:nonans") -> NonAnswerableItem:
         bloom_level="remember",
         question_type="factual",
         source_file_id="src",
+        chunker_id="cep_4k",
         parent_qa_pair_id="src:chk:0",
         swapped_entity=SwapRecord(
             original_entity="Maria", replacement_entity="Joana", entity_type="person"

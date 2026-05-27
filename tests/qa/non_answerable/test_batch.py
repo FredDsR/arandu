@@ -74,6 +74,32 @@ def test_end_to_end_builds_dataset(tmp_path: Path, cep_dir: Path, patched_llm: _
     assert len(dataset.items) == 2
     assert all(item.is_answerable is False for item in dataset.items)
     assert all(item.parent_qa_pair_id.startswith("src1:") for item in dataset.items)
+    # chunker_id is inherited from the parent QARecordCEP (default "cep_4k").
+    assert all(item.chunker_id == "cep_4k" for item in dataset.items)
+    # perturbations_per_seed is pinned to 1 in provenance, not configurable.
+    assert dataset.perturbations_per_seed == 1
+
+
+def test_kg_gate_reads_atlas_output_path(
+    tmp_path: Path, cep_dir: Path, patched_llm: _FakeLLM
+) -> None:
+    # The fake always proposes replacement "Joana". Seed a KG graphml at the
+    # real path (kg/outputs/atlas_output/kg_graphml/) with a "Joana" node:
+    # every swap must now collide on the KG gate, proving _load_kg_nodes
+    # reads the atlas_output segment (the buggy path would yield 0 nodes
+    # and let every swap through).
+    import networkx as nx
+
+    base = tmp_path / "results"
+    kg_dir = base / "run-x" / "kg" / "outputs" / "atlas_output" / "kg_graphml"
+    kg_dir.mkdir(parents=True)
+    graph = nx.DiGraph()
+    graph.add_node("n0", label="Joana")
+    nx.write_graphml(graph, str(kg_dir / "corpus_graph.graphml"))
+
+    result = run_generate_non_answerable_batch("run-x", base_dir=base, settings=_settings())
+    assert result.items_built == 0
+    assert result.seeds_failed == 2
 
 
 def test_resume_skips_completed_seeds(tmp_path: Path, cep_dir: Path, patched_llm: _FakeLLM) -> None:

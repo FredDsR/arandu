@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 CHECKPOINT_FILENAME = "non_answerable_checkpoint.json"
 _ITEMS_SUBDIR = "items"
 
+# One perturbation per seed is the design (spec §7.7): ~400 seeds already
+# give sufficient power, and a second swap on the same seed yields a
+# near-duplicate. Recorded in the dataset for provenance; not configurable.
+_PERTURBATIONS_PER_SEED = 1
+
 
 class NonAnswerableBatchConfig(BaseModel):
     """Run-metadata snapshot for the non_answerable stage."""
@@ -48,7 +53,6 @@ class NonAnswerableBatchConfig(BaseModel):
     model_id: str
     language: str
     seeds_per_bloom: int
-    perturbations_per_seed: int
     rng_seed: int
 
 
@@ -103,7 +107,8 @@ def run_generate_non_answerable_batch(
             f"Run `arandu generate-cep-qa` + `arandu judge-qa` first."
         )
 
-    kg_node_set = _load_kg_nodes(base / pipeline_id / "kg" / "outputs" / "kg_graphml")
+    kg_graphml_dir = base / pipeline_id / "kg" / "outputs" / "atlas_output" / "kg_graphml"
+    kg_node_set = _load_kg_nodes(kg_graphml_dir)
     corpus_index = SourceCorpusIndex(base / pipeline_id / "transcription" / "outputs")
     logger.info("Absence gates: %d KG nodes, %d corpus spans.", len(kg_node_set), len(corpus_index))
 
@@ -115,7 +120,6 @@ def run_generate_non_answerable_batch(
         model_id=resolved.model_id,
         language=resolved.language,
         seeds_per_bloom=resolved.seeds_per_bloom,
-        perturbations_per_seed=resolved.perturbations_per_seed,
         rng_seed=resolved.rng_seed,
     )
     results_mgr = ResultsManager(base, PipelineType.NON_ANSWERABLE, pipeline_id=pipeline_id)
@@ -166,9 +170,9 @@ def run_generate_non_answerable_batch(
     dataset = NonAnswerableDataset(
         items=items,
         seed_cep_dataset=str(cep_dir),
-        kg_artifact=str(base / pipeline_id / "kg" / "outputs" / "kg_graphml"),
+        kg_artifact=str(kg_graphml_dir),
         seed_count=len(seeds),
-        perturbations_per_seed=resolved.perturbations_per_seed,
+        perturbations_per_seed=_PERTURBATIONS_PER_SEED,
         success_rate=success_rate,
         rng_seed=resolved.rng_seed,
     )

@@ -18,9 +18,7 @@ class NonAnswerableSettings(BaseSettings):
         api_key_env: Env var holding the API key. Ignored for ollama.
         base_url: Base URL override; ``None`` uses the per-provider default.
         language: Prompt language (``"pt"`` project default).
-        seeds_per_bloom: Target seeds per Bloom level. 100 → ~400 total.
-        perturbations_per_seed: Perturbations per seed. 1 is sufficient at
-            ~400 seeds and avoids near-duplicate variants (spec §7.7).
+        seeds_per_bloom: Target seeds per Bloom level. 100 -> ~400 total.
         rng_seed: Sampler seed for reproducibility.
         retry_max: Collision retries per seed before skipping it.
         base_temperature: Temperature for the first perturbation attempt;
@@ -33,7 +31,6 @@ class NonAnswerableSettings(BaseSettings):
     base_url: str | None = Field(default=None)
     language: Literal["pt", "en"] = Field(default="pt")
     seeds_per_bloom: int = Field(default=100, ge=1)
-    perturbations_per_seed: int = Field(default=1, ge=1)
     rng_seed: int = Field(default=42)
     retry_max: int = Field(default=3, ge=1)
     base_temperature: float = Field(default=0.7, ge=0.0, le=2.0)

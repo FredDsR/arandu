@@ -44,6 +44,7 @@ def _seed(question: str = "Em que ano Maria viu a enchente?") -> SeedPair:
     return SeedPair(
         parent_qa_pair_id="src:chk_00:0",
         source_file_id="src",
+        chunker_id="cep_4k",
         pair=make_pair(question=question),
     )
 
@@ -77,6 +78,7 @@ class TestPerturb:
         assert item is not None
         assert item.qa_pair_id == "src:chk_00:0:nonans"
         assert item.parent_qa_pair_id == "src:chk_00:0"
+        assert item.chunker_id == "cep_4k"
         assert item.is_answerable is False
         assert item.swapped_entity.replacement_entity == "Joana"
         assert llm.calls == 1
@@ -190,3 +192,4 @@ class TestStratifiedSeedSample:
         )
         seeds = stratified_seed_sample(cep, seeds_per_bloom=10, rng_seed=1)
         assert seeds[0].parent_qa_pair_id == "s1:chk_07:0"
+        assert seeds[0].chunker_id == "cep_4k"  # QARecordCEP default

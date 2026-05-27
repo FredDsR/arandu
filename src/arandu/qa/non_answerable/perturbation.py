@@ -45,6 +45,7 @@ class SeedPair(BaseModel):
 
     parent_qa_pair_id: str
     source_file_id: str
+    chunker_id: str
     pair: QAPairCEP
 
 
@@ -86,6 +87,7 @@ def stratified_seed_sample(
                 SeedPair(
                     parent_qa_pair_id=parent_id,
                     source_file_id=record.source_file_id,
+                    chunker_id=record.chunker_id,
                     pair=pair,
                 )
             )
@@ -172,6 +174,7 @@ def _build_item(seed: SeedPair, output: PerturbationOutput) -> NonAnswerableItem
         bloom_level=seed.pair.bloom_level,
         question_type=seed.pair.question_type,
         source_file_id=seed.source_file_id,
+        chunker_id=seed.chunker_id,
         parent_qa_pair_id=seed.parent_qa_pair_id,
         swapped_entity=SwapRecord(
             original_entity=output.original_entity,

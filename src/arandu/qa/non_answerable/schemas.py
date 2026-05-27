@@ -54,6 +54,7 @@ class NonAnswerableItem(JudgeResultMixin):
     bloom_level: BloomLevel
     question_type: QuestionType
     source_file_id: str = Field(..., min_length=1)
+    chunker_id: str = Field(..., min_length=1)
     parent_qa_pair_id: str = Field(..., min_length=1)
     perturbation_method: Literal["entity_swap_llm"] = "entity_swap_llm"
     swapped_entity: SwapRecord

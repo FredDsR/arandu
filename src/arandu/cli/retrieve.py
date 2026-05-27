@@ -79,7 +79,7 @@ def retrieve(
     """Run Phase C retrievers over a populated run.
 
     Reads QA pairs from ``results/<id>/cep/outputs/`` and (when present)
-    non-answerable items from ``results/<id>/nonanswerable/outputs/``;
+    non-answerable items from ``results/<id>/non_answerable/outputs/``;
     emits one ``RetrievalRecord`` per (arm, question) tuple under
     ``results/<id>/retrieve/outputs/<arm>/<source>/<safe_qa_pair_id>.json``.
 

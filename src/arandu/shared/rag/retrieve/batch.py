@@ -145,7 +145,7 @@ def run_retrieve_batch(
 
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
     cep_dir = base / pipeline_id / "cep" / "outputs"
-    nonanswerable_dir = base / pipeline_id / "nonanswerable" / "outputs"
+    nonanswerable_dir = base / pipeline_id / PipelineType.NON_ANSWERABLE.value / "outputs"
 
     questions = load_questions(cep_dir, nonanswerable_dir)
     if not questions:

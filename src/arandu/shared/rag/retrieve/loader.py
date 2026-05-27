@@ -4,9 +4,9 @@ The retrieve stage iterates two source datasets:
 
 - **CEP QA**: per-source ``QARecordCEP`` files at ``results/<id>/cep/outputs/*.json``.
   Each record holds many :class:`QAPairCEP` items; we iterate them.
-- **Non-answerable** (optional, when the ``nonanswerable`` stage has
-  populated): at ``results/<id>/nonanswerable/outputs/`` — silently
-  skipped when absent (that stage is still in development).
+- **Non-answerable** (optional, when the ``non_answerable`` stage has
+  populated): at ``results/<id>/non_answerable/outputs/`` - silently
+  skipped when absent.
 
 Both produce :class:`QuestionRecord` rows, distinguished by ``source``
 (``"cep"`` or ``"nonanswerable"``). The retrieve batch runner emits
@@ -101,11 +101,10 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
 
     Args:
         cep_dir: ``results/<id>/cep/outputs/``. Each ``*.json`` is a
-            :class:`QARecordCEP`. ``FileNotFoundError`` if missing —
+            :class:`QARecordCEP`. ``FileNotFoundError`` if missing -
             CEP is required for any retrieve run.
-        nonanswerable_dir: ``results/<id>/nonanswerable/outputs/``. When
-            ``None`` or non-existent, silently skipped (the stage that
-            populates this is still in development).
+        nonanswerable_dir: ``results/<id>/non_answerable/outputs/``. When
+            ``None`` or non-existent, silently skipped.
 
     Returns:
         Flat list of :class:`QuestionRecord` rows. CEP rows first, in
