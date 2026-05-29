@@ -15,8 +15,11 @@ import pytest
 from pydantic import ValidationError
 
 from arandu.shared.judge.criterion import (
+    CriterionResponse,
+    LLMCriterion,
     OrdinalCriterionResponse,
     OrdinalLLMCriterion,
+    RangeLLMCriterion,
 )
 from arandu.shared.judge.pipeline import JudgePipeline, JudgeStage
 from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult
@@ -210,29 +213,110 @@ class TestOrdinalLLMCriterion:
         assert "Modo antropólogo" in criterion.prompt_template
 
 
+class TestLLMCriterionRouter:
+    """LLMCriterion routes to a Range (default) or Ordinal engine."""
+
+    def test_default_routes_to_range_engine(self, mock_llm_client: Any) -> None:
+        criterion = LLMCriterion(
+            name="faithfulness",
+            llm_client=mock_llm_client,
+            prompt_template="$context",
+            threshold=0.7,
+        )
+        assert criterion.scale == "continuous"
+        assert isinstance(criterion._engine, RangeLLMCriterion)
+        assert criterion.threshold == 0.7
+
+    def test_scale_ordinal_routes_to_ordinal_engine(self, mock_llm_client: Any) -> None:
+        criterion = LLMCriterion(
+            name="emic_validity",
+            llm_client=mock_llm_client,
+            prompt_template="$context",
+            scale="ordinal",
+        )
+        assert criterion.scale == "ordinal"
+        assert isinstance(criterion._engine, OrdinalLLMCriterion)
+
+    def test_unknown_scale_rejected(self, mock_llm_client: Any) -> None:
+        with pytest.raises(ValueError, match="scale"):
+            LLMCriterion(
+                name="x",
+                llm_client=mock_llm_client,
+                prompt_template="$context",
+                scale="nonsense",  # type: ignore[arg-type]
+            )
+
+    def test_continuous_evaluation_delegated(self, mock_llm_client: Any) -> None:
+        mock_llm_client.generate_structured.return_value = CriterionResponse(
+            score=0.8, rationale="grounded"
+        )
+        criterion = LLMCriterion(
+            name="faithfulness",
+            llm_client=mock_llm_client,
+            prompt_template="$context",
+            threshold=0.7,
+        )
+        result = criterion.evaluate(context="c")
+        assert result.scale == "continuous"
+        assert result.score == 0.8
+        assert (
+            mock_llm_client.generate_structured.call_args.kwargs["response_model"]
+            is CriterionResponse
+        )
+
+    def test_ordinal_evaluation_delegated(self, mock_llm_client: Any) -> None:
+        mock_llm_client.generate_structured.return_value = OrdinalCriterionResponse(
+            score=2, rationale="reenquadramento"
+        )
+        criterion = LLMCriterion(
+            name="emic_validity",
+            llm_client=mock_llm_client,
+            prompt_template="$context",
+            scale="ordinal",
+        )
+        result = criterion.evaluate(context="c")
+        assert result.scale == "ordinal"
+        assert result.ordinal_score == 2
+        assert (
+            mock_llm_client.generate_structured.call_args.kwargs["response_model"]
+            is OrdinalCriterionResponse
+        )
+
+    def test_from_config_routes_ordinal(self, mock_llm_client: Any, tmp_path: Path) -> None:
+        base = tmp_path / "criteria"
+        crit_dir = base / "emic_validity" / "pt"
+        crit_dir.mkdir(parents=True)
+        (crit_dir / "prompt.md").write_text("$context")
+        (base / "emic_validity" / "config.json").write_text(json.dumps({"temperature": 0.1}))
+
+        criterion = LLMCriterion.from_config(
+            name="emic_validity",
+            prompts_dir=base,
+            language="pt",
+            llm_client=mock_llm_client,
+            scale="ordinal",
+        )
+        assert criterion.scale == "ordinal"
+        assert isinstance(criterion._engine, OrdinalLLMCriterion)
+        assert criterion.temperature == 0.1
+
+
 class TestMixedPipeline:
     """Ordinal and continuous criteria coexist in one pipeline."""
 
     def test_ordinal_score_stage_after_continuous_filter(self, mock_llm_client: Any) -> None:
-        from arandu.shared.judge.criterion import LLMCriterion
-
-        # Continuous filter criterion that passes.
-        mock_continuous = mock_llm_client
+        # Continuous filter criterion (router → Range engine) that passes.
         cont = LLMCriterion(
             name="faithfulness",
-            threshold=0.6,
-            llm_client=mock_continuous,
+            llm_client=mock_llm_client,
             prompt_template="$context $question $answer",
+            threshold=0.6,
         )
-        # Separate mock for the ordinal criterion so call routing is clear.
-        ordinal_client = mock_llm_client
         emic = OrdinalLLMCriterion(
             name="emic_validity",
-            llm_client=ordinal_client,
+            llm_client=mock_llm_client,
             prompt_template="$context $question $answer",
         )
-
-        from arandu.shared.judge.criterion import CriterionResponse
 
         def _route(**kwargs: Any) -> Any:
             if kwargs["response_model"] is OrdinalCriterionResponse:

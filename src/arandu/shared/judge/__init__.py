@@ -1,6 +1,8 @@
 """Shared judge module for multi-stage evaluation with per-criterion thresholds."""
 
 from arandu.shared.judge.criterion import (
+    BaseCriterionConfig,
+    BaseLLMCriterion,
     CriterionConfig,
     HeuristicCriterion,
     JudgeCriterion,
@@ -9,6 +11,7 @@ from arandu.shared.judge.criterion import (
     OrdinalCriterionConfig,
     OrdinalCriterionResponse,
     OrdinalLLMCriterion,
+    RangeLLMCriterion,
 )
 from arandu.shared.judge.factory import LLMCriterionFactory
 from arandu.shared.judge.judge import BaseJudge
@@ -23,7 +26,9 @@ from arandu.shared.judge.schemas import (
 from arandu.shared.judge.step import JudgeStep
 
 __all__ = [
+    "BaseCriterionConfig",
     "BaseJudge",
+    "BaseLLMCriterion",
     "CriterionConfig",
     "CriterionScale",
     "CriterionScore",
@@ -40,5 +45,6 @@ __all__ = [
     "OrdinalCriterionConfig",
     "OrdinalCriterionResponse",
     "OrdinalLLMCriterion",
+    "RangeLLMCriterion",
     "StageMode",
 ]
