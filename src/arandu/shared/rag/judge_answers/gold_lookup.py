@@ -6,17 +6,21 @@ artifacts once at batch start and produces a flat lookup keyed by the
 same ``qa_pair_id`` format the retrieve / answer stages emit
 (``"<file_id>:<chunk_id>:<idx>"``).
 
-Beyond the question + gold answer, the record carries the source
-``context`` the pair was generated from, which the faithfulness and
-heuristic-correctness criteria score against. Analysis-only dimensions
-(Bloom level, question type) are deliberately NOT carried here: they are
-stratification keys, not judge inputs, and the analysis stage already
-re-derives them via its own CEP cross-cut map
-(:func:`arandu.shared.rag.analysis.loader.build_cross_cut_map`). The
-CEP's own ``reasoning_trace`` / ``tacit_inference`` annotations are also
-excluded: feeding the generator's self-explanation back as ground truth
-would make the judge score conformance to the CEP annotation rather than
-against an independent reference.
+``GoldRecord`` carries only what an answer-judge criterion actually
+consumes today: the question and the gold answer. Other ``QAPairCEP``
+fields are deliberately NOT carried here:
+
+- Source ``context``, Bloom level, question type: no current criterion
+  reads them. ``answer_faithfulness`` scores against the retrieved
+  ``passages_text``, not the gold context; the analysis stage re-derives
+  Bloom level / question type via its own CEP cross-cut map
+  (:func:`arandu.shared.rag.analysis.loader.build_cross_cut_map`). The
+  planned Phase-2 heuristic-correctness criterion will re-add ``context``
+  here together with the code that consumes it.
+- ``reasoning_trace`` / ``tacit_inference``: feeding the CEP generator's
+  own self-explanation back as ground truth would make the judge score
+  conformance to the annotation rather than against an independent
+  reference.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from arandu.qa.schemas import QARecordCEP
 
@@ -40,7 +44,6 @@ class GoldRecord(BaseModel):
     qa_pair_id: str
     question: str
     gold_answer: str
-    context: str = Field(default="", description="Source text the QA pair was generated from.")
 
 
 def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
@@ -49,7 +52,7 @@ def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
     Args:
         cep_dir: ``results/<id>/cep/outputs/``. Each ``*.json`` is a
             :class:`QARecordCEP` whose ``qa_pairs`` carry questions +
-            gold answers + source context + chunk_id pointers.
+            gold answers + chunk_id pointers.
 
     Returns:
         Flat dict; empty if ``cep_dir`` is absent.
@@ -71,6 +74,5 @@ def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
                 qa_pair_id=qa_pair_id,
                 question=pair.question,
                 gold_answer=pair.answer,
-                context=pair.context,
             )
     return out
