@@ -1,7 +1,11 @@
-"""NullRetriever — parametric arm of the Phase C four-arm decomposition (spec §4.6).
+"""NullRetriever: abstention/hallucination baseline for Phase C (spec §4.6).
 
-Returns no passages; forces the Answerer to fall back to parametric (LLM-internal)
-knowledge. The arm-vs-null delta is the *graph lift* metric in Joel's framing.
+Returns no passages. With the Answerer prompt held constant across all retrieval
+arms, the Null arm is expected to abstain on most items; cases where it commits
+despite zero passages surface as parametric-memory leaks. Used as the
+abstention/hallucination baseline for cross-arm comparison via abstention-F1 and
+hallucination-rate (not via a KC subtraction; the corpus is private ethnographic
+material outside LLM parametric coverage by construction).
 """
 
 from __future__ import annotations
