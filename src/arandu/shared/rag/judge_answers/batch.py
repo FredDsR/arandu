@@ -153,10 +153,15 @@ def run_judge_answers_batch(
             failed += 1
             continue
 
+        # Answerable items need their CEP gold for the gold-scoring stage;
+        # an orphan answerable qa_pair_id can't be judged. Non-answerable
+        # items (from `arandu generate-non-answerable`) have no gold and
+        # are judged on abstention alone — the commitment gate skips the
+        # gold criteria for them, so a missing gold is expected.
         gold = gold_lookup.get(answer.qa_pair_id)
-        if gold is None:
+        if answer.is_answerable and gold is None:
             logger.warning(
-                "No gold lookup for qa_pair_id=%s — skipping judge for %s.",
+                "No gold lookup for answerable qa_pair_id=%s — skipping judge for %s.",
                 answer.qa_pair_id,
                 record_path,
             )
@@ -278,24 +283,37 @@ def _judge_one(
     *,
     judge: AnswerJudge,
     answer: AnswerRecord,
-    gold: GoldRecord,
+    gold: GoldRecord | None,
     passage_text: dict[str, str],
 ) -> AnswerRecord:
-    """Run the 4 LLM criteria; attach verdict to the record.
+    """Run the gated judge pipeline; attach the verdict to the record.
 
-    Every kwarg below is consumed by at least one criterion's prompt
-    template (via ``string.Template.safe_substitute``). Criteria that
-    don't reference a given kwarg silently ignore it.
+    Every kwarg below is consumed by at least one stage. The commitment
+    gate reads ``is_answerable`` + ``abstained``; the abstention criterion
+    reads ``abstained`` / ``answer_text`` / ``rationale``; the gold-scoring
+    criteria read ``question`` / ``gold_answer`` / ``context`` / etc.
+    Criteria that don't reference a given kwarg silently ignore it (LLM
+    prompts via ``string.Template.safe_substitute``).
+
+    ``gold`` is ``None`` for non-answerable items (no CEP pair); the
+    commitment gate rejects those before the gold criteria run, so the
+    empty gold fields are never actually consumed.
     """
     passages_text = _format_passages(answer, passage_text)
     pipeline_result = judge.evaluate(
-        question=gold.question,
-        gold_answer=gold.gold_answer,
-        system_answer=answer.answer_text or "",
-        passages_text=passages_text,
+        is_answerable=answer.is_answerable,
         abstained=str(answer.abstained).lower(),
         answer_text=answer.answer_text or "",
+        system_answer=answer.answer_text or "",
         rationale=answer.rationale,
+        passages_text=passages_text,
+        question=gold.question if gold is not None else answer.question,
+        gold_answer=gold.gold_answer if gold is not None else "",
+        context=gold.context if gold is not None else "",
+        bloom_level=gold.bloom_level if gold is not None else "",
+        question_type=gold.question_type if gold is not None else "",
+        reasoning_trace=(gold.reasoning_trace or "") if gold is not None else "",
+        tacit_inference=(gold.tacit_inference or "") if gold is not None else "",
     )
     return answer.model_copy(update={"validation": pipeline_result})
 

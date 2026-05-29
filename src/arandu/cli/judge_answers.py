@@ -48,12 +48,18 @@ def judge_answers(
         ),
     ] = False,
 ) -> None:
-    """Run the 4-criterion LLM judge over every AnswerRecord in a populated run.
+    """Run the gated answer judge over every AnswerRecord in a populated run.
 
-    Criteria: ``passage_coverage``, ``abstention``, ``answer_correctness``,
-    ``answer_faithfulness``. All run in ``score`` mode (none reject);
-    verdicts persist via :class:`JudgeResultMixin.validation` on each
-    :class:`AnswerRecord` copy under
+    Pipeline: ``abstention`` (always scored) -> heuristic
+    ``answerability_gate`` -> ``retrieval_scoring`` (``passage_coverage``,
+    runs for every answerable item) -> heuristic ``commitment_gate`` ->
+    ``answer_scoring`` (``answer_correctness``, ``answer_faithfulness``,
+    run only for True-Commitment items: answerable + committed). The
+    answerability gate skips both LLM-scoring stages for non-answerable
+    items (no gold), which are judged on abstention alone; the commitment
+    gate skips the answer-text scoring stage for abstained answers (no
+    answer text). Verdicts persist via :class:`JudgeResultMixin.validation`
+    on each :class:`AnswerRecord` copy under
     ``judge_answers/outputs/<arm>/<source>/``.
 
     Judge LLM configuration is read from ``ARANDU_JUDGE_ANSWERS_*`` env

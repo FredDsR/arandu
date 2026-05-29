@@ -149,9 +149,10 @@ class TestRunJudgeAnswersBatch:
         assert rec.answer_text is None
 
     def test_missing_gold_lookup_records_as_failed(self, tmp_path: Path) -> None:
-        # AnswerRecord exists but no matching CEP pair (orphan qa_pair_id).
-        # Without the gold answer the judge can't run; surface it cleanly.
-        _seed_answers(tmp_path)  # no _seed_cep call
+        # ANSWERABLE AnswerRecord with no matching CEP pair (orphan
+        # qa_pair_id). Without the gold answer the gold criteria can't run;
+        # surface it cleanly. (Non-answerable orphans are fine — see below.)
+        _seed_answers(tmp_path)  # is_answerable=True, no _seed_cep call
         settings = JudgeAnswersSettings(provider="ollama")
 
         with (
@@ -164,6 +165,60 @@ class TestRunJudgeAnswersBatch:
 
         assert result.judgments_written == 0
         assert result.judgments_failed >= 1
+
+    def test_nonanswerable_judged_without_gold(self, tmp_path: Path) -> None:
+        # A non-answerable item (is_answerable=False) has no CEP gold, but
+        # must still be judged (abstention only, via the commitment gate) —
+        # not skipped as "no gold lookup".
+        out_dir = tmp_path / "run_x" / "answers" / "outputs" / "bm25" / "nonanswerable"
+        out_dir.mkdir(parents=True)
+        record = AnswerRecord(
+            qa_pair_id="src_a:chk_aa:0:nonans",
+            question="Onde Joana mora?",
+            retriever_id="bm25",
+            chunker_id="cep_4k",
+            top_k=5,
+            passages=[],
+            elapsed_ms=1.0,
+            is_answerable=False,
+            answer_text="Em Itaqui.",
+            abstained=False,
+            rationale="Committed despite no support.",
+            answerer_model="qwen3:14b",
+            answerer_temperature=0.2,
+        )
+        record.save(out_dir / "src_a__chk_aa__0__nonans.json")
+        # Deliberately no _seed_cep: non-answerable items need no gold.
+        settings = JudgeAnswersSettings(provider="ollama")
+
+        with (
+            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
+        ):
+            judge = MagicMock()
+            judge.evaluate.return_value = JudgePipelineResult(
+                stage_results={
+                    "abstention": JudgeStepResult(
+                        criterion_scores={
+                            "abstention": CriterionScore(
+                                score=0.1, threshold=0.7, rationale="substantive claim"
+                            ),
+                        }
+                    )
+                },
+                passed=False,
+                rejected_at="commitment_gate",
+            )
+            mock_judge_cls.return_value = judge
+
+            result = run_judge_answers_batch(
+                pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+
+        assert result.judgments_written == 1
+        assert result.judgments_failed == 0
+        # judge.evaluate received is_answerable=False (gate input).
+        assert judge.evaluate.call_args.kwargs["is_answerable"] is False
 
     def test_resume_skips_completed_records(self, tmp_path: Path) -> None:
         _seed_answers(tmp_path)

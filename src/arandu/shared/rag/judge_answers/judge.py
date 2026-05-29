@@ -1,7 +1,33 @@
-"""``AnswerJudge`` — 4-criterion LLM pipeline composition (spec §6.6).
+"""``AnswerJudge`` — gated answer-judging pipeline (spec §6.6).
 
-All criteria run in ``score`` mode (none reject); the pipeline's role
-is to attach verdicts to each :class:`AnswerRecord` for later analysis.
+Five stages composed as a cascade of single-responsibility gates, so
+each LLM-backed scoring stage runs only when its data dependencies are
+satisfied:
+
+1. ``abstention`` (LLM, ``score``) — always recorded. The TA/TC/FA/FC
+   signal the analysis stage reads, so it must survive every stage-skip.
+2. ``answerability_gate`` (heuristic, ``filter``) — passes iff the item
+   has a gold answer (``is_answerable=True``). A reject leaves only the
+   abstention score in the result.
+3. ``retrieval_scoring`` (LLM, ``score``) — ``passage_coverage``. A
+   retrieval-quality lens: did the retrieved passages cover the gold
+   answer? Runs for every answerable item (TC + FA); the system's
+   answer text is not consulted, so abstention does not gate it.
+4. ``commitment_gate`` (heuristic, ``filter``) — passes iff the system
+   committed (``abstained=False``). Lives downstream of the
+   answerability gate; reaching it implies the item is answerable.
+5. ``answer_scoring`` (LLM, ``score``) — ``answer_correctness``,
+   ``answer_faithfulness``. Need a committed answer + gold, so they run
+   only for TC.
+
+This split fixes a TC-only narrowing of ``passage_coverage`` that an
+earlier draft introduced by lumping it with the answer-scoring criteria:
+passage coverage depends only on retrieval + gold, not on commitment.
+
+The whole pipeline still stops scoring ``answer_correctness`` /
+``answer_faithfulness`` on abstained answers (where ``answer_text`` is
+``None``) per spec §6.1/§6.2, and still lets non-answerable items be
+judged on abstention alone (no gold needed).
 
 Note on scope: spec §6.3 also describes a deterministic
 ``offset_coverage`` variant alongside the LLM ``passage_coverage``.
@@ -30,24 +56,30 @@ from arandu.shared.judge import (
     JudgeStep,
     LLMCriterionFactory,
 )
+from arandu.shared.rag.judge_answers.heuristic import (
+    AnswerabilityGateCriterion,
+    CommitmentGateCriterion,
+)
 
 if TYPE_CHECKING:
     from arandu.shared.llm_client import LLMClient
     from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
 
 
-# Spec §6.6 — order matches the pipeline composition described there.
-# All four LLM criteria load from ``prompts/judge/criteria/<name>/``.
-_LLM_CRITERIA = (
-    "passage_coverage",
-    "abstention",
+# Stage 1: the abstention signal, always recorded.
+_ABSTENTION_CRITERIA = ("abstention",)
+# Stage 3: retrieval-quality lens, run for every answerable item (TC + FA).
+_RETRIEVAL_CRITERIA = ("passage_coverage",)
+# Stage 5: answer-text quality, run only for True-Commitment items (TC).
+# All LLM criteria load from ``prompts/judge/criteria/<name>/``.
+_ANSWER_CRITERIA = (
     "answer_correctness",
     "answer_faithfulness",
 )
 
 
 class AnswerJudge(BaseJudge):
-    """Drive the 4-criterion LLM judge pipeline over one :class:`AnswerRecord`.
+    """Drive the gated answer-judging pipeline over one :class:`AnswerRecord`.
 
     Attributes:
         factory: The :class:`LLMCriterionFactory` used to load LLM
@@ -72,14 +104,31 @@ class AnswerJudge(BaseJudge):
         super().__init__()  # calls _build_pipeline()
 
     def _build_pipeline(self) -> JudgePipeline:
-        """Assemble the 4 LLM criteria into one score-mode stage.
+        """Assemble the cascaded answer-judging pipeline.
 
-        All-in-one stage rather than four single-criterion stages because
-        the judges don't gate each other (no filter mode); a single stage
-        avoids redundant ``JudgePipelineResult`` machinery and gives the
-        analysis stage one flat ``criterion_scores`` dict to consume.
+        Two heuristic gates partition the LLM-backed scoring stages on
+        their actual data dependencies:
+
+        - the answerability gate (filter) fronts both retrieval and
+          answer scoring (both need a gold answer);
+        - the commitment gate (filter) fronts answer scoring alone
+          (only the answer-text criteria need a committed answer).
+
+        Stage names are distinct so the analysis stage finds the
+        ``abstention`` score by criterion name regardless of which
+        stages were skipped.
         """
-        step = JudgeStep(criteria=list(_LLM_CRITERIA), factory=self.factory)
+        abstention_step = JudgeStep(criteria=list(_ABSTENTION_CRITERIA), factory=self.factory)
+        answerability_step = JudgeStep(criteria=[AnswerabilityGateCriterion()])
+        retrieval_step = JudgeStep(criteria=list(_RETRIEVAL_CRITERIA), factory=self.factory)
+        commitment_step = JudgeStep(criteria=[CommitmentGateCriterion()])
+        answer_step = JudgeStep(criteria=list(_ANSWER_CRITERIA), factory=self.factory)
         return JudgePipeline(
-            stages=[JudgeStage(name="answer_judge", step=step, mode="score")],
+            stages=[
+                JudgeStage(name="abstention", step=abstention_step, mode="score"),
+                JudgeStage(name="answerability_gate", step=answerability_step, mode="filter"),
+                JudgeStage(name="retrieval_scoring", step=retrieval_step, mode="score"),
+                JudgeStage(name="commitment_gate", step=commitment_step, mode="filter"),
+                JudgeStage(name="answer_scoring", step=answer_step, mode="score"),
+            ],
         )
