@@ -6,10 +6,17 @@ artifacts once at batch start and produces a flat lookup keyed by the
 same ``qa_pair_id`` format the retrieve / answer stages emit
 (``"<file_id>:<chunk_id>:<idx>"``).
 
-Beyond the question + gold answer, the record carries the richer CEP
-signals (source context, Bloom level, question type, reasoning trace,
-tacit-knowledge annotation) so heuristic and LLM criteria can use them
-without a second pass over the CEP outputs.
+Beyond the question + gold answer, the record carries the source
+``context`` the pair was generated from, which the faithfulness and
+heuristic-correctness criteria score against. Analysis-only dimensions
+(Bloom level, question type) are deliberately NOT carried here: they are
+stratification keys, not judge inputs, and the analysis stage already
+re-derives them via its own CEP cross-cut map
+(:func:`arandu.shared.rag.analysis.loader.build_cross_cut_map`). The
+CEP's own ``reasoning_trace`` / ``tacit_inference`` annotations are also
+excluded: feeding the generator's self-explanation back as ground truth
+would make the judge score conformance to the CEP annotation rather than
+against an independent reference.
 """
 
 from __future__ import annotations
@@ -34,14 +41,6 @@ class GoldRecord(BaseModel):
     question: str
     gold_answer: str
     context: str = Field(default="", description="Source text the QA pair was generated from.")
-    bloom_level: str = Field(default="", description="Bloom's-taxonomy level of the question.")
-    question_type: str = Field(default="", description="factual | conceptual | temporal | entity.")
-    reasoning_trace: str | None = Field(
-        default=None, description="Logical connections leading to the answer, if any."
-    )
-    tacit_inference: str | None = Field(
-        default=None, description="Implicit/tacit knowledge used in the answer, if any."
-    )
 
 
 def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
@@ -50,7 +49,7 @@ def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
     Args:
         cep_dir: ``results/<id>/cep/outputs/``. Each ``*.json`` is a
             :class:`QARecordCEP` whose ``qa_pairs`` carry questions +
-            gold answers + chunk_id pointers + the richer CEP signals.
+            gold answers + source context + chunk_id pointers.
 
     Returns:
         Flat dict; empty if ``cep_dir`` is absent.
@@ -73,9 +72,5 @@ def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
                 question=pair.question,
                 gold_answer=pair.answer,
                 context=pair.context,
-                bloom_level=str(pair.bloom_level),
-                question_type=str(pair.question_type),
-                reasoning_trace=pair.reasoning_trace,
-                tacit_inference=pair.tacit_inference,
             )
     return out
