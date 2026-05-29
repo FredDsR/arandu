@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 from pydantic import BaseModel, Field
 
 from arandu.shared.judge.schemas import CriterionScore
-from arandu.utils.text import validate_score
+from arandu.utils.text import validate_ordinal_score, validate_score
+
+ORDINAL_MIN = 1
+ORDINAL_MAX = 5
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +249,185 @@ class LLMCriterion(JudgeCriterion):
             threshold=self.threshold,
             rationale=response.rationale,
         )
+
+    def _build_prompt(self, **kwargs: Any) -> str:
+        """Build evaluation prompt from template.
+
+        Args:
+            **kwargs: Parameters for template substitution.
+
+        Returns:
+            Formatted prompt string.
+        """
+        template = Template(self.prompt_template)
+        return template.safe_substitute(**kwargs)
+
+
+class OrdinalCriterionResponse(BaseModel):
+    """Expected structured response from an ordinal LLM criterion.
+
+    ``score`` is an integer label on the ordinal scale ``[ORDINAL_MIN,
+    ORDINAL_MAX]``. The range constraint makes ``generate_structured`` retry
+    when the model returns an out-of-range or fractional value.
+    """
+
+    score: int = Field(ge=ORDINAL_MIN, le=ORDINAL_MAX)
+    rationale: str
+
+
+class OrdinalCriterionConfig(BaseModel):
+    """Configuration for ordinal LLM criteria.
+
+    Ordinal criteria run in score mode, so no continuous ``threshold`` is
+    required; only the optional sampling temperature is configurable.
+    """
+
+    temperature: float | None = None
+
+    @classmethod
+    def load(cls, config_file: Path) -> OrdinalCriterionConfig:
+        """Load config from a JSON file.
+
+        Args:
+            config_file: Path to config.json.
+
+        Returns:
+            Validated config instance.
+
+        Raises:
+            FileNotFoundError: If config file doesn't exist.
+        """
+        if not config_file.exists():
+            raise FileNotFoundError(f"Criterion config not found: {config_file}")
+        return cls.model_validate_json(config_file.read_text(encoding="utf-8"))
+
+
+class OrdinalLLMCriterion(JudgeCriterion):
+    """LLM-based criterion that emits an ordinal label instead of a float.
+
+    Mirrors ``LLMCriterion`` but produces a ``CriterionScore`` with
+    ``scale="ordinal"`` and an integer ``ordinal_score`` in
+    ``[ORDINAL_MIN, ORDINAL_MAX]``. The continuous ``threshold`` is unused
+    (fixed at ``0.0``); the criterion is meant to run in ``score`` mode.
+
+    Args:
+        name: Criterion identifier.
+        llm_client: LLM client for evaluation.
+        prompt_template: Prompt template string with ``$variable`` placeholders.
+        temperature: Sampling temperature (low by default; the judgment is
+            structural, not creative).
+        max_tokens: Maximum tokens for response.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        llm_client: Any,
+        prompt_template: str,
+        temperature: float = 0.1,
+        max_tokens: int = 2048,
+    ) -> None:
+        super().__init__(name, threshold=0.0)
+        self.llm_client = llm_client
+        self.prompt_template = prompt_template
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+
+    @classmethod
+    def from_config(
+        cls,
+        name: str,
+        prompts_dir: Path,
+        language: str,
+        llm_client: Any,
+        temperature: float = 0.1,
+        max_tokens: int = 2048,
+    ) -> OrdinalLLMCriterion:
+        """Load criterion from prompt files and config.json.
+
+        Args:
+            name: Criterion name (e.g., "emic_validity").
+            prompts_dir: Base directory for criterion prompts.
+            language: Language code (e.g., "pt", "en").
+            llm_client: LLM client for evaluation.
+            temperature: Default temperature (overridden by config if set).
+            max_tokens: Maximum tokens for response.
+
+        Returns:
+            Configured OrdinalLLMCriterion instance.
+
+        Raises:
+            FileNotFoundError: If config.json or the prompt file is missing.
+        """
+        config = OrdinalCriterionConfig.load(prompts_dir / name / "config.json")
+
+        prompt_file = prompts_dir / name / language / "prompt.md"
+        if not prompt_file.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+        prompt_template = prompt_file.read_text(encoding="utf-8")
+
+        effective_temp = config.temperature if config.temperature is not None else temperature
+
+        logger.debug("Loaded ordinal criterion '%s' for language '%s'", name, language)
+
+        return cls(
+            name=name,
+            llm_client=llm_client,
+            prompt_template=prompt_template,
+            temperature=effective_temp,
+            max_tokens=max_tokens,
+        )
+
+    def _evaluate_impl(self, **kwargs: Any) -> CriterionScore:
+        """Call the LLM and return an ordinal-scored result.
+
+        Args:
+            **kwargs: Domain-specific evaluation parameters.
+
+        Returns:
+            CriterionScore with ``scale="ordinal"`` and an integer
+            ``ordinal_score``.
+        """
+        prompt = self._build_prompt(**kwargs)
+
+        response = self.llm_client.generate_structured(
+            prompt=prompt,
+            response_model=OrdinalCriterionResponse,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+
+        return CriterionScore(
+            ordinal_score=validate_ordinal_score(response.score, ORDINAL_MIN, ORDINAL_MAX),
+            scale="ordinal",
+            threshold=self.threshold,
+            rationale=response.rationale,
+        )
+
+    def evaluate(self, **kwargs: Any) -> CriterionScore:
+        """Evaluate content, wrapping errors into an ordinal CriterionScore.
+
+        Overrides the base wrapper so a failed evaluation still reports
+        ``scale="ordinal"`` (with ``ordinal_score=None``) rather than the
+        continuous default, keeping error rows self-describing.
+
+        Args:
+            **kwargs: Domain-specific evaluation parameters.
+
+        Returns:
+            CriterionScore with the ordinal scale set even on error.
+        """
+        try:
+            return self._evaluate_impl(**kwargs)
+        except Exception as e:
+            logger.warning("Ordinal criterion '%s' evaluation failed: %s", self.name, e)
+            return CriterionScore(
+                ordinal_score=None,
+                scale="ordinal",
+                threshold=self.threshold,
+                rationale="",
+                error=str(e),
+            )
 
     def _build_prompt(self, **kwargs: Any) -> str:
         """Build evaluation prompt from template.
