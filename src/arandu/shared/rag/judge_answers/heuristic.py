@@ -1,19 +1,25 @@
-"""Heuristic (non-LLM) criteria for the answer judge (spec §6).
+"""Heuristic (non-LLM) gate criteria for the answer judge (spec §6).
 
-The commitment gate decides, deterministically and for free, whether the
-gold-requiring criteria (``answer_correctness`` / ``answer_faithfulness``
-/ ``passage_coverage``) should run at all. They only make sense for a
-**True-Commitment** candidate: an *answerable* question that the system
-actually *committed* to (did not abstain). For every other quadrant of
-the analysis confusion matrix the gate rejects, short-circuiting the
-gold-scoring stage:
+Two single-responsibility gates compose into a cascade that gates the
+LLM-backed scoring stages on their actual data dependencies:
 
-- non-answerable + committed (FC, hallucination) — no gold answer exists;
-- non-answerable + abstained (TA, correct refusal) — nothing to score;
-- answerable + abstained (FA, over-cautious) — ``answer_text`` is None.
+- :class:`AnswerabilityGateCriterion` passes iff the item is answerable
+  (has a gold answer). Used in front of *retrieval-quality* scoring
+  (``passage_coverage``) and again, transitively, in front of *answer*
+  scoring. A reject leaves only the always-recorded ``abstention``
+  signal in the result.
+- :class:`CommitmentGateCriterion` passes iff the system committed
+  (did not abstain). Used in front of *answer* scoring
+  (``answer_correctness`` / ``answer_faithfulness``), which need the
+  committed answer text. Lives downstream of the answerability gate, so
+  reaching it implies the item is already answerable.
 
-The ``abstention`` criterion runs in an earlier stage and is always
-recorded, so the TA/TC/FA/FC signal is preserved regardless of the gate.
+Together they partition the analysis confusion matrix without any LLM
+call: TA / FC stop at the answerability gate (skip retrieval + answer
+scoring); FA passes the first gate but is stopped at the commitment
+gate (skip answer scoring only; passage_coverage still runs because
+retrieval can be evaluated against the gold answer regardless of
+whether the system used it); TC passes both gates.
 """
 
 from __future__ import annotations
@@ -23,20 +29,43 @@ from typing import Any
 from arandu.shared.judge.criterion import HeuristicCriterion
 
 
+class AnswerabilityGateCriterion(HeuristicCriterion):
+    """Pass iff the item is answerable (a gold answer exists).
+
+    Reads a single kwarg, ``is_answerable`` (bool), forwarded by the
+    batch runner from :attr:`AnswerRecord.is_answerable`. Used in a
+    ``filter``-mode stage so a non-answerable item short-circuits every
+    later gold-using criterion (retrieval-quality + answer-quality).
+    """
+
+    def __init__(self, *, threshold: float = 0.5) -> None:
+        """Initialise the gate; default threshold makes it a binary 0/1 gate."""
+        super().__init__(name="answerability_gate", threshold=threshold)
+
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Pass iff ``is_answerable`` is true.
+
+        Args:
+            **kwargs: Must contain ``is_answerable`` (bool).
+
+        Returns:
+            ``(1.0, rationale)`` when answerable, else ``(0.0, rationale)``.
+        """
+        if bool(kwargs.get("is_answerable", False)):
+            return 1.0, "answerable -> run retrieval + (if committed) answer scoring"
+        return 0.0, "non-answerable -> no gold; only abstention is meaningful"
+
+
 class CommitmentGateCriterion(HeuristicCriterion):
-    """Pass only for a True-Commitment candidate (answerable + committed).
+    """Pass iff the system committed (did not abstain).
 
-    Binary gate: ``1.0`` when the question is answerable AND the system
-    committed (``abstained`` is false), else ``0.0``. Used in a
-    ``filter``-mode stage so a ``0.0`` rejects the pipeline and skips the
-    downstream gold-scoring criteria.
-
-    Reads two kwargs forwarded by the batch runner:
-
-    - ``is_answerable``: bool ground-truth answerability of the item.
-    - ``abstained``: the system's structured flag as a lowercased string
-      (``"true"`` / ``"false"``), the same value the abstention LLM prompt
-      consumes.
+    Reads the ``abstained`` kwarg as a lowercased string
+    (``"true"`` / ``"false"``), the same value the abstention LLM prompt
+    consumes. Used in a ``filter``-mode stage downstream of
+    :class:`AnswerabilityGateCriterion`, so reaching it implies the
+    item is already answerable; a reject here skips only the answer-text
+    scoring stage (correctness + faithfulness), leaving any prior
+    retrieval-quality score intact.
     """
 
     def __init__(self, *, threshold: float = 0.5) -> None:
@@ -44,19 +73,15 @@ class CommitmentGateCriterion(HeuristicCriterion):
         super().__init__(name="commitment_gate", threshold=threshold)
 
     def _check(self, **kwargs: Any) -> tuple[float, str]:
-        """Pass iff the item is answerable and the system committed.
+        """Pass iff ``abstained`` is the lowercased string ``"false"``.
 
         Args:
-            **kwargs: Must contain ``is_answerable`` (bool) and
-                ``abstained`` (``"true"``/``"false"`` string).
+            **kwargs: Must contain ``abstained`` (``"true"``/``"false"``).
 
         Returns:
-            ``(1.0, rationale)`` for a TC candidate, else ``(0.0, rationale)``.
+            ``(1.0, rationale)`` when committed, else ``(0.0, rationale)``.
         """
-        is_answerable = bool(kwargs.get("is_answerable", False))
         abstained = str(kwargs.get("abstained", "false")).strip().lower() == "true"
-        if is_answerable and not abstained:
-            return 1.0, "answerable + committed (TC) -> score gold criteria"
-        if not is_answerable:
-            return 0.0, "non-answerable -> no gold; skip gold criteria"
-        return 0.0, "answerable but abstained (FA) -> no answer text; skip gold criteria"
+        if not abstained:
+            return 1.0, "committed -> score answer correctness + faithfulness"
+        return 0.0, "abstained -> no answer text; skip answer scoring"

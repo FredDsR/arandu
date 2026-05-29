@@ -1,21 +1,33 @@
 """``AnswerJudge`` — gated answer-judging pipeline (spec §6.6).
 
-Three stages, run in order:
+Five stages composed as a cascade of single-responsibility gates, so
+each LLM-backed scoring stage runs only when its data dependencies are
+satisfied:
 
-1. ``abstention`` (LLM, ``score`` mode) — always recorded. This is the
-   TA/TC/FA/FC signal the analysis stage reads, so it must survive even
-   when later stages are skipped.
-2. ``commitment_gate`` (heuristic, ``filter`` mode) — passes only for a
-   True-Commitment candidate (answerable + committed). A reject
-   short-circuits the gold-scoring stage. Deterministic, no LLM call.
-3. ``gold_scoring`` (LLM, ``score`` mode) — ``answer_correctness``,
-   ``answer_faithfulness``, ``passage_coverage``. These need a gold
-   answer + a committed answer, so they run only for TC items.
+1. ``abstention`` (LLM, ``score``) — always recorded. The TA/TC/FA/FC
+   signal the analysis stage reads, so it must survive every stage-skip.
+2. ``answerability_gate`` (heuristic, ``filter``) — passes iff the item
+   has a gold answer (``is_answerable=True``). A reject leaves only the
+   abstention score in the result.
+3. ``retrieval_scoring`` (LLM, ``score``) — ``passage_coverage``. A
+   retrieval-quality lens: did the retrieved passages cover the gold
+   answer? Runs for every answerable item (TC + FA); the system's
+   answer text is not consulted, so abstention does not gate it.
+4. ``commitment_gate`` (heuristic, ``filter``) — passes iff the system
+   committed (``abstained=False``). Lives downstream of the
+   answerability gate; reaching it implies the item is answerable.
+5. ``answer_scoring`` (LLM, ``score``) — ``answer_correctness``,
+   ``answer_faithfulness``. Need a committed answer + gold, so they run
+   only for TC.
 
-This gating replaces the earlier "run all four criteria unconditionally"
-composition: it stops scoring correctness/faithfulness on abstained
-answers (where ``answer_text`` is None) per spec §6.1/§6.2, and lets
-non-answerable items be judged on abstention alone (no gold needed).
+This split fixes a TC-only narrowing of ``passage_coverage`` that an
+earlier draft introduced by lumping it with the answer-scoring criteria:
+passage coverage depends only on retrieval + gold, not on commitment.
+
+The whole pipeline still stops scoring ``answer_correctness`` /
+``answer_faithfulness`` on abstained answers (where ``answer_text`` is
+``None``) per spec §6.1/§6.2, and still lets non-answerable items be
+judged on abstention alone (no gold needed).
 
 Note on scope: spec §6.3 also describes a deterministic
 ``offset_coverage`` variant alongside the LLM ``passage_coverage``.
@@ -44,7 +56,10 @@ from arandu.shared.judge import (
     JudgeStep,
     LLMCriterionFactory,
 )
-from arandu.shared.rag.judge_answers.heuristic import CommitmentGateCriterion
+from arandu.shared.rag.judge_answers.heuristic import (
+    AnswerabilityGateCriterion,
+    CommitmentGateCriterion,
+)
 
 if TYPE_CHECKING:
     from arandu.shared.llm_client import LLMClient
@@ -53,12 +68,13 @@ if TYPE_CHECKING:
 
 # Stage 1: the abstention signal, always recorded.
 _ABSTENTION_CRITERIA = ("abstention",)
-# Stage 3: gold-requiring criteria, run only for True-Commitment items.
-# All load from ``prompts/judge/criteria/<name>/``.
-_GOLD_CRITERIA = (
+# Stage 3: retrieval-quality lens, run for every answerable item (TC + FA).
+_RETRIEVAL_CRITERIA = ("passage_coverage",)
+# Stage 5: answer-text quality, run only for True-Commitment items (TC).
+# All LLM criteria load from ``prompts/judge/criteria/<name>/``.
+_ANSWER_CRITERIA = (
     "answer_correctness",
     "answer_faithfulness",
-    "passage_coverage",
 )
 
 
@@ -88,21 +104,31 @@ class AnswerJudge(BaseJudge):
         super().__init__()  # calls _build_pipeline()
 
     def _build_pipeline(self) -> JudgePipeline:
-        """Assemble the abstention -> commitment-gate -> gold-scoring pipeline.
+        """Assemble the cascaded answer-judging pipeline.
 
-        The commitment gate (heuristic, filter mode) sits between the
-        always-recorded abstention stage and the gold-requiring stage, so
-        correctness/faithfulness/passage_coverage run only for True-
-        Commitment items. Stage names are distinct so the analysis stage
-        still finds the ``abstention`` score by criterion name.
+        Two heuristic gates partition the LLM-backed scoring stages on
+        their actual data dependencies:
+
+        - the answerability gate (filter) fronts both retrieval and
+          answer scoring (both need a gold answer);
+        - the commitment gate (filter) fronts answer scoring alone
+          (only the answer-text criteria need a committed answer).
+
+        Stage names are distinct so the analysis stage finds the
+        ``abstention`` score by criterion name regardless of which
+        stages were skipped.
         """
         abstention_step = JudgeStep(criteria=list(_ABSTENTION_CRITERIA), factory=self.factory)
-        gate_step = JudgeStep(criteria=[CommitmentGateCriterion()])
-        gold_step = JudgeStep(criteria=list(_GOLD_CRITERIA), factory=self.factory)
+        answerability_step = JudgeStep(criteria=[AnswerabilityGateCriterion()])
+        retrieval_step = JudgeStep(criteria=list(_RETRIEVAL_CRITERIA), factory=self.factory)
+        commitment_step = JudgeStep(criteria=[CommitmentGateCriterion()])
+        answer_step = JudgeStep(criteria=list(_ANSWER_CRITERIA), factory=self.factory)
         return JudgePipeline(
             stages=[
                 JudgeStage(name="abstention", step=abstention_step, mode="score"),
-                JudgeStage(name="commitment_gate", step=gate_step, mode="filter"),
-                JudgeStage(name="gold_scoring", step=gold_step, mode="score"),
+                JudgeStage(name="answerability_gate", step=answerability_step, mode="filter"),
+                JudgeStage(name="retrieval_scoring", step=retrieval_step, mode="score"),
+                JudgeStage(name="commitment_gate", step=commitment_step, mode="filter"),
+                JudgeStage(name="answer_scoring", step=answer_step, mode="score"),
             ],
         )

@@ -1,9 +1,9 @@
 """Tests for the gated AnswerJudge pipeline (spec §6.6).
 
 Mocks the LLMClient so the real pipeline structure runs (abstention ->
-commitment gate -> gold scoring) without LLM calls. Verifies the
-commitment gate short-circuits the gold-scoring stage for everything
-except a True-Commitment candidate.
+answerability gate -> retrieval scoring -> commitment gate -> answer
+scoring) without LLM calls. Verifies the cascaded gates produce the
+expected per-quadrant criterion coverage.
 """
 
 from __future__ import annotations
@@ -42,44 +42,61 @@ def _kwargs(*, is_answerable: bool, abstained: str) -> dict[str, object]:
 
 
 class TestAnswerJudgePipeline:
-    """The commitment gate gates the gold-scoring stage."""
+    """The cascaded gates partition criteria by their data dependencies."""
 
-    def test_true_commitment_runs_gold_scoring(self) -> None:
+    def test_true_commitment_runs_all_stages(self) -> None:
         judge, _ = _judge()
         result = judge.evaluate(**_kwargs(is_answerable=True, abstained="false"))
         assert result.passed is True
-        assert "abstention" in result.stage_results
-        assert "gold_scoring" in result.stage_results
-        gold = result.stage_results["gold_scoring"].criterion_scores
-        assert set(gold) == {"answer_correctness", "answer_faithfulness", "passage_coverage"}
-        # abstention is always recorded, in its own stage.
-        assert "abstention" in result.stage_results["abstention"].criterion_scores
+        # All five stages recorded; both LLM-scoring stages populated.
+        assert set(result.stage_results) == {
+            "abstention",
+            "answerability_gate",
+            "retrieval_scoring",
+            "commitment_gate",
+            "answer_scoring",
+        }
+        assert "passage_coverage" in result.stage_results["retrieval_scoring"].criterion_scores
+        assert set(result.stage_results["answer_scoring"].criterion_scores) == {
+            "answer_correctness",
+            "answer_faithfulness",
+        }
 
-    def test_answerable_abstained_skips_gold(self) -> None:
+    def test_false_abstention_keeps_passage_coverage(self) -> None:
+        # Answerable + abstained (FA): retrieval can still be evaluated
+        # against the gold answer; only the answer-text scoring stage skips.
         judge, _ = _judge()
         result = judge.evaluate(**_kwargs(is_answerable=True, abstained="true"))
         assert result.passed is False
         assert result.rejected_at == "commitment_gate"
-        assert "abstention" in result.stage_results
-        assert "gold_scoring" not in result.stage_results
+        assert "retrieval_scoring" in result.stage_results
+        assert "passage_coverage" in result.stage_results["retrieval_scoring"].criterion_scores
+        assert "answer_scoring" not in result.stage_results
 
-    def test_nonanswerable_committed_skips_gold(self) -> None:
+    def test_nonanswerable_committed_only_abstention(self) -> None:
         judge, _ = _judge()
         result = judge.evaluate(**_kwargs(is_answerable=False, abstained="false"))
         assert result.passed is False
-        assert "gold_scoring" not in result.stage_results
-        assert "abstention" in result.stage_results["abstention"].criterion_scores
+        assert result.rejected_at == "answerability_gate"
+        assert "abstention" in result.stage_results
+        # Both downstream LLM stages skipped (no gold).
+        assert "retrieval_scoring" not in result.stage_results
+        assert "answer_scoring" not in result.stage_results
 
-    def test_nonanswerable_abstained_skips_gold(self) -> None:
+    def test_nonanswerable_abstained_only_abstention(self) -> None:
         judge, _ = _judge()
         result = judge.evaluate(**_kwargs(is_answerable=False, abstained="true"))
         assert result.passed is False
-        assert "gold_scoring" not in result.stage_results
+        assert result.rejected_at == "answerability_gate"
+        assert "retrieval_scoring" not in result.stage_results
+        assert "answer_scoring" not in result.stage_results
 
-    def test_gate_does_not_call_llm(self) -> None:
-        # On a rejected (non-TC) item only the abstention criterion hits the
-        # LLM; the gate is heuristic and gold scoring is skipped -> exactly
-        # one generate_structured call.
+    def test_non_tc_items_skip_answer_scoring_llm_calls(self) -> None:
+        # FA: 1 LLM call for abstention + 1 for passage_coverage = 2.
+        # Non-answerable (TA/FC): 1 LLM call for abstention only.
         judge, llm = _judge()
+        judge.evaluate(**_kwargs(is_answerable=True, abstained="true"))
+        assert llm.generate_structured.call_count == 2
+        llm.reset_mock()
         judge.evaluate(**_kwargs(is_answerable=False, abstained="true"))
         assert llm.generate_structured.call_count == 1
