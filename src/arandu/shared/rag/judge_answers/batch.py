@@ -288,15 +288,15 @@ def _judge_one(
 ) -> AnswerRecord:
     """Run the gated judge pipeline; attach the verdict to the record.
 
-    Every kwarg below is consumed by at least one stage. The commitment
-    gate reads ``is_answerable`` + ``abstained``; the abstention criterion
-    reads ``abstained`` / ``answer_text`` / ``rationale``; the gold-scoring
-    criteria read ``question`` / ``gold_answer`` / ``context`` / etc.
+    Every kwarg below is consumed by at least one stage. The gates read
+    ``is_answerable`` + ``abstained``; the abstention criterion reads
+    ``abstained`` / ``answer_text`` / ``rationale``; the gold-scoring
+    criteria read ``question`` / ``gold_answer`` / ``passages_text``.
     Criteria that don't reference a given kwarg silently ignore it (LLM
     prompts via ``string.Template.safe_substitute``).
 
     ``gold`` is ``None`` for non-answerable items (no CEP pair); the
-    commitment gate rejects those before the gold criteria run, so the
+    answerability gate rejects those before the gold criteria run, so the
     empty gold fields are never actually consumed.
     """
     passages_text = _format_passages(answer, passage_text)
@@ -309,11 +309,6 @@ def _judge_one(
         passages_text=passages_text,
         question=gold.question if gold is not None else answer.question,
         gold_answer=gold.gold_answer if gold is not None else "",
-        context=gold.context if gold is not None else "",
-        bloom_level=gold.bloom_level if gold is not None else "",
-        question_type=gold.question_type if gold is not None else "",
-        reasoning_trace=(gold.reasoning_trace or "") if gold is not None else "",
-        tacit_inference=(gold.tacit_inference or "") if gold is not None else "",
     )
     return answer.model_copy(update={"validation": pipeline_result})
 

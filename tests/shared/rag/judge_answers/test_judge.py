@@ -33,11 +33,6 @@ def _kwargs(*, is_answerable: bool, abstained: str) -> dict[str, object]:
         "passages_text": "p",
         "question": "Onde Maria mora?",
         "gold_answer": "Em Itaqui.",
-        "context": "Maria mora em Itaqui.",
-        "bloom_level": "remember",
-        "question_type": "factual",
-        "reasoning_trace": "",
-        "tacit_inference": "",
     }
 
 
