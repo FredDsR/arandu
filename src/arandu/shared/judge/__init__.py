@@ -11,6 +11,7 @@ from arandu.shared.judge.criterion import (
     OrdinalCriterionConfig,
     OrdinalCriterionResponse,
     OrdinalLLMCriterion,
+    RangeCriterionResponse,
     RangeLLMCriterion,
 )
 from arandu.shared.judge.factory import LLMCriterionFactory
@@ -45,6 +46,7 @@ __all__ = [
     "OrdinalCriterionConfig",
     "OrdinalCriterionResponse",
     "OrdinalLLMCriterion",
+    "RangeCriterionResponse",
     "RangeLLMCriterion",
     "StageMode",
 ]

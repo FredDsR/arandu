@@ -15,10 +15,10 @@ import pytest
 from pydantic import ValidationError
 
 from arandu.shared.judge.criterion import (
-    CriterionResponse,
     LLMCriterion,
     OrdinalCriterionResponse,
     OrdinalLLMCriterion,
+    RangeCriterionResponse,
     RangeLLMCriterion,
 )
 from arandu.shared.judge.pipeline import JudgePipeline, JudgeStage
@@ -247,7 +247,7 @@ class TestLLMCriterionRouter:
             )
 
     def test_continuous_evaluation_delegated(self, mock_llm_client: Any) -> None:
-        mock_llm_client.generate_structured.return_value = CriterionResponse(
+        mock_llm_client.generate_structured.return_value = RangeCriterionResponse(
             score=0.8, rationale="grounded"
         )
         criterion = LLMCriterion(
@@ -261,7 +261,7 @@ class TestLLMCriterionRouter:
         assert result.score == 0.8
         assert (
             mock_llm_client.generate_structured.call_args.kwargs["response_model"]
-            is CriterionResponse
+            is RangeCriterionResponse
         )
 
     def test_ordinal_evaluation_delegated(self, mock_llm_client: Any) -> None:
@@ -321,7 +321,7 @@ class TestMixedPipeline:
         def _route(**kwargs: Any) -> Any:
             if kwargs["response_model"] is OrdinalCriterionResponse:
                 return OrdinalCriterionResponse(score=2, rationale="reenquadramento")
-            return CriterionResponse(score=0.9, rationale="grounded")
+            return RangeCriterionResponse(score=0.9, rationale="grounded")
 
         mock_llm_client.generate_structured.side_effect = _route
 

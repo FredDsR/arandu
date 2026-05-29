@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from arandu.shared.judge import BaseJudge
-from arandu.shared.judge.criterion import CriterionResponse
+from arandu.shared.judge.criterion import RangeCriterionResponse
 from arandu.shared.llm_client import LLMProvider
 from arandu.transcription.judge import TranscriptionJudge, build_validator_client
 
@@ -100,7 +100,7 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
     client = mocker.MagicMock()
     client.provider.value = "ollama"
     client.model_id = "test-model"
-    client.generate_structured.return_value = CriterionResponse(score=1.0, rationale="clean")
+    client.generate_structured.return_value = RangeCriterionResponse(score=1.0, rationale="clean")
     return client
 
 
@@ -127,11 +127,11 @@ class TestTranscriptionJudgeLLMStage:
         assert mock_llm_client.generate_structured.call_count == 2
 
     def test_llm_stage_rejects_on_drift(self, mock_llm_client: Any) -> None:
-        def _structured_response(**kwargs: Any) -> CriterionResponse:
+        def _structured_response(**kwargs: Any) -> RangeCriterionResponse:
             prompt = kwargs.get("prompt", "")
             if "Language Drift" in prompt or "Linguística" in prompt:
-                return CriterionResponse(score=0.0, rationale="fully English")
-            return CriterionResponse(score=1.0, rationale="no hallucination")
+                return RangeCriterionResponse(score=0.0, rationale="fully English")
+            return RangeCriterionResponse(score=1.0, rationale="no hallucination")
 
         mock_llm_client.generate_structured.side_effect = _structured_response
 

@@ -86,7 +86,7 @@ class LLMCriterionConfig(CriterionConfig):
     """
 
 
-class CriterionResponse(BaseModel):
+class RangeCriterionResponse(BaseModel):
     """Expected structured response from an LLM criterion evaluation."""
 
     score: float
@@ -219,7 +219,7 @@ class BaseLLMCriterion(JudgeCriterion):
     """
 
     SCALE: ClassVar[CriterionScale] = "continuous"
-    RESPONSE_MODEL: ClassVar[type[BaseModel]] = CriterionResponse
+    RESPONSE_MODEL: ClassVar[type[BaseModel]] = RangeCriterionResponse
     CONFIG_CLS: ClassVar[type[BaseCriterionConfig]] = LLMCriterionConfig
     DEFAULT_TEMPERATURE: ClassVar[float] = 0.3
 
@@ -349,7 +349,7 @@ class RangeLLMCriterion(BaseLLMCriterion):
     """Continuous ``[0, 1]`` LLM criterion (the default engine)."""
 
     SCALE: ClassVar[CriterionScale] = "continuous"
-    RESPONSE_MODEL: ClassVar[type[BaseModel]] = CriterionResponse
+    RESPONSE_MODEL: ClassVar[type[BaseModel]] = RangeCriterionResponse
     CONFIG_CLS: ClassVar[type[BaseCriterionConfig]] = LLMCriterionConfig
     DEFAULT_TEMPERATURE: ClassVar[float] = 0.3
 
