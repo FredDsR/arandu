@@ -299,6 +299,7 @@ def _judge_one(
     answerability gate rejects those before the gold criteria run, so the
     empty gold fields are never actually consumed.
     """
+    resolved_passages = _resolve_passage_texts(answer, passage_text)
     passages_text = _format_passages(answer, passage_text)
     pipeline_result = judge.evaluate(
         is_answerable=answer.is_answerable,
@@ -307,29 +308,43 @@ def _judge_one(
         system_answer=answer.answer_text or "",
         rationale=answer.rationale,
         passages_text=passages_text,
+        # Raw joined passage text + payload flag for the deterministic
+        # source_recovery criterion (separate from the LLM-facing
+        # passages_text, which carries "[Passage N]" markers).
+        retrieved_text="\n".join(resolved_passages),
+        passages_are_payload=any(p.payload is not None for p in answer.passages),
         question=gold.question if gold is not None else answer.question,
         gold_answer=gold.gold_answer if gold is not None else "",
+        context=gold.context if gold is not None else "",
     )
     return answer.model_copy(update={"validation": pipeline_result})
 
 
-def _format_passages(answer: AnswerRecord, passage_text: dict[str, str]) -> str:
-    """Format retrieved passages as enumerated text for the LLM prompts.
+def _resolve_passage_texts(answer: AnswerRecord, passage_text: dict[str, str]) -> list[str]:
+    """Resolve each passage to its raw text (payload or chunk lookup).
 
     Honours :attr:`RetrievedPassage.payload` for triple-arm passages
-    (those skip the chunk_id lookup). Unresolvable passages are
-    silently dropped — the judge sees only the passages that have
-    text grounding.
+    (those skip the chunk_id lookup). Unresolvable / empty passages are
+    dropped, so the caller sees only passages that have text grounding.
     """
-    parts: list[str] = []
-    for idx, passage in enumerate(answer.passages, start=1):
-        if passage.payload is not None:
-            text = passage.payload
-        else:
-            text = passage_text.get(passage.chunk_id, "")
-        if not text:
-            continue
-        parts.append(f"[Passage {idx}]:\n{text}\n")
+    texts: list[str] = []
+    for passage in answer.passages:
+        text = (
+            passage.payload
+            if passage.payload is not None
+            else passage_text.get(passage.chunk_id, "")
+        )
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _format_passages(answer: AnswerRecord, passage_text: dict[str, str]) -> str:
+    """Format retrieved passages as enumerated text for the LLM prompts."""
+    parts = [
+        f"[Passage {idx}]:\n{text}\n"
+        for idx, text in enumerate(_resolve_passage_texts(answer, passage_text), start=1)
+    ]
     return "\n".join(parts) if parts else "(no passages available)"
 
 

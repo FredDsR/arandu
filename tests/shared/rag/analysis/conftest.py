@@ -28,6 +28,7 @@ def make_answer(
     correctness_score: float | None = 0.9,
     faithfulness_score: float | None = 0.8,
     passage_coverage_score: float | None = 0.7,
+    source_recovery_score: float | None = None,
 ) -> AnswerRecord:
     """Build a fully judged :class:`AnswerRecord` for analysis tests."""
     criterion_scores: dict[str, CriterionScore] = {
@@ -38,6 +39,9 @@ def make_answer(
         ),
         "passage_coverage": CriterionScore(
             score=passage_coverage_score, threshold=0.5, rationale="r"
+        ),
+        "source_recovery": CriterionScore(
+            score=source_recovery_score, threshold=0.5, rationale="r"
         ),
     }
     validation = JudgePipelineResult(

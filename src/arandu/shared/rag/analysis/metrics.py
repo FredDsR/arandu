@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 _CORRECTNESS = "answer_correctness"
 _FAITHFULNESS = "answer_faithfulness"
 _PASSAGE_COVERAGE = "passage_coverage"
+_SOURCE_RECOVERY = "source_recovery"
 
 
 class ProportionMetric(BaseModel):
@@ -63,6 +64,9 @@ class ArmMetrics(BaseModel):
     answer_faithfulness: MeanMetric
     knowledge_coverage: MeanMetric
     passage_coverage: MeanMetric
+    # Deterministic retrieval source-recovery (prose arms only; payload
+    # arms score None and are excluded from the mean by construction).
+    source_recovery: MeanMetric
 
 
 def aggregate_arm(
@@ -93,6 +97,7 @@ def aggregate_arm(
     faithfulness: list[float] = []
     kc_values: list[float] = []
     passage_cov: list[float] = []
+    source_rec: list[float] = []
 
     for record in records:
         label = classify_record(record)
@@ -111,6 +116,11 @@ def aggregate_arm(
         cov = _criterion_score(record, _PASSAGE_COVERAGE)
         if cov is not None:
             passage_cov.append(cov)
+        # Payload arms / empty-passage records score None here, so they
+        # drop out of the mean automatically (prose arms only).
+        recovery = _criterion_score(record, _SOURCE_RECOVERY)
+        if recovery is not None:
+            source_rec.append(recovery)
 
     ta = confusion.get("TA", 0)
     tc = confusion.get("TC", 0)
@@ -136,6 +146,7 @@ def aggregate_arm(
         answer_faithfulness=_mean(faithfulness),
         knowledge_coverage=_mean(kc_values),
         passage_coverage=_mean(passage_cov),
+        source_recovery=_mean(source_rec),
     )
 
 

@@ -59,6 +59,7 @@ from arandu.shared.judge import (
 from arandu.shared.rag.judge_answers.heuristic import (
     AnswerabilityGateCriterion,
     CommitmentGateCriterion,
+    SourceRecoveryCriterion,
 )
 
 if TYPE_CHECKING:
@@ -114,13 +115,18 @@ class AnswerJudge(BaseJudge):
         - the commitment gate (filter) fronts answer scoring alone
           (only the answer-text criteria need a committed answer).
 
-        Stage names are distinct so the analysis stage finds the
-        ``abstention`` score by criterion name regardless of which
-        stages were skipped.
+        The retrieval-scoring stage mixes the LLM ``passage_coverage``
+        with the deterministic :class:`SourceRecoveryCriterion`
+        (``JudgeStep`` accepts factory-resolved strings + criterion
+        objects in one list). Stage names are distinct so the analysis
+        stage finds scores by criterion name regardless of which stages
+        were skipped.
         """
         abstention_step = JudgeStep(criteria=list(_ABSTENTION_CRITERIA), factory=self.factory)
         answerability_step = JudgeStep(criteria=[AnswerabilityGateCriterion()])
-        retrieval_step = JudgeStep(criteria=list(_RETRIEVAL_CRITERIA), factory=self.factory)
+        retrieval_step = JudgeStep(
+            criteria=[*_RETRIEVAL_CRITERIA, SourceRecoveryCriterion()], factory=self.factory
+        )
         commitment_step = JudgeStep(criteria=[CommitmentGateCriterion()])
         answer_step = JudgeStep(criteria=list(_ANSWER_CRITERIA), factory=self.factory)
         return JudgePipeline(

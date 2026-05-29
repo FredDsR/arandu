@@ -119,3 +119,22 @@ class TestAggregateArm:
         metrics = aggregate_arm("bm25", records)
         assert metrics.knowledge_coverage.mean is not None
         assert abs(metrics.knowledge_coverage.mean - 0.4) < 1e-9
+
+    def test_source_recovery_mean_excludes_none(self) -> None:
+        # Two prose records carry source_recovery; one payload/null-style
+        # record carries None and must be excluded from the mean.
+        records = [
+            make_answer(qa_pair_id="r:c:0", source_recovery_score=0.6),
+            make_answer(qa_pair_id="r:c:1", source_recovery_score=0.8),
+            make_answer(qa_pair_id="r:c:2", source_recovery_score=None),
+        ]
+        metrics = aggregate_arm("bm25", records)
+        assert metrics.source_recovery.n == 2
+        assert metrics.source_recovery.mean is not None
+        assert abs(metrics.source_recovery.mean - 0.7) < 1e-9
+
+    def test_source_recovery_all_none_yields_none(self) -> None:
+        records = [make_answer(qa_pair_id="r:c:0", source_recovery_score=None)]
+        metrics = aggregate_arm("bm25", records)
+        assert metrics.source_recovery.mean is None
+        assert metrics.source_recovery.n == 0

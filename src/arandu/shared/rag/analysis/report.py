@@ -64,9 +64,11 @@ def _table_1_joint(joint: dict[str, ArmMetrics]) -> str:
         "## Table 1 - Per-arm joint-benchmark metrics\n"
         "\n"
         "| Arm | n_answerable | n_nonanswerable | KC ↑ | Hallucination ↓ "
-        "| Over-caution ↓ | Abstention F1 ↑ | Passage cov (judge) ↑ |\n"
+        "| Over-caution ↓ | Abstention F1 ↑ | Passage cov (judge) ↑ "
+        "| Source recovery (prose) ↑ |\n"
         "|-----|--------------|-----------------|------|-----------------"
-        "|----------------|-----------------|-----------------------|"
+        "|----------------|-----------------|-----------------------"
+        "|---------------------------|"
     )
     rows = [header]
     for arm in sorted(joint):
@@ -79,7 +81,8 @@ def _table_1_joint(joint: dict[str, ArmMetrics]) -> str:
             f"| {_fmt_prop_ci(m.hallucination_rate)} "
             f"| {_fmt_prop_ci(m.over_cautiousness_rate)} "
             f"| {_fmt_mean(m.abstention_f1)} "
-            f"| {_fmt_mean(m.passage_coverage.mean)} |"
+            f"| {_fmt_mean(m.passage_coverage.mean)} "
+            f"| {_fmt_mean(m.source_recovery.mean)} |"
         )
     return "\n".join(rows)
 
@@ -144,4 +147,5 @@ def _empty() -> ArmMetrics:
         answer_faithfulness=zero_mean,
         knowledge_coverage=zero_mean,
         passage_coverage=zero_mean,
+        source_recovery=zero_mean,
     )

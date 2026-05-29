@@ -1,4 +1,4 @@
-"""Heuristic (non-LLM) gate criteria for the answer judge (spec §6).
+"""Heuristic (non-LLM) criteria for the answer judge (spec §6).
 
 Two single-responsibility gates compose into a cascade that gates the
 LLM-backed scoring stages on their actual data dependencies:
@@ -20,13 +20,22 @@ scoring); FA passes the first gate but is stopped at the commitment
 gate (skip answer scoring only; passage_coverage still runs because
 retrieval can be evaluated against the gold answer regardless of
 whether the system used it); TC passes both gates.
+
+This module also hosts :class:`SourceRecoveryCriterion`, a deterministic
+*scoring* criterion (not a gate) that lives in the retrieval-scoring
+stage alongside the LLM ``passage_coverage``.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from arandu.shared.judge.criterion import HeuristicCriterion
+from arandu.shared.judge.schemas import CriterionScore
+from arandu.shared.rag.retrievers._bm25_tokenize import portuguese_tokenizer
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class AnswerabilityGateCriterion(HeuristicCriterion):
@@ -85,3 +94,93 @@ class CommitmentGateCriterion(HeuristicCriterion):
         if not abstained:
             return 1.0, "committed -> score answer correctness + faithfulness"
         return 0.0, "abstained -> no answer text; skip answer scoring"
+
+
+class SourceRecoveryCriterion(HeuristicCriterion):
+    """Deterministic retrieval source-recovery (spec §6.3 lineage).
+
+    Set-precision (containment) of the retrieved passages' content tokens
+    within the CEP source ``context`` the QA pair was generated from:
+
+        score = |tokens(retrieved) ∩ tokens(context)| / |tokens(retrieved)|
+
+    This is a retrieval-*targeting* lens distinct from the LLM
+    ``passage_coverage`` (which asks semantically whether the passages
+    support the gold answer): did the retriever recover the actual source
+    span? It runs in the retrieval-scoring stage, for every answerable
+    item (TC + FA), and never gates.
+
+    Containment, not symmetric F1, on purpose: the source ``context`` is a
+    large generation-time chunk while a retrieved passage is a shorter
+    span, so a perfect retriever returns a *subset* and symmetric overlap
+    would be capped low by the length mismatch. Precision answers "is what
+    I retrieved drawn from the right source?".
+
+    Returns ``score=None`` (not ``0.0``) for the cases where the metric is
+    undefined or would bias the cross-arm comparison, so the analysis mean
+    excludes them:
+
+    - **payload arms** (e.g. ``KHopTripleRetriever``): linearized triples
+      are not source prose, so token overlap is structurally near-zero
+      regardless of relevance — the same bias that kept the deterministic
+      ``offset_coverage`` variant out of the pipeline.
+    - **no retrieved passages** (e.g. ``NullRetriever``): empty denominator.
+    - **no source context**: empty denominator on the gold side.
+
+    Tokenization reuses the BM25 Portuguese tokenizer (lemma + stopword
+    removal), so containment is over content words, not surface forms or
+    stopwords.
+    """
+
+    def __init__(self, *, threshold: float = 0.5) -> None:
+        """Initialise the criterion and build the tokenizer once."""
+        super().__init__(name="source_recovery", threshold=threshold)
+        self._tokenize: Callable[[str], list[str]] = portuguese_tokenizer()
+
+    def _check(self, **kwargs: Any) -> tuple[float, str]:
+        """Unused: :meth:`_evaluate_impl` is overridden to express the
+        not-applicable (``score=None``) cases a ``(float, str)`` cannot."""
+        raise NotImplementedError  # pragma: no cover
+
+    def _evaluate_impl(self, **kwargs: Any) -> CriterionScore:
+        """Compute containment, or ``score=None`` for the undefined cases.
+
+        Args:
+            **kwargs: Reads ``passages_are_payload`` (bool),
+                ``retrieved_text`` (raw joined passage text), and
+                ``context`` (gold source span).
+
+        Returns:
+            CriterionScore with the containment fraction, or ``score=None``
+            for payload arms / empty passages / empty context.
+        """
+        if bool(kwargs.get("passages_are_payload", False)):
+            return CriterionScore(
+                score=None,
+                threshold=self.threshold,
+                rationale="payload arm (non-prose passages); source-recovery N/A",
+            )
+        retrieved_tokens = set(self._tokenize(str(kwargs.get("retrieved_text", ""))))
+        context_tokens = set(self._tokenize(str(kwargs.get("context", ""))))
+        if not retrieved_tokens:
+            return CriterionScore(
+                score=None,
+                threshold=self.threshold,
+                rationale="no retrieved passages; source-recovery undefined",
+            )
+        if not context_tokens:
+            return CriterionScore(
+                score=None,
+                threshold=self.threshold,
+                rationale="no source context; source-recovery undefined",
+            )
+        overlap = len(retrieved_tokens & context_tokens)
+        containment = overlap / len(retrieved_tokens)
+        return CriterionScore(
+            score=containment,
+            threshold=self.threshold,
+            rationale=(
+                f"{overlap}/{len(retrieved_tokens)} retrieved content tokens "
+                f"found in source context"
+            ),
+        )
