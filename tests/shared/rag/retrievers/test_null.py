@@ -1,4 +1,4 @@
-"""Tests for shared/rag/retrievers/null.py — NullRetriever parametric arm."""
+"""Tests for shared/rag/retrievers/null.py (NullRetriever abstention baseline)."""
 
 from __future__ import annotations
 
