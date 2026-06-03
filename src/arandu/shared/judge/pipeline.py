@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from arandu.shared.judge.schemas import JudgePipelineResult, JudgeStepResult, StageMode
 from arandu.shared.judge.step import JudgeStep  # noqa: TC001 (Pydantic needs runtime access)
@@ -37,6 +37,26 @@ class JudgeStage(BaseModel):
     mode: StageMode = "score"
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="after")
+    def _reject_ordinal_in_filter(self) -> JudgeStage:
+        """Forbid ordinal (score-mode-only) criteria in a filter stage.
+
+        An ordinal criterion's ``passed`` is always True on success (no
+        continuous gate), so in a filter stage it would silently never reject.
+        Threshold-based ordinal filtering is a separate, deferred step; until
+        then this misconfiguration fails loudly at construction.
+        """
+        if self.mode == "filter":
+            ordinal = [
+                c.name for c in self.step.criteria if getattr(c, "scale", "continuous") == "ordinal"
+            ]
+            if ordinal:
+                raise ValueError(
+                    f"Filter-mode stage '{self.name}' contains ordinal criteria "
+                    f"{ordinal}; ordinal criteria run in score mode only."
+                )
+        return self
 
 
 class JudgePipeline:

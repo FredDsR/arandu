@@ -19,10 +19,28 @@ StageMode = Literal["filter", "score", "always"]
 """
 
 
-class CriterionScore(BaseModel):
-    """Result of a single criterion evaluation."""
+CriterionScale = Literal["continuous", "ordinal"]
+"""Which scale a criterion's result lives on.
 
-    score: float | None
+- ``"continuous"`` -- ``score`` holds a float in ``[0, 1]`` (default; the
+  classic LLM/heuristic criterion).
+- ``"ordinal"``    -- ``ordinal_score`` holds an integer label (e.g. ``{1..5}``);
+  ``score`` is unused. The continuous ``threshold`` does not gate ordinal
+  criteria, which run in ``score`` mode (any downstream filter threshold is
+  applied separately).
+"""
+
+
+class CriterionScore(BaseModel):
+    """Result of a single criterion evaluation.
+
+    Carries either a continuous ``score`` or an ``ordinal_score``, selected by
+    ``scale``. Continuous is the default so existing criteria are unaffected.
+    """
+
+    score: float | None = None
+    ordinal_score: int | None = None
+    scale: CriterionScale = "continuous"
     threshold: float
     rationale: str
     thinking: str | None = None
@@ -30,8 +48,18 @@ class CriterionScore(BaseModel):
 
     @property
     def passed(self) -> bool:
-        """Whether the score meets the threshold. Always False on error."""
-        if self.error is not None or self.score is None:
+        """Whether the criterion is satisfied. Always False on error.
+
+        For continuous criteria this is ``score >= threshold``. Ordinal
+        criteria run in score mode (no continuous gate), so a successful
+        evaluation counts as passed; any emic filter threshold is applied
+        downstream, not here.
+        """
+        if self.error is not None:
+            return False
+        if self.scale == "ordinal":
+            return self.ordinal_score is not None
+        if self.score is None:
             return False
         return self.score >= self.threshold
 

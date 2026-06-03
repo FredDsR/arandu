@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from arandu.shared.judge.criterion import CriterionResponse
+from arandu.shared.judge.criterion import RangeCriterionResponse
 from arandu.shared.rag.judge_answers.judge import AnswerJudge
 from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
 
@@ -18,7 +18,7 @@ from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
 def _judge() -> tuple[AnswerJudge, MagicMock]:
     """Build an AnswerJudge whose LLM criteria all return a fixed score."""
     llm = MagicMock()
-    llm.generate_structured.return_value = CriterionResponse(score=0.8, rationale="ok")
+    llm.generate_structured.return_value = RangeCriterionResponse(score=0.8, rationale="ok")
     judge = AnswerJudge(llm_client=llm, settings=JudgeAnswersSettings(provider="ollama"))
     return judge, llm
 

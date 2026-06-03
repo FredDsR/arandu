@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from pydantic import ValidationError
 
-from arandu.shared.judge.criterion import CriterionResponse, HeuristicCriterion, LLMCriterion
+from arandu.shared.judge.criterion import HeuristicCriterion, LLMCriterion, RangeCriterionResponse
 from arandu.shared.judge.schemas import CriterionScore
 from arandu.shared.llm_client import StructuredOutputError
 
@@ -146,7 +146,7 @@ class TestLLMCriterion:
         mock_llm_client: Any,
     ) -> None:
         """Test successful evaluation."""
-        mock_llm_client.generate_structured.return_value = CriterionResponse(
+        mock_llm_client.generate_structured.return_value = RangeCriterionResponse(
             score=0.8, rationale="Good quality"
         )
 
@@ -174,14 +174,14 @@ class TestLLMCriterion:
         mock_llm_client.generate_structured.assert_called_once()
         call_kwargs = mock_llm_client.generate_structured.call_args.kwargs
         assert call_kwargs["temperature"] == 0.3
-        assert call_kwargs["response_model"] is CriterionResponse
+        assert call_kwargs["response_model"] is RangeCriterionResponse
 
     def test_evaluate_builds_prompt_with_kwargs(
         self,
         mock_llm_client: Any,
     ) -> None:
         """Test that evaluate passes kwargs to prompt building."""
-        mock_llm_client.generate_structured.return_value = CriterionResponse(
+        mock_llm_client.generate_structured.return_value = RangeCriterionResponse(
             score=0.7, rationale="Decent"
         )
 
@@ -267,7 +267,7 @@ class TestLLMCriterion:
         mock_llm_client: Any,
     ) -> None:
         """Test that scores outside [0, 1] are clamped."""
-        mock_llm_client.generate_structured.return_value = CriterionResponse(
+        mock_llm_client.generate_structured.return_value = RangeCriterionResponse(
             score=1.5, rationale="Too high"
         )
 
@@ -291,7 +291,7 @@ class TestLLMCriterion:
         mock_llm_client: Any,
     ) -> None:
         """Test that negative scores are clamped to 0."""
-        mock_llm_client.generate_structured.return_value = CriterionResponse(
+        mock_llm_client.generate_structured.return_value = RangeCriterionResponse(
             score=-0.5, rationale="Too low"
         )
 
@@ -315,7 +315,7 @@ class TestLLMCriterion:
         mock_llm_client: Any,
     ) -> None:
         """Test evaluation with criterion-specific extra parameters."""
-        mock_llm_client.generate_structured.return_value = CriterionResponse(
+        mock_llm_client.generate_structured.return_value = RangeCriterionResponse(
             score=0.6, rationale="OK"
         )
 

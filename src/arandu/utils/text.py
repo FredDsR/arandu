@@ -84,6 +84,41 @@ def validate_score(value: Any, default: float = 0.5) -> float:
         return default
 
 
+def validate_ordinal_score(value: Any, low: int = 1, high: int = 5, default: int = 3) -> int:
+    """Validate and clamp an ordinal score to the integer range ``[low, high]``.
+
+    Coerces whole-number floats (``5.0``) to ``int`` and clamps out-of-range
+    values to the nearest bound. Non-numeric or fractional values fall back to
+    ``default``. Used as a safety net after an LLM returns an ordinal label.
+
+    Args:
+        value: Raw score value from an LLM response.
+        low: Inclusive lower bound of the ordinal scale.
+        high: Inclusive upper bound of the ordinal scale.
+        default: Fallback score when value is not a whole number.
+
+    Returns:
+        Integer score clamped to ``[low, high]``.
+
+    Examples:
+        >>> validate_ordinal_score(4)
+        4
+        >>> validate_ordinal_score(5.0)
+        5
+        >>> validate_ordinal_score(9)
+        5
+        >>> validate_ordinal_score("not_a_number")
+        3
+    """
+    try:
+        as_float = float(value)
+    except (ValueError, TypeError):
+        return max(low, min(high, default))
+    if not as_float.is_integer():
+        return max(low, min(high, default))
+    return max(low, min(high, int(as_float)))
+
+
 def strip_markdown_codeblock(text: str) -> str:
     """Remove markdown code block wrappers from text.
 
