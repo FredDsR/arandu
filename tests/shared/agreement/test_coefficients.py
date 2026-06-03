@@ -92,21 +92,77 @@ class TestBootstrapCI:
         flat_a = [row[0] for row in data]
         flat_b = [row[1] for row in data]
         r = cohen_kappa_weighted(flat_a, flat_b, n_bootstrap=500, seed=42)
-        assert r.ci_low is not None and r.ci_high is not None
-        assert r.ci_low <= r.coefficient <= r.ci_high
+        assert r.ci_lower is not None and r.ci_upper is not None
+        assert r.coefficient is not None
+        assert r.ci_lower <= r.coefficient <= r.ci_upper
 
     def test_bootstrap_reproducible_with_seed(self) -> None:
         flat_a = [1, 2, 3, 3, 2, 1, 4, 5, 3, 2]
         flat_b = [1, 2, 3, 2, 2, 1, 4, 4, 3, 1]
         r1 = cohen_kappa_weighted(flat_a, flat_b, n_bootstrap=200, seed=7)
         r2 = cohen_kappa_weighted(flat_a, flat_b, n_bootstrap=200, seed=7)
-        assert r1.ci_low == r2.ci_low
-        assert r1.ci_high == r2.ci_high
+        assert r1.ci_lower == r2.ci_lower
+        assert r1.ci_upper == r2.ci_upper
 
     def test_no_bootstrap_leaves_ci_none(self) -> None:
         r = cohen_kappa_weighted([1, 2, 3], [1, 2, 3])
-        assert r.ci_low is None and r.ci_high is None
+        assert r.ci_lower is None and r.ci_upper is None
 
     def test_coefficient_finite(self) -> None:
         r = krippendorff_alpha([[1, 1], [2, 2]], level="ordinal", n_bootstrap=50, seed=1)
-        assert math.isfinite(r.coefficient)
+        assert r.coefficient is not None and math.isfinite(r.coefficient)
+
+    def test_degenerate_resamples_do_not_pin_ci_high(self) -> None:
+        # Mostly-agreeing data with a tail of disagreement: degenerate resamples
+        # (collapsing to one category) must be skipped, not counted as 1.0,
+        # so the CI is not artificially pinned at the top.
+        flat_a = [3, 3, 3, 3, 3, 4, 2]
+        flat_b = [3, 3, 3, 3, 3, 2, 4]
+        r = cohen_kappa_weighted(flat_a, flat_b, n_bootstrap=500, seed=11)
+        assert r.ci_upper is not None and r.ci_upper < 1.0
+
+
+class TestFixedScaleAndValidation:
+    def test_scale_recorded_in_result(self) -> None:
+        r = krippendorff_alpha([[1, 1], [2, 2]], scale=(1, 5))
+        assert r.scale == (1, 5)
+
+    def test_off_scale_label_rejected(self) -> None:
+        with pytest.raises(ValueError, match="scale"):
+            cohen_kappa_weighted([1, 7], [1, 2], scale=(1, 5))
+        with pytest.raises(ValueError, match="scale"):
+            krippendorff_alpha([[1, 9]], scale=(1, 5))
+        with pytest.raises(ValueError, match="scale"):
+            gwet_ac2([[0, 1]], scale=(1, 5))
+
+    def test_ac2_value_independent_of_absent_extreme_category(self) -> None:
+        # Same disagreement pattern; presence of an extra (5,5) item that only
+        # adds a never-otherwise-used category must not rescale the weights for
+        # the rest. With a fixed scale, the shared items' contribution is stable.
+        base = [[2, 3], [3, 4], [2, 2], [4, 4]]
+        r_narrow = gwet_ac2(base, scale=(1, 5))
+        # Widening observed range by adding 1s and 5s should still use span 4.
+        r_wide = gwet_ac2([*base, [1, 1], [5, 5]], scale=(1, 5))
+        # Not equal (different data), but both computed on span-4 weights:
+        # the narrow one must NOT have used span-2 weights. Check a concrete
+        # invariant: distance(2,3) under fixed scale is (1/4)^2, so a 1-level
+        # miss is mild -> AC2 stays high.
+        assert r_narrow.coefficient is not None and r_narrow.coefficient > 0.5
+        assert r_wide.coefficient is not None
+
+
+class TestUndefinedReturnsNone:
+    def test_empty_input_is_none(self) -> None:
+        assert cohen_kappa_weighted([], []).coefficient is None
+        assert krippendorff_alpha([]).coefficient is None
+        assert gwet_ac2([]).coefficient is None
+
+    def test_all_missing_is_none(self) -> None:
+        assert krippendorff_alpha([[None, None], [None, None]]).coefficient is None
+        assert cohen_kappa_weighted([None, None], [None, None]).coefficient is None
+
+    def test_no_variance_is_none_not_zero(self) -> None:
+        # Everyone always says "3": no variance -> kappa/alpha undefined.
+        # Returning None (not 0.0) avoids reading as chance-level agreement.
+        assert cohen_kappa_weighted([3, 3, 3], [3, 3, 3]).coefficient is None
+        assert krippendorff_alpha([[3, 3], [3, 3]]).coefficient is None

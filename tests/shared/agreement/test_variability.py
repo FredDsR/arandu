@@ -27,3 +27,9 @@ class TestHighVariabilityItems:
 
     def test_empty_input(self) -> None:
         assert high_variability_items([], min_spread=2) == []
+
+    def test_rejects_non_positive_threshold(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="min_spread"):
+            high_variability_items([[3, 3]], min_spread=0)

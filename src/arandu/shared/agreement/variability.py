@@ -32,6 +32,8 @@ def high_variability_items(
     Returns:
         Sorted list of item indices meeting or exceeding the threshold.
     """
+    if min_spread < 1:
+        raise ValueError(f"min_spread must be >= 1, got {min_spread}")
     flagged: list[int] = []
     for idx, item in enumerate(ratings):
         present = [r for r in item if r is not None]
