@@ -42,6 +42,11 @@ class JudgeStep:
         """
         self._criteria = self._resolve_criteria(criteria, factory)
 
+    @property
+    def criteria(self) -> list[JudgeCriterion]:
+        """The resolved criteria this step evaluates."""
+        return self._criteria
+
     @staticmethod
     def _resolve_criteria(
         criteria: list[JudgeCriterion | str],

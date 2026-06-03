@@ -109,6 +109,15 @@ class JudgeCriterion(ABC):
         self.name = name
         self.threshold = threshold
 
+    @property
+    def scale(self) -> CriterionScale:
+        """Scale of this criterion's score. Continuous unless overridden.
+
+        Used by the pipeline to reject score-mode-only (ordinal) criteria from
+        filter stages.
+        """
+        return "continuous"
+
     def evaluate(self, **kwargs: Any) -> CriterionScore:
         """Evaluate content against this criterion.
 
@@ -218,9 +227,12 @@ class BaseLLMCriterion(JudgeCriterion):
         max_tokens: Maximum tokens for response.
     """
 
-    SCALE: ClassVar[CriterionScale] = "continuous"
-    RESPONSE_MODEL: ClassVar[type[BaseModel]] = RangeCriterionResponse
-    CONFIG_CLS: ClassVar[type[BaseCriterionConfig]] = LLMCriterionConfig
+    # Set by concrete engines (RangeLLMCriterion / OrdinalLLMCriterion). Left
+    # unset on the base so a new engine that forgets to declare them fails
+    # loudly (AttributeError) rather than silently inheriting continuous values.
+    SCALE: ClassVar[CriterionScale]
+    RESPONSE_MODEL: ClassVar[type[BaseModel]]
+    CONFIG_CLS: ClassVar[type[BaseCriterionConfig]]
     DEFAULT_TEMPERATURE: ClassVar[float] = 0.3
 
     def __init__(
@@ -238,6 +250,10 @@ class BaseLLMCriterion(JudgeCriterion):
         self.prompt_template = prompt_template
         self.temperature = self.DEFAULT_TEMPERATURE if temperature is None else temperature
         self.max_tokens = max_tokens
+
+    @property
+    def scale(self) -> CriterionScale:
+        return self.SCALE
 
     @staticmethod
     def _load_prompt_and_config(
@@ -346,12 +362,14 @@ class BaseLLMCriterion(JudgeCriterion):
 
 
 class RangeLLMCriterion(BaseLLMCriterion):
-    """Continuous ``[0, 1]`` LLM criterion (the default engine)."""
+    """Continuous ``[0, 1]`` LLM criterion (the default engine).
+
+    Inherits ``DEFAULT_TEMPERATURE = 0.3`` from the base.
+    """
 
     SCALE: ClassVar[CriterionScale] = "continuous"
     RESPONSE_MODEL: ClassVar[type[BaseModel]] = RangeCriterionResponse
     CONFIG_CLS: ClassVar[type[BaseCriterionConfig]] = LLMCriterionConfig
-    DEFAULT_TEMPERATURE: ClassVar[float] = 0.3
 
     def _score_from_response(self, response: Any) -> CriterionScore:
         return CriterionScore(
@@ -444,7 +462,6 @@ class LLMCriterion(BaseLLMCriterion):
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        self.scale = scale
         super().__init__(
             name,
             llm_client,
@@ -453,6 +470,11 @@ class LLMCriterion(BaseLLMCriterion):
             temperature=self._engine.temperature,
             max_tokens=max_tokens,
         )
+
+    @property
+    def scale(self) -> CriterionScale:
+        """Derived from the delegate engine (single source of truth)."""
+        return self._engine.scale
 
     @classmethod
     def from_config(

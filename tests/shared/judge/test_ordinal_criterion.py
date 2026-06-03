@@ -81,6 +81,11 @@ class TestValidateOrdinalScore:
     def test_custom_default(self) -> None:
         assert validate_ordinal_score(None, default=2) == 2
 
+    def test_default_is_clamped_to_range(self) -> None:
+        # An out-of-range default must still honor the [low, high] contract.
+        assert validate_ordinal_score("garbage", low=1, high=4, default=9) == 4
+        assert validate_ordinal_score("garbage", low=2, high=5, default=0) == 2
+
 
 class TestCriterionScoreOrdinal:
     """CriterionScore carries ordinal results alongside continuous ones."""
@@ -344,3 +349,32 @@ class TestMixedPipeline:
         restored_emic = restored.stage_results["emic"].criterion_scores["emic_validity"]
         assert restored_emic.ordinal_score == 2
         assert restored_emic.scale == "ordinal"
+
+
+class TestScaleAccessor:
+    """Every criterion exposes a uniform `scale`; ordinal-in-filter is rejected."""
+
+    def test_continuous_criterion_scale(self, mock_llm_client: Any) -> None:
+        cont = LLMCriterion(name="f", llm_client=mock_llm_client, prompt_template="$x")
+        assert cont.scale == "continuous"
+
+    def test_ordinal_engine_scale(self, mock_llm_client: Any) -> None:
+        emic = OrdinalLLMCriterion(name="e", llm_client=mock_llm_client, prompt_template="$x")
+        assert emic.scale == "ordinal"
+
+    def test_router_scale_tracks_engine(self, mock_llm_client: Any) -> None:
+        # scale is derived from the engine, not stored separately.
+        router = LLMCriterion(
+            name="e", llm_client=mock_llm_client, prompt_template="$x", scale="ordinal"
+        )
+        assert router.scale == router._engine.scale == "ordinal"
+
+    def test_ordinal_criterion_in_filter_stage_rejected(self, mock_llm_client: Any) -> None:
+        emic = OrdinalLLMCriterion(name="e", llm_client=mock_llm_client, prompt_template="$x")
+        with pytest.raises(ValueError, match="ordinal"):
+            JudgeStage(name="bad", step=JudgeStep([emic]), mode="filter")
+
+    def test_ordinal_criterion_in_score_stage_allowed(self, mock_llm_client: Any) -> None:
+        emic = OrdinalLLMCriterion(name="e", llm_client=mock_llm_client, prompt_template="$x")
+        stage = JudgeStage(name="ok", step=JudgeStep([emic]), mode="score")
+        assert stage.mode == "score"

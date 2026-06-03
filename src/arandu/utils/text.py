@@ -113,9 +113,9 @@ def validate_ordinal_score(value: Any, low: int = 1, high: int = 5, default: int
     try:
         as_float = float(value)
     except (ValueError, TypeError):
-        return default
+        return max(low, min(high, default))
     if not as_float.is_integer():
-        return default
+        return max(low, min(high, default))
     return max(low, min(high, int(as_float)))
 
 
