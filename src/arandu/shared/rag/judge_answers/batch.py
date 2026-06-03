@@ -72,7 +72,7 @@ def run_judge_answers_batch(
     base_dir: Path | None = None,
     rejudge: bool = False,
 ) -> JudgeAnswersBatchResult:
-    """Run the 4-criterion LLM judge over every ``AnswerRecord`` for ``pipeline_id``.
+    """Run the gated answer-judge pipeline over every ``AnswerRecord`` for ``pipeline_id``.
 
     Args:
         pipeline_id: Run identifier. The answers stage must be populated.
@@ -288,48 +288,68 @@ def _judge_one(
 ) -> AnswerRecord:
     """Run the gated judge pipeline; attach the verdict to the record.
 
-    Every kwarg below is consumed by at least one stage. The gates read
-    ``is_answerable`` + ``abstained``; the abstention criterion reads
-    ``abstained`` / ``answer_text`` / ``rationale``; the gold-scoring
-    criteria read ``question`` / ``gold_answer`` / ``passages_text``.
-    Criteria that don't reference a given kwarg silently ignore it (LLM
-    prompts via ``string.Template.safe_substitute``).
+    Every kwarg below is consumed by at least one stage. Criteria that
+    don't reference a given kwarg silently ignore it (LLM prompts via
+    ``string.Template.safe_substitute``; heuristics via ``kwargs.get``):
+
+    - gates: ``is_answerable`` (answerability) + ``abstained`` (commitment);
+    - ``abstention``: ``abstained`` / ``answer_text`` / ``rationale``;
+    - ``passage_coverage`` / ``answer_correctness`` / ``answer_faithfulness``:
+      ``question`` / ``gold_answer`` / ``system_answer`` / ``passages_text``;
+    - ``source_recovery`` (heuristic): ``retrieved_text`` (raw joined
+      passage text, no ``[Passage N]`` markers) / ``context`` /
+      ``passages_are_payload``.
 
     ``gold`` is ``None`` for non-answerable items (no CEP pair); the
     answerability gate rejects those before the gold criteria run, so the
     empty gold fields are never actually consumed.
     """
-    passages_text = _format_passages(answer, passage_text)
+    resolved_passages = _resolve_passage_texts(answer, passage_text)
     pipeline_result = judge.evaluate(
         is_answerable=answer.is_answerable,
         abstained=str(answer.abstained).lower(),
         answer_text=answer.answer_text or "",
         system_answer=answer.answer_text or "",
         rationale=answer.rationale,
-        passages_text=passages_text,
+        passages_text=_format_passages(resolved_passages),
+        # Raw joined passage text + payload flag for the deterministic
+        # source_recovery criterion (separate from the LLM-facing
+        # passages_text, which carries "[Passage N]" markers).
+        retrieved_text="\n".join(resolved_passages),
+        passages_are_payload=any(p.payload is not None for p in answer.passages),
         question=gold.question if gold is not None else answer.question,
         gold_answer=gold.gold_answer if gold is not None else "",
+        context=gold.context if gold is not None else "",
     )
     return answer.model_copy(update={"validation": pipeline_result})
 
 
-def _format_passages(answer: AnswerRecord, passage_text: dict[str, str]) -> str:
-    """Format retrieved passages as enumerated text for the LLM prompts.
+def _resolve_passage_texts(answer: AnswerRecord, passage_text: dict[str, str]) -> list[str]:
+    """Resolve each passage to its raw text (payload or chunk lookup).
 
     Honours :attr:`RetrievedPassage.payload` for triple-arm passages
-    (those skip the chunk_id lookup). Unresolvable passages are
-    silently dropped — the judge sees only the passages that have
-    text grounding.
+    (those skip the chunk_id lookup). Unresolvable / empty passages are
+    dropped, so the caller sees only passages that have text grounding.
     """
-    parts: list[str] = []
-    for idx, passage in enumerate(answer.passages, start=1):
-        if passage.payload is not None:
-            text = passage.payload
-        else:
-            text = passage_text.get(passage.chunk_id, "")
-        if not text:
-            continue
-        parts.append(f"[Passage {idx}]:\n{text}\n")
+    texts: list[str] = []
+    for passage in answer.passages:
+        text = (
+            passage.payload
+            if passage.payload is not None
+            else passage_text.get(passage.chunk_id, "")
+        )
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _format_passages(resolved_passages: list[str]) -> str:
+    """Format already-resolved passage texts as enumerated LLM-prompt text.
+
+    Takes the output of :func:`_resolve_passage_texts` so the caller
+    resolves once and reuses it (the raw join also feeds ``source_recovery``).
+    """
+    parts = [f"[Passage {idx}]:\n{text}\n" for idx, text in enumerate(resolved_passages, start=1)]
     return "\n".join(parts) if parts else "(no passages available)"
 
 

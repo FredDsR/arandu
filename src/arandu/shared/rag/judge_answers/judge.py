@@ -29,9 +29,9 @@ The whole pipeline still stops scoring ``answer_correctness`` /
 ``None``) per spec §6.1/§6.2, and still lets non-answerable items be
 judged on abstention alone (no gold needed).
 
-Note on scope: spec §6.3 also describes a deterministic
-``offset_coverage`` variant alongside the LLM ``passage_coverage``.
-The deterministic variant is intentionally **not** wired here:
+Note on scope: spec §6.3 also describes a deterministic *byte-offset*
+``offset_coverage`` variant alongside the LLM ``passage_coverage``. That
+specific variant is intentionally **not** wired here:
 
 - The thesis's research question is semantic ("did retrieval support a
   faithful tacit-knowledge answer?"), not extractive (literal-byte
@@ -43,6 +43,12 @@ The deterministic variant is intentionally **not** wired here:
   it, so its only role would be downstream analysis — and a standalone
   script can recompute char-overlap from the persisted records if a
   robustness sanity check ever needs it.
+
+A *different* deterministic criterion, :class:`SourceRecoveryCriterion`,
+**is** wired into the retrieval-scoring stage: it is token-containment
+against the gold ``context`` (not byte offsets), returns ``None`` for the
+payload arms that the offset variant would have biased, and is reported
+as a prose-arms-only diagnostic that does not feed ``KC``.
 """
 
 from __future__ import annotations
@@ -59,6 +65,7 @@ from arandu.shared.judge import (
 from arandu.shared.rag.judge_answers.heuristic import (
     AnswerabilityGateCriterion,
     CommitmentGateCriterion,
+    SourceRecoveryCriterion,
 )
 
 if TYPE_CHECKING:
@@ -114,13 +121,22 @@ class AnswerJudge(BaseJudge):
         - the commitment gate (filter) fronts answer scoring alone
           (only the answer-text criteria need a committed answer).
 
-        Stage names are distinct so the analysis stage finds the
-        ``abstention`` score by criterion name regardless of which
-        stages were skipped.
+        The retrieval-scoring stage mixes the LLM ``passage_coverage``
+        with the deterministic :class:`SourceRecoveryCriterion`
+        (``JudgeStep`` accepts factory-resolved strings + criterion
+        objects in one list). Stage names are distinct so the analysis
+        stage finds scores by criterion name regardless of which stages
+        were skipped.
         """
         abstention_step = JudgeStep(criteria=list(_ABSTENTION_CRITERIA), factory=self.factory)
         answerability_step = JudgeStep(criteria=[AnswerabilityGateCriterion()])
-        retrieval_step = JudgeStep(criteria=list(_RETRIEVAL_CRITERIA), factory=self.factory)
+        retrieval_step = JudgeStep(
+            criteria=[
+                *_RETRIEVAL_CRITERIA,
+                SourceRecoveryCriterion(language=self._settings.language),
+            ],
+            factory=self.factory,
+        )
         commitment_step = JudgeStep(criteria=[CommitmentGateCriterion()])
         answer_step = JudgeStep(criteria=list(_ANSWER_CRITERIA), factory=self.factory)
         return JudgePipeline(

@@ -31,8 +31,11 @@ def _kwargs(*, is_answerable: bool, abstained: str) -> dict[str, object]:
         "system_answer": "Em Itaqui." if abstained == "false" else "",
         "rationale": "r",
         "passages_text": "p",
+        "retrieved_text": "Maria mora em Itaqui",
+        "passages_are_payload": False,
         "question": "Onde Maria mora?",
         "gold_answer": "Em Itaqui.",
+        "context": "Maria mora em Itaqui na beira do rio",
     }
 
 
@@ -51,7 +54,12 @@ class TestAnswerJudgePipeline:
             "commitment_gate",
             "answer_scoring",
         }
-        assert "passage_coverage" in result.stage_results["retrieval_scoring"].criterion_scores
+        retrieval = result.stage_results["retrieval_scoring"].criterion_scores
+        assert "passage_coverage" in retrieval
+        # Deterministic source_recovery rides alongside the LLM criterion
+        # in the same stage; here the retrieved text is fully contained.
+        assert "source_recovery" in retrieval
+        assert retrieval["source_recovery"].score == 1.0
         assert set(result.stage_results["answer_scoring"].criterion_scores) == {
             "answer_correctness",
             "answer_faithfulness",
@@ -65,7 +73,11 @@ class TestAnswerJudgePipeline:
         assert result.passed is False
         assert result.rejected_at == "commitment_gate"
         assert "retrieval_scoring" in result.stage_results
-        assert "passage_coverage" in result.stage_results["retrieval_scoring"].criterion_scores
+        retrieval = result.stage_results["retrieval_scoring"].criterion_scores
+        # Both retrieval-stage criteria run for FA, not just passage_coverage.
+        assert "passage_coverage" in retrieval
+        assert "source_recovery" in retrieval
+        assert retrieval["source_recovery"].score == 1.0
         assert "answer_scoring" not in result.stage_results
 
     def test_nonanswerable_committed_only_abstention(self) -> None:
