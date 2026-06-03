@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from arandu.shared.judge.criterion import HeuristicCriterion
 from arandu.shared.judge.schemas import CriterionScore
-from arandu.shared.rag.retrievers._bm25_tokenize import portuguese_tokenizer
+from arandu.shared.rag.retrievers._bm25_tokenize import english_tokenizer, portuguese_tokenizer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -127,15 +127,25 @@ class SourceRecoveryCriterion(HeuristicCriterion):
     - **no retrieved passages** (e.g. ``NullRetriever``): empty denominator.
     - **no source context**: empty denominator on the gold side.
 
-    Tokenization reuses the BM25 Portuguese tokenizer (lemma + stopword
-    removal), so containment is over content words, not surface forms or
-    stopwords.
+    Tokenization reuses the BM25 tokenizer for the run ``language`` (lemma
+    + stopword removal), so containment is over content words, not surface
+    forms or stopwords. The language must match the corpus, hence it is
+    threaded through from the judge settings rather than hard-coded.
     """
 
-    def __init__(self, *, threshold: float = 0.5) -> None:
-        """Initialise the criterion and build the tokenizer once."""
+    def __init__(self, *, language: str = "pt", threshold: float = 0.5) -> None:
+        """Initialise the criterion and build the language tokenizer once.
+
+        Args:
+            language: ``"pt"`` (default) or ``"en"``; selects the BM25
+                tokenizer. Any other value falls back to Portuguese (the
+                project default corpus language).
+            threshold: Pass threshold (advisory; this criterion runs in
+                score mode and never gates).
+        """
         super().__init__(name="source_recovery", threshold=threshold)
-        self._tokenize: Callable[[str], list[str]] = portuguese_tokenizer()
+        tokenizer = english_tokenizer if language == "en" else portuguese_tokenizer
+        self._tokenize: Callable[[str], list[str]] = tokenizer()
 
     def _check(self, **kwargs: Any) -> tuple[float, str]:
         """Unused: :meth:`_evaluate_impl` is overridden to express the

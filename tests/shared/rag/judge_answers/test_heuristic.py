@@ -67,6 +67,16 @@ class TestSourceRecoveryCriterion:
         )
         assert score.score == 1.0
 
+    def test_english_language_uses_english_tokenizer(self) -> None:
+        # language="en" must build an English tokenizer; containment still
+        # computes over English content words (smoke: no PT-tokenizer reuse).
+        score = SourceRecoveryCriterion(language="en").evaluate(
+            retrieved_text="Maria lives in Itaqui",
+            context="Maria lives in Itaqui by the river",
+            passages_are_payload=False,
+        )
+        assert score.score == 1.0
+
     def test_partial_containment(self) -> None:
         # Retrieved content tokens: {maria, morar, brasilia}; context has
         # maria + morar but not brasilia -> 2/3.

@@ -131,7 +131,11 @@ class AnswerJudge(BaseJudge):
         abstention_step = JudgeStep(criteria=list(_ABSTENTION_CRITERIA), factory=self.factory)
         answerability_step = JudgeStep(criteria=[AnswerabilityGateCriterion()])
         retrieval_step = JudgeStep(
-            criteria=[*_RETRIEVAL_CRITERIA, SourceRecoveryCriterion()], factory=self.factory
+            criteria=[
+                *_RETRIEVAL_CRITERIA,
+                SourceRecoveryCriterion(language=self._settings.language),
+            ],
+            factory=self.factory,
         )
         commitment_step = JudgeStep(criteria=[CommitmentGateCriterion()])
         answer_step = JudgeStep(criteria=list(_ANSWER_CRITERIA), factory=self.factory)
