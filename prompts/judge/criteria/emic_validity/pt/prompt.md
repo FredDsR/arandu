@@ -41,18 +41,23 @@ Modelos de linguagem como você tendem a **elevar queixas e descrições situada
 
 **Exemplos** (provisórios; pendentes de validação por especialista):
 
+Cada exemplo traz os mesmos três campos que você vê na avaliação (segmento, pergunta, resposta).
+
 *Nota 5 (generalização que preserva o sentido).*
+- Segmento: "ganhei o açucareiro de presente; o fogão eu comprei com um dinheiro que o Maikinho emprestou, que veio pelo Jô, porque tava caro e eu não tinha."
 - Pergunta: "Como Dona Gilda adquiriu seus objetos domésticos?"
 - Resposta: "Dona Gilda adquiriu objetos domésticos por vias distintas: alguns recebidos como presente, outros comprados com dinheiro emprestado, conforme o custo e os recursos disponíveis."
 - Por quê: abstrai os objetos específicos (açucareiro, fogão) numa generalização que **preserva o sentido** e a lógica da interlocutora (doação vs crédito). Generalizar aqui é bom. Nenhum marcador.
 
 *Nota 4 (troca leve de registro).*
 - Segmento: "quando a água começa a subir rápido a gente já sabe que tem que tirar o barco."
+- Pergunta: "Como o pescador sabe que é hora de retirar o barco?"
 - Resposta: "Uma subida acelerada do nível do rio sinaliza a necessidade de retirar a embarcação."
 - Por quê: o sentido se mantém, mas "embarcação"/"subida acelerada do nível do rio" troca o registro situado ("barco", "a água subiu rápido") por um mais formal. Marcador 5 brando.
 
 *Nota 2 (claim externo adicionado).*
 - Segmento: "o pescador vive oprimido pelo IBAMA, pela PATRAM (...) em vez de te proteger e te ajudar, eles te prejudicam."
+- Pergunta: "Como o pescador descreve a atuação dos órgãos ambientais?"
 - Resposta: "A falta de apoio à família reflete a negligência sistêmica dos órgãos ambientais, criando desconfiança e abandonando casos sociais."
 - Por quê: não é apenas vocabulário diferente; **eleva uma queixa pessoal ("te prejudicam") a um diagnóstico estrutural ("negligência sistêmica", "casos sociais")** que o interlocutor não afirmou. Marcador 2 (claim externo adicionado).
 
