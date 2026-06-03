@@ -84,8 +84,19 @@ class TestEmicPromptContent:
         assert "êmic" in low and "étic" in low  # names the distinction verbatim
 
     def test_warns_of_model_own_reframing_bias(self, emic_prompt: str) -> None:
-        # Principle 2: meta-awareness of the model's own institutional reframing.
-        assert "reenquadramento" in emic_prompt.lower()
+        # Principle 2: meta-awareness of the model's own tendency to elevate
+        # situated speech into institutional/analytical diagnoses.
+        low = emic_prompt.lower()
+        assert "negligência sistêmica" in low  # the canonical bias example
+        assert "institucion" in low or "diagnóstico" in low
+
+    def test_generalization_is_acceptable(self, emic_prompt: str) -> None:
+        # Refined construct: meaning-preserving generalization is desirable,
+        # not a deviation; only meaning-change / added claims / register-swap
+        # lower the score.
+        low = emic_prompt.lower()
+        assert "generaliz" in low
+        assert "não é violação" in low or "desejável" in low
 
     def test_has_five_point_anchors(self, emic_prompt: str) -> None:
         # Anchors 1..5 must all appear so the model maps to the same scale.

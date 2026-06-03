@@ -4,43 +4,57 @@ Sua tarefa é atribuir a **VALIDADE ÊMICA** de um par pergunta-resposta gerado 
 
 **O construto: validade êmica**
 
-Um par tem validade êmica quando representa o conhecimento nas **categorias, termos e visão de mundo do próprio interlocutor** (perspectiva *êmica*), sem impor enquadramento externo do analista (*ético*), estereótipo, romantização ou senso comum.
+Um par tem validade êmica quando preserva o **sentido** e a **perspectiva** do interlocutor (perspectiva *êmica*), em vez de impor a moldura do analista externo (*ética*), estereótipo, romantização ou senso comum.
 
-A pergunta que você responde: *dado o segmento de origem, o próprio interlocutor (ou um membro da comunidade) reconheceria este par como fiel ao que quis dizer e a como ele entende o mundo? Ou o sentido foi deslocado para uma moldura de fora?*
+**Generalizar e abstrair é desejável, não um defeito.** O par não precisa reproduzir literalmente o que cada pessoa disse; o propósito do grafo é justamente generalizar e conectar conhecimento. O que importa é que a generalização **preserve o sentido** e fique em **registros que a comunidade reconheceria**. A nota só cai quando o sentido é deslocado ou uma moldura externa é imposta.
 
-Isto **não** é fidelidade textual. Um par pode citar fielmente o que foi dito e ainda assim ser eticamente distorcido ao reenquadrar o sentido. Fidelidade pergunta "está no texto?"; validade êmica pergunta "respeita a perspectiva do interlocutor?".
+A pergunta que você responde: *o interlocutor (ou um membro da comunidade) reconheceria este par como fiel ao que quis dizer e a como entende o mundo? Ou o sentido foi alterado / uma interpretação de fora foi atribuída a ele?*
+
+Isto **não** é fidelidade textual. Um par pode citar fielmente o que foi dito e ainda assim distorcer o sentido ao reenquadrá-lo. Fidelidade pergunta "está no texto?"; validade êmica pergunta "respeita a perspectiva do interlocutor?".
 
 **Aviso sobre o seu próprio viés**
 
-Modelos de linguagem como você tendem a traduzir queixas situadas e concretas em **vocabulário acadêmico-institucional** (ex.: transformar "eles te prejudicam" em "negligência sistêmica dos órgãos"). Essa é exatamente a falha que você deve **detectar** no par avaliado, e que **não** deve cometer na sua justificativa. Avalie a perspectiva do interlocutor, não a sua reformulação dela.
+Modelos de linguagem como você tendem a **elevar queixas e descrições situadas a diagnósticos analítico-institucionais** (ex.: transformar "eles te prejudicam" em "negligência sistêmica dos órgãos"). Isso não é generalizar: é **adicionar uma afirmação** que o interlocutor não fez. Essa é exatamente a falha que você deve **detectar** no par, e que **não** deve cometer na sua justificativa.
 
-**Marcadores de violação êmica** (o que derruba a nota):
+**Marcadores de violação** (em ordem de gravidade):
 
-1. **Reenquadramento acadêmico-institucional**: vocabulário de ciências sociais apresentado como se fosse da comunidade ("negligência sistêmica", "lacuna institucional", "governança", "equidade"). Este é o risco dominante.
-2. **Categorias técnicas/científicas de fora** ("a água subiu rápido" virar "taxa de elevação do nível hidrométrico").
-3. **Explicações causais ou funcionais externas** atribuídas ao interlocutor que ele não fez.
-4. **Estereótipo ou romantização** ("sabedoria ancestral", "harmonia com a natureza") no lugar do conhecimento situado e específico.
-5. **Senso comum do modelo** preenchendo lacunas que o interlocutor não preencheu.
+*Violações fortes (derrubam a nota para 1-2):*
+
+1. **Distorção de sentido**: a reformulação muda o que está sendo dito.
+2. **Claim/diagnóstico externo adicionado**: atribui ao interlocutor uma afirmação ou interpretação que ele não fez (ex.: "te prejudicam" → "negligência sistêmica", elevando uma queixa pessoal a um diagnóstico estrutural).
+3. **Estereótipo ou romantização** ("sabedoria ancestral", "harmonia com a natureza") no lugar do conhecimento situado e específico.
+4. **Senso comum do modelo** preenchendo lacunas que o interlocutor não preencheu.
+
+*Violação leve (derruba de 5 para 3-4):*
+
+5. **Troca de categoria/registro situado por técnico-externo**, ainda que o sentido se preserve (ex.: "a água subiu rápido" → "taxa de elevação do nível hidrométrico"). A categoria nativa carrega sentido; substituí-la por um registro que a comunidade não usaria é uma perda êmica leve.
+
+*Não é violação:* generalização/abstração que **preserva o sentido** e fica em registros reconhecíveis (ex.: abstrair objetos específicos em "objetos domésticos adquiridos por doação e por crédito").
 
 **Escala (1 a 5):**
 
-- **5**: Plenamente êmico. Categorias, termos e sentido são os do interlocutor; ele reconheceria o par sem ressalvas.
-- **4**: Predominantemente êmico. Leve deslize de enquadramento, sem distorcer o sentido.
-- **3**: Misto. Parte na perspectiva do interlocutor, parte em moldura externa; sentido parcialmente deslocado.
-- **2**: Predominantemente ético. Impõe categoria ou explicação de fora; o interlocutor hesitaria em reconhecer como sua.
-- **1**: Distorção. Estereótipo, romantização ou senso comum substituem a perspectiva do interlocutor.
+- **5**: Plenamente êmico. Preserva sentido e perspectiva; generalização, se houver, fica nos registros do interlocutor. Nenhum marcador.
+- **4**: Predominantemente êmico. Leve troca de registro/categoria, sem distorcer o sentido (marcador 5 brando).
+- **3**: Misto. Troca de registro relevante ou início de moldura externa; sentido parcialmente deslocado.
+- **2**: Predominantemente ético. Adiciona claim/diagnóstico externo ou impõe moldura analítica; o interlocutor hesitaria em reconhecer como sua.
+- **1**: Distorção. Muda o sentido, ou estereótipo/senso comum substitui a perspectiva.
 
 **Exemplos** (provisórios; pendentes de validação por especialista):
 
-*Nota 5 (êmico).*
-- Pergunta: "Compare a aquisição do açucareiro (presente) com a aquisição do fogão (comprado com empréstimo) por Dona Gilda."
-- Resposta: "O açucareiro foi dado como presente, enquanto o fogão foi comprado com dinheiro emprestado por Maikinho, obtido por meio de Jô, devido ao custo elevado e falta de recursos."
-- Por quê: mantém pessoas nomeadas (Maikinho, Jô), objetos concretos e a lógica da própria interlocutora. Sem moldura externa. Nenhum marcador disparou.
+*Nota 5 (generalização que preserva o sentido).*
+- Pergunta: "Como Dona Gilda adquiriu seus objetos domésticos?"
+- Resposta: "Dona Gilda adquiriu objetos domésticos por vias distintas: alguns recebidos como presente, outros comprados com dinheiro emprestado, conforme o custo e os recursos disponíveis."
+- Por quê: abstrai os objetos específicos (açucareiro, fogão) numa generalização que **preserva o sentido** e a lógica da interlocutora (doação vs crédito). Generalizar aqui é bom. Nenhum marcador.
 
-*Nota 2 (deriva ética).*
+*Nota 4 (troca leve de registro).*
+- Segmento: "quando a água começa a subir rápido a gente já sabe que tem que tirar o barco."
+- Resposta: "Uma subida acelerada do nível do rio sinaliza a necessidade de retirar a embarcação."
+- Por quê: o sentido se mantém, mas "embarcação"/"subida acelerada do nível do rio" troca o registro situado ("barco", "a água subiu rápido") por um mais formal. Marcador 5 brando.
+
+*Nota 2 (claim externo adicionado).*
 - Segmento: "o pescador vive oprimido pelo IBAMA, pela PATRAM (...) em vez de te proteger e te ajudar, eles te prejudicam."
 - Resposta: "A falta de apoio à família reflete a negligência sistêmica dos órgãos ambientais, criando desconfiança e abandonando casos sociais."
-- Por quê: conteúdo fiel, mas o sentido foi traduzido para vocabulário analítico-institucional ("negligência sistêmica", "casos sociais") que não é o do pescador ("te prejudicam"). Marcador 1 (reenquadramento acadêmico-institucional).
+- Por quê: não é apenas vocabulário diferente; **eleva uma queixa pessoal ("te prejudicam") a um diagnóstico estrutural ("negligência sistêmica", "casos sociais")** que o interlocutor não afirmou. Marcador 2 (claim externo adicionado).
 
 ---
 
@@ -55,6 +69,6 @@ $context
 
 **Instruções de saída:**
 
-Atribua uma nota inteira de 1 a 5 e uma justificativa curta (no máximo 3 frases). Se a nota for menor ou igual a 3, **nomeie o(s) marcador(es)** que dispararam; se for 4 ou 5, explique por que nenhum marcador disparou.
+Atribua uma nota inteira de 1 a 5 e uma justificativa curta (no máximo 3 frases). Se a nota for menor ou igual a 3, **nomeie o(s) marcador(es)** que dispararam; se for 4 ou 5, explique por que o sentido e a perspectiva foram preservados (e, se houve generalização, por que ela é aceitável).
 
 Responda em JSON: `{"score": <inteiro 1-5>, "rationale": "<justificativa>"}`.
