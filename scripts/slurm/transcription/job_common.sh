@@ -163,10 +163,14 @@ fi
 # Build Docker image (if needed)
 # -----------------------------------------------------------------------------
 echo ""
-echo "Pruning Docker build cache, unused images, and volumes to free disk space..."
+echo "Pruning all unused Docker data (images, containers, volumes, build cache) to free disk space..."
+# Match the kg/ step's aggressive reclaim: `system prune -af --volumes`
+# also removes STOPPED CONTAINERS (whose writable layers can fill the
+# node's docker storage), which the previous builder/image/volume trio
+# left behind -> caused job 793351's "No space left on device" at the
+# apt-get ffmpeg build step.
+docker system prune -af --volumes 2>/dev/null || true
 docker builder prune -af 2>/dev/null || true
-docker image prune -af 2>/dev/null || true
-docker volume prune -f 2>/dev/null || true
 
 echo ""
 echo "Building Docker image..."
