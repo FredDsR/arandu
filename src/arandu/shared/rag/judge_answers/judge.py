@@ -29,9 +29,9 @@ The whole pipeline still stops scoring ``answer_correctness`` /
 ``None``) per spec §6.1/§6.2, and still lets non-answerable items be
 judged on abstention alone (no gold needed).
 
-Note on scope: spec §6.3 also describes a deterministic
-``offset_coverage`` variant alongside the LLM ``passage_coverage``.
-The deterministic variant is intentionally **not** wired here:
+Note on scope: spec §6.3 also describes a deterministic *byte-offset*
+``offset_coverage`` variant alongside the LLM ``passage_coverage``. That
+specific variant is intentionally **not** wired here:
 
 - The thesis's research question is semantic ("did retrieval support a
   faithful tacit-knowledge answer?"), not extractive (literal-byte
@@ -43,6 +43,12 @@ The deterministic variant is intentionally **not** wired here:
   it, so its only role would be downstream analysis — and a standalone
   script can recompute char-overlap from the persisted records if a
   robustness sanity check ever needs it.
+
+A *different* deterministic criterion, :class:`SourceRecoveryCriterion`,
+**is** wired into the retrieval-scoring stage: it is token-containment
+against the gold ``context`` (not byte offsets), returns ``None`` for the
+payload arms that the offset variant would have biased, and is reported
+as a prose-arms-only diagnostic that does not feed ``KC``.
 """
 
 from __future__ import annotations

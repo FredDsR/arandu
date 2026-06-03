@@ -73,7 +73,11 @@ class TestAnswerJudgePipeline:
         assert result.passed is False
         assert result.rejected_at == "commitment_gate"
         assert "retrieval_scoring" in result.stage_results
-        assert "passage_coverage" in result.stage_results["retrieval_scoring"].criterion_scores
+        retrieval = result.stage_results["retrieval_scoring"].criterion_scores
+        # Both retrieval-stage criteria run for FA, not just passage_coverage.
+        assert "passage_coverage" in retrieval
+        assert "source_recovery" in retrieval
+        assert retrieval["source_recovery"].score == 1.0
         assert "answer_scoring" not in result.stage_results
 
     def test_nonanswerable_committed_only_abstention(self) -> None:
