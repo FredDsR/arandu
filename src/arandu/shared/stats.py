@@ -8,6 +8,7 @@ implementation instead of forking it.
 
 from __future__ import annotations
 
+import math
 import random
 from typing import TYPE_CHECKING
 
@@ -66,18 +67,19 @@ def bootstrap_ci[T](
         high_pct: Upper percentile (default 97.5).
 
     Returns:
-        ``(low, high)`` bounds, or ``(None, None)`` if no resample produced a
-        finite statistic (or ``items`` is empty).
+        ``(low, high)`` bounds, or ``(None, None)`` if fewer than two items
+        (a bootstrap needs variability to resample) or no resample produced a
+        finite statistic.
     """
-    if not items:
-        return None, None
-    rng = random.Random(seed)
     n = len(items)
+    if n < 2:
+        return None, None  # a 1-item bootstrap has no variability to estimate
+    rng = random.Random(seed)
     estimates: list[float] = []
     for _ in range(n_bootstrap):
         sample = [items[rng.randrange(n)] for _ in range(n)]
         value = estimator(sample)
-        if value is not None:
+        if value is not None and math.isfinite(value):
             estimates.append(value)
     if not estimates:
         return None, None

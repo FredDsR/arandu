@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from arandu.shared.agreement import high_variability_items
+import pytest
+
+from arandu.shared.agreement import high_variability_items, high_variability_rate
 
 
 class TestHighVariabilityItems:
@@ -29,7 +31,21 @@ class TestHighVariabilityItems:
         assert high_variability_items([], min_spread=2) == []
 
     def test_rejects_non_positive_threshold(self) -> None:
-        import pytest
-
         with pytest.raises(ValueError, match="min_spread"):
             high_variability_items([[3, 3]], min_spread=0)
+
+
+class TestHighVariabilityRate:
+    def test_rate_over_usable_items(self) -> None:
+        # 3 usable items, 1 flagged (spread 3) -> 1/3.
+        ratings = [[3, 3], [3, 4], [1, 4]]
+        assert high_variability_rate(ratings, min_spread=2) == pytest.approx(1 / 3)
+
+    def test_denominator_excludes_unusable_items(self) -> None:
+        # 2 usable (the single-rating row is excluded); 1 flagged -> 1/2.
+        ratings = [[5, None], [3, 3], [1, 5]]
+        assert high_variability_rate(ratings, min_spread=2) == pytest.approx(0.5)
+
+    def test_none_when_no_usable_items(self) -> None:
+        assert high_variability_rate([[3, None]], min_spread=2) is None
+        assert high_variability_rate([], min_spread=2) is None

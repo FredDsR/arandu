@@ -30,6 +30,7 @@ disagreement) rather than a misleading ``0.0``. Pass ``n_bootstrap > 0`` and a
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from typing import TYPE_CHECKING, Literal
 
@@ -66,24 +67,39 @@ class AgreementResult(BaseModel):
     scale: tuple[int, int]
 
 
-def _scale_categories(scale: tuple[int, int]) -> list[int]:
-    """The full fixed category list for a ``(min, max)`` scale."""
+def _resolve_scale(scale: tuple[int, int]) -> tuple[list[int], int]:
+    """Validate a ``(min, max)`` scale and return ``(categories, span)``.
+
+    The scale must have at least two points (``max > min``); a single-point
+    scale carries no notion of agreement. Validating here, before label
+    validation, gives a clean error for a reversed/degenerate scale.
+    """
     lo, hi = scale
-    if hi < lo:
-        raise ValueError(f"scale max ({hi}) must be >= scale min ({lo})")
-    return list(range(lo, hi + 1))
+    if hi <= lo:
+        raise ValueError(f"scale must have >= 2 points (max > min); got {scale}")
+    return list(range(lo, hi + 1)), hi - lo
 
 
 def _validate_labels(labels: Sequence[int | None], scale: tuple[int, int]) -> None:
-    """Reject labels outside the fixed scale or not whole numbers."""
+    """Reject labels that are not whole integers on the fixed scale."""
     lo, hi = scale
     for v in labels:
         if v is None:
             continue
-        if int(v) != v:
+        if isinstance(v, bool):
+            raise ValueError(f"label {v!r} is a bool, not an ordinal value")
+        is_int = isinstance(v, int)
+        is_whole_float = isinstance(v, float) and math.isfinite(v) and v.is_integer()
+        if not (is_int or is_whole_float):
             raise ValueError(f"label {v!r} is not an integer on the {scale} scale")
         if v < lo or v > hi:
             raise ValueError(f"label {v!r} is outside the scale {scale}")
+
+
+def _validate_units(units: Sequence[Sequence[int | None]], scale: tuple[int, int]) -> None:
+    """Validate labels across all items of a units x raters matrix."""
+    for unit in units:
+        _validate_labels(unit, scale)
 
 
 def _count_usable_units(units: Sequence[Sequence[int | None]]) -> int:
@@ -107,14 +123,18 @@ def _normalized_disagreement(a: int, b: int, span: int, weights: Weights) -> flo
 
 def _finalize[T](
     items: Sequence[T],
-    point: float | None,
     estimator: Callable[[Sequence[T]], float | None],
     n_bootstrap: int,
     seed: int,
     n_items: int,
     scale: tuple[int, int],
 ) -> AgreementResult:
-    """Assemble an AgreementResult, running the bootstrap CI if requested."""
+    """Assemble an AgreementResult from one estimator over ``items``.
+
+    The point estimate is ``estimator(items)`` -- the same callable the
+    bootstrap resamples, so the two cannot disagree.
+    """
+    point = estimator(items)
     ci_lower = ci_upper = None
     if n_bootstrap > 0:
         ci_lower, ci_upper = bootstrap_ci(items, estimator, n_bootstrap=n_bootstrap, seed=seed)
@@ -188,11 +208,10 @@ def cohen_kappa_weighted(
     """
     if len(rater_a) != len(rater_b):
         raise ValueError("rater_a and rater_b must have the same length")
+    categories, span = _resolve_scale(scale)
     _validate_labels(rater_a, scale)
     _validate_labels(rater_b, scale)
 
-    categories = _scale_categories(scale)
-    span = scale[1] - scale[0]
     pairs: list[tuple[int, int]] = [
         (a, b) for a, b in zip(rater_a, rater_b, strict=True) if a is not None and b is not None
     ]
@@ -200,8 +219,7 @@ def cohen_kappa_weighted(
     def estimator(sample: Sequence[tuple[int, int]]) -> float | None:
         return _cohen_point(sample, categories, span, weights)
 
-    point = _cohen_point(pairs, categories, span, weights)
-    return _finalize(pairs, point, estimator, n_bootstrap, seed, len(pairs), scale)
+    return _finalize(pairs, estimator, n_bootstrap, seed, len(pairs), scale)
 
 
 # --------------------------------------------------------------------------- #
@@ -293,16 +311,14 @@ def krippendorff_alpha(
     Raises:
         ValueError: If a label is off-scale.
     """
-    for unit in reliability_data:
-        _validate_labels(unit, scale)
-    categories = _scale_categories(scale)
+    categories, _ = _resolve_scale(scale)
+    _validate_units(reliability_data, scale)
 
     def estimator(sample: Sequence[Sequence[int | None]]) -> float | None:
         return _alpha_point(sample, categories, level)
 
-    point = _alpha_point(reliability_data, categories, level)
     n_items = _count_usable_units(reliability_data)
-    return _finalize(reliability_data, point, estimator, n_bootstrap, seed, n_items, scale)
+    return _finalize(reliability_data, estimator, n_bootstrap, seed, n_items, scale)
 
 
 # --------------------------------------------------------------------------- #
@@ -320,6 +336,12 @@ def _ac2_point(
     usable = [[r for r in unit if r is not None] for unit in units]
     usable = [u for u in usable if len(u) >= 2]
     if not usable:
+        return None
+
+    # No variance (every usable rating identical) -> reliability is undefined,
+    # consistent with Cohen/Krippendorff. Without this, AC2 would report a
+    # spurious 1.0 for an all-one-category stratum.
+    if len({r for u in usable for r in u}) < 2:
         return None
 
     k = len(categories)
@@ -352,13 +374,12 @@ def _ac2_point(
     for c in categories:
         pi[c] /= len(usable)
 
-    if k < 2:
-        return 1.0 if p_a >= 1.0 else None
+    # k >= 2 is guaranteed by _resolve_scale (scale has >= 2 points).
     t_w = sum(agree.values())
     p_e = (t_w / (k * (k - 1))) * sum(pi[c] * (1.0 - pi[c]) for c in categories)
 
     if p_e >= 1.0:
-        return 1.0 if p_a >= 1.0 else None
+        return None  # undefined
     return (p_a - p_e) / (1.0 - p_e)
 
 
@@ -390,14 +411,11 @@ def gwet_ac2(
     Raises:
         ValueError: If a label is off-scale.
     """
-    for unit in ratings:
-        _validate_labels(unit, scale)
-    categories = _scale_categories(scale)
-    span = scale[1] - scale[0]
+    categories, span = _resolve_scale(scale)
+    _validate_units(ratings, scale)
 
     def estimator(sample: Sequence[Sequence[int | None]]) -> float | None:
         return _ac2_point(sample, categories, span, weights)
 
-    point = _ac2_point(ratings, categories, span, weights)
     n_items = _count_usable_units(ratings)
-    return _finalize(ratings, point, estimator, n_bootstrap, seed, n_items, scale)
+    return _finalize(ratings, estimator, n_bootstrap, seed, n_items, scale)

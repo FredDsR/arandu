@@ -42,3 +42,29 @@ def high_variability_items(
         if max(present) - min(present) >= min_spread:
             flagged.append(idx)
     return flagged
+
+
+def high_variability_rate(
+    ratings: Sequence[Sequence[int | None]],
+    *,
+    min_spread: int = 2,
+) -> float | None:
+    """Fraction of usable items that are high-variability (spec §6.3).
+
+    The denominator is the number of *usable* items (>= 2 present ratings), so
+    the rate is computed over the same items a coefficient would use. Returns
+    ``None`` when there are no usable items (rate undefined), mirroring the
+    coefficient functions.
+
+    Args:
+        ratings: One row per item; each row is the raters' labels.
+        min_spread: Inclusive ``max - min`` threshold (see
+            :func:`high_variability_items`).
+
+    Returns:
+        ``flagged / usable`` in ``[0, 1]``, or ``None`` if no usable items.
+    """
+    usable = sum(1 for item in ratings if sum(1 for r in item if r is not None) >= 2)
+    if usable == 0:
+        return None
+    return len(high_variability_items(ratings, min_spread=min_spread)) / usable

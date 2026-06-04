@@ -48,7 +48,8 @@ class TestKrippendorffAlpha:
 
     def test_nominal_hand_computed_zero(self) -> None:
         # units (1,1) and (1,2): coincidences o_11=2, o_12=o_21=1.
-        # n_1=3, n_2=1, n=4. D_o = (1/4)(1+1) = 0.5.
+        # n_1=3, n_2=1, n=4 (unobserved scale categories 3,4,5 carry marginal
+        # 0 and do not affect the nominal metric). D_o = (1/4)(1+1) = 0.5.
         # D_e = (1/(4*3))(3*1 + 1*3) = 0.5. alpha = 1 - 0.5/0.5 = 0.0
         data = [[1, 1], [1, 2]]
         r = krippendorff_alpha(data, level="nominal")
@@ -121,6 +122,12 @@ class TestBootstrapCI:
         r = cohen_kappa_weighted(flat_a, flat_b, n_bootstrap=500, seed=11)
         assert r.ci_upper is not None and r.ci_upper < 1.0
 
+    def test_single_item_has_no_ci(self) -> None:
+        # A 1-item bootstrap cannot estimate variability -> no CI (not a
+        # spurious zero-width interval).
+        r = cohen_kappa_weighted([2], [4], n_bootstrap=200, seed=1)
+        assert r.ci_lower is None and r.ci_upper is None
+
 
 class TestFixedScaleAndValidation:
     def test_scale_recorded_in_result(self) -> None:
@@ -134,6 +141,25 @@ class TestFixedScaleAndValidation:
             krippendorff_alpha([[1, 9]], scale=(1, 5))
         with pytest.raises(ValueError, match="scale"):
             gwet_ac2([[0, 1]], scale=(1, 5))
+
+    def test_bool_label_rejected(self) -> None:
+        with pytest.raises(ValueError, match="bool"):
+            cohen_kappa_weighted([True, 2], [1, 2], scale=(1, 5))
+
+    def test_non_finite_label_raises_value_error(self) -> None:
+        # NaN/inf must surface as ValueError per the documented contract.
+        with pytest.raises(ValueError, match="integer"):
+            krippendorff_alpha([[float("nan"), 2]], scale=(1, 5))
+        with pytest.raises(ValueError, match="integer"):
+            gwet_ac2([[float("inf"), 2]], scale=(1, 5))
+
+    def test_degenerate_scale_rejected_cleanly(self) -> None:
+        # Reversed or single-point scales raise a clear scale error, not a
+        # confusing per-label "outside scale" error.
+        with pytest.raises(ValueError, match="2 points"):
+            cohen_kappa_weighted([1, 2], [1, 2], scale=(5, 1))
+        with pytest.raises(ValueError, match="2 points"):
+            gwet_ac2([[3, 3]], scale=(3, 3))
 
     def test_ac2_value_independent_of_absent_extreme_category(self) -> None:
         # Same disagreement pattern; presence of an extra (5,5) item that only
@@ -162,7 +188,8 @@ class TestUndefinedReturnsNone:
         assert cohen_kappa_weighted([None, None], [None, None]).coefficient is None
 
     def test_no_variance_is_none_not_zero(self) -> None:
-        # Everyone always says "3": no variance -> kappa/alpha undefined.
-        # Returning None (not 0.0) avoids reading as chance-level agreement.
+        # Everyone always says "3": no variance -> undefined for all three
+        # coefficients (returning None, not 0.0 or a spurious 1.0).
         assert cohen_kappa_weighted([3, 3, 3], [3, 3, 3]).coefficient is None
         assert krippendorff_alpha([[3, 3], [3, 3]]).coefficient is None
+        assert gwet_ac2([[3, 3], [3, 3]]).coefficient is None
