@@ -99,22 +99,27 @@ class CEPQAGenerator:
                 bloom_distribution={},
             )
 
-        questions_per_chunk = max(1, self.qa_config.questions_per_document // len(chunks))
+        # The full Bloom ladder runs independently on each chunk: every chunk
+        # produces ``questions_per_document`` pairs scaffolded across the Bloom
+        # hierarchy (remember -> understand -> analyze -> evaluate), so the
+        # earlier-level pairs ground the later-level pairs within that same
+        # chunk. The budget is NOT divided across chunks: splitting it shrinks
+        # the per-chunk count below the number of Bloom levels, which collapses
+        # the ladder to the last level (the remainder-absorbing ``evaluate``)
+        # and leaves later levels with no earlier-level pairs to scaffold from.
+        # Total pairs therefore scale with chunk count
+        # (``questions_per_document`` * ``len(chunks)``).
+        questions_per_chunk = self.qa_config.questions_per_document
 
         all_pairs: list[QAPairCEP] = []
 
         for i, chunk in enumerate(chunks):
             context = text[chunk.start_char : chunk.end_char]
 
-            num_questions = questions_per_chunk
-            if i == 0:
-                # First chunk gets remainder
-                num_questions += self.qa_config.questions_per_document % len(chunks)
-
             # Module I: Bloom Scaffolding Generation
             pairs = self._bloom_generator.generate(
                 context,
-                num_questions,
+                questions_per_chunk,
                 source_metadata=transcription.source_metadata,
             )
             logger.debug(f"Chunk {i + 1}: Generated {len(pairs)} pairs")
@@ -129,9 +134,6 @@ class CEPQAGenerator:
                 pair.chunk_id = chunk.chunk_id
 
             all_pairs.extend(pairs)
-
-        # Trim to exact count
-        all_pairs = all_pairs[: self.qa_config.questions_per_document]
 
         # Calculate statistics
         bloom_dist = self._calculate_bloom_distribution(all_pairs)

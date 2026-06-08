@@ -145,6 +145,61 @@ class TestCEPQAGenerator:
         for level in cep_config.bloom_levels:
             assert level in result.bloom_distribution
 
+    def test_full_bloom_ladder_per_chunk(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """Each chunk gets the full Bloom ladder; the budget is not divided.
+
+        Regression: dividing ``questions_per_document`` across chunks shrinks
+        the per-chunk count below the number of Bloom levels, collapsing the
+        ladder to the remainder-absorbing ``evaluate`` level. The full ladder
+        must run independently on every chunk, so the document total scales
+        with the chunk count and each chunk covers all configured levels.
+        """
+        long_text = "Frase de teste sobre o evento climático e a comunidade ribeirinha. " * 250
+        transcription = EnrichedRecord(
+            file_id="multichunk1",
+            name="long.mp3",
+            mimeType="audio/mpeg",
+            parents=["folder"],
+            webContentLink="https://drive.google.com/long",
+            size_bytes=1024000,
+            duration_milliseconds=600000,
+            transcription_text=long_text,
+            detected_language="pt",
+            language_probability=0.95,
+            model_id="whisper-large-v3",
+            compute_device="cpu",
+            processing_duration_sec=120.0,
+            transcription_status="completed",
+        )
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        n_chunks = len(generator._chunk_with_offsets(long_text.strip(), "multichunk1"))
+        assert n_chunks > 1, "precondition: text must span multiple chunks"
+
+        result = generator.generate_qa_pairs(transcription)
+
+        # Full ladder per chunk -> total scales with chunk count, no doc trim.
+        assert len(result.qa_pairs) == qa_config.questions_per_document * n_chunks
+
+        # Every chunk covers all configured Bloom levels (no collapse).
+        from collections import Counter, defaultdict
+
+        by_chunk: dict[str, Counter] = defaultdict(Counter)
+        for pair in result.qa_pairs:
+            by_chunk[pair.chunk_id][pair.bloom_level] += 1
+        assert len(by_chunk) == n_chunks
+        for levels in by_chunk.values():
+            assert set(levels) == set(cep_config.bloom_levels)
+
     def test_generate_qa_pairs_without_validation(
         self,
         mock_llm_client: Any,

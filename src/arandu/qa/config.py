@@ -45,7 +45,11 @@ class QAConfig(BaseSettings):
         default=10,
         ge=1,
         le=50,
-        description="Number of QA pairs to generate per document",
+        description=(
+            "Size of the Bloom-scaffolded ladder generated per chunk. Each "
+            "chunk independently produces this many pairs across the Bloom "
+            "levels; the document total is this value times the chunk count."
+        ),
     )
     temperature: float = Field(
         default=0.7,

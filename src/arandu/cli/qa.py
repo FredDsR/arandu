@@ -41,7 +41,10 @@ def generate_cep_qa(
     ] = None,
     questions: Annotated[
         int | None,
-        typer.Option("--questions", help="Number of QA pairs to generate per document (1-50)."),
+        typer.Option(
+            "--questions",
+            help="Bloom-ladder size generated per chunk (1-50); document total scales with chunks.",
+        ),
     ] = None,
     temperature: Annotated[
         float | None,
