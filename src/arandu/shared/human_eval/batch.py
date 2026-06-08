@@ -20,6 +20,7 @@ from arandu.shared.human_eval.sampling import (
     FRAME_BLOOM_LEVELS,
     PER_CELL,
     PoolEntry,
+    all_cell_ids,
     build_sample,
     population_by_cell,
 )
@@ -37,8 +38,14 @@ MANIFEST_FILENAME = "sample_manifest.json"
 
 
 def _pool_sha256(pool: list[PoolEntry]) -> str:
-    """Hash the in-frame pool (sorted by key) for reproducibility provenance."""
-    lines = sorted(f"{e.pair_id}|{e.bloom_level}|{e.emic_score}" for e in pool)
+    """Hash the full in-frame pool (incl. payload) for reproducibility provenance.
+
+    Canonical JSON per entry, sorted, so the digest is order-independent and
+    changes if any payload text (segment/question/answer) drifts -- not just the
+    ids/scores -- letting an auditor detect a CEP regeneration under the same
+    pair ids.
+    """
+    lines = sorted(e.model_dump_json() for e in pool)
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
@@ -68,8 +75,8 @@ def run_build_sample_batch(
             or a referenced CEP pair cannot be resolved.
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
-    emic_outputs = base / pipeline_id / "emic_prepass" / "outputs"
-    cep_outputs = base / pipeline_id / "cep" / "outputs"
+    emic_outputs = base / pipeline_id / PipelineType.EMIC_PREPASS.value / "outputs"
+    cep_outputs = base / pipeline_id / PipelineType.CEP.value / "outputs"
     if not emic_outputs.exists():
         raise FileNotFoundError(
             f"Emic pre-pass outputs not found for pipeline_id {pipeline_id!r}: {emic_outputs}. "
@@ -82,6 +89,7 @@ def run_build_sample_batch(
         )
 
     pool: list[PoolEntry] = []
+    seen_pair_ids: set[str] = set()
     excluded_none = 0
     excluded_bloom: dict[str, int] = {}
     for emic_path in sorted(emic_outputs.glob("*_cep_qa.json")):
@@ -105,10 +113,18 @@ def run_build_sample_batch(
                     f"pair_index {score.pair_index} out of range for {cep_path.name} "
                     f"({len(record.qa_pairs)} pairs); emic/cep stages are out of sync."
                 )
+            pair_id = f"{scores.source_file_id}:{score.pair_index}"
+            if pair_id in seen_pair_ids:
+                raise ValueError(
+                    f"Duplicate pair_id {pair_id!r} while pooling {emic_path.name}; the "
+                    f"emic_prepass outputs likely contain a stale or duplicate file for this "
+                    f"source. Clean results/{pipeline_id}/emic_prepass/outputs/ and re-run."
+                )
+            seen_pair_ids.add(pair_id)
             pair = record.qa_pairs[score.pair_index]
             pool.append(
                 PoolEntry(
-                    pair_id=f"{scores.source_file_id}:{score.pair_index}",
+                    pair_id=pair_id,
                     source_file_id=scores.source_file_id,
                     pair_index=score.pair_index,
                     segment=pair.context,
@@ -118,6 +134,14 @@ def run_build_sample_batch(
                     emic_score=score.emic_score,
                 )
             )
+
+    if not pool:
+        raise ValueError(
+            f"No in-frame approved pairs found for {pipeline_id!r} "
+            f"({excluded_none} null-score, {sum(excluded_bloom.values())} out-of-frame-Bloom "
+            f"excluded). Check that `arandu judge-qa` + `arandu emic-prepass` ran and produced "
+            f"scored, in-frame ({', '.join(FRAME_BLOOM_LEVELS)}) pairs."
+        )
 
     population = population_by_cell(pool)
     pool_hash = _pool_sha256(pool)
@@ -142,7 +166,7 @@ def run_build_sample_batch(
         seed=seed,
         total_items=len(items),
         per_cell=per_cell,
-        cell_counts=_count_by_cell(items),
+        cell_counts=dict.fromkeys(all_cell_ids(), per_cell),
         population_by_cell=population,
         excluded_none_score=excluded_none,
         excluded_bloom=excluded_bloom,
@@ -170,11 +194,3 @@ def _write_sample(path: Path, items: list[SampleItem]) -> None:
         for item in items:
             fh.write(item.model_dump_json())
             fh.write("\n")
-
-
-def _count_by_cell(items: list[SampleItem]) -> dict[str, int]:
-    """Tally selected items per cell id."""
-    counts: dict[str, int] = {}
-    for item in items:
-        counts[item.cell_id] = counts.get(item.cell_id, 0) + 1
-    return counts

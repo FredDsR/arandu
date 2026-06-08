@@ -150,6 +150,63 @@ class TestRunBuildSampleBatch:
         with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
             run_build_sample_batch("run6", seed=1, base_dir=tmp_path, per_cell=2)
 
+    def test_empty_pool_raises_cause_specific(self, tmp_path: Path) -> None:
+        # All approved pairs are out-of-frame Bloom or null-score -> empty frame.
+        _write_source(tmp_path, "run8", "s1", [("apply", 5), ("create", 2), ("remember", None)])
+        with pytest.raises(ValueError, match="No in-frame approved pairs"):
+            run_build_sample_batch("run8", seed=1, base_dir=tmp_path, per_cell=2)
+
+    def test_duplicate_pair_id_raises(self, tmp_path: Path) -> None:
+        # Two emic files whose EmicSourceScores share the same source_file_id +
+        # pair_index collide on pair_id (e.g. a stale duplicate emic output).
+        emic_outputs = tmp_path / "run9" / "emic_prepass" / "outputs"
+        cep_outputs = tmp_path / "run9" / "cep" / "outputs"
+        emic_outputs.mkdir(parents=True)
+        cep_outputs.mkdir(parents=True)
+        for name in ("a", "b"):
+            QARecordCEP(
+                source_gdrive_id="dup",
+                source_filename="dup.mp4",
+                transcription_text="t",
+                qa_pairs=[
+                    QAPairCEP(
+                        question="q",
+                        answer="a",
+                        context="seg",
+                        question_type="conceptual",
+                        confidence=0.9,
+                        bloom_level="remember",
+                    )
+                ],
+                model_id="m",
+                provider="ollama",
+                total_pairs=1,
+            ).save(cep_outputs / f"{name}_cep_qa.json")
+            EmicSourceScores(
+                source_file_id="dup",
+                source_filename="dup.mp4",
+                scores=[
+                    EmicScore(pair_index=0, bloom_level="remember", emic_score=2, rationale="r")
+                ],
+            ).save(emic_outputs / f"{name}_cep_qa.json")
+
+        with pytest.raises(ValueError, match="Duplicate pair_id"):
+            run_build_sample_batch("run9", seed=1, base_dir=tmp_path, per_cell=2)
+
+    def test_pool_hash_changes_when_payload_drifts(self, tmp_path: Path) -> None:
+        # Same pair ids/bloom/score but different CEP text -> different pool hash.
+        _write_source(tmp_path, "runA", "s1", _frame_specs(2))
+        h1 = run_build_sample_batch("runA", seed=1, base_dir=tmp_path, per_cell=2).pool_sha256
+        # Rewrite the CEP records with mutated payload text, same indices/blooms.
+        cep_outputs = tmp_path / "runA" / "cep" / "outputs"
+        for cep_file in cep_outputs.glob("*_cep_qa.json"):
+            rec = QARecordCEP.load(cep_file)
+            for p in rec.qa_pairs:
+                p.context = p.context + " (edited)"
+            rec.save(cep_file)
+        h2 = run_build_sample_batch("runA", seed=1, base_dir=tmp_path, per_cell=2).pool_sha256
+        assert h1 != h2
+
     def test_manifest_roundtrips(self, tmp_path: Path) -> None:
         _write_source(tmp_path, "run7", "s1", _frame_specs(2))
         run_build_sample_batch("run7", seed=3, base_dir=tmp_path, per_cell=2)

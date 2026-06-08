@@ -125,3 +125,17 @@ class TestBuildSample:
 
     def test_bands_constant_is_two(self) -> None:
         assert BANDS == ("duvidosa", "limpa")
+
+    def test_cell_selection_independent_of_other_cells(self) -> None:
+        # Per-cell deterministic selection: changing one cell's population must
+        # not perturb the selection of an unrelated cell (guards against the
+        # shared-RNG cross-cell coupling).
+        base = _pool(15)
+        extra = [_entry(1000 + k, "remember", DUBIOUS_SCORE) for k in range(20)]
+        a = {i.pair_id for i in build_sample(base, seed=3) if i.cell_id == "evaluate:limpa"}
+        b = {
+            i.pair_id
+            for i in build_sample([*base, *extra], seed=3)
+            if i.cell_id == "evaluate:limpa"
+        }
+        assert a == b
