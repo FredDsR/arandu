@@ -393,6 +393,33 @@ class TestLLMClient:
         assert result.content == "Recovered"
         assert mock_client.chat.completions.create.call_count == 6
 
+    def test_long_backoff_only_for_rate_limit(self, mocker: MockerFixture) -> None:
+        """The 60s jittered backoff applies to RateLimitError only.
+
+        Other transient errors recover quickly, so they must not sit through a
+        per-minute reset window; they get the short backoff instead.
+        """
+        from openai import RateLimitError
+
+        from arandu.shared import llm_client
+
+        rate_limit_wait = mocker.patch.object(llm_client, "_RATE_LIMIT_WAIT", return_value=42.0)
+        transient_wait = mocker.patch.object(llm_client, "_TRANSIENT_WAIT", return_value=1.0)
+
+        # Bypass RateLimitError.__init__ (needs an httpx response) — only the
+        # type matters for the isinstance dispatch.
+        rate_limit_exc = RateLimitError.__new__(RateLimitError)
+
+        rate_state = Mock()
+        rate_state.outcome.exception.return_value = rate_limit_exc
+        other_state = Mock()
+        other_state.outcome.exception.return_value = ValueError("network blip")
+
+        assert llm_client._wait_by_error(rate_state) == 42.0
+        assert llm_client._wait_by_error(other_state) == 1.0
+        rate_limit_wait.assert_called_once_with(rate_state)
+        transient_wait.assert_called_once_with(other_state)
+
     def test_generate_extracts_thinking(self, mocker: MockerFixture) -> None:
         """Test that generate extracts thinking from <think> tags."""
         mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")

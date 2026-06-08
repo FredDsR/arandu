@@ -12,9 +12,15 @@ import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
-from tenacity import retry, stop_after_attempt, wait_random_exponential
+from tenacity import (
+    RetryCallState,
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    wait_random_exponential,
+)
 
 from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
 
@@ -24,6 +30,23 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
+
+# Two backoff profiles, selected per-error by ``_wait_by_error``:
+# - Rate limits (HTTP 429) need a long, jittered wait to outwait the hosted
+#   endpoint's per-minute quota reset; the jitter desynchronizes concurrent
+#   workers so they don't retry in lockstep and re-trip the limit.
+# - Other transient errors (brief network blips) recover quickly, so they get a
+#   short wait instead of sitting through a 60s window for nothing.
+_RATE_LIMIT_WAIT = wait_random_exponential(multiplier=1, max=60)
+_TRANSIENT_WAIT = wait_exponential(multiplier=1, min=2, max=10)
+
+
+def _wait_by_error(retry_state: RetryCallState) -> float:
+    """Pick the backoff by error type: long+jittered for 429s, short otherwise."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, RateLimitError):
+        return _RATE_LIMIT_WAIT(retry_state)
+    return _TRANSIENT_WAIT(retry_state)
 
 
 class StructuredOutputError(Exception):
@@ -117,15 +140,14 @@ class LLMClient:
 
     # Retry budget sized for cloud rate limits, not just transient blips.
     # Hosted endpoints (Gemini, OpenAI) enforce per-minute quotas; a 429 needs
-    # backoff long enough to outwait the reset window, not a few seconds. Six
-    # attempts with randomized exponential backoff capped at 60s spans a
-    # per-minute reset, and the jitter desynchronizes concurrent workers so they
-    # don't retry in lockstep and re-trip the limit. Too-short retries surface as
+    # backoff long enough to outwait the reset window (see ``_wait_by_error``,
+    # which applies the long jittered backoff only to RateLimitError). Six
+    # attempts span a per-minute reset. Too-short retries surface as
     # RetryError[RateLimitError] -> the caller records score=None and drops the
     # result, which is indistinguishable from a real failure downstream.
     @retry(
         stop=stop_after_attempt(6),
-        wait=wait_random_exponential(multiplier=1, max=60),
+        wait=_wait_by_error,
     )
     def generate(
         self,
