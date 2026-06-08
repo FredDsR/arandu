@@ -121,29 +121,42 @@ def run_emic_prepass_batch(
         checkpoint_filename=CHECKPOINT_FILENAME,
     )
     checkpoint_path = results_mgr.run_dir / CHECKPOINT_FILENAME
-    if rerun and checkpoint_path.exists():
-        checkpoint_path.unlink()
+    if rerun:
+        if checkpoint_path.exists():
+            checkpoint_path.unlink()
+        # Resetting only the checkpoint would leave per-source outputs from a
+        # prior run in outputs_dir. If the CEP stage was regenerated with a
+        # different (e.g. smaller) corpus since, those orphaned files would be
+        # globbed as live scores by the stratified sample builder. Clear them.
+        for stale in results_mgr.outputs_dir.glob("*.json"):
+            stale.unlink()
     checkpoint = CheckpointManager(checkpoint_path)
 
     cep_paths = sorted(cep_outputs.glob("*_cep_qa.json"))
     checkpoint.set_total_files(len(cep_paths))
 
-    approved = scored = failed = 0
+    completed_sources = resumed_sources = failed_sources = 0
+    approved = scored = failed = unjudged = 0
     for path in cep_paths:
         ckpt_key = path.stem
         if checkpoint.is_completed(ckpt_key):
+            resumed_sources += 1
             continue
         try:
             record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
         except (OSError, ValidationError) as exc:
             logger.warning("Skipping %s: load failed: %s", path.name, exc)
             checkpoint.mark_failed(ckpt_key, f"load failed: {exc}")
+            failed_sources += 1
             continue
 
         scores: list[EmicScore] = []
         for idx, pair in enumerate(record.qa_pairs):
+            if pair.is_valid is None:
+                unjudged += 1  # never judged; can't be canonically approved
+                continue
             if not pair.is_valid:
-                continue  # only canonical-approved pairs enter the emic pre-pass
+                continue  # judged and rejected — only approved pairs are scored
             approved += 1
             result = criterion.evaluate(
                 context=pair.context,
@@ -170,18 +183,42 @@ def run_emic_prepass_batch(
             scores=scores,
         ).save(results_mgr.outputs_dir / f"{path.stem}.json")
         checkpoint.mark_completed(ckpt_key)
+        completed_sources += 1
+
+    if unjudged:
+        logger.warning(
+            "%d pair(s) had no judge verdict (is_valid is None) and were skipped; "
+            "the run may not have been fully judged via `arandu judge-qa`.",
+            unjudged,
+        )
+
+    # Mirror the judge-answers convention: record progress and finalize the run
+    # so run_metadata flips to COMPLETED and the run enters the global index
+    # (otherwise it is stuck IN_PROGRESS and invisible to get_latest_run /
+    # list_runs). A load failure marks the run FAILED but is non-fatal.
+    results_mgr.update_progress(completed_sources + resumed_sources, failed_sources, len(cep_paths))
+    results_mgr.complete_run(success=(failed_sources == 0))
 
     logger.info(
-        "Emic pre-pass complete: %d sources, %d approved pairs, %d scored, %d failed.",
+        "Emic pre-pass complete: %d/%d sources scored (%d resumed, %d failed), "
+        "%d approved pairs, %d scored, %d failed, %d unjudged.",
+        completed_sources,
         len(cep_paths),
+        resumed_sources,
+        failed_sources,
         approved,
         scored,
         failed,
+        unjudged,
     )
     return EmicPrepassResult(
         pipeline_id=pipeline_id,
         sources=len(cep_paths),
+        completed_sources=completed_sources,
+        resumed_sources=resumed_sources,
+        failed_sources=failed_sources,
         approved_pairs=approved,
         scored_pairs=scored,
         failed_pairs=failed,
+        unjudged_pairs=unjudged,
     )

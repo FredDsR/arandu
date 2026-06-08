@@ -71,10 +71,24 @@ def emic_prepass(
     except (RuntimeError, ValueError) as exc:
         print_error(f"Invalid emic-prepass configuration: {exc}")
         raise typer.Exit(code=1) from exc
+    except OSError as exc:
+        print_error(f"I/O error during emic pre-pass: {exc}")
+        raise typer.Exit(code=1) from exc
 
+    if result.failed_sources:
+        print_warning(
+            f"{result.failed_sources} source(s) failed to load and were skipped (see logs)."
+        )
+    if result.unjudged_pairs:
+        print_warning(
+            f"{result.unjudged_pairs} pair(s) had no judge verdict and were skipped; "
+            "the run may not have been fully judged (`arandu judge-qa`)."
+        )
     if result.failed_pairs:
-        print_warning(f"Failed pairs: {result.failed_pairs} (LLM errors; see logs).")
+        print_warning(f"{result.failed_pairs} approved pair(s) errored while scoring (see logs).")
     print_success(
-        f"Scored {result.scored_pairs}/{result.approved_pairs} approved pairs "
-        f"across {result.sources} source(s)."
+        f"Scored {result.scored_pairs}/{result.approved_pairs} approved pairs this run "
+        f"across {result.completed_sources} new source(s); "
+        f"{result.resumed_sources} resumed, {result.failed_sources} failed "
+        f"({result.sources} total)."
     )
