@@ -781,6 +781,7 @@ class TestPipelineType:
             "judge_answers",
             "analysis",
             "non_answerable",
+            "emic_prepass",
             "evaluation",
         }
         actual = {p.value for p in PipelineType}
