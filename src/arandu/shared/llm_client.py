@@ -297,7 +297,7 @@ class LLMClient:
         )
 
 
-def _parse_provider(provider: LLMProvider | str) -> LLMProvider:
+def parse_provider(provider: LLMProvider | str) -> LLMProvider:
     """Coerce a provider value to :class:`LLMProvider` with one canonical error.
 
     Args:
@@ -345,7 +345,7 @@ def create_llm_client(
         >>> client = create_llm_client(LLMProvider.OPENAI, "gpt-4", api_key="sk-...")
     """
     return LLMClient(
-        provider=_parse_provider(provider),
+        provider=parse_provider(provider),
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
@@ -381,7 +381,7 @@ def build_llm_client_from_settings(
     """
     prefix = env_prefix or settings.model_config.get("env_prefix") or "ARANDU_LLM_"
 
-    provider_enum = _parse_provider(settings.provider)
+    provider_enum = parse_provider(settings.provider)
 
     api_key = os.environ.get(settings.api_key_env)
     if not api_key and provider_enum is not LLMProvider.OLLAMA:
