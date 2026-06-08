@@ -676,13 +676,15 @@ class TestBuildLlmClientFromSettings:
         with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY_ENV"):
             build_llm_client_from_settings(LLMSettings(provider="openai"))
 
-    def test_explicit_env_prefix_used_in_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An explicit env_prefix (the direct-LLMSettings case) drives the hint."""
+    def test_subclass_env_prefix_drives_error_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Error hints use the settings subclass's own env_prefix, derived automatically."""
+
+        class _StageSettings(LLMSettings):
+            model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
+
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="ARANDU_EMIC_PREPASS_PROVIDER"):
-            build_llm_client_from_settings(
-                LLMSettings(provider="openai"), env_prefix="ARANDU_EMIC_PREPASS_"
-            )
+        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_PROVIDER"):
+            build_llm_client_from_settings(_StageSettings(provider="openai"))
 
     def test_custom_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The custom provider must have an explicit base_url to avoid leaking to OpenAI."""

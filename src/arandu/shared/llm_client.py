@@ -352,24 +352,17 @@ def create_llm_client(
     )
 
 
-def build_llm_client_from_settings(
-    settings: LLMSettings,
-    *,
-    env_prefix: str | None = None,
-) -> LLMClient:
+def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
     """Build an :class:`LLMClient` from :class:`LLMSettings`, with stage-aware guards.
 
     Centralizes the provider parse, API-key lookup, ollama free-pass, and
     custom-``base_url`` guard that every LLM stage needs. Error messages name
-    the stage's env vars so a misconfiguration is actionable.
+    the stage's env vars (derived from the settings subclass's own
+    ``env_prefix``) so a misconfiguration is actionable.
 
     Args:
-        settings: Resolved :class:`LLMSettings` (or a subclass). Every stage is
-            a subclass that pins its own ``env_prefix``, so the prefix used in
-            error hints is derived automatically.
-        env_prefix: Override the env-var prefix used in error hints. Only needed
-            when building from a bare :class:`LLMSettings` constructed with a
-            per-instance prefix rather than a subclass.
+        settings: Resolved :class:`LLMSettings` subclass; its ``env_prefix``
+            supplies the env-var names used in error hints.
 
     Returns:
         A configured :class:`LLMClient`.
@@ -379,7 +372,7 @@ def build_llm_client_from_settings(
             without a ``base_url``.
         RuntimeError: If a cloud provider's API-key env var is unset.
     """
-    prefix = env_prefix or settings.model_config.get("env_prefix") or "ARANDU_LLM_"
+    prefix = settings.model_config.get("env_prefix") or "ARANDU_LLM_"
 
     provider_enum = parse_provider(settings.provider)
 
