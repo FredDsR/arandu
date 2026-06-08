@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from arandu.shared.config import get_llm_config
 from arandu.shared.judge import (
+    DEFAULT_MAX_TOKENS,
     BaseJudge,
     JudgePipeline,
     JudgeStage,
@@ -141,7 +142,8 @@ class TranscriptionJudge(BaseJudge):
         validator_client: Optional LLM client. When provided, enables the
             ``llm_filter`` stage.
         temperature: Sampling temperature for LLM criteria (default ``0.3``).
-        max_tokens: Max tokens for LLM criterion responses (default ``2048``).
+        max_tokens: Max tokens for LLM criterion responses (default
+            ``DEFAULT_MAX_TOKENS``; sized for reasoning models).
     """
 
     def __init__(
@@ -150,7 +152,7 @@ class TranscriptionJudge(BaseJudge):
         language: str = "pt",
         validator_client: LLMClient | None = None,
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
         """Initialize judge with language and optional LLM client.
 

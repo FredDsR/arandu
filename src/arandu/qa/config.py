@@ -54,9 +54,14 @@ class QAConfig(BaseSettings):
         description="Temperature for QA generation LLM",
     )
     max_tokens: int = Field(
-        default=2048,
+        default=8192,
         ge=1,
-        description="Max tokens for QA generation LLM",
+        description=(
+            "Max tokens for QA generation LLM. "
+            "Sized for thinking models (Qwen3, Gemini 2.5) whose reasoning "
+            "tokens consume the budget before the JSON output and would "
+            "otherwise truncate it mid-string."
+        ),
     )
 
     # Output settings
@@ -149,13 +154,14 @@ class CEPConfig(BaseSettings):
         description="Maximum reasoning hops to detect for multi-hop questions",
     )
     reasoning_max_tokens: int = Field(
-        default=2048,
+        default=8192,
         ge=128,
         le=8192,
         description=(
             "Maximum tokens for reasoning enrichment responses. "
-            "Increase for thinking models (Qwen3, DeepSeek-R1) whose <think> "
-            "blocks consume tokens before the JSON output."
+            "Defaults high for thinking models (Qwen3, DeepSeek-R1, Gemini 2.5) "
+            "whose <think> blocks consume tokens before the JSON output and "
+            "would otherwise truncate it."
         ),
     )
 
@@ -286,12 +292,13 @@ class JudgeConfig(BaseSettings):
         description="Temperature for judge LLM (low for consistent evaluation)",
     )
     max_tokens: int = Field(
-        default=2048,
+        default=8192,
         ge=128,
         le=8192,
         description=(
             "Maximum tokens for judge responses. "
-            "Increase for thinking models whose <think> blocks consume tokens."
+            "Defaults high for thinking models whose <think> blocks consume "
+            "tokens before the JSON output and would otherwise truncate it."
         ),
     )
 

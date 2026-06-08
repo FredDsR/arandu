@@ -9,7 +9,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from arandu.shared.judge.criterion import JudgeCriterion, LLMCriterion
+from arandu.shared.judge.criterion import (
+    DEFAULT_MAX_TOKENS,
+    JudgeCriterion,
+    LLMCriterion,
+)
 from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
@@ -37,7 +41,7 @@ class LLMCriterionFactory:
         language: str = "pt",
         prompts_dir: Path | None = None,
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
         """Initialize criterion factory.
 

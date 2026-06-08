@@ -99,7 +99,7 @@ class TestQAConfig:
         assert config.base_url is None
         assert config.questions_per_document == 10
         assert config.temperature == 0.7
-        assert config.max_tokens == 2048
+        assert config.max_tokens == 8192
         assert config.workers == 2
 
     def test_questions_per_document_boundary_min(self) -> None:

@@ -18,7 +18,7 @@ class TestJudgeAnswersSettings:
         assert s.provider == "ollama"
         assert s.model_id == "qwen3:14b"
         assert s.temperature == 0.3
-        assert s.max_tokens == 2048
+        assert s.max_tokens == 8192
         assert s.language == "pt"
         assert s.abstention_disagreement_audit is True
 

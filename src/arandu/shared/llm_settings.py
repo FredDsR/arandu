@@ -44,7 +44,12 @@ class LLMSettings(BaseSettings):
     api_key_env: str = Field(default="OPENAI_API_KEY")
     base_url: str | None = Field(default=None)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, gt=0)
+    # 8192: sized for reasoning models (qwen3:14b default, gemini-2.5-flash)
+    # whose internal thinking tokens count against this budget. A tighter cap
+    # is exhausted mid-reasoning and truncates the (often JSON) response, which
+    # surfaces downstream as a parse failure and a dropped result. Stages that
+    # emit short free-text (e.g. the answerer) pin a smaller value themselves.
+    max_tokens: int = Field(default=8192, gt=0)
     language: Literal["pt", "en"] = Field(default="pt")
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_LLM_", extra="ignore")

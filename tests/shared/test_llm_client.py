@@ -620,7 +620,7 @@ class TestLLMSettings:
         assert s.api_key_env == "OPENAI_API_KEY"
         assert s.base_url is None
         assert s.temperature == 0.2
-        assert s.max_tokens == 2048
+        assert s.max_tokens == 8192
         assert s.language == "pt"
 
     def test_provider_normalized_to_lowercase(self) -> None:

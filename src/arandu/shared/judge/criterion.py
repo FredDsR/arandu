@@ -26,6 +26,12 @@ from arandu.utils.text import validate_ordinal_score, validate_score
 ORDINAL_MIN = 1
 ORDINAL_MAX = 5
 
+# Default completion-token budget for LLM criteria. Sized for reasoning models
+# (Qwen3, Gemini 2.5, DeepSeek-R1) whose internal thinking tokens count against
+# this budget: a tight cap exhausts it during reasoning and truncates the JSON
+# response mid-string, surfacing as ``JSONDecodeError`` and a dropped verdict.
+DEFAULT_MAX_TOKENS = 8192
+
 logger = logging.getLogger(__name__)
 
 
@@ -243,7 +249,7 @@ class BaseLLMCriterion(JudgeCriterion):
         *,
         threshold: float = 0.0,
         temperature: float | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
         super().__init__(name, threshold)
         self.llm_client = llm_client
@@ -297,7 +303,7 @@ class BaseLLMCriterion(JudgeCriterion):
         llm_client: Any,
         *,
         temperature: float | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> Self:
         """Load a concrete engine from prompt files and config.json.
 
@@ -451,7 +457,7 @@ class LLMCriterion(BaseLLMCriterion):
         *,
         threshold: float = 0.0,
         temperature: float | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         scale: CriterionScale = "continuous",
     ) -> None:
         self._engine: BaseLLMCriterion = _engine_for_scale(scale)(
@@ -485,7 +491,7 @@ class LLMCriterion(BaseLLMCriterion):
         llm_client: Any,
         *,
         temperature: float | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         scale: CriterionScale = "continuous",
     ) -> LLMCriterion:
         """Load the router with the engine indicated by ``scale``.

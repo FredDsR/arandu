@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.shared.judge.criterion import LLMCriterion
+from arandu.shared.judge.criterion import DEFAULT_MAX_TOKENS, LLMCriterion
 from arandu.shared.judge.factory import LLMCriterionFactory
 
 if TYPE_CHECKING:
@@ -190,3 +190,26 @@ class TestLLMCriterionFactory:
         assert isinstance(criterion, LLMCriterion)
         assert criterion.temperature == 0.5
         assert criterion.max_tokens == 4096
+
+    def test_default_max_tokens_sized_for_reasoning_models(
+        self,
+        mock_llm_client: Any,
+        prompts_dir: Path,
+    ) -> None:
+        """Factory defaults max_tokens high enough for thinking-model JSON.
+
+        Reasoning models (Qwen3, Gemini 2.5) spend tokens on internal thinking
+        before emitting the JSON verdict; a tight budget truncates the response
+        mid-string and drops the criterion. The default must leave headroom.
+        """
+        factory = LLMCriterionFactory(
+            llm_client=mock_llm_client,
+            language="pt",
+            prompts_dir=prompts_dir,
+        )
+
+        criterion = factory.get_criterion("faithfulness")
+
+        assert factory.max_tokens == DEFAULT_MAX_TOKENS
+        assert DEFAULT_MAX_TOKENS == 8192
+        assert criterion.max_tokens == DEFAULT_MAX_TOKENS
