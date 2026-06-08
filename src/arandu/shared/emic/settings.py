@@ -22,11 +22,11 @@ class EmicPrepassSettings(LLMSettings):
     model than the judge via ``ARANDU_EMIC_PREPASS_MODEL_ID``.
 
     Attributes:
-        temperature: Sampling temperature. Default 0.1 — the emic judgment is
+        temperature: Sampling temperature. Default 0.1: the emic judgment is
             structural, not creative (spec §4.2 principle 8). Still
             env-overridable via ``ARANDU_EMIC_PREPASS_TEMPERATURE``.
-        language: Prompt language. Narrowed to ``"pt"`` only — that is the only
-            ``emic_validity`` prompt template that ships today.
+        language: Prompt language. Narrowed to ``"pt"`` only (that is the only
+            ``emic_validity`` prompt template that ships today).
     """
 
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)

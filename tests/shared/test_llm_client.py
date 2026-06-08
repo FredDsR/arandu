@@ -10,6 +10,8 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
+from pydantic_settings import SettingsConfigDict
+
 from arandu.shared.llm_client import (
     LLMClient,
     LLMProvider,
@@ -632,6 +634,29 @@ class TestLLMSettings:
         s = LLMSettings(_env_prefix="ARANDU_STAGEX_")
         assert s.model_id == "stage-x-model"
         assert s.provider == "openai"  # still normalized
+
+    def test_subclass_inherits_extra_ignore_and_validator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A subclass that sets only ``env_prefix`` still inherits ``extra="ignore"``.
+
+        Stage subclasses (answerer/judge/non-answerable/emic) drop ``extra`` from
+        their own ``model_config`` and rely on config-merge inheritance from the
+        base. Guard that an unknown env var is ignored (not rejected) and that
+        the provider normalizer still fires, so a future pydantic change that
+        broke the merge would fail here instead of silently flipping to
+        ``extra="forbid"``.
+        """
+
+        class _StageSettings(LLMSettings):
+            model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
+
+        monkeypatch.setenv("ARANDU_TESTSTAGE_PROVIDER", "OpenAI")
+        monkeypatch.setenv("ARANDU_TESTSTAGE_BOGUS_UNKNOWN", "x")  # must be ignored, not raise
+        s = _StageSettings()
+        assert s.provider == "openai"  # inherited validator applied
+        assert _StageSettings.model_config.get("extra") == "ignore"  # merged from base
+        assert _StageSettings.model_config.get("env_prefix") == "ARANDU_TESTSTAGE_"
 
 
 class TestBuildLlmClientFromSettings:

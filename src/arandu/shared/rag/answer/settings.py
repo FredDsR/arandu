@@ -13,7 +13,7 @@ class AnswererSettings(LLMSettings):
 
     Inherits the canonical LLM connection/sampling fields from
     :class:`LLMSettings`; adds the answerer's token-budget knobs. Held
-    constant across retrieval arms in a single run — this is what isolates
+    constant across retrieval arms in a single run; this is what isolates
     retrieval-quality from generation-quality in the cross-arm comparison
     (spec §5.1).
 
