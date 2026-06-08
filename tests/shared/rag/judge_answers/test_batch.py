@@ -363,7 +363,7 @@ class TestBuildLlmClientFailures:
             language="pt",
             abstention_disagreement_audit=True,
         )
-        with pytest.raises(ValueError, match="Unknown LLM provider"):
+        with pytest.raises(ValueError, match="Invalid provider"):
             run_judge_answers_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
     def test_cloud_provider_without_api_key_raises(

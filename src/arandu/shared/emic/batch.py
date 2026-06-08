@@ -22,9 +22,9 @@ from arandu.qa.schemas import QARecordCEP
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
 from arandu.shared.emic.schemas import EmicPrepassResult, EmicScore, EmicSourceScores
-from arandu.shared.emic.settings import EMIC_ENV_PREFIX, default_emic_settings
+from arandu.shared.emic.settings import EmicPrepassSettings
 from arandu.shared.judge.criterion import OrdinalLLMCriterion
-from arandu.shared.llm_client import LLMSettings, build_llm_client_from_settings
+from arandu.shared.llm_client import build_llm_client_from_settings
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
 from arandu.utils.paths import get_project_root
@@ -41,7 +41,7 @@ EMIC_CRITERION_NAME = "emic_validity"
 def run_emic_prepass_batch(
     pipeline_id: str,
     *,
-    settings: LLMSettings | None = None,
+    settings: EmicPrepassSettings | None = None,
     base_dir: Path | None = None,
     rerun: bool = False,
 ) -> EmicPrepassResult:
@@ -51,7 +51,7 @@ def run_emic_prepass_batch(
         pipeline_id: Run identifier. The ``cep`` stage must be populated and
             judged (only pairs with ``is_valid`` are scored).
         settings: Emic-prepass LLM configuration. Defaults to
-            :func:`default_emic_settings` (reads ``ARANDU_EMIC_PREPASS_*``).
+            :class:`EmicPrepassSettings` (reads ``ARANDU_EMIC_PREPASS_*``).
         base_dir: Override the project ``results/`` root.
         rerun: If True, clear the checkpoint so every source is re-scored.
 
@@ -62,7 +62,7 @@ def run_emic_prepass_batch(
         FileNotFoundError: If the cep stage outputs aren't present.
         RuntimeError: If a cloud-provider API key env var is unset.
     """
-    resolved = settings if settings is not None else default_emic_settings()
+    resolved = settings if settings is not None else EmicPrepassSettings()
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
 
     cep_outputs = base / pipeline_id / "cep" / "outputs"
@@ -72,7 +72,7 @@ def run_emic_prepass_batch(
             f"Run `arandu generate-cep-qa` and `arandu judge-qa` first."
         )
 
-    llm_client = build_llm_client_from_settings(resolved, env_prefix=EMIC_ENV_PREFIX)
+    llm_client = build_llm_client_from_settings(resolved)
     criterion = OrdinalLLMCriterion.from_config(
         name=EMIC_CRITERION_NAME,
         prompts_dir=get_project_root() / "prompts" / "judge" / "criteria",

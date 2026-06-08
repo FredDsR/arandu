@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from arandu.shared.llm_client import LLMSettings
+from arandu.shared.llm_settings import LLMSettings
 
 
 class AnswererSettings(LLMSettings):
@@ -35,4 +35,4 @@ class AnswererSettings(LLMSettings):
     max_context_tokens: int = Field(default=8192, gt=0)
     prompt_overhead_tokens: int = Field(default=350, ge=0)
 
-    model_config = SettingsConfigDict(env_prefix="ARANDU_ANSWERER_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="ARANDU_ANSWERER_")

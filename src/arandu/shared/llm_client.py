@@ -10,14 +10,16 @@ import json
 import logging
 import os
 from enum import Enum
-from typing import Any, ClassVar, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
+
+if TYPE_CHECKING:
+    from arandu.shared.llm_settings import LLMSettings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -295,6 +297,28 @@ class LLMClient:
         )
 
 
+def _parse_provider(provider: LLMProvider | str) -> LLMProvider:
+    """Coerce a provider value to :class:`LLMProvider` with one canonical error.
+
+    Args:
+        provider: An ``LLMProvider`` (returned unchanged) or a string
+            (case-insensitive).
+
+    Returns:
+        The resolved provider enum.
+
+    Raises:
+        ValueError: If a string does not name a valid provider.
+    """
+    if isinstance(provider, LLMProvider):
+        return provider
+    try:
+        return LLMProvider(provider.lower())
+    except ValueError as exc:
+        valid = [p.value for p in LLMProvider]
+        raise ValueError(f"Invalid provider: {provider!r}. Must be one of {valid}") from exc
+
+
 def create_llm_client(
     provider: LLMProvider | str,
     model_id: str,
@@ -320,61 +344,12 @@ def create_llm_client(
         >>> client = create_llm_client("ollama", "llama3.1:8b")
         >>> client = create_llm_client(LLMProvider.OPENAI, "gpt-4", api_key="sk-...")
     """
-    if isinstance(provider, str):
-        try:
-            provider = LLMProvider(provider.lower())
-        except ValueError as e:
-            valid = [p.value for p in LLMProvider]
-            raise ValueError(f"Invalid provider: {provider!r}. Must be one of {valid}") from e
-
     return LLMClient(
-        provider=provider,
+        provider=_parse_provider(provider),
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
     )
-
-
-class LLMSettings(BaseSettings):
-    """Canonical LLM connection + sampling settings for any pipeline stage.
-
-    Single source of truth for the fields every LLM-driven stage needs to
-    build an :class:`LLMClient`. Stages with extra domain config (token
-    budgets, criterion thresholds, sampler seeds) subclass this and add their
-    own fields, overriding only the LLM defaults they deliberately change.
-    Stages that need nothing beyond LLM config use it directly, passing a
-    per-stage ``_env_prefix`` so each stage can be configured independently
-    (e.g. a cheaper model for one stage than another).
-
-    Attributes:
-        provider: LLM provider (``"ollama"`` default; ``"openai"`` for OpenAI
-            proper; ``"custom"`` for an OpenAI-compatible endpoint, paired
-            with ``base_url``).
-        model_id: Model identifier.
-        api_key_env: Env var holding the API key (ignored for ollama).
-        base_url: Base URL override; required when ``provider == "custom"``.
-        temperature: Sampling temperature.
-        max_tokens: Cap on each response.
-        language: Prompt language; selects the per-stage prompt template.
-    """
-
-    provider: str = Field(default="ollama")
-    model_id: str = Field(default="qwen3:14b")
-    api_key_env: str = Field(default="OPENAI_API_KEY")
-    base_url: str | None = Field(default=None)
-    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, gt=0)
-    language: Literal["pt", "en"] = Field(default="pt")
-
-    model_config = SettingsConfigDict(env_prefix="ARANDU_LLM_", extra="ignore")
-
-    @field_validator("provider", mode="before")
-    @classmethod
-    def _normalize_provider(cls, v: str) -> str:
-        """Lowercase the provider so env-var case (Ollama, OPENAI) doesn't break dispatch."""
-        if isinstance(v, str):
-            return v.lower()
-        return v
 
 
 def build_llm_client_from_settings(
@@ -389,11 +364,12 @@ def build_llm_client_from_settings(
     the stage's env vars so a misconfiguration is actionable.
 
     Args:
-        settings: Resolved :class:`LLMSettings` (or a subclass).
-        env_prefix: Env-var prefix used in error hints. Defaults to the
-            settings class's own ``env_prefix`` (correct for subclasses);
-            pass it explicitly when constructing :class:`LLMSettings` directly
-            with a per-instance ``_env_prefix``.
+        settings: Resolved :class:`LLMSettings` (or a subclass). Every stage is
+            a subclass that pins its own ``env_prefix``, so the prefix used in
+            error hints is derived automatically.
+        env_prefix: Override the env-var prefix used in error hints. Only needed
+            when building from a bare :class:`LLMSettings` constructed with a
+            per-instance prefix rather than a subclass.
 
     Returns:
         A configured :class:`LLMClient`.
@@ -405,12 +381,7 @@ def build_llm_client_from_settings(
     """
     prefix = env_prefix or settings.model_config.get("env_prefix") or "ARANDU_LLM_"
 
-    try:
-        provider_enum = LLMProvider(settings.provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unknown LLM provider {settings.provider!r}. Valid: {[p.value for p in LLMProvider]}."
-        ) from exc
+    provider_enum = _parse_provider(settings.provider)
 
     api_key = os.environ.get(settings.api_key_env)
     if not api_key and provider_enum is not LLMProvider.OLLAMA:

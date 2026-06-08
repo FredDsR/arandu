@@ -13,10 +13,10 @@ if TYPE_CHECKING:
 from arandu.shared.llm_client import (
     LLMClient,
     LLMProvider,
-    LLMSettings,
     build_llm_client_from_settings,
     create_llm_client,
 )
+from arandu.shared.llm_settings import LLMSettings
 from arandu.utils.text import GenerateResult
 
 
@@ -676,5 +676,5 @@ class TestBuildLlmClientFromSettings:
             max_tokens=2048,
             language="pt",
         )
-        with pytest.raises(ValueError, match="Unknown LLM provider"):
+        with pytest.raises(ValueError, match="Invalid provider"):
             build_llm_client_from_settings(bad)

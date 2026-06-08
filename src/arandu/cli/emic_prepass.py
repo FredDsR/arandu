@@ -15,7 +15,7 @@ from typing import Annotated
 import typer
 
 from arandu.shared.emic.batch import run_emic_prepass_batch
-from arandu.shared.emic.settings import default_emic_settings
+from arandu.shared.emic.settings import EmicPrepassSettings
 from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 logger = logging.getLogger(__name__)
@@ -51,10 +51,10 @@ def emic_prepass(
     sample builder.
 
     LLM configuration is read from ``ARANDU_EMIC_PREPASS_*`` env vars; see
-    :func:`default_emic_settings`. The score is a sampling aid, not ground
+    :class:`EmicPrepassSettings`. The score is a sampling aid, not ground
     truth — the human annotators are the reference.
     """
-    settings = default_emic_settings()
+    settings = EmicPrepassSettings()
     print_info(f"Run: {pipeline_id}")
     print_info(
         f"Emic LLM: provider={settings.provider}, model={settings.model_id}, "

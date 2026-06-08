@@ -10,9 +10,9 @@ import pytest
 from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.emic.batch import run_emic_prepass_batch
 from arandu.shared.emic.schemas import EmicSourceScores
+from arandu.shared.emic.settings import EmicPrepassSettings
 from arandu.shared.judge.criterion import OrdinalCriterionResponse
 from arandu.shared.judge.schemas import JudgePipelineResult
-from arandu.shared.llm_client import LLMSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,13 +61,13 @@ def mock_emic_client(mocker: MockerFixture) -> Any:
 
 
 @pytest.fixture
-def settings() -> LLMSettings:
-    return LLMSettings(provider="ollama", model_id="test-model")
+def settings() -> EmicPrepassSettings:
+    return EmicPrepassSettings(provider="ollama", model_id="test-model")
 
 
 class TestEmicPrepassBatch:
     def test_scores_only_approved_pairs(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
         cep_outputs = tmp_path / "run1" / "cep" / "outputs"
         _write_cep_record(
@@ -99,13 +99,13 @@ class TestEmicPrepassBatch:
         assert {s.bloom_level for s in out.scores} == {"analyze", "evaluate"}
 
     def test_missing_cep_stage_raises(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
         with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
             run_emic_prepass_batch("absent", settings=settings, base_dir=tmp_path)
 
     def test_resume_skips_completed_sources(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
         cep_outputs = tmp_path / "run2" / "cep" / "outputs"
         _write_cep_record(cep_outputs, "src1", [_pair("Q", approved=True)])
@@ -124,7 +124,7 @@ class TestEmicPrepassBatch:
         assert second.sources == 1
 
     def test_rerun_rescores(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
         cep_outputs = tmp_path / "run3" / "cep" / "outputs"
         _write_cep_record(cep_outputs, "src1", [_pair("Q", approved=True)])
@@ -134,7 +134,7 @@ class TestEmicPrepassBatch:
         assert mock_emic_client.generate_structured.call_count == 2
 
     def test_llm_error_records_failed_pair(
-        self, tmp_path: Path, mocker: MockerFixture, settings: LLMSettings
+        self, tmp_path: Path, mocker: MockerFixture, settings: EmicPrepassSettings
     ) -> None:
         client = mocker.MagicMock()
         client.generate_structured.side_effect = RuntimeError("llm down")
@@ -153,7 +153,7 @@ class TestEmicPrepassBatch:
         assert out.scores[0].error is not None
 
     def test_unjudged_pairs_are_skipped_and_flagged(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
         # A run that was CEP-populated but never judge-qa'd: is_valid is None
         # for every pair, so nothing is scored and the result flags the gap
@@ -178,7 +178,7 @@ class TestEmicPrepassBatch:
         assert out.scores == []
 
     def test_load_failure_counts_failed_source_and_marks_run_failed(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
 
         cep_outputs = tmp_path / "run6" / "cep" / "outputs"
@@ -199,7 +199,7 @@ class TestEmicPrepassBatch:
         assert metadata["status"] == "failed"  # a failed source marks the run FAILED
 
     def test_run_marked_completed_on_success(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
 
         cep_outputs = tmp_path / "run7" / "cep" / "outputs"
@@ -213,7 +213,7 @@ class TestEmicPrepassBatch:
         assert metadata["status"] == "completed"  # no longer stuck IN_PROGRESS
 
     def test_rerun_clears_stale_outputs(
-        self, tmp_path: Path, mock_emic_client: Any, settings: LLMSettings
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicPrepassSettings
     ) -> None:
         cep_outputs = tmp_path / "run8" / "cep" / "outputs"
         _write_cep_record(cep_outputs, "src1", [_pair("Q", approved=True)])

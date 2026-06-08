@@ -1,26 +1,35 @@
-"""Settings for ``arandu emic-prepass`` (env prefix ``ARANDU_EMIC_PREPASS_``).
-
-The emic pre-pass needs nothing beyond the canonical LLM configuration, so it
-reuses :class:`~arandu.shared.llm_client.LLMSettings` directly rather than
-declaring a bespoke settings class. This module only pins the stage's env
-prefix and its one deliberate default (a low, structural-not-creative
-temperature, spec §4.2 principle 8).
-"""
+"""Settings for ``arandu emic-prepass`` (env prefix ``ARANDU_EMIC_PREPASS_``)."""
 
 from __future__ import annotations
 
-from arandu.shared.llm_client import LLMSettings
+from typing import Literal
 
-EMIC_ENV_PREFIX = "ARANDU_EMIC_PREPASS_"
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+
+from arandu.shared.llm_settings import LLMSettings
 
 
-def default_emic_settings() -> LLMSettings:
-    """Return the default LLM settings for the emic pre-pass.
+class EmicPrepassSettings(LLMSettings):
+    """LLM settings for the ordinal emic-validity pre-pass (spec §5).
 
-    Reads ``ARANDU_EMIC_PREPASS_*`` (provider/model_id/api_key_env/base_url
-    remain env-overridable so the pre-pass can run a cheaper model than the
-    judge). Temperature is pinned to 0.1: the emic judgment is structural, not
-    creative (spec §4.2 principle 8). The score is a sampling aid, not ground
-    truth (the human annotators are the reference).
+    A thin subclass of :class:`LLMSettings` (same pattern as the answerer /
+    judge / non-answerable stages): inherits the canonical LLM fields and the
+    provider normalizer, pins the ``ARANDU_EMIC_PREPASS_`` env prefix, and
+    overrides only the two defaults the pre-pass deliberately changes. The
+    score is a sampling aid, **not** ground truth (the human annotators are the
+    reference), so a modest model is fine and the pre-pass can run a cheaper
+    model than the judge via ``ARANDU_EMIC_PREPASS_MODEL_ID``.
+
+    Attributes:
+        temperature: Sampling temperature. Default 0.1 — the emic judgment is
+            structural, not creative (spec §4.2 principle 8). Still
+            env-overridable via ``ARANDU_EMIC_PREPASS_TEMPERATURE``.
+        language: Prompt language. Narrowed to ``"pt"`` only — that is the only
+            ``emic_validity`` prompt template that ships today.
     """
-    return LLMSettings(_env_prefix=EMIC_ENV_PREFIX, temperature=0.1)
+
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    language: Literal["pt"] = Field(default="pt")
+
+    model_config = SettingsConfigDict(env_prefix="ARANDU_EMIC_PREPASS_")

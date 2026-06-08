@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from arandu.shared.llm_client import LLMSettings
+from arandu.shared.llm_settings import LLMSettings
 
 
 class NonAnswerableSettings(LLMSettings):
@@ -29,4 +29,4 @@ class NonAnswerableSettings(LLMSettings):
     retry_max: int = Field(default=3, ge=1)
     base_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
 
-    model_config = SettingsConfigDict(env_prefix="ARANDU_NONANSWERABLE_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="ARANDU_NONANSWERABLE_")

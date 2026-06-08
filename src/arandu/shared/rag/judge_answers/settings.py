@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from arandu.shared.llm_client import LLMSettings
+from arandu.shared.llm_settings import LLMSettings
 
 
 class JudgeAnswersSettings(LLMSettings):
@@ -29,4 +29,4 @@ class JudgeAnswersSettings(LLMSettings):
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     abstention_disagreement_audit: bool = Field(default=True)
 
-    model_config = SettingsConfigDict(env_prefix="ARANDU_JUDGE_ANSWERS_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="ARANDU_JUDGE_ANSWERS_")

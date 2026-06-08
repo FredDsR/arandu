@@ -143,7 +143,7 @@ class TestBuildLlmClientFailures:
             max_context_tokens=8192,
             prompt_overhead_tokens=350,
         )
-        with pytest.raises(ValueError, match="Unknown LLM provider"):
+        with pytest.raises(ValueError, match="Invalid provider"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
     def test_cloud_provider_without_api_key_raises(
