@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from arandu.qa.config import CEPConfig, QAConfig
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import LLMClient, parse_provider
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import EnrichedRecord, PipelineType
 
@@ -243,7 +243,7 @@ def _init_cep_worker(
 
     # Create main LLM client
     llm_client = LLMClient(
-        provider=LLMProvider(provider),
+        provider=parse_provider(provider),
         model_id=model_id,
         base_url=base_url,
     )
@@ -292,7 +292,7 @@ def generate_cep_qa_for_transcription(
                 base_url = qa_config.ollama_url
 
             llm_client = LLMClient(
-                provider=LLMProvider(provider),
+                provider=parse_provider(provider),
                 model_id=model_id,
                 base_url=base_url,
             )

@@ -18,7 +18,7 @@ from arandu.shared.chunking.resolver import ChunkResolver
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.config import ResultsConfig
 from arandu.shared.embeddings import EmbedderSettings, build_embedder
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import LLMClient, LLMProvider, parse_provider
 from arandu.shared.rag.retrieve.settings import (
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
@@ -272,13 +272,7 @@ def _build_atlas_rag(
     # the per-provider base_url default; here we coerce to the enum and
     # use it for the API-key check so the comparison is exhaustive
     # rather than string-fragile.
-    try:
-        provider_enum = LLMProvider(settings.provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unknown atlas_rag provider {settings.provider!r}. "
-            f"Valid: {[p.value for p in LLMProvider]}."
-        ) from exc
+    provider_enum = parse_provider(settings.provider)
 
     api_key = os.environ.get(settings.api_key_env)
     if not api_key and provider_enum is not LLMProvider.OLLAMA:

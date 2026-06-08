@@ -10,11 +10,15 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
+from pydantic_settings import SettingsConfigDict
+
 from arandu.shared.llm_client import (
     LLMClient,
     LLMProvider,
+    build_llm_client_from_settings,
     create_llm_client,
 )
+from arandu.shared.llm_settings import LLMSettings
 from arandu.utils.text import GenerateResult
 
 
@@ -603,3 +607,101 @@ class TestLLMProvider:
         """Test creating LLMProvider from invalid string raises ValueError."""
         with pytest.raises(ValueError):
             LLMProvider("invalid")
+
+
+class TestLLMSettings:
+    """Tests for the canonical LLMSettings class."""
+
+    def test_defaults(self) -> None:
+        """Global defaults match the project's ollama/qwen3 baseline."""
+        s = LLMSettings()
+        assert s.provider == "ollama"
+        assert s.model_id == "qwen3:14b"
+        assert s.api_key_env == "OPENAI_API_KEY"
+        assert s.base_url is None
+        assert s.temperature == 0.2
+        assert s.max_tokens == 2048
+        assert s.language == "pt"
+
+    def test_provider_normalized_to_lowercase(self) -> None:
+        """The shared validator lowercases the provider so env-var case can't break dispatch."""
+        assert LLMSettings(provider="OpenAI").provider == "openai"
+
+    def test_per_instance_env_prefix_isolates_stages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A per-instance ``_env_prefix`` lets one class serve independently-configured stages."""
+        monkeypatch.setenv("ARANDU_STAGEX_MODEL_ID", "stage-x-model")
+        monkeypatch.setenv("ARANDU_STAGEX_PROVIDER", "OPENAI")
+        s = LLMSettings(_env_prefix="ARANDU_STAGEX_")
+        assert s.model_id == "stage-x-model"
+        assert s.provider == "openai"  # still normalized
+
+    def test_subclass_inherits_extra_ignore_and_validator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A subclass that sets only ``env_prefix`` still inherits ``extra="ignore"``.
+
+        Stage subclasses (answerer/judge/non-answerable/emic) drop ``extra`` from
+        their own ``model_config`` and rely on config-merge inheritance from the
+        base. Guard that an unknown env var is ignored (not rejected) and that
+        the provider normalizer still fires, so a future pydantic change that
+        broke the merge would fail here instead of silently flipping to
+        ``extra="forbid"``.
+        """
+
+        class _StageSettings(LLMSettings):
+            model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
+
+        monkeypatch.setenv("ARANDU_TESTSTAGE_PROVIDER", "OpenAI")
+        monkeypatch.setenv("ARANDU_TESTSTAGE_BOGUS_UNKNOWN", "x")  # must be ignored, not raise
+        s = _StageSettings()
+        assert s.provider == "openai"  # inherited validator applied
+        assert _StageSettings.model_config.get("extra") == "ignore"  # merged from base
+        assert _StageSettings.model_config.get("env_prefix") == "ARANDU_TESTSTAGE_"
+
+
+class TestBuildLlmClientFromSettings:
+    """Tests for the shared settings -> LLMClient builder."""
+
+    def test_ollama_needs_no_api_key(self, mocker: MockerFixture) -> None:
+        """Ollama gets a free pass on the API-key requirement."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_llm_client_from_settings(LLMSettings(provider="ollama"))
+        assert client.provider is LLMProvider.OLLAMA
+
+    def test_cloud_missing_key_raises_with_default_prefix_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing cloud key points at the settings class's own env prefix."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY_ENV"):
+            build_llm_client_from_settings(LLMSettings(provider="openai"))
+
+    def test_subclass_env_prefix_drives_error_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Error hints use the settings subclass's own env_prefix, derived automatically."""
+
+        class _StageSettings(LLMSettings):
+            model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_PROVIDER"):
+            build_llm_client_from_settings(_StageSettings(provider="openai"))
+
+    def test_custom_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The custom provider must have an explicit base_url to avoid leaking to OpenAI."""
+        monkeypatch.setenv("OPENAI_API_KEY", "test")
+        with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
+            build_llm_client_from_settings(LLMSettings(provider="custom"))
+
+    def test_unknown_provider_raises(self) -> None:
+        """An invalid provider surfaces the valid set."""
+        bad = LLMSettings.model_construct(
+            provider="not_a_provider",
+            model_id="x",
+            api_key_env="OPENAI_API_KEY",
+            base_url=None,
+            temperature=0.2,
+            max_tokens=2048,
+            language="pt",
+        )
+        with pytest.raises(ValueError, match="Invalid provider"):
+            build_llm_client_from_settings(bad)

@@ -14,14 +14,13 @@ abstention judge's verdict (spec §6.4).
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import build_llm_client_from_settings
 from arandu.shared.rag.answer.resolver import build_passage_text_map
 from arandu.shared.rag.judge_answers.audit import (
     AbstentionDisagreement,
@@ -101,7 +100,7 @@ def run_judge_answers_batch(
             f"{answers_outputs}. Run `arandu answer --id {pipeline_id}` first."
         )
 
-    llm_client = _build_llm_client(resolved_settings)
+    llm_client = build_llm_client_from_settings(resolved_settings)
     judge = AnswerJudge(llm_client=llm_client, settings=resolved_settings)
 
     gold_lookup = build_gold_lookup(cep_dir=base / pipeline_id / "cep" / "outputs")
@@ -241,42 +240,6 @@ def _collect_all_disagreements(outputs_dir: Path) -> list[AbstentionDisagreement
         if disagreement is not None:
             out.append(disagreement)
     return out
-
-
-def _build_llm_client(settings: JudgeAnswersSettings) -> LLMClient:
-    """Construct the unified LLMClient from judge settings.
-
-    Mirrors the cloud-API-key + custom-base-url guards used in the
-    answerer's :func:`_build_llm_client` so the failure surfaces stay
-    consistent across stages.
-    """
-    try:
-        provider_enum = LLMProvider(settings.provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unknown judge_answers provider {settings.provider!r}. "
-            f"Valid: {[p.value for p in LLMProvider]}."
-        ) from exc
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        raise RuntimeError(
-            f"judge_answers provider {settings.provider!r} requires "
-            f"{settings.api_key_env} to be set. Either set it, or switch "
-            f"ARANDU_JUDGE_ANSWERS_PROVIDER to 'ollama'."
-        )
-    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
-        raise ValueError(
-            "provider='custom' requires a base URL. Set ARANDU_JUDGE_ANSWERS_BASE_URL "
-            "or pass base_url=... explicitly."
-        )
-
-    return LLMClient(
-        provider=provider_enum,
-        model_id=settings.model_id,
-        api_key=api_key,
-        base_url=settings.base_url,
-    )
 
 
 def _judge_one(

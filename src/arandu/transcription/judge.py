@@ -20,7 +20,7 @@ from arandu.shared.judge import (
     JudgeStep,
     LLMCriterionFactory,
 )
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import LLMClient, LLMProvider, parse_provider
 from arandu.transcription.criteria import (
     ContentDensityCriterion,
     ContentLengthFloorCriterion,
@@ -71,13 +71,7 @@ def build_validator_client(
     # Step 1: pick the provider, inferring 'custom' only when the user
     # hasn't named one and an env-var base URL is configured.
     resolved_provider = provider or ("custom" if env_base_url else "ollama")
-    try:
-        provider_enum = LLMProvider(resolved_provider.lower())
-    except ValueError as exc:
-        valid = sorted(p.value for p in LLMProvider)
-        raise ValueError(
-            f"Invalid LLM provider: {resolved_provider!r}. Must be one of {valid}."
-        ) from exc
+    provider_enum = parse_provider(resolved_provider)
 
     # Step 2: pick the base URL. Explicit base_url always wins. Otherwise
     # only inherit the env-var URL when the resolved provider is 'custom';

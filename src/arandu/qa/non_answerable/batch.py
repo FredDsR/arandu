@@ -13,7 +13,6 @@ already succeeded or were already attempted-and-collided.
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -27,7 +26,7 @@ from arandu.qa.non_answerable.schemas import NonAnswerableDataset, NonAnswerable
 from arandu.qa.non_answerable.settings import NonAnswerableSettings
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import build_llm_client_from_settings
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
 
@@ -114,7 +113,7 @@ def run_generate_non_answerable_batch(
     corpus_index = SourceCorpusIndex(base / pipeline_id / "transcription" / "outputs")
     logger.info("Absence gates: %d KG nodes, %d corpus spans.", len(kg_node_set), len(corpus_index))
 
-    llm_client = _build_llm_client(resolved)
+    llm_client = build_llm_client_from_settings(resolved)
 
     config = NonAnswerableBatchConfig(
         pipeline_id=pipeline_id,
@@ -250,34 +249,3 @@ def _reset_state(checkpoint_path: Path, items_dir: Path) -> None:
 def _safe_name(qa_pair_id: str) -> str:
     """Turn a composite id into a filesystem-safe stem (colons → underscores)."""
     return qa_pair_id.replace(":", "_").replace("/", "_")
-
-
-def _build_llm_client(settings: NonAnswerableSettings) -> LLMClient:
-    """Construct the unified LLMClient from settings (mirrors the judge stage)."""
-    try:
-        provider_enum = LLMProvider(settings.provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unknown non_answerable provider {settings.provider!r}. "
-            f"Valid: {[p.value for p in LLMProvider]}."
-        ) from exc
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        raise RuntimeError(
-            f"non_answerable provider {settings.provider!r} requires "
-            f"{settings.api_key_env} to be set. Either set it, or switch "
-            f"ARANDU_NONANSWERABLE_PROVIDER to 'ollama'."
-        )
-    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
-        raise ValueError(
-            "provider='custom' requires a base URL. Set ARANDU_NONANSWERABLE_BASE_URL "
-            "or pass base_url=... explicitly."
-        )
-
-    return LLMClient(
-        provider=provider_enum,
-        model_id=settings.model_id,
-        api_key=api_key,
-        base_url=settings.base_url,
-    )

@@ -56,7 +56,7 @@ def mock_emic_client(mocker: MockerFixture) -> Any:
     client.generate_structured.return_value = OrdinalCriterionResponse(
         score=2, rationale="reenquadramento institucional"
     )
-    mocker.patch("arandu.shared.emic.batch._build_llm_client", return_value=client)
+    mocker.patch("arandu.shared.emic.batch.build_llm_client_from_settings", return_value=client)
     return client
 
 
@@ -138,7 +138,7 @@ class TestEmicPrepassBatch:
     ) -> None:
         client = mocker.MagicMock()
         client.generate_structured.side_effect = RuntimeError("llm down")
-        mocker.patch("arandu.shared.emic.batch._build_llm_client", return_value=client)
+        mocker.patch("arandu.shared.emic.batch.build_llm_client_from_settings", return_value=client)
 
         cep_outputs = tmp_path / "run4" / "cep" / "outputs"
         _write_cep_record(cep_outputs, "src1", [_pair("Q", approved=True)])

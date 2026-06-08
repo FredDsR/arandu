@@ -1,47 +1,35 @@
-"""Pydantic settings for ``arandu emic-prepass`` (env prefix ``ARANDU_EMIC_PREPASS_``)."""
+"""Settings for ``arandu emic-prepass`` (env prefix ``ARANDU_EMIC_PREPASS_``)."""
 
 from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+
+from arandu.shared.llm_settings import LLMSettings
 
 
-class EmicPrepassSettings(BaseSettings):
+class EmicPrepassSettings(LLMSettings):
     """LLM settings for the ordinal emic-validity pre-pass (spec §5).
 
-    The pre-pass runs the ``emic_validity`` ordinal criterion over the
-    canonical-approved CEP pairs to produce per-pair scores that feed the
-    stratified sample. The score is a sampling aid, **not** ground truth (the
-    human annotators are the reference), so a modest model is fine.
+    A thin subclass of :class:`LLMSettings` (same pattern as the answerer /
+    judge / non-answerable stages): inherits the canonical LLM fields and the
+    provider normalizer, pins the ``ARANDU_EMIC_PREPASS_`` env prefix, and
+    overrides only the two defaults the pre-pass deliberately changes. The
+    score is a sampling aid, **not** ground truth (the human annotators are the
+    reference), so a modest model is fine and the pre-pass can run a cheaper
+    model than the judge via ``ARANDU_EMIC_PREPASS_MODEL_ID``.
 
     Attributes:
-        provider: LLM provider (``ollama`` default; ``openai`` or ``custom``
-            for cloud / OpenAI-compatible endpoints).
-        model_id: Model identifier.
-        api_key_env: Env var holding the API key (ignored for ollama).
-        base_url: Base URL override; required when ``provider == "custom"``.
-        temperature: Sampling temperature. Default 0.1 — the emic judgment is
-            structural, not creative (spec §4.2 principle 8).
-        max_tokens: Cap on each criterion response.
-        language: Prompt language; selects
-            ``prompts/judge/criteria/emic_validity/<lang>/prompt.md``.
-            Only ``pt`` ships today.
+        temperature: Sampling temperature. Default 0.1: the emic judgment is
+            structural, not creative (spec §4.2 principle 8). Still
+            env-overridable via ``ARANDU_EMIC_PREPASS_TEMPERATURE``.
+        language: Prompt language. Narrowed to ``"pt"`` only (that is the only
+            ``emic_validity`` prompt template that ships today).
     """
 
-    provider: str = Field(default="ollama")
-    model_id: str = Field(default="qwen3:14b")
-    api_key_env: str = Field(default="OPENAI_API_KEY")
-    base_url: str | None = Field(default=None)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, gt=0)
     language: Literal["pt"] = Field(default="pt")
 
-    model_config = SettingsConfigDict(env_prefix="ARANDU_EMIC_PREPASS_", extra="ignore")
-
-    @field_validator("provider", mode="before")
-    @classmethod
-    def _normalize_provider(cls, v: str) -> str:
-        """Lowercase the provider so env-var case doesn't break dispatch."""
-        return v.lower() if isinstance(v, str) else v
+    model_config = SettingsConfigDict(env_prefix="ARANDU_EMIC_PREPASS_")

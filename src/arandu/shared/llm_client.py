@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from enum import Enum
-from typing import Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
+
+if TYPE_CHECKING:
+    from arandu.shared.llm_settings import LLMSettings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -293,6 +297,28 @@ class LLMClient:
         )
 
 
+def parse_provider(provider: LLMProvider | str) -> LLMProvider:
+    """Coerce a provider value to :class:`LLMProvider` with one canonical error.
+
+    Args:
+        provider: An ``LLMProvider`` (returned unchanged) or a string
+            (case-insensitive).
+
+    Returns:
+        The resolved provider enum.
+
+    Raises:
+        ValueError: If a string does not name a valid provider.
+    """
+    if isinstance(provider, LLMProvider):
+        return provider
+    try:
+        return LLMProvider(provider.lower())
+    except ValueError as exc:
+        valid = [p.value for p in LLMProvider]
+        raise ValueError(f"Invalid provider: {provider!r}. Must be one of {valid}") from exc
+
+
 def create_llm_client(
     provider: LLMProvider | str,
     model_id: str,
@@ -318,16 +344,58 @@ def create_llm_client(
         >>> client = create_llm_client("ollama", "llama3.1:8b")
         >>> client = create_llm_client(LLMProvider.OPENAI, "gpt-4", api_key="sk-...")
     """
-    if isinstance(provider, str):
-        try:
-            provider = LLMProvider(provider.lower())
-        except ValueError as e:
-            valid = [p.value for p in LLMProvider]
-            raise ValueError(f"Invalid provider: {provider!r}. Must be one of {valid}") from e
-
     return LLMClient(
-        provider=provider,
+        provider=parse_provider(provider),
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
+    )
+
+
+def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
+    """Build an :class:`LLMClient` from :class:`LLMSettings`, with stage-aware guards.
+
+    Centralizes the provider parse, API-key lookup, ollama free-pass, and
+    custom-``base_url`` guard that every LLM stage needs. Error messages name
+    the stage's env vars (derived from the settings subclass's own
+    ``env_prefix``) so a misconfiguration is actionable.
+
+    Args:
+        settings: Resolved :class:`LLMSettings` subclass; its ``env_prefix``
+            supplies the env-var names used in error hints.
+
+    Returns:
+        A configured :class:`LLMClient`.
+
+    Raises:
+        ValueError: If the provider is unknown, or ``provider == "custom"``
+            without a ``base_url``.
+        RuntimeError: If a cloud provider's API-key env var is unset.
+    """
+    prefix = settings.model_config.get("env_prefix") or "ARANDU_LLM_"
+
+    provider_enum = parse_provider(settings.provider)
+
+    api_key = os.environ.get(settings.api_key_env)
+    if not api_key and provider_enum is not LLMProvider.OLLAMA:
+        raise RuntimeError(
+            f"LLM provider {settings.provider!r} requires {settings.api_key_env} to be set. "
+            f"Set it, point {prefix}API_KEY_ENV at the right variable, or switch "
+            f"{prefix}PROVIDER to 'ollama'."
+        )
+
+    # The 'custom' provider exists to target a non-default OpenAI-compatible
+    # endpoint; without an explicit base URL the LLMClient would silently fall
+    # back to OpenAI's default and could send data to the wrong provider.
+    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
+        raise ValueError(
+            f"provider='custom' requires a base URL. Set {prefix}BASE_URL "
+            f"or pass base_url=... explicitly."
+        )
+
+    return create_llm_client(
+        provider=provider_enum,
+        model_id=settings.model_id,
+        api_key=api_key,
+        base_url=settings.base_url,
     )
