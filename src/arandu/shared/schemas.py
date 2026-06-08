@@ -201,6 +201,7 @@ class PipelineType(StrEnum):
     ANALYSIS = "analysis"
     NON_ANSWERABLE = "non_answerable"
     EMIC_PREPASS = "emic_prepass"
+    HUMAN_EVAL = "human_eval"
     EVALUATION = "evaluation"
 
 
