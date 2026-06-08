@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
 
@@ -115,9 +115,17 @@ class LLMClient:
         except Exception:
             return False
 
+    # Retry budget sized for cloud rate limits, not just transient blips.
+    # Hosted endpoints (Gemini, OpenAI) enforce per-minute quotas; a 429 needs
+    # backoff long enough to outwait the reset window, not a few seconds. Six
+    # attempts with randomized exponential backoff capped at 60s spans a
+    # per-minute reset, and the jitter desynchronizes concurrent workers so they
+    # don't retry in lockstep and re-trip the limit. Too-short retries surface as
+    # RetryError[RateLimitError] -> the caller records score=None and drops the
+    # result, which is indistinguishable from a real failure downstream.
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(6),
+        wait=wait_random_exponential(multiplier=1, max=60),
     )
     def generate(
         self,

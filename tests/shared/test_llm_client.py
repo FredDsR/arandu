@@ -356,6 +356,43 @@ class TestLLMClient:
         assert result.content == "Success"
         assert mock_client.chat.completions.create.call_count == 3
 
+    def test_generate_survives_sustained_rate_limiting(self, mocker: MockerFixture) -> None:
+        """generate retries past the old 3-attempt budget under sustained 429s.
+
+        Cloud endpoints enforce per-minute quotas, so a burst of rate-limit
+        errors must not exhaust the retry budget after a few attempts (which
+        would surface as RetryError and a dropped result). Five failures
+        followed by a success must still resolve.
+        """
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Recovered"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+
+        mock_client.chat.completions.create.side_effect = [
+            Exception("429 rate limit 1"),
+            Exception("429 rate limit 2"),
+            Exception("429 rate limit 3"),
+            Exception("429 rate limit 4"),
+            Exception("429 rate limit 5"),
+            mock_response,
+        ]
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+
+        result = client.generate("Test prompt")
+
+        assert result.content == "Recovered"
+        assert mock_client.chat.completions.create.call_count == 6
+
     def test_generate_extracts_thinking(self, mocker: MockerFixture) -> None:
         """Test that generate extracts thinking from <think> tags."""
         mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
