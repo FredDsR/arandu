@@ -45,7 +45,7 @@ class _FakeLLM:
 def patched_llm(monkeypatch: pytest.MonkeyPatch) -> _FakeLLM:
     """Replace the batch's LLM client builder with a fake."""
     fake = _FakeLLM()
-    monkeypatch.setattr(batch_mod, "_build_llm_client", lambda _settings: fake)
+    monkeypatch.setattr(batch_mod, "build_llm_client_from_settings", lambda _settings: fake)
     return fake
 
 
@@ -145,7 +145,7 @@ def test_perturbation_crash_is_isolated_not_fatal(
     # A non-StructuredOutputError (e.g. tenacity RetryError wrapping an API
     # error) must not abort the whole batch: each seed is isolated, marked
     # failed, and a dataset.json is still written.
-    monkeypatch.setattr(batch_mod, "_build_llm_client", lambda _s: _RaisingLLM())
+    monkeypatch.setattr(batch_mod, "build_llm_client_from_settings", lambda _s: _RaisingLLM())
     base = tmp_path / "results"
     result = run_generate_non_answerable_batch("run-x", base_dir=base, settings=_settings())
     assert result.items_built == 0
@@ -162,7 +162,7 @@ def test_reduced_seeds_on_resume_does_not_exceed_one(
     # (len(items)=3 on disk, len(current seeds)=1) rather than crash the
     # NonAnswerableDataset validator.
     fake = _FakeLLM()
-    monkeypatch.setattr(batch_mod, "_build_llm_client", lambda _s: fake)
+    monkeypatch.setattr(batch_mod, "build_llm_client_from_settings", lambda _s: fake)
     base = tmp_path / "results"
     cep = base / "run-y" / "cep" / "outputs"
     write_cep_record(

@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from enum import Enum
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, Literal, TypeVar
 
 from openai import OpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
@@ -330,4 +332,106 @@ def create_llm_client(
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
+    )
+
+
+class LLMSettings(BaseSettings):
+    """Canonical LLM connection + sampling settings for any pipeline stage.
+
+    Single source of truth for the fields every LLM-driven stage needs to
+    build an :class:`LLMClient`. Stages with extra domain config (token
+    budgets, criterion thresholds, sampler seeds) subclass this and add their
+    own fields, overriding only the LLM defaults they deliberately change.
+    Stages that need nothing beyond LLM config use it directly, passing a
+    per-stage ``_env_prefix`` so each stage can be configured independently
+    (e.g. a cheaper model for one stage than another).
+
+    Attributes:
+        provider: LLM provider (``"ollama"`` default; ``"openai"`` for OpenAI
+            proper; ``"custom"`` for an OpenAI-compatible endpoint, paired
+            with ``base_url``).
+        model_id: Model identifier.
+        api_key_env: Env var holding the API key (ignored for ollama).
+        base_url: Base URL override; required when ``provider == "custom"``.
+        temperature: Sampling temperature.
+        max_tokens: Cap on each response.
+        language: Prompt language; selects the per-stage prompt template.
+    """
+
+    provider: str = Field(default="ollama")
+    model_id: str = Field(default="qwen3:14b")
+    api_key_env: str = Field(default="OPENAI_API_KEY")
+    base_url: str | None = Field(default=None)
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, gt=0)
+    language: Literal["pt", "en"] = Field(default="pt")
+
+    model_config = SettingsConfigDict(env_prefix="ARANDU_LLM_", extra="ignore")
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _normalize_provider(cls, v: str) -> str:
+        """Lowercase the provider so env-var case (Ollama, OPENAI) doesn't break dispatch."""
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+
+def build_llm_client_from_settings(
+    settings: LLMSettings,
+    *,
+    env_prefix: str | None = None,
+) -> LLMClient:
+    """Build an :class:`LLMClient` from :class:`LLMSettings`, with stage-aware guards.
+
+    Centralizes the provider parse, API-key lookup, ollama free-pass, and
+    custom-``base_url`` guard that every LLM stage needs. Error messages name
+    the stage's env vars so a misconfiguration is actionable.
+
+    Args:
+        settings: Resolved :class:`LLMSettings` (or a subclass).
+        env_prefix: Env-var prefix used in error hints. Defaults to the
+            settings class's own ``env_prefix`` (correct for subclasses);
+            pass it explicitly when constructing :class:`LLMSettings` directly
+            with a per-instance ``_env_prefix``.
+
+    Returns:
+        A configured :class:`LLMClient`.
+
+    Raises:
+        ValueError: If the provider is unknown, or ``provider == "custom"``
+            without a ``base_url``.
+        RuntimeError: If a cloud provider's API-key env var is unset.
+    """
+    prefix = env_prefix or settings.model_config.get("env_prefix") or "ARANDU_LLM_"
+
+    try:
+        provider_enum = LLMProvider(settings.provider)
+    except ValueError as exc:
+        raise ValueError(
+            f"Unknown LLM provider {settings.provider!r}. Valid: {[p.value for p in LLMProvider]}."
+        ) from exc
+
+    api_key = os.environ.get(settings.api_key_env)
+    if not api_key and provider_enum is not LLMProvider.OLLAMA:
+        raise RuntimeError(
+            f"LLM provider {settings.provider!r} requires {settings.api_key_env} to be set. "
+            f"Set it, point {prefix}API_KEY_ENV at the right variable, or switch "
+            f"{prefix}PROVIDER to 'ollama'."
+        )
+
+    # The 'custom' provider exists to target a non-default OpenAI-compatible
+    # endpoint; without an explicit base URL the LLMClient would silently fall
+    # back to OpenAI's default and could send data to the wrong provider.
+    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
+        raise ValueError(
+            f"provider='custom' requires a base URL. Set {prefix}BASE_URL "
+            f"or pass base_url=... explicitly."
+        )
+
+    return create_llm_client(
+        provider=provider_enum,
+        model_id=settings.model_id,
+        api_key=api_key,
+        base_url=settings.base_url,
     )

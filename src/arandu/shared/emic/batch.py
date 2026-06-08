@@ -14,7 +14,6 @@ the separate ``emic-filter-stage`` task).
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -23,9 +22,9 @@ from arandu.qa.schemas import QARecordCEP
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
 from arandu.shared.emic.schemas import EmicPrepassResult, EmicScore, EmicSourceScores
-from arandu.shared.emic.settings import EmicPrepassSettings
+from arandu.shared.emic.settings import EMIC_ENV_PREFIX, default_emic_settings
 from arandu.shared.judge.criterion import OrdinalLLMCriterion
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import LLMSettings, build_llm_client_from_settings
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
 from arandu.utils.paths import get_project_root
@@ -39,41 +38,10 @@ CHECKPOINT_FILENAME = "emic_prepass_checkpoint.json"
 EMIC_CRITERION_NAME = "emic_validity"
 
 
-def _build_llm_client(settings: EmicPrepassSettings) -> LLMClient:
-    """Construct the unified LLMClient from emic-prepass settings."""
-    try:
-        provider_enum = LLMProvider(settings.provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unknown emic-prepass provider {settings.provider!r}. "
-            f"Valid: {[p.value for p in LLMProvider]}."
-        ) from exc
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        raise RuntimeError(
-            f"emic-prepass provider {settings.provider!r} requires "
-            f"{settings.api_key_env} to be set, or switch "
-            f"ARANDU_EMIC_PREPASS_PROVIDER to 'ollama'."
-        )
-    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
-        raise ValueError(
-            "provider='custom' requires a base URL. Set "
-            "ARANDU_EMIC_PREPASS_BASE_URL or pass base_url=... explicitly."
-        )
-
-    return LLMClient(
-        provider=provider_enum,
-        model_id=settings.model_id,
-        api_key=api_key,
-        base_url=settings.base_url,
-    )
-
-
 def run_emic_prepass_batch(
     pipeline_id: str,
     *,
-    settings: EmicPrepassSettings | None = None,
+    settings: LLMSettings | None = None,
     base_dir: Path | None = None,
     rerun: bool = False,
 ) -> EmicPrepassResult:
@@ -82,8 +50,8 @@ def run_emic_prepass_batch(
     Args:
         pipeline_id: Run identifier. The ``cep`` stage must be populated and
             judged (only pairs with ``is_valid`` are scored).
-        settings: Emic-prepass configuration. Defaults to
-            :class:`EmicPrepassSettings` (reads ``ARANDU_EMIC_PREPASS_*``).
+        settings: Emic-prepass LLM configuration. Defaults to
+            :func:`default_emic_settings` (reads ``ARANDU_EMIC_PREPASS_*``).
         base_dir: Override the project ``results/`` root.
         rerun: If True, clear the checkpoint so every source is re-scored.
 
@@ -94,7 +62,7 @@ def run_emic_prepass_batch(
         FileNotFoundError: If the cep stage outputs aren't present.
         RuntimeError: If a cloud-provider API key env var is unset.
     """
-    resolved = settings if settings is not None else EmicPrepassSettings()
+    resolved = settings if settings is not None else default_emic_settings()
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
 
     cep_outputs = base / pipeline_id / "cep" / "outputs"
@@ -104,7 +72,7 @@ def run_emic_prepass_batch(
             f"Run `arandu generate-cep-qa` and `arandu judge-qa` first."
         )
 
-    llm_client = _build_llm_client(resolved)
+    llm_client = build_llm_client_from_settings(resolved, env_prefix=EMIC_ENV_PREFIX)
     criterion = OrdinalLLMCriterion.from_config(
         name=EMIC_CRITERION_NAME,
         prompts_dir=get_project_root() / "prompts" / "judge" / "criteria",

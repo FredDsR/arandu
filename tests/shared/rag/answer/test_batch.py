@@ -52,7 +52,7 @@ class TestRunAnswerBatch:
         monkeypatch.setenv("OPENAI_API_KEY", "test")
         settings = AnswererSettings(provider="ollama")  # no api key needed
 
-        with patch("arandu.shared.rag.answer.batch.LLMClient") as mock_llm_cls:
+        with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm_cls:
             inner = MagicMock()
             inner.generate_structured.return_value = AnswererOutput(
                 abstained=True,
@@ -113,7 +113,7 @@ class TestRunAnswerBatch:
         _seed_retrieve_outputs(tmp_path)
         settings = AnswererSettings(provider="ollama")
 
-        with patch("arandu.shared.rag.answer.batch.LLMClient") as mock_llm_cls:
+        with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm_cls:
             inner = MagicMock()
             inner.generate_structured.return_value = AnswererOutput(
                 abstained=True, answer=None, rationale="r"
@@ -143,7 +143,7 @@ class TestBuildLlmClientFailures:
             max_context_tokens=8192,
             prompt_overhead_tokens=350,
         )
-        with pytest.raises(ValueError, match="Unknown answerer provider"):
+        with pytest.raises(ValueError, match="Unknown LLM provider"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
     def test_cloud_provider_without_api_key_raises(
@@ -203,7 +203,7 @@ class TestTopKCap:
         record.save(out_dir / "src_a__chk_00__0.json")
         settings = AnswererSettings(provider="ollama", top_k=2)
 
-        with patch("arandu.shared.rag.answer.batch.LLMClient") as mock_llm_cls:
+        with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm_cls:
             inner = MagicMock()
             inner.generate_structured.return_value = AnswererOutput(
                 abstained=False, answer="a", rationale="r"
@@ -260,7 +260,7 @@ class TestPayloadPassThrough:
         record.save(out_dir / "src_a__chk_00__0.json")
         settings = AnswererSettings(provider="ollama")
 
-        with patch("arandu.shared.rag.answer.batch.LLMClient") as mock_llm_cls:
+        with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm_cls:
             inner = MagicMock()
             inner.generate_structured.return_value = AnswererOutput(
                 abstained=False,

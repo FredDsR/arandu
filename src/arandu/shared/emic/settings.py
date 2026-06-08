@@ -1,47 +1,26 @@
-"""Pydantic settings for ``arandu emic-prepass`` (env prefix ``ARANDU_EMIC_PREPASS_``)."""
+"""Settings for ``arandu emic-prepass`` (env prefix ``ARANDU_EMIC_PREPASS_``).
+
+The emic pre-pass needs nothing beyond the canonical LLM configuration, so it
+reuses :class:`~arandu.shared.llm_client.LLMSettings` directly rather than
+declaring a bespoke settings class. This module only pins the stage's env
+prefix and its one deliberate default (a low, structural-not-creative
+temperature, spec §4.2 principle 8).
+"""
 
 from __future__ import annotations
 
-from typing import Literal
+from arandu.shared.llm_client import LLMSettings
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+EMIC_ENV_PREFIX = "ARANDU_EMIC_PREPASS_"
 
 
-class EmicPrepassSettings(BaseSettings):
-    """LLM settings for the ordinal emic-validity pre-pass (spec §5).
+def default_emic_settings() -> LLMSettings:
+    """Return the default LLM settings for the emic pre-pass.
 
-    The pre-pass runs the ``emic_validity`` ordinal criterion over the
-    canonical-approved CEP pairs to produce per-pair scores that feed the
-    stratified sample. The score is a sampling aid, **not** ground truth (the
-    human annotators are the reference), so a modest model is fine.
-
-    Attributes:
-        provider: LLM provider (``ollama`` default; ``openai`` or ``custom``
-            for cloud / OpenAI-compatible endpoints).
-        model_id: Model identifier.
-        api_key_env: Env var holding the API key (ignored for ollama).
-        base_url: Base URL override; required when ``provider == "custom"``.
-        temperature: Sampling temperature. Default 0.1 — the emic judgment is
-            structural, not creative (spec §4.2 principle 8).
-        max_tokens: Cap on each criterion response.
-        language: Prompt language; selects
-            ``prompts/judge/criteria/emic_validity/<lang>/prompt.md``.
-            Only ``pt`` ships today.
+    Reads ``ARANDU_EMIC_PREPASS_*`` (provider/model_id/api_key_env/base_url
+    remain env-overridable so the pre-pass can run a cheaper model than the
+    judge). Temperature is pinned to 0.1: the emic judgment is structural, not
+    creative (spec §4.2 principle 8). The score is a sampling aid, not ground
+    truth (the human annotators are the reference).
     """
-
-    provider: str = Field(default="ollama")
-    model_id: str = Field(default="qwen3:14b")
-    api_key_env: str = Field(default="OPENAI_API_KEY")
-    base_url: str | None = Field(default=None)
-    temperature: float = Field(default=0.1, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, gt=0)
-    language: Literal["pt"] = Field(default="pt")
-
-    model_config = SettingsConfigDict(env_prefix="ARANDU_EMIC_PREPASS_", extra="ignore")
-
-    @field_validator("provider", mode="before")
-    @classmethod
-    def _normalize_provider(cls, v: str) -> str:
-        """Lowercase the provider so env-var case doesn't break dispatch."""
-        return v.lower() if isinstance(v, str) else v
+    return LLMSettings(_env_prefix=EMIC_ENV_PREFIX, temperature=0.1)

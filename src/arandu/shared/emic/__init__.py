@@ -2,12 +2,13 @@
 
 from arandu.shared.emic.batch import run_emic_prepass_batch
 from arandu.shared.emic.schemas import EmicPrepassResult, EmicScore, EmicSourceScores
-from arandu.shared.emic.settings import EmicPrepassSettings
+from arandu.shared.emic.settings import EMIC_ENV_PREFIX, default_emic_settings
 
 __all__ = [
+    "EMIC_ENV_PREFIX",
     "EmicPrepassResult",
-    "EmicPrepassSettings",
     "EmicScore",
     "EmicSourceScores",
+    "default_emic_settings",
     "run_emic_prepass_batch",
 ]

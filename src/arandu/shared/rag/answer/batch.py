@@ -12,14 +12,13 @@ same composite checkpoint keys as the retrieve stage.
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import LLMClient, LLMProvider
+from arandu.shared.llm_client import build_llm_client_from_settings
 from arandu.shared.rag.answer.answerer import AnswererClient
 from arandu.shared.rag.answer.packer import pack_passages
 from arandu.shared.rag.answer.resolver import build_passage_text_map
@@ -98,7 +97,7 @@ def run_answer_batch(
             f"{retrieve_outputs}. Run `arandu retrieve --id {pipeline_id}` first."
         )
 
-    llm_client = _build_llm_client(resolved_settings)
+    llm_client = build_llm_client_from_settings(resolved_settings)
     answerer = AnswererClient(llm_client=llm_client, settings=resolved_settings)
     passage_text = _build_passage_text_map(base=base, pipeline_id=pipeline_id)
 
@@ -183,47 +182,6 @@ def run_answer_batch(
         answers_written=written,
         answers_resumed=resumed,
         answers_failed=failed,
-    )
-
-
-def _build_llm_client(settings: AnswererSettings) -> LLMClient:
-    """Construct the unified LLMClient from answerer settings.
-
-    Surfaces a clear ``RuntimeError`` if a cloud provider is requested
-    without its API key env var set; ollama gets a free pass per
-    :class:`LLMClient` convention.
-    """
-    try:
-        provider_enum = LLMProvider(settings.provider)
-    except ValueError as exc:
-        raise ValueError(
-            f"Unknown answerer provider {settings.provider!r}. "
-            f"Valid: {[p.value for p in LLMProvider]}."
-        ) from exc
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        raise RuntimeError(
-            f"Answerer provider {settings.provider!r} requires {settings.api_key_env} "
-            f"to be set. Either set it, or switch ARANDU_ANSWERER_PROVIDER to 'ollama'."
-        )
-
-    # The 'custom' provider exists specifically to point at a non-default
-    # OpenAI-compatible endpoint. Without an explicit base URL the
-    # underlying LLMClient would silently fall back to OpenAI's default,
-    # potentially sending data to the wrong provider — mirrors the guard
-    # in `transcription/judge.py`.
-    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
-        raise ValueError(
-            "provider='custom' requires a base URL. Set ARANDU_ANSWERER_BASE_URL "
-            "or pass base_url=... explicitly."
-        )
-
-    return LLMClient(
-        provider=provider_enum,
-        model_id=settings.model_id,
-        api_key=api_key,
-        base_url=settings.base_url,
     )
 
 

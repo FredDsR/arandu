@@ -92,7 +92,7 @@ class TestRunJudgeAnswersBatch:
         settings = JudgeAnswersSettings(provider="ollama")
 
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
         ):
             judge = MagicMock()
@@ -156,7 +156,7 @@ class TestRunJudgeAnswersBatch:
         settings = JudgeAnswersSettings(provider="ollama")
 
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge"),
         ):
             result = run_judge_answers_batch(
@@ -192,7 +192,7 @@ class TestRunJudgeAnswersBatch:
         settings = JudgeAnswersSettings(provider="ollama")
 
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
         ):
             judge = MagicMock()
@@ -226,7 +226,7 @@ class TestRunJudgeAnswersBatch:
         settings = JudgeAnswersSettings(provider="ollama")
 
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
         ):
             judge = MagicMock()
@@ -268,7 +268,7 @@ class TestRunJudgeAnswersBatch:
         # First run: judge returns abstention=0.1 (committal text per
         # judge) while answerer.abstained=True → disagreement.
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
         ):
             judge = MagicMock()
@@ -299,7 +299,7 @@ class TestRunJudgeAnswersBatch:
         # but the audit must still reflect the disagreement that's on
         # disk from the first run.
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
         ):
             judge = MagicMock()
@@ -321,7 +321,7 @@ class TestRunJudgeAnswersBatch:
         settings = JudgeAnswersSettings(provider="ollama")
 
         with (
-            patch("arandu.shared.rag.judge_answers.batch.LLMClient"),
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
             patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
         ):
             judge = MagicMock()
@@ -363,7 +363,7 @@ class TestBuildLlmClientFailures:
             language="pt",
             abstention_disagreement_audit=True,
         )
-        with pytest.raises(ValueError, match="Unknown judge_answers provider"):
+        with pytest.raises(ValueError, match="Unknown LLM provider"):
             run_judge_answers_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
     def test_cloud_provider_without_api_key_raises(
