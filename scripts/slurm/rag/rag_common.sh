@@ -30,6 +30,11 @@ COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 RAG_CLI_ARGS="${RAG_CLI_ARGS:?RAG_CLI_ARGS must be set by the per-stage script}"
 RAG_NEEDS_OLLAMA="${RAG_NEEDS_OLLAMA:-false}"
 RAG_OLLAMA_MODEL="${RAG_OLLAMA_MODEL:-qwen3:14b}"
+# Which compose service + profile runs the stage. GPU stages (LLM / embedder)
+# use arandu-rag under the rag-gpu profile; pure-CPU stages override to
+# arandu-rag-cpu / rag-cpu so they don't wait behind GPU contention.
+RAG_SERVICE="${RAG_SERVICE:-arandu-rag}"
+RAG_PROFILE="${RAG_PROFILE:-rag-gpu}"
 
 # Directories (bind-mounted into the arandu-rag container)
 export ARANDU_RESULTS_DIR="${ARANDU_RESULTS_DIR:-$PROJECT_DIR/results}"
@@ -40,7 +45,7 @@ export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 
 # ollama-gpu is the only GPU-backed sidecar profile we use on tupi.
 OLLAMA_SERVICE="ollama-gpu"
-DOCKER_PROFILE="rag-gpu"
+DOCKER_PROFILE="$RAG_PROFILE"
 
 echo "=============================================="
 echo "Arandu Phase C RAG stage"
@@ -91,8 +96,8 @@ if [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
 fi
 
 echo ""
-echo "Building arandu-rag image (reuses the kg-extra image)..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-rag
+echo "Building ${RAG_SERVICE} image (reuses the kg-extra image)..."
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build "$RAG_SERVICE"
 
 # ---------------------------------------------------------------------------
 # Ollama sidecar (LLM stages only)
@@ -126,7 +131,7 @@ echo ""
 echo "Running: arandu ${RAG_CLI_ARGS}"
 echo "=============================================="
 # shellcheck disable=SC2086  # intentional word-splitting of the arg string
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm arandu-rag ${RAG_CLI_ARGS}
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm "$RAG_SERVICE" ${RAG_CLI_ARGS}
 RUN_RC=$?
 
 echo ""

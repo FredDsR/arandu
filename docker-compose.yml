@@ -569,3 +569,35 @@ services:
     profiles:
       - rag
       - rag-gpu
+
+  # CPU-only Phase C stages (chunk, kg-link-passages, rag-analysis) — no LLM,
+  # no embedder, so no GPU. Lets these schedule on a CPU slot instead of waiting
+  # behind GPU contention. Same kg-extra image; minimal env.
+  arandu-rag-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.kg
+    image: arandu-kg:latest
+    container_name: arandu-rag-cpu-${SLURM_JOB_ID:-local}
+    working_dir: /app
+    deploy: {}
+
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '8gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - rag-cpu
