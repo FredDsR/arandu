@@ -241,6 +241,7 @@ services:
       - cep-gpu
       - judge-gpu
       - ollama-gpu
+      - rag-gpu
 
   # QA Generation Service
   arandu-qa:
@@ -503,3 +504,68 @@ services:
 
     profiles:
       - evaluate
+
+  # Phase C RAG eval-chain Service (chunk / kg-link-passages /
+  # kg-build-retriever-index / generate-non-answerable / retrieve / answer /
+  # judge-answers / rag-analysis). Reuses the kg-extra image (atlas_rag, faiss,
+  # sentence-transformers). No fixed command — the per-stage SLURM script passes
+  # the `arandu` subcommand + flags via `docker compose run --rm arandu-rag ...`
+  # (the image ENTRYPOINT is `arandu`). LLM stages reach the ollama-gpu sidecar
+  # at http://ollama:11434/v1; the embedder (index/retrieve) runs in-process and
+  # uses the GPU reservation below.
+  arandu-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile.kg
+    image: arandu-kg:latest
+    container_name: arandu-rag-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      # Answerer (spec §5.7)
+      - ARANDU_ANSWERER_PROVIDER=${ARANDU_ANSWERER_PROVIDER:-ollama}
+      - ARANDU_ANSWERER_MODEL_ID=${ARANDU_ANSWERER_MODEL_ID:-qwen3:14b}
+      - ARANDU_ANSWERER_BASE_URL=${ARANDU_ANSWERER_BASE_URL:-http://ollama:11434/v1}
+      # Answer judge (spec §6)
+      - ARANDU_JUDGE_ANSWERS_PROVIDER=${ARANDU_JUDGE_ANSWERS_PROVIDER:-ollama}
+      - ARANDU_JUDGE_ANSWERS_MODEL_ID=${ARANDU_JUDGE_ANSWERS_MODEL_ID:-qwen3:14b}
+      - ARANDU_JUDGE_ANSWERS_BASE_URL=${ARANDU_JUDGE_ANSWERS_BASE_URL:-http://ollama:11434/v1}
+      # Non-answerable item generator (entity-perturbation LLM)
+      - ARANDU_NONANSWERABLE_PROVIDER=${ARANDU_NONANSWERABLE_PROVIDER:-ollama}
+      - ARANDU_NONANSWERABLE_MODEL_ID=${ARANDU_NONANSWERABLE_MODEL_ID:-qwen3:14b}
+      - ARANDU_NONANSWERABLE_BASE_URL=${ARANDU_NONANSWERABLE_BASE_URL:-http://ollama:11434/v1}
+      # atlas-rag retrieve arm (NER LLM); other arms need no LLM
+      - ARANDU_ATLAS_RAG_PROVIDER=${ARANDU_ATLAS_RAG_PROVIDER:-ollama}
+      - ARANDU_ATLAS_RAG_MODEL_ID=${ARANDU_ATLAS_RAG_MODEL_ID:-qwen3:14b}
+      - ARANDU_ATLAS_RAG_BASE_URL=${ARANDU_ATLAS_RAG_BASE_URL:-http://ollama:11434/v1}
+      # Local sentence-transformers embedder (kg-build-retriever-index + retrieve);
+      # avoids paid Gemini embeddings. Multilingual for the PT-BR corpus.
+      - ARANDU_EMBEDDER_PROVIDER=${ARANDU_EMBEDDER_PROVIDER:-sentence_transformers}
+      - ARANDU_EMBEDDER_MODEL=${ARANDU_EMBEDDER_MODEL:-sentence-transformers/paraphrase-multilingual-mpnet-base-v2}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - rag
+      - rag-gpu
