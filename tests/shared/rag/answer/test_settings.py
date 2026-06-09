@@ -15,10 +15,15 @@ class TestAnswererSettings:
         assert s.provider == "ollama"
         assert s.model_id == "qwen3:14b"
         assert s.temperature == 0.2
-        assert s.max_tokens == 1024
+        # 8192 headroom: the answerer emits structured output and reasoning
+        # models burn thinking tokens against this budget; 1024 truncated the
+        # JSON -> spurious abstention (dry-run 2026-06-08).
+        assert s.max_tokens == 8192
         assert s.language == "pt"
         assert s.top_k == 10
-        assert s.max_context_tokens == 8192
+        # 16384 (not 8192): the packer reserves max_tokens (8192) from this
+        # budget, so it must leave room for passages (dry-run bug #7 follow-on).
+        assert s.max_context_tokens == 16384
         assert s.prompt_overhead_tokens == 350
 
     def test_provider_lowercased(self, monkeypatch: pytest.MonkeyPatch) -> None:
