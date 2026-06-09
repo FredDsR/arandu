@@ -100,7 +100,13 @@ ATLAS_DEFAULTS: dict[str, Any] = {
     "batch_size_triple": 3,
     "batch_size_concept": 16,
     "chunk_size": 8192,
-    "max_new_tokens": 2048,
+    # 8192 (not atlas-rag's own 2048 default): triple/concept extraction runs
+    # through reasoning models (qwen3:14b, gemini-2.5-flash) whose thinking
+    # tokens count against this budget, so 2048 truncates the JSON mid-output.
+    # The dry-run (2026-06-08) had to pre-empt this with
+    # `--backend-option max_new_tokens=8192`; making it the default removes
+    # that footgun. Mirrors the judge/answerer reasoning-model headroom.
+    "max_new_tokens": 8192,
     "include_concept": True,
     "max_workers": 3,
 }
