@@ -103,6 +103,34 @@ def get_output_filename(original_name: str, suffix: str = "_transcription.json")
     return f"{path.stem}{suffix}"
 
 
+def resolve_transcription_path(transcription_dir: Path, file_id: str) -> Path | None:
+    """Return the on-disk transcription file for ``file_id``, or ``None``.
+
+    The transcription stage writes ``<file_id>_transcription.json`` (see
+    :func:`get_output_filename` and :func:`save_enriched_record`); older or
+    future runs may use the bare ``<file_id>.json``. Tries the suffixed form
+    first, then the bare form, and returns the first that exists. Single source
+    of the read-side filename convention so readers
+    (:func:`arandu.shared.rag.retrieve.factory._build_chunk_resolver`,
+    :func:`arandu.kg.passage_offsets._load_source_text`) don't each re-encode
+    it. Callers decide how to treat ``None`` (raise vs. skip).
+
+    Args:
+        transcription_dir: Directory holding the stage's ``*.json`` outputs.
+        file_id: Source file identifier (the transcription output stem).
+
+    Returns:
+        The first matching path, or ``None`` if neither candidate exists.
+    """
+    for candidate in (
+        transcription_dir / f"{file_id}_transcription.json",
+        transcription_dir / f"{file_id}.json",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def get_mime_type(file_path: Path) -> str:
     """Get MIME type based on file extension.
 

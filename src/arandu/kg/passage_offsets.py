@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Literal, Self
 from pydantic import BaseModel, Field
 
 from arandu.shared.config import ResultsConfig
+from arandu.shared.io import resolve_transcription_path
 from arandu.shared.schemas import EnrichedRecord
 
 if TYPE_CHECKING:
@@ -161,26 +162,23 @@ def build_passage_text_to_atlas_passage_id(
 def _load_source_text(transcription_dir: Path, file_id: str) -> str | None:
     """Load ``EnrichedRecord.transcription_text`` for ``file_id`` from disk.
 
-    The transcription stage today writes ``<file_id>_transcription.json``;
-    older / future runs may use the bare ``<file_id>.json``. Try both before
-    treating the source as missing.
+    The filename (``_transcription`` suffix, bare fallback) is resolved by
+    :func:`arandu.shared.io.resolve_transcription_path` — the single source of
+    the read-side convention.
 
     Returns ``None`` if no matching file exists or the file fails schema
     validation — callers treat that as an orphan passage (source dropped or
     drifted after KG construction).
     """
-    for candidate in (
-        transcription_dir / f"{file_id}_transcription.json",
-        transcription_dir / f"{file_id}.json",
-    ):
-        if candidate.exists():
-            try:
-                record = EnrichedRecord.model_validate_json(candidate.read_text())
-            except Exception as exc:
-                logger.warning("Skipping invalid EnrichedRecord %s: %s", candidate, exc)
-                return None
-            return record.transcription_text
-    return None
+    candidate = resolve_transcription_path(transcription_dir, file_id)
+    if candidate is None:
+        return None
+    try:
+        record = EnrichedRecord.model_validate_json(candidate.read_text())
+    except Exception as exc:
+        logger.warning("Skipping invalid EnrichedRecord %s: %s", candidate, exc)
+        return None
+    return record.transcription_text
 
 
 def _find_normalized(source: str, needle: str) -> tuple[int, int] | None:
