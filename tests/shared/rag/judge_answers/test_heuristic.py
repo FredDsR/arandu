@@ -63,7 +63,7 @@ class TestSourceRecoveryCriterion:
         score = SourceRecoveryCriterion().evaluate(
             retrieved_text="Maria mora em Itaqui",
             context="Maria mora em Itaqui na beira do rio",
-            passages_are_payload=False,
+            passages_are_non_prose=False,
         )
         assert score.score == 1.0
 
@@ -73,7 +73,7 @@ class TestSourceRecoveryCriterion:
         score = SourceRecoveryCriterion(language="en").evaluate(
             retrieved_text="Maria lives in Itaqui",
             context="Maria lives in Itaqui by the river",
-            passages_are_payload=False,
+            passages_are_non_prose=False,
         )
         assert score.score == 1.0
 
@@ -83,28 +83,41 @@ class TestSourceRecoveryCriterion:
         score = SourceRecoveryCriterion().evaluate(
             retrieved_text="Maria mora em Brasilia",
             context="Maria mora em Itaqui",
-            passages_are_payload=False,
+            passages_are_non_prose=False,
         )
         assert score.score is not None
         assert 0.0 < score.score < 1.0
 
-    def test_payload_arm_scores_none(self) -> None:
+    def test_non_prose_payload_arm_scores_none(self) -> None:
+        # Triples (non-prose payload) -> N/A: token overlap is structurally
+        # near-zero regardless of relevance, so it would bias the cross-arm mean.
         score = SourceRecoveryCriterion().evaluate(
             retrieved_text="(Maria, mora_em, Itaqui)",
             context="Maria mora em Itaqui",
-            passages_are_payload=True,
+            passages_are_non_prose=True,
         )
         assert score.score is None
         assert score.error is None
 
+    def test_prose_payload_arm_still_scores(self) -> None:
+        # Inline-prose payload (khop_passage, payload_is_prose=True) sets
+        # passages_are_non_prose=False, so containment scores normally — the
+        # payload IS source prose, unlike triples.
+        score = SourceRecoveryCriterion().evaluate(
+            retrieved_text="Maria mora em Itaqui",
+            context="Maria mora em Itaqui na beira do rio",
+            passages_are_non_prose=False,
+        )
+        assert score.score == 1.0
+
     def test_empty_passages_scores_none(self) -> None:
         score = SourceRecoveryCriterion().evaluate(
-            retrieved_text="", context="Maria mora em Itaqui", passages_are_payload=False
+            retrieved_text="", context="Maria mora em Itaqui", passages_are_non_prose=False
         )
         assert score.score is None
 
     def test_empty_context_scores_none(self) -> None:
         score = SourceRecoveryCriterion().evaluate(
-            retrieved_text="Maria mora em Itaqui", context="", passages_are_payload=False
+            retrieved_text="Maria mora em Itaqui", context="", passages_are_non_prose=False
         )
         assert score.score is None

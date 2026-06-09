@@ -261,7 +261,7 @@ def _judge_one(
       ``question`` / ``gold_answer`` / ``system_answer`` / ``passages_text``;
     - ``source_recovery`` (heuristic): ``retrieved_text`` (raw joined
       passage text, no ``[Passage N]`` markers) / ``context`` /
-      ``passages_are_payload``.
+      ``passages_are_non_prose``.
 
     ``gold`` is ``None`` for non-answerable items (no CEP pair); the
     answerability gate rejects those before the gold criteria run, so the
@@ -275,11 +275,16 @@ def _judge_one(
         system_answer=answer.answer_text or "",
         rationale=answer.rationale,
         passages_text=_format_passages(resolved_passages),
-        # Raw joined passage text + payload flag for the deterministic
+        # Raw joined passage text + non-prose flag for the deterministic
         # source_recovery criterion (separate from the LLM-facing
-        # passages_text, which carries "[Passage N]" markers).
+        # passages_text, which carries "[Passage N]" markers). Non-prose =
+        # payload that isn't verbatim source text (triples), where token
+        # containment is meaningless; inline-prose payloads (khop_passage,
+        # payload_is_prose=True) and offset-resolved passages still score.
         retrieved_text="\n".join(resolved_passages),
-        passages_are_payload=any(p.payload is not None for p in answer.passages),
+        passages_are_non_prose=any(
+            p.payload is not None and not p.payload_is_prose for p in answer.passages
+        ),
         question=gold.question if gold is not None else answer.question,
         gold_answer=gold.gold_answer if gold is not None else "",
         context=gold.context if gold is not None else "",

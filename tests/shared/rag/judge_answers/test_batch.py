@@ -18,9 +18,9 @@ from arandu.shared.judge.schemas import (
     JudgePipelineResult,
     JudgeStepResult,
 )
-from arandu.shared.rag.judge_answers.batch import run_judge_answers_batch
+from arandu.shared.rag.judge_answers.batch import _judge_one, run_judge_answers_batch
 from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
-from arandu.shared.rag.schemas import AnswerRecord
+from arandu.shared.rag.schemas import AnswerRecord, RetrievedPassage
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -388,3 +388,57 @@ class TestBuildLlmClientFailures:
         settings = JudgeAnswersSettings(provider="custom", base_url=None)
         with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
             run_judge_answers_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
+
+
+class TestPassagesAreNonProseFlag:
+    """`_judge_one` flags source_recovery N/A only for *non-prose* payloads.
+
+    khop_passage carries source prose inline (payload + payload_is_prose=True),
+    so it must NOT be treated as non-prose (source_recovery should still score
+    it); only synthetic payloads like triples are non-prose.
+    """
+
+    def _captured_flag(self, passages: list[RetrievedPassage]) -> bool:
+        judge = MagicMock()
+        answer = AnswerRecord(
+            qa_pair_id="src_a:chk_aa:0",
+            question="Onde Maria mora?",
+            retriever_id="khop_passage",
+            chunker_id="cep_4k",
+            top_k=5,
+            passages=passages,
+            elapsed_ms=1.0,
+            is_answerable=True,
+            answer_text="Itaqui.",
+            abstained=False,
+            rationale="From passages.",
+            answerer_model="qwen3:14b",
+            answerer_temperature=0.2,
+        )
+        _judge_one(judge=judge, answer=answer, gold=None, passage_text={})
+        return judge.evaluate.call_args.kwargs["passages_are_non_prose"]
+
+    def test_prose_payload_is_not_flagged_non_prose(self) -> None:
+        passage = RetrievedPassage(
+            chunk_id="src_a:0",
+            rank=0,
+            score=1.0,
+            payload="Maria mora em Itaqui.",
+            payload_is_prose=True,
+        )
+        assert self._captured_flag([passage]) is False
+
+    def test_triple_payload_is_flagged_non_prose(self) -> None:
+        passage = RetrievedPassage(
+            chunk_id="triple:abc123",
+            rank=0,
+            score=1.0,
+            payload="[pessoa] Maria --[mora_em]--> [lugar] Itaqui",
+            payload_is_prose=False,
+        )
+        assert self._captured_flag([passage]) is True
+
+    def test_offset_resolved_passage_is_not_flagged_non_prose(self) -> None:
+        # No payload -> offset-resolved source prose -> scores normally.
+        passage = RetrievedPassage(chunk_id="src_a:0", rank=0, score=1.0)
+        assert self._captured_flag([passage]) is False

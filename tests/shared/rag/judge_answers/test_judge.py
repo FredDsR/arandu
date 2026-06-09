@@ -32,7 +32,7 @@ def _kwargs(*, is_answerable: bool, abstained: str) -> dict[str, object]:
         "rationale": "r",
         "passages_text": "p",
         "retrieved_text": "Maria mora em Itaqui",
-        "passages_are_payload": False,
+        "passages_are_non_prose": False,
         "question": "Onde Maria mora?",
         "gold_answer": "Em Itaqui.",
         "context": "Maria mora em Itaqui na beira do rio",
