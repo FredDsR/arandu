@@ -206,6 +206,21 @@ class TestKHopSubgraphRetrieverRetrieve:
             assert "[Contexto" not in r.chunk_id
             assert "A enchente" not in r.chunk_id
 
+    def test_payload_carries_source_prose(self, tmp_path: Path) -> None:
+        # khop_passage carries the source passage inline in `payload` so the
+        # Answerer doesn't re-resolve `chunk_id` through passage_offsets.json at
+        # answer time. `chunk_id` stays the joinable id; `payload_is_prose=True`
+        # keeps source_recovery (prose token-containment) applicable, unlike the
+        # triple arm's non-prose payload.
+        path = _write_kg_layout(_build_minimal_kg(), tmp_path)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
+        results = retriever.retrieve("rio Uruguai enchente", top_k=5)
+        assert results, "expected non-empty results for in-KG question"
+        for r in results:
+            assert r.payload, "expected source prose carried in payload"
+            assert r.payload != r.chunk_id, "payload must be the text, not the id"
+            assert r.payload_is_prose is True
+
     def test_passage_with_no_kg_extraction_record_dropped(self, tmp_path: Path) -> None:
         # If a KG passage node has no matching kg_extraction record (corpus
         # drift between KG build and JSONL on disk), the retriever drops it

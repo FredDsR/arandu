@@ -47,11 +47,18 @@ class RetrievedPassage(BaseModel):
             offset / ChunkSet lookup. When set, the Answerer uses
             ``payload`` verbatim as the prompt context for this record,
             bypassing offset resolution. Use cases: KG-triple
-            linearization (``KHopTripleRetriever``), LLM-summarized
-            chunks, or any retriever whose output isn't a sliceable span
-            of source text. Downstream judging that operates on offsets
-            (``passage_coverage`` offset variant) skips records where
-            ``payload`` is set, since they have no source-text grounding.
+            linearization (``KHopTripleRetriever``), passages carried
+            inline to decouple from offset resolution
+            (``KHopSubgraphRetriever``), LLM-summarized chunks, or any
+            retriever whose output isn't a sliceable span of source text.
+        payload_is_prose: Whether a set ``payload`` is verbatim source-text
+            prose (``True``; e.g. ``KHopSubgraphRetriever``) versus synthetic
+            non-prose content (``False`` default; e.g. linearized triples).
+            Lets prose-grounded deterministic judging (``source_recovery``
+            token containment) still apply to inline-prose payloads while
+            skipping non-prose ones, where token overlap with the source
+            would be structurally near-zero regardless of relevance. Ignored
+            when ``payload`` is ``None`` (offset-resolved passages are prose).
     """
 
     chunk_id: str = Field(..., min_length=1)
@@ -62,7 +69,16 @@ class RetrievedPassage(BaseModel):
         default=None,
         description=(
             "Optional raw content overriding offset-based resolution. "
-            "Set by retrievers emitting non-chunk content (e.g. triples)."
+            "Set by retrievers emitting non-chunk content (e.g. triples) or "
+            "carrying source prose inline (e.g. khop_passage)."
+        ),
+    )
+    payload_is_prose: bool = Field(
+        default=False,
+        description=(
+            "Whether a set payload is verbatim source prose (True) vs "
+            "synthetic non-prose content like triples (False). Gates "
+            "prose-grounded judging; ignored when payload is None."
         ),
     )
 

@@ -120,10 +120,13 @@ class SourceRecoveryCriterion(HeuristicCriterion):
     undefined or would bias the cross-arm comparison, so the analysis mean
     excludes them:
 
-    - **payload arms** (e.g. ``KHopTripleRetriever``): linearized triples
-      are not source prose, so token overlap is structurally near-zero
-      regardless of relevance — the same bias that kept the deterministic
-      ``offset_coverage`` variant out of the pipeline.
+    - **non-prose payload arms** (e.g. ``KHopTripleRetriever``): linearized
+      triples are not source prose, so token overlap is structurally
+      near-zero regardless of relevance — the same bias that kept the
+      deterministic ``offset_coverage`` variant out of the pipeline.
+      Inline-*prose* payloads (``KHopSubgraphRetriever``, which carries the
+      source passage in ``payload`` with ``payload_is_prose=True``) are NOT
+      skipped — they are source prose and score normally.
     - **no retrieved passages** (e.g. ``NullRetriever``): empty denominator.
     - **no source context**: empty denominator on the gold side.
 
@@ -156,19 +159,19 @@ class SourceRecoveryCriterion(HeuristicCriterion):
         """Compute containment, or ``score=None`` for the undefined cases.
 
         Args:
-            **kwargs: Reads ``passages_are_payload`` (bool),
+            **kwargs: Reads ``passages_are_non_prose`` (bool),
                 ``retrieved_text`` (raw joined passage text), and
                 ``context`` (gold source span).
 
         Returns:
             CriterionScore with the containment fraction, or ``score=None``
-            for payload arms / empty passages / empty context.
+            for non-prose payload arms / empty passages / empty context.
         """
-        if bool(kwargs.get("passages_are_payload", False)):
+        if bool(kwargs.get("passages_are_non_prose", False)):
             return CriterionScore(
                 score=None,
                 threshold=self.threshold,
-                rationale="payload arm (non-prose passages); source-recovery N/A",
+                rationale="non-prose payload arm (e.g. triples); source-recovery N/A",
             )
         retrieved_tokens = set(self._tokenize(str(kwargs.get("retrieved_text", ""))))
         context_tokens = set(self._tokenize(str(kwargs.get("context", ""))))
