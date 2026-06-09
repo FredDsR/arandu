@@ -293,6 +293,28 @@ class AtlasRagRetriever:
         }
 
     @staticmethod
+    def _edge_faiss_index_path(
+        *,
+        precompute_dir: Path,
+        keyword: str,
+        sentence_encoder_model: str,
+        include_events: bool,
+        include_concept: bool,
+    ) -> Path:
+        """Path to atlas-rag's prebuilt edge faiss index for this KG.
+
+        Filename mirrors ``atlas_rag.vectorstore.create_graph_index.
+        create_embeddings_and_index`` (``..._edge_faiss.index``), which
+        :meth:`build_index` already writes. Kept out of :meth:`_artifact_paths`
+        because that map feeds the ``pickle.load`` + sha-verify loop, while the
+        faiss index is read with ``faiss.read_index`` (not a pickle, so the
+        pickle-tamper threat model that drives sha verification does not apply).
+        """
+        encoder_short = sentence_encoder_model.split("/")[-1]
+        flags = f"event{include_events}_concept{include_concept}"
+        return precompute_dir / f"{keyword}_{flags}_{encoder_short}_edge_faiss.index"
+
+    @staticmethod
     def _validate_manifest(
         manifest: dict[str, Any],
         *,
@@ -362,8 +384,15 @@ class AtlasRagRetriever:
             include_events=include_events,
             include_concept=include_concept,
         )
+        edge_index_path = cls._edge_faiss_index_path(
+            precompute_dir=precompute_dir,
+            keyword=keyword,
+            sentence_encoder_model=sentence_encoder_model,
+            include_events=include_events,
+            include_concept=include_concept,
+        )
 
-        for path in (*artifacts.values(), graphml_path):
+        for path in (*artifacts.values(), edge_index_path, graphml_path):
             if not path.exists():
                 raise FileNotFoundError(
                     f"atlas-rag retriever artifact missing: {path}. "
@@ -393,6 +422,13 @@ class AtlasRagRetriever:
             kg = nx.read_graphml(f)
         cls._patch_orphan_file_ids(kg)
 
+        # atlas-rag's prebuilt edge faiss index — see _build_inner_retriever
+        # for why this is injected onto the retriever rather than read from
+        # `data` by its __init__.
+        import faiss
+
+        edge_faiss_index = faiss.read_index(str(edge_index_path))
+
         return {
             "node_embeddings": loaded["node_embeddings"],
             "edge_embeddings": loaded["edge_embeddings"],
@@ -400,6 +436,7 @@ class AtlasRagRetriever:
             "edge_list": loaded["edge_list"],
             "text_embeddings": loaded["text_embeddings"],
             "text_dict": loaded["text_dict"],
+            "edge_faiss_index": edge_faiss_index,
             "KG": kg,
         }
 
@@ -449,11 +486,21 @@ class AtlasRagRetriever:
             client=llm_client,
             model_name=llm_model_id,
         )
-        return HippoRAGRetriever(
+        retriever = HippoRAGRetriever(
             llm_generator=llm_generator,
             sentence_encoder=sentence_encoder,
             data=data,
         )
+        # Shim: this atlas-rag version's HippoRAGRetriever.__init__ sets
+        # self.edge_embeddings but NOT self.edge_faiss_index, yet query2edge()
+        # under the default inference config (is_filter_edges=True,
+        # hipporag_mode="query2edge") searches self.edge_faiss_index and
+        # crashes with AttributeError (dry-run 2026-06-08). Sibling retrievers
+        # (HippoRAG2, SimpleGraphRetriever) read data["edge_faiss_index"];
+        # hipporag.py omits it. Inject the prebuilt index we already write at
+        # build_index time so the LLM-filtered edge path works.
+        retriever.edge_faiss_index = data["edge_faiss_index"]
+        return retriever
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
         """Run HippoRAG retrieval and return ranked passages.

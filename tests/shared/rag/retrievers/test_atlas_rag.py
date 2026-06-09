@@ -311,6 +311,10 @@ def _write_minimal_precompute(
     placeholder = b"placeholder-pickle-bytes"
     for path in artifacts.values():
         path.write_bytes(placeholder)
+    # The edge faiss index must exist for `_load_data_dict`'s presence check;
+    # it is not sha-verified (not a pickle) and these integrity tests fail at
+    # the pickle sha/load step before `faiss.read_index` is ever reached.
+    (precompute / f"{keyword}_{flags}_{encoder_short}_edge_faiss.index").write_bytes(placeholder)
 
     manifest: dict[str, object] = {
         "kg_outputs_dir": str(kg_outputs_dir),
@@ -480,3 +484,73 @@ class TestAtlasRagManifestIntegrity:
                 sentence_encoder=MagicMock(),
                 sentence_encoder_model="m",
             )
+
+
+# -- edge faiss index shim (dry-run bug #6, 2026-06-08) ------------------
+
+
+class TestEdgeFaissIndexPath:
+    """The prebuilt edge-faiss-index filename must mirror upstream exactly."""
+
+    def test_mirrors_upstream_create_graph_index_filename(self, tmp_path: Path) -> None:
+        # Must match atlas_rag.vectorstore.create_graph_index's
+        # `..._edge_faiss.index` so we read the index build_index wrote.
+        # encoder_short strips any namespace prefix (org/model -> model).
+        path = AtlasRagRetriever._edge_faiss_index_path(
+            precompute_dir=tmp_path,
+            keyword="transcriptions.json",
+            sentence_encoder_model="org/gemini-embedding-001",
+            include_events=True,
+            include_concept=True,
+        )
+        assert path == (
+            tmp_path
+            / "transcriptions.json_eventTrue_conceptTrue_gemini-embedding-001_edge_faiss.index"
+        )
+
+
+class TestBuildInnerRetrieverEdgeFaissShim:
+    """`_build_inner_retriever` injects edge_faiss_index onto the retriever.
+
+    Our pinned atlas-rag's ``HippoRAGRetriever.__init__`` sets
+    ``edge_embeddings`` but not ``edge_faiss_index``, yet ``query2edge`` under
+    the default config searches the latter and crashes (dry-run bug #6). The
+    wrapper patches it post-construction. This runs without the ``kg`` extra
+    by faking the atlas_rag import targets.
+    """
+
+    def test_injects_prebuilt_edge_faiss_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import sys
+        import types
+
+        captured: dict[str, object] = {}
+
+        class _FakeHippoRAGRetriever:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+                # Mimic the upstream bug: edge_faiss_index is NOT set here.
+
+        fake_retriever_mod = types.ModuleType("atlas_rag.retriever")
+        fake_retriever_mod.HippoRAGRetriever = _FakeHippoRAGRetriever  # type: ignore[attr-defined]
+        fake_llm_mod = types.ModuleType("atlas_rag.llm_generator")
+        fake_llm_mod.LLMGenerator = lambda **kw: MagicMock()  # type: ignore[attr-defined]
+        fake_pkg = types.ModuleType("atlas_rag")
+        monkeypatch.setitem(sys.modules, "atlas_rag", fake_pkg)
+        monkeypatch.setitem(sys.modules, "atlas_rag.retriever", fake_retriever_mod)
+        monkeypatch.setitem(sys.modules, "atlas_rag.llm_generator", fake_llm_mod)
+
+        sentinel_index = object()
+        data = {"edge_faiss_index": sentinel_index, "text_dict": {}}
+
+        retriever = AtlasRagRetriever._build_inner_retriever(
+            llm_client=MagicMock(),
+            llm_model_id="m",
+            sentence_encoder=MagicMock(),
+            data=data,
+        )
+
+        # Upstream __init__ left it unset; the wrapper injected the prebuilt one.
+        assert retriever.edge_faiss_index is sentinel_index
+        # The faiss index is injected, NOT smuggled through the data dict the
+        # upstream constructor reads (it ignores the key in this version).
+        assert "edge_faiss_index" in captured["data"]  # type: ignore[operator]
