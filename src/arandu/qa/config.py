@@ -7,6 +7,8 @@ from pathlib import Path
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
+
 
 class QAConfig(BaseSettings):
     """Configuration settings for the QA generation pipeline.
@@ -58,7 +60,7 @@ class QAConfig(BaseSettings):
         description="Temperature for QA generation LLM",
     )
     max_tokens: int = Field(
-        default=8192,
+        default=REASONING_MODEL_MAX_TOKENS,
         ge=1,
         description=(
             "Max tokens for QA generation LLM. "
@@ -158,9 +160,9 @@ class CEPConfig(BaseSettings):
         description="Maximum reasoning hops to detect for multi-hop questions",
     )
     reasoning_max_tokens: int = Field(
-        default=8192,
+        default=REASONING_MODEL_MAX_TOKENS,
         ge=128,
-        le=8192,
+        le=REASONING_MODEL_MAX_TOKENS,
         description=(
             "Maximum tokens for reasoning enrichment responses. "
             "Defaults high for thinking models (Qwen3, DeepSeek-R1, Gemini 2.5) "
@@ -296,9 +298,9 @@ class JudgeConfig(BaseSettings):
         description="Temperature for judge LLM (low for consistent evaluation)",
     )
     max_tokens: int = Field(
-        default=8192,
+        default=REASONING_MODEL_MAX_TOKENS,
         ge=128,
-        le=8192,
+        le=REASONING_MODEL_MAX_TOKENS,
         description=(
             "Maximum tokens for judge responses. "
             "Defaults high for thinking models whose <think> blocks consume "

@@ -14,6 +14,15 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: Token headroom sized for reasoning models (qwen3:14b, gemini-2.5-flash)
+#: whose internal thinking tokens count against the response budget. A tighter
+#: cap is exhausted mid-reasoning and truncates the (often JSON) response,
+#: surfacing downstream as a parse failure and a dropped result. Single source
+#: for the value every LLM stage uses, so they all move together; referenced as
+#: the :class:`LLMSettings` ``max_tokens`` default and re-exported as
+#: ``arandu.shared.judge.criterion.DEFAULT_MAX_TOKENS``.
+REASONING_MODEL_MAX_TOKENS = 8192
+
 
 class LLMSettings(BaseSettings):
     """Canonical LLM connection + sampling settings for any pipeline stage.
@@ -44,12 +53,10 @@ class LLMSettings(BaseSettings):
     api_key_env: str = Field(default="OPENAI_API_KEY")
     base_url: str | None = Field(default=None)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    # 8192: sized for reasoning models (qwen3:14b default, gemini-2.5-flash)
-    # whose internal thinking tokens count against this budget. A tighter cap
-    # is exhausted mid-reasoning and truncates the (often JSON) response, which
-    # surfaces downstream as a parse failure and a dropped result. Stages that
-    # emit short free-text (e.g. the answerer) pin a smaller value themselves.
-    max_tokens: int = Field(default=8192, gt=0)
+    # See REASONING_MODEL_MAX_TOKENS. Every stage inherits this headroom; even
+    # short-answer stages (e.g. the answerer) need it because the response is
+    # structured and reasoning models burn thinking tokens against the budget.
+    max_tokens: int = Field(default=REASONING_MODEL_MAX_TOKENS, gt=0)
     language: Literal["pt", "en"] = Field(default="pt")
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_LLM_", extra="ignore")

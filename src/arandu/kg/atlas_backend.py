@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from arandu.kg.schemas import KGConstructionResult
 from arandu.shared.llm_client import create_llm_client
+from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
 from arandu.utils.paths import get_project_root
 
 logger = logging.getLogger(__name__)
@@ -100,13 +101,13 @@ ATLAS_DEFAULTS: dict[str, Any] = {
     "batch_size_triple": 3,
     "batch_size_concept": 16,
     "chunk_size": 8192,
-    # 8192 (not atlas-rag's own 2048 default): triple/concept extraction runs
-    # through reasoning models (qwen3:14b, gemini-2.5-flash) whose thinking
-    # tokens count against this budget, so 2048 truncates the JSON mid-output.
-    # The dry-run (2026-06-08) had to pre-empt this with
-    # `--backend-option max_new_tokens=8192`; making it the default removes
-    # that footgun. Mirrors the judge/answerer reasoning-model headroom.
-    "max_new_tokens": 8192,
+    # Not atlas-rag's own 2048 default: triple/concept extraction runs through
+    # reasoning models (qwen3:14b, gemini-2.5-flash) whose thinking tokens count
+    # against this budget, so 2048 truncates the JSON mid-output. The dry-run
+    # (2026-06-08) had to pre-empt this with `--backend-option
+    # max_new_tokens=8192`; making it the default removes that footgun. Uses the
+    # shared REASONING_MODEL_MAX_TOKENS so it tracks the judge/answerer headroom.
+    "max_new_tokens": REASONING_MODEL_MAX_TOKENS,
     "include_concept": True,
     "max_workers": 3,
 }
