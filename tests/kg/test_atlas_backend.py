@@ -127,8 +127,8 @@ class TestAtlasRagConstructorInit:
 
         assert constructor._opts["chunk_size"] == 4096
         assert constructor._opts["batch_size_triple"] == 5
-        # Non-overridden defaults stay
-        assert constructor._opts["max_new_tokens"] == 2048
+        # Non-overridden defaults stay (8192 headroom for reasoning models)
+        assert constructor._opts["max_new_tokens"] == 8192
 
 
 class TestPrepareInputData:

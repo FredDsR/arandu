@@ -92,8 +92,8 @@ class TestRunAnswerBatch:
         # even if run-level metadata is later moved or split.
         assert rec.answerer_meta["provider"] == "ollama"
         assert rec.answerer_meta["top_k"] == 10
-        assert rec.answerer_meta["max_tokens"] == 1024
-        assert rec.answerer_meta["max_context_tokens"] == 8192
+        assert rec.answerer_meta["max_tokens"] == 8192
+        assert rec.answerer_meta["max_context_tokens"] == 16384
         assert rec.answerer_meta["prompt_overhead_tokens"] == 350
         assert rec.answerer_model == "qwen3:14b"
 

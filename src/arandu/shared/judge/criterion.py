@@ -21,16 +21,17 @@ if TYPE_CHECKING:
 from pydantic import BaseModel, Field
 
 from arandu.shared.judge.schemas import CriterionScale, CriterionScore
+from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
 from arandu.utils.text import validate_ordinal_score, validate_score
 
 ORDINAL_MIN = 1
 ORDINAL_MAX = 5
 
-# Default completion-token budget for LLM criteria. Sized for reasoning models
-# (Qwen3, Gemini 2.5, DeepSeek-R1) whose internal thinking tokens count against
-# this budget: a tight cap exhausts it during reasoning and truncates the JSON
-# response mid-string, surfacing as ``JSONDecodeError`` and a dropped verdict.
-DEFAULT_MAX_TOKENS = 8192
+# Default completion-token budget for LLM criteria. Aliases the shared
+# REASONING_MODEL_MAX_TOKENS so the judge tracks the same headroom as every
+# other stage (reasoning models' thinking tokens count against this budget; a
+# tight cap truncates the JSON verdict mid-string into a JSONDecodeError).
+DEFAULT_MAX_TOKENS = REASONING_MODEL_MAX_TOKENS
 
 logger = logging.getLogger(__name__)
 

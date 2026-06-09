@@ -18,6 +18,7 @@ from arandu.shared.chunking.resolver import ChunkResolver
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.config import ResultsConfig
 from arandu.shared.embeddings import EmbedderSettings, build_embedder
+from arandu.shared.io import resolve_transcription_path
 from arandu.shared.llm_client import LLMClient, LLMProvider, parse_provider
 from arandu.shared.rag.retrieve.settings import (
     AtlasRagRetrieveSettings,
@@ -216,9 +217,12 @@ def _load_chunks(chunk_dir: Path, chunker_id: str) -> list[Chunk]:
 def _build_chunk_resolver(*, pipeline_id: str, base_dir: Path) -> ChunkResolver:
     """Construct a :class:`ChunkResolver` reading source text from this run.
 
-    Source text lives at ``<base_dir>/<pipeline_id>/transcription/outputs/
-    <file_id>.json`` as an :class:`EnrichedRecord`. The loader reads it
-    lazily; ``ChunkResolver`` caches loaded texts in its LRU.
+    Source text lives at ``<base_dir>/<pipeline_id>/transcription/outputs/`` as
+    an :class:`EnrichedRecord`. The filename (``_transcription`` suffix, bare
+    fallback) is resolved by
+    :func:`arandu.shared.io.resolve_transcription_path` — the single source of
+    the read-side convention. The loader reads lazily; ``ChunkResolver`` caches
+    loaded texts in its LRU.
     """
     transcription_dir = base_dir / pipeline_id / "transcription" / "outputs"
     if not transcription_dir.exists():
@@ -228,9 +232,12 @@ def _build_chunk_resolver(*, pipeline_id: str, base_dir: Path) -> ChunkResolver:
         )
 
     def _load_text(file_id: str) -> str:
-        path = transcription_dir / f"{file_id}.json"
-        if not path.exists():
-            raise FileNotFoundError(f"Transcription not found for file_id {file_id!r}: {path}")
+        path = resolve_transcription_path(transcription_dir, file_id)
+        if path is None:
+            raise FileNotFoundError(
+                f"Transcription not found for file_id {file_id!r} in {transcription_dir} "
+                f"(tried {file_id}_transcription.json and {file_id}.json)."
+            )
         record = EnrichedRecord.model_validate_json(path.read_text(encoding="utf-8"))
         return record.transcription_text
 
