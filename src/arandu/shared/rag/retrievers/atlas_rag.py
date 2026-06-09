@@ -250,6 +250,19 @@ class AtlasRagRetriever:
             relname: hashlib.sha256(path.read_bytes()).hexdigest()
             for relname, path in artifact_paths.items()
         }
+        # Record the edge faiss index sha alongside the pickles so _load_data_dict
+        # can integrity-check it on load. Stored under EDGE_FAISS_SHA_KEY (not a
+        # pickle, so it is verified + loaded separately, not via the pickle loop).
+        edge_index_path = cls._edge_faiss_index_path(
+            precompute_dir=precompute_dir,
+            keyword=keyword,
+            sentence_encoder_model=sentence_encoder_model,
+            include_events=include_events,
+            include_concept=include_concept,
+        )
+        artifact_sha256[cls.EDGE_FAISS_SHA_KEY] = hashlib.sha256(
+            edge_index_path.read_bytes()
+        ).hexdigest()
 
         manifest = {
             "kg_outputs_dir": str(kg_outputs_dir),
@@ -264,7 +277,23 @@ class AtlasRagRetriever:
         (precompute_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest, indent=2))
 
     @staticmethod
+    def _encoder_short_and_flags(
+        sentence_encoder_model: str, include_events: bool, include_concept: bool
+    ) -> tuple[str, str]:
+        """Derive the ``(encoder_short, flags)`` filename parts atlas-rag uses.
+
+        Both shared by :meth:`_artifact_paths` and :meth:`_edge_faiss_index_path`
+        so the upstream filename scheme (encoder basename + event/concept flags)
+        lives in one place; mirrors
+        ``atlas_rag.vectorstore.create_graph_index.create_embeddings_and_index``.
+        """
+        encoder_short = sentence_encoder_model.split("/")[-1]
+        flags = f"event{include_events}_concept{include_concept}"
+        return encoder_short, flags
+
+    @classmethod
     def _artifact_paths(
+        cls,
         *,
         precompute_dir: Path,
         keyword: str,
@@ -279,8 +308,9 @@ class AtlasRagRetriever:
         ``manifest["artifact_sha256"]`` so `_load_data_dict` can verify
         integrity without re-deriving filenames from arguments.
         """
-        encoder_short = sentence_encoder_model.split("/")[-1]
-        flags = f"event{include_events}_concept{include_concept}"
+        encoder_short, flags = cls._encoder_short_and_flags(
+            sentence_encoder_model, include_events, include_concept
+        )
         return {
             "node_embeddings": precompute_dir
             / f"{keyword}_{flags}_{encoder_short}_node_embeddings.pkl",
@@ -292,8 +322,14 @@ class AtlasRagRetriever:
             "text_dict": precompute_dir / f"{keyword}_original_text_dict_with_node_id.pkl",
         }
 
-    @staticmethod
+    #: Manifest key under which the edge faiss index sha256 is recorded.
+    #: Verified *if present* (see :meth:`_load_data_dict`): precomputes built
+    #: before this key existed still load, newer ones get integrity-checked.
+    EDGE_FAISS_SHA_KEY = "edge_faiss_index"
+
+    @classmethod
     def _edge_faiss_index_path(
+        cls,
         *,
         precompute_dir: Path,
         keyword: str,
@@ -306,12 +342,14 @@ class AtlasRagRetriever:
         Filename mirrors ``atlas_rag.vectorstore.create_graph_index.
         create_embeddings_and_index`` (``..._edge_faiss.index``), which
         :meth:`build_index` already writes. Kept out of :meth:`_artifact_paths`
-        because that map feeds the ``pickle.load`` + sha-verify loop, while the
-        faiss index is read with ``faiss.read_index`` (not a pickle, so the
-        pickle-tamper threat model that drives sha verification does not apply).
+        because that map feeds the ``pickle.load`` loop; the faiss index is read
+        with ``faiss.read_index`` (not a pickle), so it is loaded separately and
+        its sha is recorded under :attr:`EDGE_FAISS_SHA_KEY` rather than mixed
+        into the pickle artifact-sha map.
         """
-        encoder_short = sentence_encoder_model.split("/")[-1]
-        flags = f"event{include_events}_concept{include_concept}"
+        encoder_short, flags = cls._encoder_short_and_flags(
+            sentence_encoder_model, include_events, include_concept
+        )
         return precompute_dir / f"{keyword}_{flags}_{encoder_short}_edge_faiss.index"
 
     @staticmethod
@@ -424,7 +462,20 @@ class AtlasRagRetriever:
 
         # atlas-rag's prebuilt edge faiss index — see _build_inner_retriever
         # for why this is injected onto the retriever rather than read from
-        # `data` by its __init__.
+        # `data` by its __init__. Integrity-checked against the manifest if the
+        # sha was recorded (verify-if-present: precomputes built before
+        # EDGE_FAISS_SHA_KEY existed still load). faiss.read_index is not a
+        # pickle, so this is bytes-equality, not an arbitrary-code-exec gate.
+        recorded_edge_sha = artifact_sha256.get(cls.EDGE_FAISS_SHA_KEY)
+        if recorded_edge_sha is not None:
+            actual_edge_sha = hashlib.sha256(edge_index_path.read_bytes()).hexdigest()
+            if actual_edge_sha != recorded_edge_sha:
+                raise ValueError(
+                    f"sha256 mismatch on {edge_index_path}: manifest records "
+                    f"{recorded_edge_sha[:12]}…, computed {actual_edge_sha[:12]}… — "
+                    f"artifact may be corrupted or tampered. Rebuild the index."
+                )
+
         import faiss
 
         edge_faiss_index = faiss.read_index(str(edge_index_path))
