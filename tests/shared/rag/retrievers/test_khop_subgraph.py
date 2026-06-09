@@ -221,6 +221,29 @@ class TestKHopSubgraphRetrieverRetrieve:
             assert r.payload != r.chunk_id, "payload must be the text, not the id"
             assert r.payload_is_prose is True
 
+    def test_payload_strips_atlas_header(self, tmp_path: Path) -> None:
+        # atlas KG passage labels carry a `[Contexto…][Transcrição]\n` header
+        # that the offset-resolution path strips before slicing. The inline
+        # payload must strip the SAME header so khop_passage feeds the answerer
+        # and source_recovery the header-free text every other arm sees;
+        # otherwise the header tokens confound the cross-arm comparison.
+        body = "A enchente do rio Uruguai em 2024."
+        label = f"[Contexto da Entrevista] entrevista de teste [Transcrição]\n{body}"
+        kg = nx.DiGraph()
+        kg.add_node("p_h", type="passage", id=label, file_id="p_h")
+        kg.add_node("e_rio", type="entity", id="rio Uruguai", file_id="p_h")
+        kg.add_edge("e_rio", "p_h", relation="mentions")
+        path = _write_kg_layout(kg, tmp_path)
+
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
+        results = retriever.retrieve("rio Uruguai enchente", top_k=5)
+
+        assert results, "expected the header-bearing passage to be retrieved"
+        for r in results:
+            assert "[Transcrição]" not in r.payload
+            assert "[Contexto" not in r.payload
+            assert r.payload == body
+
     def test_passage_with_no_kg_extraction_record_dropped(self, tmp_path: Path) -> None:
         # If a KG passage node has no matching kg_extraction record (corpus
         # drift between KG build and JSONL on disk), the retriever drops it

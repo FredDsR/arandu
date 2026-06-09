@@ -119,11 +119,13 @@ def _iter_atlas_passages(kg_extraction_dir: Path) -> Iterator[_AtlasPassage]:
                 )
 
 
-def _strip_atlas_header(text: str) -> str:
+def strip_atlas_header(text: str) -> str:
     """Strip the atlas-rag-injected ``[Contexto…][Transcrição]\\n`` header.
 
     If the marker is absent (passage was indexed without a header), return
-    the text unchanged.
+    the text unchanged. Public so retrievers that surface atlas passage text
+    inline (``KHopSubgraphRetriever`` payload) strip the same header the
+    offset-resolution path strips, keeping arms comparable on identical text.
     """
     idx = text.find(_HEADER_END_MARKER)
     if idx == -1:
@@ -310,7 +312,7 @@ def link_passages(
             unmatched.append(passage.passage_id)
             continue
 
-        needle = _strip_atlas_header(passage.text)
+        needle = strip_atlas_header(passage.text)
         # If the atlas record carried only the injected header (degenerate
         # chunk), `needle` is empty / whitespace. `str.find("")` returns 0,
         # which would yield `end_char=0` and fail `PassageOffset.end_char (gt=0)`

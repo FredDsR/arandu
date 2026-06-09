@@ -43,7 +43,10 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from arandu.kg.passage_offsets import build_passage_text_to_atlas_passage_id
+from arandu.kg.passage_offsets import (
+    build_passage_text_to_atlas_passage_id,
+    strip_atlas_header,
+)
 from arandu.shared.rag.retrievers._khop_common import (
     _DEFAULT_MAX_POSTINGS,
     _LINKABLE_TYPES,
@@ -235,16 +238,22 @@ class KHopSubgraphRetriever:
         max_count = ranked[0][1]
         # Carry the passage text inline in `payload` (marked prose) so the
         # Answerer doesn't re-resolve `chunk_id` through `passage_offsets.json`
-        # at answer time — the retriever already holds the exact text. The
-        # `chunk_id` stays the sidecar-joinable `<file_id>:<chunk_index>` for
-        # joins/dedup, and `payload_is_prose=True` keeps source_recovery's
-        # token-containment lens applicable (unlike triple payloads).
+        # at answer time — the retriever already holds the exact text.
+        # `strip_atlas_header` mirrors the offset-resolution path (which strips
+        # the same `[Contexto…][Transcrição]` header before slicing), so the
+        # payload matches the header-free text every other arm feeds — keeping
+        # the answerer prompt and source_recovery comparable across arms. The
+        # `chunk_id` stays the stable sidecar-joinable `<file_id>:<chunk_index>`,
+        # and `payload_is_prose=True` keeps source_recovery's token-containment
+        # lens applicable (unlike triple payloads). NB: the header-bearing raw
+        # `text` is still the lookup key for `_text_to_passage_id` above; only
+        # the surfaced payload is stripped.
         return [
             RetrievedPassage(
                 chunk_id=atlas_passage_id,
                 rank=rank,
                 score=count / max_count,
-                payload=text,
+                payload=strip_atlas_header(text),
                 payload_is_prose=True,
                 retriever_meta={
                     "score_method": "node_freq_khop",
