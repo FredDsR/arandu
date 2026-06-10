@@ -179,6 +179,10 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      # Serve concurrent requests so the eval stages' client-side workers don't
+      # serialize on a single slot. The 24GB GPU holds qwen3:14b (~14GB) with
+      # ~10GB free; 3 slots' KV-cache at 32k ctx fits within that headroom.
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-3}
 
     volumes:
       - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
@@ -221,6 +225,10 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      # Serve concurrent requests so the eval stages' client-side workers don't
+      # serialize on a single slot. The 24GB GPU holds qwen3:14b (~14GB) with
+      # ~10GB free; 3 slots' KV-cache at 32k ctx fits within that headroom.
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-3}
 
     volumes:
       - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
