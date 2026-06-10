@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from pydantic import ValidationError
 
-from arandu.shared.judge.criterion import HeuristicCriterion, LLMCriterion, RangeCriterionResponse
+from arandu.shared.judge.criterion import (
+    HeuristicCriterion,
+    LLMCriterion,
+    OrdinalCriterionResponse,
+    RangeCriterionResponse,
+)
 from arandu.shared.judge.schemas import CriterionScore
 from arandu.shared.llm_client import StructuredOutputError
 
@@ -45,6 +50,51 @@ def prompts_dir(tmp_path: Path) -> Path:
     config_file.write_text(json.dumps({"threshold": 0.7}))
 
     return base_dir
+
+
+class TestCriterionResponseAliases:
+    """Local models (qwen3:14b) vary the JSON key names; aliases must absorb them.
+
+    JSON mode guarantees valid JSON but not the schema keys, so qwen3:14b emits
+    `reasoning`/`explanation`/`justificativa`/... for the rationale and
+    `rating`/`value`/`level` for the score. Without aliases ~half the criterion
+    evaluations failed to parse on the real cluster run (poisoning the filter).
+    """
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"score": 0.8, "reasoning": "r"},
+            {"rating": 0.6, "justificativa": "r"},
+            {"value": 1.0, "explanation": "r"},
+            {"score": 0.5, "justification": "r"},
+            {"score": 0.4, "reason": "r"},
+            {"score": 0.3, "evaluation": "r"},
+            {"score": 0.9, "rationale": "r"},  # canonical still works
+        ],
+    )
+    def test_range_response_accepts_key_synonyms(self, payload: dict) -> None:
+        resp = RangeCriterionResponse.model_validate(payload)
+        assert 0.0 <= resp.score <= 1.0
+        assert resp.rationale == "r"
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"rating": 3, "reasoning": "r"},
+            {"level": 5, "justificativa": "r"},
+            {"score": 1, "rationale": "r"},  # canonical still works
+        ],
+    )
+    def test_ordinal_response_accepts_key_synonyms(self, payload: dict) -> None:
+        resp = OrdinalCriterionResponse.model_validate(payload)
+        assert 1 <= resp.score <= 5
+        assert resp.rationale == "r"
+
+    def test_direct_construction_by_field_name_still_works(self) -> None:
+        # populate_by_name=True keeps canonical kwargs valid despite the aliases.
+        assert RangeCriterionResponse(score=0.7, rationale="ok").rationale == "ok"
+        assert OrdinalCriterionResponse(score=4, rationale="ok").score == 4
 
 
 class TestLLMCriterion:
