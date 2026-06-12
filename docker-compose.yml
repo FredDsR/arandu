@@ -180,9 +180,15 @@ services:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
       # Serve concurrent requests so the eval stages' client-side workers don't
-      # serialize on a single slot. The 24GB GPU holds qwen3:14b (~14GB) with
-      # ~10GB free; 3 slots' KV-cache at 32k ctx fits within that headroom.
+      # serialize on a single slot. Measured on qwen3:14b (24GB RTX 4090,
+      # 2026-06-11): 3 slots x 32k ctx = ~25GB total, ~4% CPU spill - works,
+      # but stages with long prompts should override per job, e.g.
+      # judge-answers needs OLLAMA_NUM_PARALLEL=2 OLLAMA_CONTEXT_LENGTH=40960
+      # (khop_passage/atlas_rag judge prompts reach ~25k tokens + 8k output).
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-3}
+      # Bare passthrough: only lands in the container when set at submit
+      # time, so the server default stays untouched for every other stage.
+      - OLLAMA_CONTEXT_LENGTH
 
     volumes:
       - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
@@ -226,9 +232,15 @@ services:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
       # Serve concurrent requests so the eval stages' client-side workers don't
-      # serialize on a single slot. The 24GB GPU holds qwen3:14b (~14GB) with
-      # ~10GB free; 3 slots' KV-cache at 32k ctx fits within that headroom.
+      # serialize on a single slot. Measured on qwen3:14b (24GB RTX 4090,
+      # 2026-06-11): 3 slots x 32k ctx = ~25GB total, ~4% CPU spill - works,
+      # but stages with long prompts should override per job, e.g.
+      # judge-answers needs OLLAMA_NUM_PARALLEL=2 OLLAMA_CONTEXT_LENGTH=40960
+      # (khop_passage/atlas_rag judge prompts reach ~25k tokens + 8k output).
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-3}
+      # Bare passthrough: only lands in the container when set at submit
+      # time, so the server default stays untouched for every other stage.
+      - OLLAMA_CONTEXT_LENGTH
 
     volumes:
       - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
