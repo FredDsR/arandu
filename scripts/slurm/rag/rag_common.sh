@@ -130,9 +130,14 @@ fi
 echo ""
 echo "Running: arandu ${RAG_CLI_ARGS}"
 echo "=============================================="
+# set +e: under `set -e` a failing stage aborts the script HERE, skipping
+# the cleanup below and leaking the ollama sidecar on the shared node
+# (observed with judge-answers 795114). Capture the rc instead.
+set +e
 # shellcheck disable=SC2086  # intentional word-splitting of the arg string
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm "$RAG_SERVICE" ${RAG_CLI_ARGS}
 RUN_RC=$?
+set -e
 
 echo ""
 echo "Cleaning up containers..."

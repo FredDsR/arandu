@@ -193,6 +193,9 @@ echo ""
 echo "Starting transcription process..."
 echo "=============================================="
 
+# set +e: a failing run must not abort the script before the cleanup below
+# (a skipped `down` leaks containers on the shared node).
+set +e
 if [ "$USE_ROCM" = "true" ]; then
     echo "Running with AMD ROCm support..."
     docker compose -f "$COMPOSE_FILE" --profile rocm up arandu-rocm --abort-on-container-exit
@@ -203,6 +206,8 @@ else
     echo "Running with NVIDIA GPU support..."
     docker compose -f "$COMPOSE_FILE" --profile gpu up arandu --abort-on-container-exit
 fi
+TRANSCRIBE_RC=$?
+set -e
 
 # -----------------------------------------------------------------------------
 # Cleanup
