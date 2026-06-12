@@ -73,6 +73,17 @@ class TestOrdinalCriterionResponse:
         with pytest.raises(ValidationError):
             OrdinalCriterionResponse(score="alto", rationale="bad")
 
+    @pytest.mark.parametrize(("raw", "expected"), [("3.5", 4), ("2.5", 3), ("4", 4)])
+    def test_string_encoded_scores_coerce_and_round(self, raw: str, expected: int) -> None:
+        # JSON-mode local models emit numerics as strings ("3.5"); those
+        # must round like native floats instead of burning the retry budget.
+        resp = OrdinalCriterionResponse(score=raw, rationale="ok")
+        assert resp.score == expected
+
+    def test_string_fraction_out_of_range_still_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            OrdinalCriterionResponse(score="5.7", rationale="bad")
+
 
 class TestValidateOrdinalScore:
     """The validate_ordinal_score helper coerces and clamps to {1..5}."""

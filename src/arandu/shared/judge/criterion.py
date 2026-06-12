@@ -234,7 +234,17 @@ class OrdinalCriterionResponse(BaseModel):
     @field_validator("score", mode="before")
     @classmethod
     def _round_fractional_score(cls, v: object) -> object:
-        """Round fractional numeric scores half-up; pass others through."""
+        """Round fractional numeric scores half-up; pass others through.
+
+        Handles both native JSON floats (``3.5``) and string-encoded
+        numerics (``"3.5"``, common from JSON-mode local models); anything
+        non-numeric passes through for pydantic's own error.
+        """
+        if isinstance(v, str):
+            try:
+                v = float(v)
+            except ValueError:
+                return v
         if isinstance(v, float) and not v.is_integer():
             return math.floor(v + 0.5)
         return v

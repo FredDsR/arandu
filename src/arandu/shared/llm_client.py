@@ -12,7 +12,7 @@ import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from openai import BadRequestError, OpenAI, RateLimitError
+from openai import APIStatusError, BadRequestError, OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 from tenacity import (
     RetryCallState,
@@ -172,10 +172,14 @@ class LLMClient:
     # retrying them wastes the whole backoff budget on a request that can
     # never succeed (e.g. an unsupported response_format, handled by the
     # generate_structured fallback layer).
+    # reraise=True: when the budget is exhausted the ORIGINAL exception
+    # propagates (not tenacity.RetryError), so callers can classify it
+    # (e.g. the json_schema fallback below keys on the status code).
     @retry(
         stop=stop_after_attempt(6),
         wait=_wait_by_error,
         retry=retry_if_not_exception_type(BadRequestError),
+        reraise=True,
     )
     def generate(
         self,
@@ -321,33 +325,55 @@ class LLMClient:
             },
         }
 
-        for attempt in range(1, attempts + 1):
-            response_format: dict[str, Any] = (
-                schema_format if self._json_schema_supported else {"type": "json_object"}
+        def _generate(fmt: dict[str, Any]) -> Any:
+            return self.generate(
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                system_prompt=system_prompt,
+                response_format=fmt,
             )
+
+        for attempt in range(1, attempts + 1):
+            use_schema = self._json_schema_supported
             try:
-                result = self.generate(
-                    prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    system_prompt=system_prompt,
-                    response_format=response_format,
-                )
+                result = _generate(schema_format if use_schema else {"type": "json_object"})
             except BadRequestError as exc:
-                if not self._json_schema_supported:
-                    raise
+                if not use_schema:
+                    # Deterministic 4xx in plain JSON mode: the request is
+                    # bad. Surface it through the uniform caller contract.
+                    last_error = exc
+                    continue
+                # A 400 on a schema attempt is ambiguous: schema rejection
+                # OR a bad request (e.g. context overflow). Probe with plain
+                # JSON mode to tell them apart instead of guessing.
+                try:
+                    result = _generate({"type": "json_object"})
+                except BadRequestError:
+                    # Probe also 400s: the request itself is bad; keep
+                    # schema enforcement enabled and fail this attempt.
+                    last_error = exc
+                    continue
                 logger.warning(
                     "Provider rejected response_format json_schema (%s); "
                     "falling back to json_object for this client.",
                     exc,
                 )
                 self._json_schema_supported = False
-                result = self.generate(
-                    prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    system_prompt=system_prompt,
-                    response_format={"type": "json_object"},
+            except APIStatusError as exc:
+                if not use_schema or exc.status_code < 500:
+                    raise
+                # Some providers (ollama builds) reject schema grammars with
+                # 5xx. Fall back for THIS call only: a transient 500 must
+                # not permanently disable schema enforcement.
+                try:
+                    result = _generate({"type": "json_object"})
+                except Exception:
+                    raise exc from None
+                logger.warning(
+                    "Schema-mode call failed with %s; json_object succeeded - "
+                    "possible schema-grammar rejection (not latching).",
+                    exc.status_code,
                 )
 
             raw = strip_markdown_codeblock(result.content)
