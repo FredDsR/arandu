@@ -13,4 +13,8 @@
 # and the local embedder for query encoding; bm25/khop/null need neither.
 export RAG_CLI_ARGS="retrieve --id ${PIPELINE_ID}"
 export RAG_NEEDS_OLLAMA=true
+# Sequential client; atlas_rag NER/edge-filter calls are short: one slot
+# at a modest context. Revisit with rag-batch-concurrency.
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/rag/rag_common.sh"
