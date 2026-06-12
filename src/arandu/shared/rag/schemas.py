@@ -106,6 +106,10 @@ class RetrievalRecord(BaseModel):
     passages: list[RetrievedPassage]
     elapsed_ms: float = Field(..., ge=0.0)
     is_answerable: bool
+    # Per-call retriever diagnostics (e.g. atlas_rag's seed_path:
+    # edge_filter / node_fallback / ungrounded). Defaults to {} so records
+    # persisted before this field load unchanged.
+    retriever_meta: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _passages_within_top_k(self) -> Self:

@@ -554,3 +554,93 @@ class TestBuildInnerRetrieverEdgeFaissShim:
         # The faiss index is injected, NOT smuggled through the data dict the
         # upstream constructor reads (it ignores the key in this version).
         assert "edge_faiss_index" in captured["data"]  # type: ignore[operator]
+
+
+# -- seeding fallback (edge-filter -> node path -> honest zero) ----------
+
+
+class TestAtlasRagSeedingFallback:
+    """Zero-mass edge-filter seeding falls back to the node path, then to []."""
+
+    def _instance(self) -> AtlasRagRetriever:
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        return instance
+
+    def test_edge_filter_mass_uses_primary_path(self) -> None:
+        instance = self._instance()
+        inner = MagicMock()
+        inner.inference_config.is_filter_edges = True
+        inner.inference_config.topk_nodes = 5
+        inner.q2kg_fn.return_value = {"n1": 0.7}
+        instance._inner = inner
+
+        personalization, seed_path = instance._resolve_personalization("q")
+
+        assert personalization == {"n1": 0.7}
+        assert seed_path == "edge_filter"
+        inner.retrieve_personalization_dict.assert_not_called()
+
+    @pytest.mark.parametrize("empty", [{}, {"n1": 0.0}])
+    def test_zero_mass_falls_back_to_node_path(self, empty: dict) -> None:
+        # The LLM edge filter can reject every candidate fact (observed for
+        # 14/46 dry-run questions); upstream's node path is the retriever's
+        # own degradation chain and must seed the walk instead.
+        instance = self._instance()
+        inner = MagicMock()
+        inner.inference_config.is_filter_edges = True
+        inner.inference_config.topk_nodes = 5
+        inner.q2kg_fn.return_value = empty
+        inner.retrieve_personalization_dict.return_value = {"n2": 1.0}
+        instance._inner = inner
+
+        personalization, seed_path = instance._resolve_personalization("q")
+
+        assert personalization == {"n2": 1.0}
+        assert seed_path == "node_fallback"
+        inner.retrieve_personalization_dict.assert_called_once_with("q", topN=5)
+
+    def test_both_paths_empty_is_ungrounded(self) -> None:
+        instance = self._instance()
+        inner = MagicMock()
+        inner.inference_config.is_filter_edges = True
+        inner.inference_config.topk_nodes = 5
+        inner.q2kg_fn.return_value = {}
+        inner.retrieve_personalization_dict.return_value = {}
+        instance._inner = inner
+
+        personalization, seed_path = instance._resolve_personalization("q")
+
+        assert personalization == {}
+        assert seed_path == "ungrounded"
+
+    def test_ungrounded_retrieve_returns_empty_and_tags_meta(self) -> None:
+        # No ZeroDivisionError crash: the question yields an empty passage
+        # list (the answerer will abstain) and the record-level meta says why.
+        instance = self._instance()
+        instance._resolve_personalization = MagicMock(  # type: ignore[method-assign]
+            return_value=({}, "ungrounded")
+        )
+
+        scored = instance._retrieve_with_scores("q", top_k=5)
+
+        assert scored == []
+        assert instance.last_retrieve_meta == {"seed_path": "ungrounded"}
+
+
+def test_retrieve_one_copies_last_retrieve_meta_into_record() -> None:
+    from arandu.shared.rag.retrieve.batch import _retrieve_one
+
+    retriever = MagicMock()
+    retriever.retrieve.return_value = []
+    retriever.retriever_id = "atlas_rag_test"
+    retriever.last_retrieve_meta = {"seed_path": "node_fallback"}
+    question = MagicMock()
+    question.qa_pair_id = "s:c:0"
+    question.question = "q?"
+    question.chunker_id = "cep_4k"
+    question.is_answerable = True
+
+    record = _retrieve_one(retriever=retriever, arm="atlas_rag", question=question, top_k=5)
+
+    assert record.retriever_meta == {"seed_path": "node_fallback"}

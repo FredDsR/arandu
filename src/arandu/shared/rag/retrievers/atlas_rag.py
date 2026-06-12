@@ -587,14 +587,18 @@ class AtlasRagRetriever:
         """
         import networkx as nx
 
+        personalization, seed_path = self._resolve_personalization(question)
+        self.last_retrieve_meta = {"seed_path": seed_path}
+        if seed_path == "ungrounded":
+            # Honest zero: no KG node carries seed mass for this question,
+            # so the arm returns no passages (the answerer will abstain)
+            # instead of crashing networkx's PPR with a zero-sum
+            # personalization vector (bare ZeroDivisionError, dry-run
+            # 2026-06-12: 14/46 questions).
+            return []
+
         inner = self._inner
         cfg = inner.inference_config
-
-        if not cfg.is_filter_edges:
-            personalization = inner.q2kg_fn(question, topN=cfg.topk_edges)
-        else:
-            personalization = inner.q2kg_fn(question, topN=cfg.topk_nodes)
-
         pr = nx.pagerank(
             inner.KG,
             personalization=personalization,
@@ -621,6 +625,40 @@ class AtlasRagRetriever:
         # list lazily, accumulating only successfully-bridged results.
         ranked_all = sorted(passage_probs.items(), key=lambda x: x[1], reverse=True)
         return self._bridge_to_atlas_passage_ids(ranked_all, top_k=top_k)
+
+    def _resolve_personalization(self, question: str) -> tuple[dict[str, float], str]:
+        """Resolve the PPR seed mass, falling back along HippoRAG's own chain.
+
+        Primary path follows the configured mode (the LLM edge filter under
+        ``is_filter_edges``). The filter can legitimately reject every
+        candidate fact; upstream's node path
+        (``retrieve_personalization_dict``) is the retriever's built-in
+        degradation chain (NER -> query-as-entity -> nearest nodes), so use
+        it before giving up. The returned ``seed_path`` label is persisted
+        to ``RetrievalRecord.retriever_meta`` so the analysis can report
+        how each question was grounded.
+
+        Returns:
+            ``(personalization, seed_path)`` where ``seed_path`` is one of
+            ``"edge_filter"`` / ``"nodes"`` (primary, by config),
+            ``"node_fallback"``, or ``"ungrounded"`` (both paths empty).
+        """
+        inner = self._inner
+        cfg = inner.inference_config
+
+        if not cfg.is_filter_edges:
+            personalization = inner.q2kg_fn(question, topN=cfg.topk_edges)
+            primary_path = "nodes"
+        else:
+            personalization = inner.q2kg_fn(question, topN=cfg.topk_nodes)
+            primary_path = "edge_filter"
+        if personalization and sum(personalization.values()) > 0:
+            return personalization, primary_path
+
+        fallback = inner.retrieve_personalization_dict(question, topN=cfg.topk_nodes)
+        if fallback and sum(fallback.values()) > 0:
+            return fallback, "node_fallback"
+        return {}, "ungrounded"
 
     def _bridge_to_atlas_passage_ids(
         self, ranked: list[tuple[str, float]], *, top_k: int

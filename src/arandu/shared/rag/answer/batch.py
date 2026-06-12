@@ -264,6 +264,7 @@ def _answer_one(
         passages=retrieval.passages,
         elapsed_ms=retrieval.elapsed_ms,
         is_answerable=retrieval.is_answerable,
+        retriever_meta=retrieval.retriever_meta,
         # AnswerRecord-specific fields:
         answer_text=output.answer,
         abstained=output.abstained,

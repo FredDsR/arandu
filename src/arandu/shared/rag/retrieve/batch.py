@@ -308,6 +308,10 @@ def _retrieve_one(
         passages=passages,
         elapsed_ms=elapsed_ms,
         is_answerable=question.is_answerable,
+        # Per-call diagnostics a retriever may expose (e.g. atlas_rag's
+        # seed_path: edge_filter / node_fallback / ungrounded). Optional
+        # by design - arms without the attribute contribute {}.
+        retriever_meta=dict(getattr(retriever, "last_retrieve_meta", None) or {}),
     )
 
 
