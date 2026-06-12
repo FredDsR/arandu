@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from arandu.qa.non_answerable.corpus_index import SourceCorpusIndex, load_kg_node_set
 from arandu.qa.non_answerable.perturbation import (
+    SeedPair,
     perturb_to_non_answerable,
     stratified_seed_sample,
 )
@@ -26,9 +27,10 @@ from arandu.qa.non_answerable.schemas import NonAnswerableDataset, NonAnswerable
 from arandu.qa.non_answerable.settings import NonAnswerableSettings
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import build_llm_client_from_settings
+from arandu.shared.llm_client import build_llm_client_from_settings, is_rate_limit_error
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
+from arandu.utils.concurrency import map_concurrent
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -141,28 +143,44 @@ def run_generate_non_answerable_batch(
     checkpoint.set_total_files(len(seeds))
 
     built = 0
-    resumed = 0
-    for seed in seeds:
+    pending = [
+        seed
+        for seed in seeds
+        if not (
+            checkpoint.is_completed(seed.parent_qa_pair_id)
+            or seed.parent_qa_pair_id in checkpoint.state.failed_files
+        )
+    ]
+    resumed = len(seeds) - len(pending)
+
+    def _process(seed: SeedPair) -> NonAnswerableItem | None:
+        """Perturb one seed on a worker thread (shared state is read-only)."""
+        return perturb_to_non_answerable(
+            seed,
+            kg_node_set=kg_node_set,
+            corpus_index=corpus_index,
+            llm=llm_client,
+            language=resolved.language,
+            base_temperature=resolved.base_temperature,
+            max_retries=resolved.retry_max,
+        )
+
+    # Workers run only the perturbation; checkpoint and file writes stay
+    # on this (main) thread. Rate-limited seeds are requeued after an
+    # adaptive slowdown (see arandu.utils.concurrency).
+    for seed, item, error in map_concurrent(
+        _process,
+        pending,
+        workers=resolved.workers,
+        rate_limit_of=is_rate_limit_error,
+    ):
         key = seed.parent_qa_pair_id
-        if checkpoint.is_completed(key) or key in checkpoint.state.failed_files:
-            resumed += 1
-            continue
-        try:
-            item = perturb_to_non_answerable(
-                seed,
-                kg_node_set=kg_node_set,
-                corpus_index=corpus_index,
-                llm=llm_client,
-                language=resolved.language,
-                base_temperature=resolved.base_temperature,
-                max_retries=resolved.retry_max,
-            )
-        except Exception as exc:
+        if error is not None:
             # Per-seed isolation (mirrors the answer/judge batch loops): a
             # transient LLM/network failure on one seed must not abort the
             # whole ~400-call run. Record it and move on; resume re-attempts.
-            logger.exception("Perturbation crashed for %s: %s", key, exc)
-            checkpoint.mark_failed(key, f"perturbation error: {exc}")
+            logger.error("Perturbation crashed for %s: %s", key, error, exc_info=error)
+            checkpoint.mark_failed(key, f"perturbation error: {error}")
             continue
         if item is None:
             checkpoint.mark_failed(key, "no valid swap after retries")
@@ -171,6 +189,7 @@ def run_generate_non_answerable_batch(
         item_path.write_text(item.model_dump_json(indent=2), encoding="utf-8")
         checkpoint.mark_completed(key)
         built += 1
+    checkpoint.flush()
 
     # Derive the headline counts from the checkpoint over THIS run's seed
     # set, so a resume reports the same completed/failed split as the

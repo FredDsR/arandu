@@ -276,3 +276,71 @@ class TestPayloadPassThrough:
             # Verify the answerer saw the triple's payload in its prompt.
             prompt = inner.generate_structured.call_args.kwargs["prompt"]
             assert "Maria --[vive_em]--> Itaqui" in prompt
+
+
+def _seed_many_retrievals(base: Path, count: int, pipeline_id: str = "run_x") -> None:
+    """Lay out several null-arm RetrievalRecords for concurrency tests."""
+    out_dir = base / pipeline_id / "retrieve" / "outputs" / "null" / "cep"
+    out_dir.mkdir(parents=True)
+    for i in range(count):
+        record = RetrievalRecord(
+            qa_pair_id=f"src_a:chk_{i:02d}:0",
+            question=f"Pergunta {i}?",
+            retriever_id="null",
+            chunker_id="cep_4k",
+            top_k=5,
+            passages=[],
+            elapsed_ms=1.5,
+            is_answerable=True,
+        )
+        record.save(out_dir / f"src_a__chk_{i:02d}__0.json")
+
+
+class TestRunAnswerBatchConcurrency:
+    def test_workers_run_records_simultaneously(self, tmp_path: Path) -> None:
+        # The barrier only releases when 2 LLM calls are in flight at
+        # once; a sequential runner breaks it on timeout and fails both
+        # records, so this test passes only with real client concurrency.
+        import threading
+
+        _seed_many_retrievals(tmp_path, count=2)
+        settings = AnswererSettings(provider="ollama", workers=2)
+        barrier = threading.Barrier(2)
+
+        def blocking_answer(*args, **kwargs) -> AnswererOutput:
+            barrier.wait(timeout=5)
+            return AnswererOutput(abstained=True, answer=None, rationale="x")
+
+        with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm:
+            inner = MagicMock()
+            inner.generate_structured.side_effect = blocking_answer
+            mock_llm.return_value = inner
+
+            result = run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
+
+        assert result.answers_written == 2
+        assert result.answers_failed == 0
+
+    def test_error_isolation_preserved_with_workers(self, tmp_path: Path) -> None:
+        _seed_many_retrievals(tmp_path, count=4)
+        settings = AnswererSettings(provider="ollama", workers=3)
+        calls = {"n": 0}
+        lock = __import__("threading").Lock()
+
+        def sometimes_broken(*args, **kwargs) -> AnswererOutput:
+            with lock:
+                calls["n"] += 1
+                n = calls["n"]
+            if n == 2:
+                raise RuntimeError("boom")
+            return AnswererOutput(abstained=True, answer=None, rationale="x")
+
+        with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm:
+            inner = MagicMock()
+            inner.generate_structured.side_effect = sometimes_broken
+            mock_llm.return_value = inner
+
+            result = run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
+
+        assert result.answers_written == 3
+        assert result.answers_failed == 1

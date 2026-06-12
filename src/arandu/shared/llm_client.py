@@ -12,11 +12,12 @@ import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from openai import OpenAI, RateLimitError
+from openai import APIStatusError, BadRequestError, OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 from tenacity import (
     RetryCallState,
     retry,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
     wait_random_exponential,
@@ -47,6 +48,23 @@ def _wait_by_error(retry_state: RetryCallState) -> float:
     if isinstance(exc, RateLimitError):
         return _RATE_LIMIT_WAIT(retry_state)
     return _TRANSIENT_WAIT(retry_state)
+
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    """Classify an exception as a provider rate limit (HTTP 429).
+
+    The batch-level adaptive throttle
+    (:func:`arandu.utils.concurrency.map_concurrent`) uses this to slow
+    the pipeline down instead of failing the record when a call exhausts
+    the client-level 429 retry budget.
+
+    Args:
+        exc: The exception that escaped an LLM call.
+
+    Returns:
+        True when the error is a rate limit.
+    """
+    return isinstance(exc, RateLimitError)
 
 
 class StructuredOutputError(Exception):
@@ -120,6 +138,11 @@ class LLMClient:
             api_key = "ollama"
 
         self.client = OpenAI(api_key=api_key, base_url=self._base_url)
+        # Whether the provider accepts response_format json_schema (wire-level
+        # schema enforcement). Optimistic until a BadRequestError proves
+        # otherwise; flipping it from worker threads is a benign race (all
+        # writers store the same False).
+        self._json_schema_supported = True
 
     @property
     def base_url(self) -> str | None:
@@ -145,9 +168,18 @@ class LLMClient:
     # attempts span a per-minute reset. Too-short retries surface as
     # RetryError[RateLimitError] -> the caller records score=None and drops the
     # result, which is indistinguishable from a real failure downstream.
+    # Deterministic 4xx client errors (BadRequestError) are excluded:
+    # retrying them wastes the whole backoff budget on a request that can
+    # never succeed (e.g. an unsupported response_format, handled by the
+    # generate_structured fallback layer).
+    # reraise=True: when the budget is exhausted the ORIGINAL exception
+    # propagates (not tenacity.RetryError), so callers can classify it
+    # (e.g. the json_schema fallback below keys on the status code).
     @retry(
         stop=stop_after_attempt(6),
         wait=_wait_by_error,
+        retry=retry_if_not_exception_type(BadRequestError),
+        reraise=True,
     )
     def generate(
         self,
@@ -279,14 +311,70 @@ class LLMClient:
         attempts = 1 + max(max_retries, 0)
         last_error: Exception | None = None
 
-        for attempt in range(1, attempts + 1):
-            result = self.generate(
+        # Wire-level schema enforcement: providers that support
+        # response_format json_schema (ollama structured outputs, OpenAI,
+        # Gemini OpenAI-compat) constrain the output grammar to the
+        # response model's canonical keys, retiring key-synonym drift at
+        # the source. Providers that reject it fall back to plain JSON
+        # mode once per client.
+        schema_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": response_model.__name__,
+                "schema": response_model.model_json_schema(),
+            },
+        }
+
+        def _generate(fmt: dict[str, Any]) -> Any:
+            return self.generate(
                 prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 system_prompt=system_prompt,
-                response_format={"type": "json_object"},
+                response_format=fmt,
             )
+
+        for attempt in range(1, attempts + 1):
+            use_schema = self._json_schema_supported
+            try:
+                result = _generate(schema_format if use_schema else {"type": "json_object"})
+            except BadRequestError as exc:
+                if not use_schema:
+                    # Deterministic 4xx in plain JSON mode: the request is
+                    # bad. Surface it through the uniform caller contract.
+                    last_error = exc
+                    continue
+                # A 400 on a schema attempt is ambiguous: schema rejection
+                # OR a bad request (e.g. context overflow). Probe with plain
+                # JSON mode to tell them apart instead of guessing.
+                try:
+                    result = _generate({"type": "json_object"})
+                except BadRequestError:
+                    # Probe also 400s: the request itself is bad; keep
+                    # schema enforcement enabled and fail this attempt.
+                    last_error = exc
+                    continue
+                logger.warning(
+                    "Provider rejected response_format json_schema (%s); "
+                    "falling back to json_object for this client.",
+                    exc,
+                )
+                self._json_schema_supported = False
+            except APIStatusError as exc:
+                if not use_schema or exc.status_code < 500:
+                    raise
+                # Some providers (ollama builds) reject schema grammars with
+                # 5xx. Fall back for THIS call only: a transient 500 must
+                # not permanently disable schema enforcement.
+                try:
+                    result = _generate({"type": "json_object"})
+                except Exception:
+                    raise exc from None
+                logger.warning(
+                    "Schema-mode call failed with %s; json_object succeeded - "
+                    "possible schema-grammar rejection (not latching).",
+                    exc.status_code,
+                )
 
             raw = strip_markdown_codeblock(result.content)
 

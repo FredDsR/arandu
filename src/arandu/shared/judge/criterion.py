@@ -10,6 +10,7 @@ Provides a three-level hierarchy:
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from string import Template
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Self
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from arandu.shared.judge.schemas import CriterionScale, CriterionScore
 from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
@@ -93,11 +94,32 @@ class LLMCriterionConfig(CriterionConfig):
     """
 
 
+# Local models (esp. ollama qwen3:14b) emit valid JSON but freely vary the key
+# names — `reasoning`/`explanation`/`justificativa`/... for the rationale, and
+# `rating`/`value`/`level` for the score. JSON mode does not enforce the schema
+# keys (only valid-JSON), so without these aliases ~half of qwen3:14b criterion
+# evaluations fail to parse, retry, and land as ERR (poisoning the validity
+# filter). Accept the common synonyms; the canonical name is always first.
+_SCORE_ALIASES = AliasChoices("score", "rating", "value", "level", "label")
+_RATIONALE_ALIASES = AliasChoices(
+    "rationale",
+    "reasoning",
+    "explanation",
+    "justification",
+    "justificativa",
+    "reason",
+    "evaluation",
+    "assessment",
+)
+
+
 class RangeCriterionResponse(BaseModel):
     """Expected structured response from an LLM criterion evaluation."""
 
-    score: float
-    rationale: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    score: float = Field(validation_alias=_SCORE_ALIASES)
+    rationale: str = Field(validation_alias=_RATIONALE_ALIASES)
 
 
 class JudgeCriterion(ABC):
@@ -197,12 +219,35 @@ class OrdinalCriterionResponse(BaseModel):
     """Expected structured response from an ordinal LLM criterion.
 
     ``score`` is an integer label on the ordinal scale ``[ORDINAL_MIN,
-    ORDINAL_MAX]``. The range constraint makes ``generate_structured`` retry
-    when the model returns an out-of-range or fractional value.
+    ORDINAL_MAX]``. Fractional values are rounded half-up before the range
+    check: reasoning models emit labels like ``3.5`` and retry attempts
+    repeat the same shape, so rejecting them burns the whole structured
+    retry budget into an ERR. Out-of-range values still fail validation
+    (and trigger the ``generate_structured`` retry).
     """
 
-    score: int = Field(ge=ORDINAL_MIN, le=ORDINAL_MAX)
-    rationale: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    score: int = Field(ge=ORDINAL_MIN, le=ORDINAL_MAX, validation_alias=_SCORE_ALIASES)
+    rationale: str = Field(validation_alias=_RATIONALE_ALIASES)
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def _round_fractional_score(cls, v: object) -> object:
+        """Round fractional numeric scores half-up; pass others through.
+
+        Handles both native JSON floats (``3.5``) and string-encoded
+        numerics (``"3.5"``, common from JSON-mode local models); anything
+        non-numeric passes through for pydantic's own error.
+        """
+        if isinstance(v, str):
+            try:
+                v = float(v)
+            except ValueError:
+                return v
+        if isinstance(v, float) and not v.is_integer():
+            return math.floor(v + 0.5)
+        return v
 
 
 class OrdinalCriterionConfig(BaseCriterionConfig):

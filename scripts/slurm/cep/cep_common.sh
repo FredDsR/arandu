@@ -201,7 +201,12 @@ echo ""
 echo "Starting CEP QA generation process..."
 echo "=============================================="
 
+# set +e: a failing stage must not abort the script before the cleanup
+# below runs (a skipped `down` leaks the ollama sidecar on the shared node).
+set +e
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up arandu-cep --abort-on-container-exit
+CEP_RC=$?
+set -e
 
 # -----------------------------------------------------------------------------
 # Cleanup

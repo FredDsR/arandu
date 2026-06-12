@@ -20,7 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import build_llm_client_from_settings
+from arandu.shared.llm_client import build_llm_client_from_settings, is_rate_limit_error
 from arandu.shared.rag.answer.resolver import build_passage_text_map
 from arandu.shared.rag.judge_answers.audit import (
     AbstentionDisagreement,
@@ -33,12 +33,22 @@ from arandu.shared.rag.judge_answers.settings import JudgeAnswersSettings
 from arandu.shared.rag.schemas import AnswerRecord
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
+from arandu.utils.concurrency import map_concurrent
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+class _MissingGoldError(Exception):
+    """Worker-side sentinel: an answerable record has no CEP gold to judge against."""
+
+
+# Batched checkpoint persistence: full-file rewrites per record are
+# O(n^2) total I/O over a large batch; an interval keeps I/O flat at
+# the cost of re-processing up to N-1 records after a crash (idempotent).
+_CHECKPOINT_SAVE_INTERVAL = 20
 
 CHECKPOINT_FILENAME = "judge_answers_checkpoint.json"
 
@@ -130,28 +140,22 @@ def run_judge_answers_batch(
     checkpoint_path = results_mgr.run_dir / CHECKPOINT_FILENAME
     if rejudge and checkpoint_path.exists():
         checkpoint_path.unlink()
-    checkpoint = CheckpointManager(checkpoint_path)
+    checkpoint = CheckpointManager(checkpoint_path, save_interval=_CHECKPOINT_SAVE_INTERVAL)
 
     answer_paths = sorted(answers_outputs.glob("*/*/*.json"))
     checkpoint.set_total_files(len(answer_paths))
 
     written = 0
-    resumed = 0
     failed = 0
-    for record_path in answer_paths:
-        ckpt_key = _checkpoint_key(record_path)
-        if checkpoint.is_completed(ckpt_key):
-            resumed += 1
-            continue
 
-        try:
-            answer = AnswerRecord.load(record_path)
-        except (OSError, ValidationError) as exc:
-            logger.warning("Skipping unreadable AnswerRecord %s: %s", record_path, exc)
-            checkpoint.mark_failed(ckpt_key, f"load failed: {exc}")
-            failed += 1
-            continue
+    # Resume filtering happens up front so the worker pool only ever
+    # sees real work.
+    pending = [p for p in answer_paths if not checkpoint.is_completed(_checkpoint_key(p))]
+    resumed = len(answer_paths) - len(pending)
 
+    def _process(record_path: Path) -> AnswerRecord:
+        """Load, gold-check, and judge one record on a worker thread."""
+        answer = AnswerRecord.load(record_path)
         # Answerable items need their CEP gold for the gold-scoring stage;
         # an orphan answerable qa_pair_id can't be judged. Non-answerable
         # items (from `arandu generate-non-answerable`) have no gold and
@@ -159,33 +163,44 @@ def run_judge_answers_batch(
         # gold criteria for them, so a missing gold is expected.
         gold = gold_lookup.get(answer.qa_pair_id)
         if answer.is_answerable and gold is None:
-            logger.warning(
-                "No gold lookup for answerable qa_pair_id=%s — skipping judge for %s.",
-                answer.qa_pair_id,
-                record_path,
-            )
-            checkpoint.mark_failed(ckpt_key, "no gold lookup")
-            failed += 1
-            continue
+            raise _MissingGoldError(answer.qa_pair_id)
+        return _judge_one(judge=judge, answer=answer, gold=gold, passage_text=passage_text)
 
-        try:
-            judged = _judge_one(
-                judge=judge,
-                answer=answer,
-                gold=gold,
-                passage_text=passage_text,
-            )
-        except Exception as exc:
-            # Per-record isolation: log + continue per spec §6.6's
-            # "all in score mode" contract (a bad record doesn't kill
-            # the batch).
-            logger.exception(
-                "Judge failed for qa_pair_id=%s arm=%s: %s",
-                answer.qa_pair_id,
-                answer.retriever_id,
-                exc,
-            )
-            checkpoint.mark_failed(ckpt_key, str(exc))
+    # Workers run only `_process`; checkpoint writes and file saves stay
+    # on this (main) thread, so no locking is needed. A rate-limited
+    # record (exhausted client-side 429 retries) is requeued by the
+    # helper after an adaptive slowdown instead of being failed.
+    for record_path, judged, error in map_concurrent(
+        _process,
+        pending,
+        workers=resolved_settings.workers,
+        rate_limit_of=is_rate_limit_error,
+    ):
+        ckpt_key = _checkpoint_key(record_path)
+        if error is not None:
+            if isinstance(error, _MissingGoldError):
+                logger.warning(
+                    "No gold lookup for answerable qa_pair_id=%s — skipping judge for %s.",
+                    error,
+                    record_path,
+                )
+                checkpoint.mark_failed(ckpt_key, "no gold lookup")
+            elif isinstance(error, (OSError, ValidationError)):
+                logger.warning("Skipping unreadable AnswerRecord %s: %s", record_path, error)
+                checkpoint.mark_failed(ckpt_key, f"load failed: {error}")
+            else:
+                # Per-record isolation: log + continue per spec §6.6's
+                # "all in score mode" contract (a bad record doesn't kill
+                # the batch).
+                logger.error(
+                    "Judge failed for arm=%s source=%s record=%s: %s",
+                    record_path.parts[-3],
+                    record_path.parts[-2],
+                    record_path.stem,
+                    error,
+                    exc_info=error,
+                )
+                checkpoint.mark_failed(ckpt_key, str(error))
             failed += 1
             continue
 
@@ -208,6 +223,7 @@ def run_judge_answers_batch(
         write_audit_log(results_mgr.outputs_dir, disagreements)
         disagreements_count = len(disagreements)
 
+    checkpoint.flush()
     results_mgr.update_progress(written + resumed, failed, len(answer_paths))
     results_mgr.complete_run(success=(failed == 0))
 

@@ -70,19 +70,23 @@ class TestBuildEmbedder:
     def test_sentence_transformers_dispatches_to_atlas_rag_model(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The atlas-rag SentenceTransformerEmbeddingModel constructor pulls
-        # weights; patch the class so the test stays import-only.
-        # Skip if atlas_rag isn't installed (CI runs without --extra kg).
+        # SentenceTransformer pulls weights on construction; patch both it
+        # and atlas-rag's SentenceEmbedding wrapper so the test stays
+        # import-only. Skip if atlas_rag isn't installed (CI runs without
+        # --extra kg).
         pytest.importorskip("atlas_rag.vectorstore.embedding_model")
         settings = EmbedderSettings(provider="sentence_transformers", model="some/local-model")
 
-        with patch(
-            "atlas_rag.vectorstore.embedding_model.SentenceTransformerEmbeddingModel"
-        ) as mock_cls:
-            mock_cls.return_value = "embedder-instance"
+        with (
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+            patch("atlas_rag.vectorstore.embedding_model.SentenceEmbedding") as mock_wrap,
+        ):
+            mock_st.return_value = "st-encoder"
+            mock_wrap.return_value = "embedder-instance"
             result = build_embedder(settings)
 
-        mock_cls.assert_called_once_with("some/local-model")
+        mock_st.assert_called_once_with("some/local-model")
+        mock_wrap.assert_called_once_with("st-encoder")
         assert result == "embedder-instance"
 
     def test_unknown_provider_raises_valueerror(self, monkeypatch: pytest.MonkeyPatch) -> None:

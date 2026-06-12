@@ -164,8 +164,8 @@ class TestGenerateStructured:
         call_args = mock_backend.chat.completions.create.call_args
         assert call_args.kwargs["temperature"] == 0.1
 
-    def test_response_format_json_object_set(self, mocker: MockerFixture) -> None:
-        """Test that response_format is set to json_object in the API call."""
+    def test_response_format_json_schema_set(self, mocker: MockerFixture) -> None:
+        """Wire-level schema enforcement: json_schema is the first choice."""
         client, mock_backend = self._make_client(mocker)
         payload = json.dumps({"score": 0.5, "rationale": "OK"})
         mock_backend.chat.completions.create.return_value = _make_llm_response(payload)
@@ -173,7 +173,9 @@ class TestGenerateStructured:
         client.generate_structured("Rate this.", SampleResponse)
 
         call_args = mock_backend.chat.completions.create.call_args
-        assert call_args.kwargs["response_format"] == {"type": "json_object"}
+        fmt = call_args.kwargs["response_format"]
+        assert fmt["type"] == "json_schema"
+        assert fmt["json_schema"]["schema"] == SampleResponse.model_json_schema()
 
     def test_zero_retries_fails_immediately(self, mocker: MockerFixture) -> None:
         """Test that max_retries=0 means only one attempt, no retries."""

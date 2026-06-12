@@ -10,11 +10,13 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
+from pydantic import BaseModel as _PydanticBaseModel
 from pydantic_settings import SettingsConfigDict
 
 from arandu.shared.llm_client import (
     LLMClient,
     LLMProvider,
+    StructuredOutputError,
     build_llm_client_from_settings,
     create_llm_client,
 )
@@ -769,3 +771,182 @@ class TestBuildLlmClientFromSettings:
         )
         with pytest.raises(ValueError, match="Invalid provider"):
             build_llm_client_from_settings(bad)
+
+
+class TestIsRateLimitError:
+    def test_openai_rate_limit_error_is_classified(self) -> None:
+        import httpx
+        from openai import RateLimitError
+
+        from arandu.shared.llm_client import is_rate_limit_error
+
+        response = httpx.Response(429, request=httpx.Request("POST", "http://x"))
+        exc = RateLimitError("quota", response=response, body=None)
+        assert is_rate_limit_error(exc) is True
+
+    def test_other_errors_are_not_classified(self) -> None:
+        from arandu.shared.llm_client import is_rate_limit_error
+
+        assert is_rate_limit_error(ValueError("nope")) is False
+
+
+def _mock_completion(content: str) -> Mock:
+    response = Mock()
+    response.choices = [Mock()]
+    response.choices[0].message.content = content
+    response.choices[0].message.reasoning_content = None
+    response.choices[0].message.reasoning = None
+    response.choices[0].message.model_extra = None
+    return response
+
+
+class _StructuredDemo(_PydanticBaseModel):
+    score: float
+    rationale: str
+
+
+def _bad_request(msg: str = "response_format not supported") -> Exception:
+    import httpx
+    from openai import BadRequestError
+
+    response = httpx.Response(400, request=httpx.Request("POST", "http://x"))
+    return BadRequestError(msg, response=response, body=None)
+
+
+class TestGenerateStructuredSchemaEnforcement:
+    def _client(self, mocker: MockerFixture) -> tuple:
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="qwen3:14b")
+        return client, mock_client
+
+    def test_sends_json_schema_response_format(self, mocker: MockerFixture) -> None:
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.return_value = _mock_completion(
+            '{"score": 0.8, "rationale": "ok"}'
+        )
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.8
+        fmt = mock_client.chat.completions.create.call_args.kwargs["response_format"]
+        assert fmt["type"] == "json_schema"
+        assert fmt["json_schema"]["name"] == "_StructuredDemo"
+        assert fmt["json_schema"]["schema"] == _StructuredDemo.model_json_schema()
+
+    def test_falls_back_to_json_object_when_schema_rejected(self, mocker: MockerFixture) -> None:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = [
+            _bad_request(),
+            _mock_completion('{"score": 0.7, "rationale": "ok"}'),
+        ]
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.7
+        second_fmt = mock_client.chat.completions.create.call_args_list[1].kwargs["response_format"]
+        assert second_fmt == {"type": "json_object"}
+
+    def test_fallback_is_remembered_for_subsequent_calls(self, mocker: MockerFixture) -> None:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = [
+            _bad_request(),
+            _mock_completion('{"score": 0.7, "rationale": "ok"}'),
+            _mock_completion('{"score": 0.9, "rationale": "ok"}'),
+        ]
+
+        client.generate_structured("p", _StructuredDemo)
+        client.generate_structured("p2", _StructuredDemo)
+
+        third_fmt = mock_client.chat.completions.create.call_args_list[2].kwargs["response_format"]
+        assert third_fmt == {"type": "json_object"}
+
+    def test_bad_request_is_not_retried_by_tenacity(self, mocker: MockerFixture) -> None:
+        # Deterministic 4xx errors must not burn the 6-attempt backoff
+        # budget; they propagate immediately (the schema fallback layer
+        # handles the response_format case).
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _bad_request("bad prompt")
+
+        from openai import BadRequestError
+
+        with pytest.raises(BadRequestError):
+            client.generate("p", response_format={"type": "json_object"})
+
+        assert mock_client.chat.completions.create.call_count == 1
+
+
+def _server_error(msg: str = "schema grammar failed") -> Exception:
+    import httpx
+    from openai import InternalServerError
+
+    response = httpx.Response(500, request=httpx.Request("POST", "http://x"))
+    return InternalServerError(msg, response=response, body=None)
+
+
+class TestSchemaFallbackHardening:
+    def _client(self, mocker: MockerFixture) -> tuple:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="qwen3:14b")
+        return client, mock_client
+
+    def test_unrelated_bad_request_does_not_disable_schema(self, mocker: MockerFixture) -> None:
+        # Both schema AND json_object probes 400 (e.g. context overflow):
+        # the request is bad, not the schema. Surface a StructuredOutputError
+        # (uniform caller contract) and keep schema enforcement enabled.
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _bad_request("context too long")
+
+        with pytest.raises(StructuredOutputError):
+            client.generate_structured("p", _StructuredDemo, max_retries=1)
+
+        assert client._json_schema_supported is True
+
+    def test_bad_request_with_schema_disabled_raises_structured_error(
+        self, mocker: MockerFixture
+    ) -> None:
+        # When the client already fell back, a 400 on json_object must not
+        # escape as a bare BadRequestError (callers catch StructuredOutputError).
+        client, mock_client = self._client(mocker)
+        client._json_schema_supported = False
+        mock_client.chat.completions.create.side_effect = _bad_request("bad prompt")
+
+        with pytest.raises(StructuredOutputError):
+            client.generate_structured("p", _StructuredDemo, max_retries=0)
+
+    def test_server_error_on_schema_falls_back_without_latching(
+        self, mocker: MockerFixture
+    ) -> None:
+        # Some ollama builds reject schema grammars with 5xx, not 400. Fall
+        # back for THIS call, but a transient 500 must not permanently
+        # disable schema enforcement.
+        client, mock_client = self._client(mocker)
+        server_failures = [_server_error()] * 6  # tenacity budget for the schema attempt
+        mock_client.chat.completions.create.side_effect = [
+            *server_failures,
+            _mock_completion('{"score": 0.6, "rationale": "ok"}'),
+        ]
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.6
+        assert client._json_schema_supported is True
+        fallback_fmt = mock_client.chat.completions.create.call_args_list[6].kwargs[
+            "response_format"
+        ]
+        assert fallback_fmt == {"type": "json_object"}
+
+    def test_server_error_on_both_paths_reraises_original(self, mocker: MockerFixture) -> None:
+        from openai import InternalServerError
+
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _server_error("infra down")
+
+        with pytest.raises(InternalServerError):
+            client.generate_structured("p", _StructuredDemo)

@@ -9,6 +9,7 @@ The fallback emits a logged warning at factory time.
 from __future__ import annotations
 
 import logging
+import threading
 import unicodedata
 from typing import TYPE_CHECKING
 
@@ -39,12 +40,22 @@ def _spacy_tokenizer(model: str) -> Callable[[str], list[str]] | None:
     except OSError:
         return None
 
+    # spaCy does not formally guarantee thread safety for a shared Language
+    # object (Vocab/StringStore mutate during calls). The closure is shared
+    # across worker threads by the concurrent batch runners (e.g. the judge's
+    # SourceRecoveryCriterion), so serialize access. Tokenization is cheap
+    # relative to the LLM calls the workers spend their time on.
+    nlp_lock = threading.Lock()
+
     def tokenize(text: str) -> list[str]:
-        return [
-            tok.lemma_.lower()
-            for tok in nlp(text)
-            if not tok.is_stop and not tok.is_punct and not tok.is_space
-        ]
+        # Attribute access (lemma_) also reads the shared StringStore, so
+        # extraction stays inside the lock alongside processing.
+        with nlp_lock:
+            return [
+                tok.lemma_.lower()
+                for tok in nlp(text)
+                if not tok.is_stop and not tok.is_punct and not tok.is_space
+            ]
 
     return tokenize
 

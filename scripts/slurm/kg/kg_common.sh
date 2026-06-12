@@ -195,7 +195,12 @@ echo ""
 echo "Starting KG construction process..."
 echo "=============================================="
 
+# set +e: a failing stage must not abort the script before the cleanup
+# below runs (a skipped `down` leaks the ollama sidecar on the shared node).
+set +e
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up arandu-kg --abort-on-container-exit
+KG_RC=$?
+set -e
 
 # -----------------------------------------------------------------------------
 # Cleanup
