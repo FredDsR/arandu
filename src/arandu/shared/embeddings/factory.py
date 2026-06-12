@@ -5,8 +5,8 @@ Two providers supported today:
 - ``gemini``: cloud, OpenAI-compatible endpoint, sized for thesis runs.
   See :class:`arandu.shared.embeddings.gemini.GeminiEmbedder`.
 - ``sentence_transformers``: local, GPU-backed; used on PCAD / when
-  cloud quotas are tight. atlas-rag's
-  :class:`SentenceTransformerEmbeddingModel` is used as-is.
+  cloud quotas are tight. atlas-rag's :class:`SentenceEmbedding`
+  wrapping a :class:`sentence_transformers.SentenceTransformer`.
 
 The choice is exposed through :class:`EmbedderSettings` (env prefix
 ``ARANDU_EMBEDDER_``) and resolved by :func:`build_embedder`.
@@ -117,10 +117,13 @@ def build_embedder(settings: EmbedderSettings) -> Any:
         return GeminiEmbedder(client=client, model=settings.model)
 
     if settings.provider == "sentence_transformers":
-        # Defer atlas-rag import; only the local-GPU path needs it.
-        from atlas_rag.vectorstore.embedding_model import SentenceTransformerEmbeddingModel
+        # Defer heavy imports; only the local-GPU path needs them.
+        # atlas-rag's SentenceEmbedding wraps an already-constructed
+        # SentenceTransformer (it does not load weights itself).
+        from atlas_rag.vectorstore.embedding_model import SentenceEmbedding
+        from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformerEmbeddingModel(settings.model)
+        return SentenceEmbedding(SentenceTransformer(settings.model))
 
     raise ValueError(
         f"Unknown embedder provider {settings.provider!r}. "
