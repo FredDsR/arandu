@@ -46,6 +46,11 @@ class LLMSettings(BaseSettings):
         temperature: Sampling temperature.
         max_tokens: Cap on each response.
         language: Prompt language; selects the per-stage prompt template.
+        workers: Client-side concurrent LLM requests for batch runners
+            wired through :func:`arandu.utils.concurrency.map_concurrent`
+            (answer, judge-answers); other stages ignore it. Pair with
+            matching server slots (``OLLAMA_NUM_PARALLEL``) and the
+            per-slot context VRAM budget (``scripts/slurm/rag/*.slurm``).
     """
 
     provider: str = Field(default="ollama")
@@ -58,6 +63,7 @@ class LLMSettings(BaseSettings):
     # structured and reasoning models burn thinking tokens against the budget.
     max_tokens: int = Field(default=REASONING_MODEL_MAX_TOKENS, gt=0)
     language: Literal["pt", "en"] = Field(default="pt")
+    workers: int = Field(default=1, ge=1, le=16)
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_LLM_", extra="ignore")
 

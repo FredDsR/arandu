@@ -49,6 +49,23 @@ def _wait_by_error(retry_state: RetryCallState) -> float:
     return _TRANSIENT_WAIT(retry_state)
 
 
+def is_rate_limit_error(exc: Exception) -> bool:
+    """Classify an exception as a provider rate limit (HTTP 429).
+
+    The batch-level adaptive throttle
+    (:func:`arandu.utils.concurrency.map_concurrent`) uses this to slow
+    the pipeline down instead of failing the record when a call exhausts
+    the client-level 429 retry budget.
+
+    Args:
+        exc: The exception that escaped an LLM call.
+
+    Returns:
+        True when the error is a rate limit.
+    """
+    return isinstance(exc, RateLimitError)
+
+
 class StructuredOutputError(Exception):
     """Raised when structured output parsing fails after all retries."""
 

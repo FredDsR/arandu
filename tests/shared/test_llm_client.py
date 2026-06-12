@@ -769,3 +769,20 @@ class TestBuildLlmClientFromSettings:
         )
         with pytest.raises(ValueError, match="Invalid provider"):
             build_llm_client_from_settings(bad)
+
+
+class TestIsRateLimitError:
+    def test_openai_rate_limit_error_is_classified(self) -> None:
+        import httpx
+        from openai import RateLimitError
+
+        from arandu.shared.llm_client import is_rate_limit_error
+
+        response = httpx.Response(429, request=httpx.Request("POST", "http://x"))
+        exc = RateLimitError("quota", response=response, body=None)
+        assert is_rate_limit_error(exc) is True
+
+    def test_other_errors_are_not_classified(self) -> None:
+        from arandu.shared.llm_client import is_rate_limit_error
+
+        assert is_rate_limit_error(ValueError("nope")) is False

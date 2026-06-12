@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.llm_client import build_llm_client_from_settings
+from arandu.shared.llm_client import build_llm_client_from_settings, is_rate_limit_error
 from arandu.shared.rag.answer.answerer import AnswererClient
 from arandu.shared.rag.answer.packer import pack_passages
 from arandu.shared.rag.answer.resolver import build_passage_text_map
@@ -26,6 +26,7 @@ from arandu.shared.rag.answer.settings import AnswererSettings
 from arandu.shared.rag.schemas import AnswerRecord, RetrievalRecord
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
+from arandu.utils.concurrency import map_concurrent
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -124,43 +125,52 @@ def run_answer_batch(
     checkpoint.set_total_files(len(retrieval_paths))
 
     written = 0
-    resumed = 0
     failed = 0
-    for record_path in retrieval_paths:
-        # Path shape: <outputs>/<arm>/<source>/<safe_qa_pair_id>.json.
-        # parts[-3:] = (arm, source, file). Use them as the checkpoint
-        # key so resume is cross-arm safe.
+
+    # Path shape: <outputs>/<arm>/<source>/<safe_qa_pair_id>.json.
+    # parts[-3:] = (arm, source, file). Used as the checkpoint key so
+    # resume is cross-arm safe. Resume filtering happens up front so the
+    # worker pool only ever sees real work.
+    pending = [p for p in retrieval_paths if not checkpoint.is_completed(_checkpoint_key(p))]
+    resumed = len(retrieval_paths) - len(pending)
+
+    def _process(record_path: Path) -> AnswerRecord:
+        """Load + answer one record on a worker thread (no shared state)."""
+        retrieval = RetrievalRecord.load(record_path)
+        return _answer_one(
+            answerer=answerer,
+            retrieval=retrieval,
+            passage_text=passage_text,
+            resolved_settings=resolved_settings,
+        )
+
+    # Workers run only `_process`; checkpoint writes and file saves stay
+    # on this (main) thread, so no locking is needed. A rate-limited
+    # record (exhausted client-side 429 retries) is requeued by the
+    # helper after an adaptive slowdown instead of being failed.
+    for record_path, answer_record, error in map_concurrent(
+        _process,
+        pending,
+        workers=resolved_settings.workers,
+        rate_limit_of=is_rate_limit_error,
+    ):
         ckpt_key = _checkpoint_key(record_path)
-        if checkpoint.is_completed(ckpt_key):
-            resumed += 1
-            continue
-
-        try:
-            retrieval = RetrievalRecord.load(record_path)
-        except (OSError, ValidationError) as exc:
-            logger.warning("Skipping unreadable RetrievalRecord %s: %s", record_path, exc)
-            checkpoint.mark_failed(ckpt_key, f"load failed: {exc}")
-            failed += 1
-            continue
-
-        try:
-            answer_record = _answer_one(
-                answerer=answerer,
-                retrieval=retrieval,
-                passage_text=passage_text,
-                resolved_settings=resolved_settings,
-            )
-        except Exception as exc:
-            # Per-record isolation: log + continue. Mirrors the
-            # retrieve batch runner's rationale (Protocol abstraction
-            # over the LLMClient internals).
-            logger.exception(
-                "Answer failed for arm=%s qa_pair_id=%s: %s",
-                _arm_from_path(record_path),
-                retrieval.qa_pair_id,
-                exc,
-            )
-            checkpoint.mark_failed(ckpt_key, str(exc))
+        if error is not None:
+            if isinstance(error, (OSError, ValidationError)):
+                logger.warning("Skipping unreadable RetrievalRecord %s: %s", record_path, error)
+                checkpoint.mark_failed(ckpt_key, f"load failed: {error}")
+            else:
+                # Per-record isolation: log + continue. Mirrors the
+                # retrieve batch runner's rationale (Protocol abstraction
+                # over the LLMClient internals).
+                logger.error(
+                    "Answer failed for arm=%s record=%s: %s",
+                    _arm_from_path(record_path),
+                    record_path.stem,
+                    error,
+                    exc_info=error,
+                )
+                checkpoint.mark_failed(ckpt_key, str(error))
             failed += 1
             continue
 

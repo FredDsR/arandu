@@ -57,3 +57,20 @@ class TestAnswererSettings:
         # Just enough headroom: 8543 - 350 - 8192 = 1 > 0.
         s = AnswererSettings(_env_file=None, max_context_tokens=8543)
         assert s.max_context_tokens == 8543
+
+
+class TestWorkersField:
+    def test_workers_defaults_to_one(self) -> None:
+        assert AnswererSettings(provider="ollama").workers == 1
+
+    def test_workers_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ARANDU_ANSWERER_WORKERS", "3")
+        assert AnswererSettings().workers == 3
+
+    def test_workers_bounds(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            AnswererSettings(workers=0)
+        with pytest.raises(ValidationError):
+            AnswererSettings(workers=17)

@@ -442,3 +442,70 @@ class TestPassagesAreNonProseFlag:
         # No payload -> offset-resolved source prose -> scores normally.
         passage = RetrievedPassage(chunk_id="src_a:0", rank=0, score=1.0)
         assert self._captured_flag([passage]) is False
+
+
+def _seed_many_answers(base: Path, count: int, pipeline_id: str = "run_x") -> None:
+    """Lay out several null-arm AnswerRecords for concurrency tests."""
+    out_dir = base / pipeline_id / "answers" / "outputs" / "null" / "cep"
+    out_dir.mkdir(parents=True)
+    for i in range(count):
+        record = AnswerRecord(
+            qa_pair_id=f"src_a:chk_{i:02d}:0",
+            question="Onde Maria mora?",
+            retriever_id="null",
+            chunker_id="cep_4k",
+            top_k=5,
+            passages=[],
+            elapsed_ms=1.0,
+            is_answerable=False,
+            answer_text=None,
+            abstained=True,
+            rationale="No passages.",
+            answerer_model="qwen3:14b",
+            answerer_temperature=0.2,
+        )
+        record.save(out_dir / f"src_a__chk_{i:02d}__0.json")
+
+
+def _abstention_only_result() -> JudgePipelineResult:
+    return JudgePipelineResult(
+        stage_results={
+            "abstention": JudgeStepResult(
+                criterion_scores={
+                    "abstention": CriterionScore(score=0.9, threshold=0.7, rationale="ok")
+                }
+            )
+        },
+        passed=True,
+    )
+
+
+class TestRunJudgeAnswersBatchConcurrency:
+    def test_workers_judge_records_simultaneously(self, tmp_path: Path) -> None:
+        # Barrier(2) deadlocks (and times out, failing both records) on a
+        # sequential runner; passes only when 2 judges run at once.
+        import threading
+
+        _seed_many_answers(tmp_path, count=2)
+        _seed_cep(tmp_path)
+        settings = JudgeAnswersSettings(provider="ollama", workers=2)
+        barrier = threading.Barrier(2)
+
+        def blocking_evaluate(*args, **kwargs) -> JudgePipelineResult:
+            barrier.wait(timeout=5)
+            return _abstention_only_result()
+
+        with (
+            patch("arandu.shared.rag.judge_answers.batch.build_llm_client_from_settings"),
+            patch("arandu.shared.rag.judge_answers.batch.AnswerJudge") as mock_judge_cls,
+        ):
+            judge = MagicMock()
+            judge.evaluate.side_effect = blocking_evaluate
+            mock_judge_cls.return_value = judge
+
+            result = run_judge_answers_batch(
+                pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+
+        assert result.judgments_written == 2
+        assert result.judgments_failed == 0
