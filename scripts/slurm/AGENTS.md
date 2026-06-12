@@ -83,6 +83,10 @@ tupi3/tupi6 docker-broken, tupi5 disk-full, tupi4 untested.
 - One bundled ssh per checkpoint. Repeated ssh connections cause the head node
   to close ALL of the user's sessions. Never poll in a loop.
 - Every deploy is `rsync` the specific files + `md5sum` verify on both ends.
+  A code deploy is NOT just `src/`: ship `pyproject.toml` + `uv.lock` when
+  deps changed (stale manifests broke cep once) and `prompts/` when criteria
+  changed (a missing criterion config.json broke judge-answers once - the
+  image COPYs both trees from the cluster checkout at build time).
 - Before resubmitting a "failed" KG job fresh, check
   `results/<id>/kg/outputs/atlas_output/concepts/` for partial state: a
   resubmit resumes automatically and a fresh start throws hours away.
