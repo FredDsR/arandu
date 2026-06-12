@@ -10,7 +10,9 @@
 #SBATCH --error=logs/rag_nonans_%j.err
 
 # Phase C: entity-perturbed non-answerable items (LLM via ollama qwen3:14b).
-export RAG_CLI_ARGS="generate-non-answerable --id ${PIPELINE_ID}"
+# Set NONANSWERABLE_REGENERATE=1 to discard the checkpoint + prior items and
+# re-perturb every seed (failed seeds are otherwise skipped on resume).
+export RAG_CLI_ARGS="generate-non-answerable --id ${PIPELINE_ID}${NONANSWERABLE_REGENERATE:+ --regenerate}"
 export RAG_NEEDS_OLLAMA=true
 # Concurrent client (ARANDU_NONANSWERABLE_WORKERS) with matching server
 # slots; short entity-swap prompts keep the per-slot context modest
