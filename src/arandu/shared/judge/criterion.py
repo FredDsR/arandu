@@ -10,6 +10,7 @@ Provides a three-level hierarchy:
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from string import Template
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Self
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from arandu.shared.judge.schemas import CriterionScale, CriterionScore
 from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
@@ -218,14 +219,25 @@ class OrdinalCriterionResponse(BaseModel):
     """Expected structured response from an ordinal LLM criterion.
 
     ``score`` is an integer label on the ordinal scale ``[ORDINAL_MIN,
-    ORDINAL_MAX]``. The range constraint makes ``generate_structured`` retry
-    when the model returns an out-of-range or fractional value.
+    ORDINAL_MAX]``. Fractional values are rounded half-up before the range
+    check: reasoning models emit labels like ``3.5`` and retry attempts
+    repeat the same shape, so rejecting them burns the whole structured
+    retry budget into an ERR. Out-of-range values still fail validation
+    (and trigger the ``generate_structured`` retry).
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
     score: int = Field(ge=ORDINAL_MIN, le=ORDINAL_MAX, validation_alias=_SCORE_ALIASES)
     rationale: str = Field(validation_alias=_RATIONALE_ALIASES)
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def _round_fractional_score(cls, v: object) -> object:
+        """Round fractional numeric scores half-up; pass others through."""
+        if isinstance(v, float) and not v.is_integer():
+            return math.floor(v + 0.5)
+        return v
 
 
 class OrdinalCriterionConfig(BaseCriterionConfig):

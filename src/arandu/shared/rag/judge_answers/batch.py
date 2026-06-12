@@ -45,6 +45,11 @@ class _MissingGoldError(Exception):
     """Worker-side sentinel: an answerable record has no CEP gold to judge against."""
 
 
+# Batched checkpoint persistence: full-file rewrites per record are
+# O(n^2) total I/O over a large batch; an interval keeps I/O flat at
+# the cost of re-processing up to N-1 records after a crash (idempotent).
+_CHECKPOINT_SAVE_INTERVAL = 20
+
 CHECKPOINT_FILENAME = "judge_answers_checkpoint.json"
 
 
@@ -135,7 +140,7 @@ def run_judge_answers_batch(
     checkpoint_path = results_mgr.run_dir / CHECKPOINT_FILENAME
     if rejudge and checkpoint_path.exists():
         checkpoint_path.unlink()
-    checkpoint = CheckpointManager(checkpoint_path)
+    checkpoint = CheckpointManager(checkpoint_path, save_interval=_CHECKPOINT_SAVE_INTERVAL)
 
     answer_paths = sorted(answers_outputs.glob("*/*/*.json"))
     checkpoint.set_total_files(len(answer_paths))
@@ -188,7 +193,9 @@ def run_judge_answers_batch(
                 # "all in score mode" contract (a bad record doesn't kill
                 # the batch).
                 logger.error(
-                    "Judge failed for record=%s: %s",
+                    "Judge failed for arm=%s source=%s record=%s: %s",
+                    record_path.parts[-3],
+                    record_path.parts[-2],
                     record_path.stem,
                     error,
                     exc_info=error,
@@ -216,6 +223,7 @@ def run_judge_answers_batch(
         write_audit_log(results_mgr.outputs_dir, disagreements)
         disagreements_count = len(disagreements)
 
+    checkpoint.flush()
     results_mgr.update_progress(written + resumed, failed, len(answer_paths))
     results_mgr.complete_run(success=(failed == 0))
 

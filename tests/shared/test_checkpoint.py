@@ -281,3 +281,47 @@ class TestCheckpointManager:
         # Should only be in the set once
         assert len(manager.state.completed_files) == 1
         assert "file1" in manager.state.completed_files
+
+
+class TestSaveInterval:
+    def test_default_interval_saves_every_mark(self, tmp_path: Path) -> None:
+        from arandu.shared.checkpoint import CheckpointManager
+
+        ckpt = CheckpointManager(tmp_path / "c.json")
+        ckpt.mark_completed("a")
+        reloaded = CheckpointManager(tmp_path / "c.json")
+        assert reloaded.is_completed("a")
+
+    def test_interval_batches_disk_writes(self, tmp_path: Path) -> None:
+        from arandu.shared.checkpoint import CheckpointManager
+
+        path = tmp_path / "c.json"
+        ckpt = CheckpointManager(path, save_interval=3)
+        ckpt.mark_completed("a")
+        ckpt.mark_completed("b")
+        # Two marks < interval: nothing persisted yet.
+        on_disk = CheckpointManager(path)
+        assert not on_disk.is_completed("a")
+        ckpt.mark_completed("c")
+        # Third mark hits the interval: all three persisted atomically.
+        on_disk = CheckpointManager(path)
+        assert on_disk.is_completed("a")
+        assert on_disk.is_completed("c")
+
+    def test_flush_persists_pending_marks(self, tmp_path: Path) -> None:
+        from arandu.shared.checkpoint import CheckpointManager
+
+        path = tmp_path / "c.json"
+        ckpt = CheckpointManager(path, save_interval=10)
+        ckpt.mark_completed("a")
+        ckpt.mark_failed("b", "boom")
+        ckpt.flush()
+        on_disk = CheckpointManager(path)
+        assert on_disk.is_completed("a")
+        assert "b" in on_disk.state.failed_files
+
+    def test_flush_without_pending_is_noop(self, tmp_path: Path) -> None:
+        from arandu.shared.checkpoint import CheckpointManager
+
+        ckpt = CheckpointManager(tmp_path / "c.json", save_interval=5)
+        ckpt.flush()  # must not raise nor create spurious writes

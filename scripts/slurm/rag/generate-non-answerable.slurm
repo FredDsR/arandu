@@ -12,8 +12,10 @@
 # Phase C: entity-perturbed non-answerable items (LLM via ollama qwen3:14b).
 export RAG_CLI_ARGS="generate-non-answerable --id ${PIPELINE_ID}"
 export RAG_NEEDS_OLLAMA=true
-# Sequential client (one request in flight) + short entity-swap prompts:
-# one slot at a modest context. Revisit with rag-batch-concurrency.
-export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+# Concurrent client (ARANDU_NONANSWERABLE_WORKERS) with matching server
+# slots; short entity-swap prompts keep the per-slot context modest
+# (3 x 16384 KV ~ 7.5GB + 9.3GB weights, well inside the 24GB card).
+export ARANDU_NONANSWERABLE_WORKERS="${ARANDU_NONANSWERABLE_WORKERS:-3}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-$ARANDU_NONANSWERABLE_WORKERS}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/rag/rag_common.sh"

@@ -36,14 +36,22 @@ class CheckpointState(BaseModel):
 class CheckpointManager:
     """Manages checkpoint state for batch transcription."""
 
-    def __init__(self, checkpoint_file: Path) -> None:
+    def __init__(self, checkpoint_file: Path, save_interval: int = 1) -> None:
         """Initialize checkpoint manager.
 
         Args:
             checkpoint_file: Path to the checkpoint JSON file.
+            save_interval: Persist to disk every Nth mark instead of on
+                every mark. ``save()`` rewrites the whole JSON, so per-mark
+                saving is O(n^2) total I/O over a large batch; an interval
+                trades up-to-``N-1`` re-processed records on crash-resume
+                (idempotent) for flat I/O. Callers using ``> 1`` MUST call
+                :meth:`flush` when the batch ends.
         """
         self.checkpoint_file = checkpoint_file
         self.state = self._load()
+        self._save_interval = max(1, save_interval)
+        self._marks_since_save = 0
 
     def _load(self) -> CheckpointState:
         """Load checkpoint state from file.
@@ -102,7 +110,7 @@ class CheckpointManager:
         self.state.completed_files.add(file_id)
         # Remove from failed if it was there
         self.state.failed_files.pop(file_id, None)
-        self.save()
+        self._maybe_save()
 
     def mark_failed(self, file_id: str, error: str) -> None:
         """Mark a file as failed.
@@ -112,7 +120,20 @@ class CheckpointManager:
             error: Error message.
         """
         self.state.failed_files[file_id] = error
-        self.save()
+        self._maybe_save()
+
+    def _maybe_save(self) -> None:
+        """Save when the configured interval of marks has accumulated."""
+        self._marks_since_save += 1
+        if self._marks_since_save >= self._save_interval:
+            self.save()
+            self._marks_since_save = 0
+
+    def flush(self) -> None:
+        """Persist any marks still pending from interval batching."""
+        if self._marks_since_save > 0:
+            self.save()
+            self._marks_since_save = 0
 
     def is_completed(self, file_id: str) -> bool:
         """Check if a file has been completed.

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 DEFAULT_COOLDOWN_SECONDS = 30.0
 DEFAULT_RATE_LIMIT_REQUEUES = 3
+# Submission window per worker: bounds in-memory futures without starving the pool.
+_WINDOW_FACTOR = 4
 
 
 class AdaptiveThrottle:
@@ -145,7 +147,8 @@ def map_concurrent[T, R](
     Args:
         fn: The per-item work. Exceptions it raises are captured and
             yielded, never propagated.
-        items: The work items. Consumed eagerly when ``workers > 1``.
+        items: The work items. Consumed lazily through a bounded
+            submission window (``workers * 4`` futures at most).
         workers: Maximum simultaneous calls; must be >= 1.
         rate_limit_of: Optional predicate classifying an exception as a
             provider rate limit (e.g. exhausted 429 retries).
@@ -172,25 +175,20 @@ def map_concurrent[T, R](
         )
         return
 
-    if rate_limit_of is None:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(fn, item): item for item in items}
-            for future in as_completed(futures):
-                item = futures[future]
-                try:
-                    yield item, future.result(), None
-                except Exception as exc:
-                    yield item, None, exc
-        return
+    throttle = (
+        AdaptiveThrottle(workers, cooldown_seconds=cooldown_seconds)
+        if rate_limit_of is not None
+        else None
+    )
 
-    throttle = AdaptiveThrottle(workers, cooldown_seconds=cooldown_seconds)
-
-    def guarded(item: T) -> R:
+    def run(item: T) -> R:
+        if throttle is None:
+            return fn(item)
         throttle.acquire()
         try:
             result = fn(item)
         except Exception as exc:
-            if rate_limit_of(exc):
+            if rate_limit_of is not None and rate_limit_of(exc):
                 throttle.release_rate_limited()
             else:
                 throttle.release_failure()
@@ -198,10 +196,23 @@ def map_concurrent[T, R](
         throttle.release_success()
         return result
 
+    # Bounded submission window: never more than workers * _WINDOW_FACTOR
+    # futures alive at once, so memory stays flat however large the item
+    # list grows (a full-corpus batch is tens of thousands of records).
+    window = workers * _WINDOW_FACTOR
+    items_iter = iter(items)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        pending: dict[object, tuple[T, int]] = {
-            pool.submit(guarded, item): (item, 0) for item in items
-        }
+        pending: dict[object, tuple[T, int]] = {}
+
+        def refill() -> None:
+            while len(pending) < window:
+                try:
+                    item = next(items_iter)
+                except StopIteration:
+                    return
+                pending[pool.submit(run, item)] = (item, 0)
+
+        refill()
         while pending:
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
@@ -209,10 +220,21 @@ def map_concurrent[T, R](
                 try:
                     yield item, future.result(), None
                 except Exception as exc:
-                    if rate_limit_of(exc) and requeues < max_rate_limit_requeues:
-                        pending[pool.submit(guarded, item)] = (item, requeues + 1)
+                    if _is_requeueable(exc, rate_limit_of, requeues, max_rate_limit_requeues):
+                        pending[pool.submit(run, item)] = (item, requeues + 1)
                     else:
                         yield item, None, exc
+            refill()
+
+
+def _is_requeueable(
+    exc: Exception,
+    rate_limit_of: Callable[[Exception], bool] | None,
+    requeues_done: int,
+    max_requeues: int,
+) -> bool:
+    """Single source of truth for the requeue decision (both execution paths)."""
+    return rate_limit_of is not None and rate_limit_of(exc) and requeues_done < max_requeues
 
 
 def _map_inline[T, R](
@@ -225,14 +247,14 @@ def _map_inline[T, R](
 ) -> Iterator[tuple[T, R | None, Exception | None]]:
     """Sequential path: submission order, with the same requeue semantics."""
     for item in items:
-        attempts_left = max_rate_limit_requeues
+        requeues_done = 0
         while True:
             try:
                 yield item, fn(item), None
                 break
             except Exception as exc:
-                if rate_limit_of is not None and rate_limit_of(exc) and attempts_left > 0:
-                    attempts_left -= 1
+                if _is_requeueable(exc, rate_limit_of, requeues_done, max_rate_limit_requeues):
+                    requeues_done += 1
                     if cooldown_seconds > 0:
                         time.sleep(cooldown_seconds)
                     continue

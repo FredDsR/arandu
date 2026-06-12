@@ -126,3 +126,46 @@ class TestSpacyPath:
         # "flooded" → "flood" via spaCy lemmatization.
         tokens = english_tokenizer()("The river flooded the village.")
         assert "flood" in tokens, f"expected lemma 'flood' in {tokens}"
+
+
+class TestTokenizerThreadSafety:
+    def test_spacy_tokenizer_serializes_concurrent_calls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The shared spaCy Language object is not formally thread-safe; the
+        # tokenizer closure must serialize access. The fake nlp records
+        # concurrent entries - without a lock, two pool threads overlap.
+        import sys
+        import threading
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from arandu.shared.rag.retrievers import _bm25_tokenize
+
+        in_flight = {"now": 0, "max": 0}
+        gauge = threading.Lock()
+
+        def fake_nlp(text: str) -> list[SimpleNamespace]:
+            with gauge:
+                in_flight["now"] += 1
+                in_flight["max"] = max(in_flight["max"], in_flight["now"])
+            time.sleep(0.02)
+            with gauge:
+                in_flight["now"] -= 1
+            return [SimpleNamespace(lemma_="tok", is_stop=False, is_punct=False, is_space=False)]
+
+        fake_spacy = MagicMock()
+        fake_spacy.load.return_value = fake_nlp
+        monkeypatch.setitem(sys.modules, "spacy", fake_spacy)
+
+        tokenize = _bm25_tokenize._spacy_tokenizer("pt_core_news_sm")
+        assert tokenize is not None
+
+        threads = [threading.Thread(target=tokenize, args=("um texto",)) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert in_flight["max"] == 1

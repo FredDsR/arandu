@@ -187,3 +187,35 @@ def test_reduced_seeds_on_resume_does_not_exceed_one(
     assert second.dataset_items == 3  # all prior items still on disk
     assert 0.0 <= second.success_rate <= 1.0
     assert second.success_rate == 1.0  # the 1 sampled seed was already completed
+
+
+class _BlockingLLM(_FakeLLM):
+    """Barrier-gated fake: only releases when 2 calls are in flight at once."""
+
+    def __init__(self) -> None:
+        import threading
+
+        super().__init__()
+        self.barrier = threading.Barrier(2)
+
+    def generate_structured(self, *args: object, **kwargs: object) -> PerturbationOutput:
+        self.barrier.wait(timeout=5)
+        return super().generate_structured(*args, **kwargs)
+
+
+def test_workers_perturb_seeds_simultaneously(
+    tmp_path: Path, cep_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A sequential runner deadlocks the barrier (both seeds fail on
+    # BrokenBarrierError); passes only with real client concurrency.
+    fake = _BlockingLLM()
+    monkeypatch.setattr(batch_mod, "build_llm_client_from_settings", lambda _settings: fake)
+    base = tmp_path / "results"
+    settings = NonAnswerableSettings(
+        provider="ollama", seeds_per_bloom=10, rng_seed=7, retry_max=2, workers=2
+    )
+
+    result = run_generate_non_answerable_batch("run-x", base_dir=base, settings=settings)
+
+    assert result.items_built == 2
+    assert result.success_rate == 1.0

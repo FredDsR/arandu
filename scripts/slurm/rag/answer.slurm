@@ -19,6 +19,8 @@ export RAG_NEEDS_OLLAMA=true
 # ctx per slot, qwen3:14b weights ~9.3GB). 3 x 24576 ~ 11.3GB KV, ~21.6GB
 # total. Context sized to the answerer packer ceiling (16384) plus margin.
 export ARANDU_ANSWERER_WORKERS="${ARANDU_ANSWERER_WORKERS:-3}"
-export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-3}"
+# Server slots follow the client worker count unless explicitly overridden,
+# so the two can never drift apart on a plain submit.
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-$ARANDU_ANSWERER_WORKERS}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-24576}"
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/rag/rag_common.sh"

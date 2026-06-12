@@ -34,6 +34,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Batched checkpoint persistence: full-file rewrites per record are
+# O(n^2) total I/O over a large batch; an interval keeps I/O flat at
+# the cost of re-processing up to N-1 records after a crash (idempotent).
+_CHECKPOINT_SAVE_INTERVAL = 20
+
 CHECKPOINT_FILENAME = "answer_checkpoint.json"
 
 
@@ -119,7 +124,9 @@ def run_answer_batch(
         input_source=str(retrieve_outputs),
         checkpoint_filename=CHECKPOINT_FILENAME,
     )
-    checkpoint = CheckpointManager(results_mgr.run_dir / CHECKPOINT_FILENAME)
+    checkpoint = CheckpointManager(
+        results_mgr.run_dir / CHECKPOINT_FILENAME, save_interval=_CHECKPOINT_SAVE_INTERVAL
+    )
 
     retrieval_paths = sorted(retrieve_outputs.glob("*/*/*.json"))
     checkpoint.set_total_files(len(retrieval_paths))
@@ -164,8 +171,9 @@ def run_answer_batch(
                 # retrieve batch runner's rationale (Protocol abstraction
                 # over the LLMClient internals).
                 logger.error(
-                    "Answer failed for arm=%s record=%s: %s",
+                    "Answer failed for arm=%s source=%s record=%s: %s",
                     _arm_from_path(record_path),
+                    record_path.parts[-2],
                     record_path.stem,
                     error,
                     exc_info=error,
@@ -183,6 +191,7 @@ def run_answer_batch(
         checkpoint.mark_completed(ckpt_key)
         written += 1
 
+    checkpoint.flush()
     results_mgr.update_progress(written + resumed, failed, len(retrieval_paths))
     results_mgr.complete_run(success=(failed == 0))
 

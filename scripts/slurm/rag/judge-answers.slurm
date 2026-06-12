@@ -21,6 +21,8 @@ export RAG_NEEDS_OLLAMA=true
 # reach ~25k tokens + 8192 output budget (32k overflows). 2 x 40960 ~
 # 12.5GB KV, ~22.8GB total - the max concurrent config that still fits.
 export ARANDU_JUDGE_ANSWERS_WORKERS="${ARANDU_JUDGE_ANSWERS_WORKERS:-2}"
-export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
+# Server slots follow the client worker count unless explicitly overridden,
+# so the two can never drift apart on a plain submit.
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-$ARANDU_JUDGE_ANSWERS_WORKERS}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-40960}"
 source "${SLURM_SUBMIT_DIR}/scripts/slurm/rag/rag_common.sh"

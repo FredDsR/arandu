@@ -54,10 +54,24 @@ class TestOrdinalCriterionResponse:
         with pytest.raises(ValidationError):
             OrdinalCriterionResponse(score=value, rationale="bad")
 
-    def test_rejects_non_integer(self) -> None:
-        # A float that is not a whole number must not silently truncate.
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [(3.5, 4), (2.5, 3), (3.2, 3), (3.8, 4), (1.0, 1)],
+    )
+    def test_fractional_scores_round_half_up(self, raw: float, expected: int) -> None:
+        # Reasoning models emit fractional ordinal labels (e.g. 3.5) and
+        # retries repeat the same shape, burning the budget to ERR. Round
+        # half-up instead of rejecting; the range guard still applies.
+        resp = OrdinalCriterionResponse(score=raw, rationale="ok")
+        assert resp.score == expected
+
+    def test_fractional_out_of_range_still_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            OrdinalCriterionResponse(score=3.5, rationale="bad")
+            OrdinalCriterionResponse(score=5.6, rationale="bad")
+
+    def test_non_numeric_score_still_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            OrdinalCriterionResponse(score="alto", rationale="bad")
 
 
 class TestValidateOrdinalScore:

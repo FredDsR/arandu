@@ -10,6 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
+from pydantic import BaseModel as _PydanticBaseModel
 from pydantic_settings import SettingsConfigDict
 
 from arandu.shared.llm_client import (
@@ -786,3 +787,92 @@ class TestIsRateLimitError:
         from arandu.shared.llm_client import is_rate_limit_error
 
         assert is_rate_limit_error(ValueError("nope")) is False
+
+
+def _mock_completion(content: str) -> Mock:
+    response = Mock()
+    response.choices = [Mock()]
+    response.choices[0].message.content = content
+    response.choices[0].message.reasoning_content = None
+    response.choices[0].message.reasoning = None
+    response.choices[0].message.model_extra = None
+    return response
+
+
+class _StructuredDemo(_PydanticBaseModel):
+    score: float
+    rationale: str
+
+
+def _bad_request(msg: str = "response_format not supported") -> Exception:
+    import httpx
+    from openai import BadRequestError
+
+    response = httpx.Response(400, request=httpx.Request("POST", "http://x"))
+    return BadRequestError(msg, response=response, body=None)
+
+
+class TestGenerateStructuredSchemaEnforcement:
+    def _client(self, mocker: MockerFixture) -> tuple:
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="qwen3:14b")
+        return client, mock_client
+
+    def test_sends_json_schema_response_format(self, mocker: MockerFixture) -> None:
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.return_value = _mock_completion(
+            '{"score": 0.8, "rationale": "ok"}'
+        )
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.8
+        fmt = mock_client.chat.completions.create.call_args.kwargs["response_format"]
+        assert fmt["type"] == "json_schema"
+        assert fmt["json_schema"]["name"] == "_StructuredDemo"
+        assert fmt["json_schema"]["schema"] == _StructuredDemo.model_json_schema()
+
+    def test_falls_back_to_json_object_when_schema_rejected(self, mocker: MockerFixture) -> None:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = [
+            _bad_request(),
+            _mock_completion('{"score": 0.7, "rationale": "ok"}'),
+        ]
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.7
+        second_fmt = mock_client.chat.completions.create.call_args_list[1].kwargs["response_format"]
+        assert second_fmt == {"type": "json_object"}
+
+    def test_fallback_is_remembered_for_subsequent_calls(self, mocker: MockerFixture) -> None:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = [
+            _bad_request(),
+            _mock_completion('{"score": 0.7, "rationale": "ok"}'),
+            _mock_completion('{"score": 0.9, "rationale": "ok"}'),
+        ]
+
+        client.generate_structured("p", _StructuredDemo)
+        client.generate_structured("p2", _StructuredDemo)
+
+        third_fmt = mock_client.chat.completions.create.call_args_list[2].kwargs["response_format"]
+        assert third_fmt == {"type": "json_object"}
+
+    def test_bad_request_is_not_retried_by_tenacity(self, mocker: MockerFixture) -> None:
+        # Deterministic 4xx errors must not burn the 6-attempt backoff
+        # budget; they propagate immediately (the schema fallback layer
+        # handles the response_format case).
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _bad_request("bad prompt")
+
+        from openai import BadRequestError
+
+        with pytest.raises(BadRequestError):
+            client.generate("p", response_format={"type": "json_object"})
+
+        assert mock_client.chat.completions.create.call_count == 1

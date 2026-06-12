@@ -12,11 +12,12 @@ import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from openai import OpenAI, RateLimitError
+from openai import BadRequestError, OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 from tenacity import (
     RetryCallState,
     retry,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
     wait_random_exponential,
@@ -137,6 +138,11 @@ class LLMClient:
             api_key = "ollama"
 
         self.client = OpenAI(api_key=api_key, base_url=self._base_url)
+        # Whether the provider accepts response_format json_schema (wire-level
+        # schema enforcement). Optimistic until a BadRequestError proves
+        # otherwise; flipping it from worker threads is a benign race (all
+        # writers store the same False).
+        self._json_schema_supported = True
 
     @property
     def base_url(self) -> str | None:
@@ -162,9 +168,14 @@ class LLMClient:
     # attempts span a per-minute reset. Too-short retries surface as
     # RetryError[RateLimitError] -> the caller records score=None and drops the
     # result, which is indistinguishable from a real failure downstream.
+    # Deterministic 4xx client errors (BadRequestError) are excluded:
+    # retrying them wastes the whole backoff budget on a request that can
+    # never succeed (e.g. an unsupported response_format, handled by the
+    # generate_structured fallback layer).
     @retry(
         stop=stop_after_attempt(6),
         wait=_wait_by_error,
+        retry=retry_if_not_exception_type(BadRequestError),
     )
     def generate(
         self,
@@ -296,14 +307,48 @@ class LLMClient:
         attempts = 1 + max(max_retries, 0)
         last_error: Exception | None = None
 
+        # Wire-level schema enforcement: providers that support
+        # response_format json_schema (ollama structured outputs, OpenAI,
+        # Gemini OpenAI-compat) constrain the output grammar to the
+        # response model's canonical keys, retiring key-synonym drift at
+        # the source. Providers that reject it fall back to plain JSON
+        # mode once per client.
+        schema_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": response_model.__name__,
+                "schema": response_model.model_json_schema(),
+            },
+        }
+
         for attempt in range(1, attempts + 1):
-            result = self.generate(
-                prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                system_prompt=system_prompt,
-                response_format={"type": "json_object"},
+            response_format: dict[str, Any] = (
+                schema_format if self._json_schema_supported else {"type": "json_object"}
             )
+            try:
+                result = self.generate(
+                    prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    system_prompt=system_prompt,
+                    response_format=response_format,
+                )
+            except BadRequestError as exc:
+                if not self._json_schema_supported:
+                    raise
+                logger.warning(
+                    "Provider rejected response_format json_schema (%s); "
+                    "falling back to json_object for this client.",
+                    exc,
+                )
+                self._json_schema_supported = False
+                result = self.generate(
+                    prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    system_prompt=system_prompt,
+                    response_format={"type": "json_object"},
+                )
 
             raw = strip_markdown_codeblock(result.content)
 
