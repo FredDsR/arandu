@@ -36,15 +36,15 @@ class TestKHopSettings:
     def test_defaults(self) -> None:
         s = KHopRetrieveSettings(_env_file=None)
         assert s.k_hop == 2
-        assert s.max_postings == 200
+        assert s.top_k_seeds == 50
         assert s.keyword == "transcriptions.json"
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ARANDU_KHOP_K_HOP", "3")
-        monkeypatch.setenv("ARANDU_KHOP_MAX_POSTINGS", "50")
+        monkeypatch.setenv("ARANDU_KHOP_TOP_K_SEEDS", "75")
         s = KHopRetrieveSettings()
         assert s.k_hop == 3
-        assert s.max_postings == 50
+        assert s.top_k_seeds == 75
 
     def test_invalid_k_hop_rejected(self) -> None:
         # k_hop=0 doesn't match any real retrieval pattern; reject at
@@ -108,3 +108,12 @@ class TestAtlasRagSettings:
         monkeypatch.setenv("ARANDU_ATLAS_RAG_BASE_URL", "https://custom.example/v1/")
         s = AtlasRagRetrieveSettings()
         assert s.base_url == "https://custom.example/v1/"
+
+
+def test_khop_top_k_seeds_default_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from arandu.shared.rag.retrieve.settings import KHopRetrieveSettings
+
+    assert KHopRetrieveSettings().top_k_seeds == 50
+    monkeypatch.setenv("ARANDU_KHOP_TOP_K_SEEDS", "25")
+    assert KHopRetrieveSettings().top_k_seeds == 25
+    assert not hasattr(KHopRetrieveSettings(), "max_postings")

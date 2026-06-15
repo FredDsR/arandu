@@ -103,7 +103,7 @@ def retrieve(
     if "bm25" in selected_arms:
         print_info(f"BM25 chunker: {bm25_settings.chunker_id}")
     if any(a.startswith("khop_") for a in selected_arms):
-        print_info(f"K-hop: k_hop={khop_settings.k_hop}, max_postings={khop_settings.max_postings}")
+        print_info(f"K-hop: k_hop={khop_settings.k_hop}, top_k_seeds={khop_settings.top_k_seeds}")
     if atlas_rag_settings is not None:
         print_info(
             f"atlas_rag LLM: provider={atlas_rag_settings.provider}, "

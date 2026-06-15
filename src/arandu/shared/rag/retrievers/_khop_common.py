@@ -213,8 +213,8 @@ def link_entities(
     Keeps every matched token (no hard drop); weights candidate seeds by
     summed smoothed IDF; returns the top-K by weight. Empty only when no
     query token matches any label (true graph-floor). The top-K budget
-    bounds downstream ego-graph size (the role the old ``max_postings``
-    cap played).
+    bounds downstream ego-graph size (the role previously played by the
+    per-token posting cap).
 
     Args:
         question: Raw question text used to identify seed nodes.
