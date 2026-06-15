@@ -36,6 +36,7 @@ from arandu.shared.rag.retrievers._khop_common import (
     _DEFAULT_TOP_K_SEEDS,
     build_label_index,
     link_entities,
+    subgraph_node_distances,
 )
 from arandu.shared.rag.schemas import RetrievedPassage
 
@@ -158,27 +159,10 @@ class KHopTripleRetriever:
         if not seeds:
             return []
 
-        subgraph_nodes: set[str] = set()
-        for seed in seeds:
-            ego = nx.ego_graph(self._kg, seed, radius=self._k_hop, undirected=True)
-            subgraph_nodes.update(ego.nodes)
-
-        # Induced subgraph + undirected shortest-path distances from any
-        # seed. **Scoring is seed-proximity**, not endpoint-degree.
-        # Rationale: degree-based scoring rewards graph hubs (`Dona Gilda`,
-        # generic locations) regardless of question relevance — the first
-        # post-concept-filter smoke on `test-kg-04` returned identical
-        # hub-entity triples across very different questions. Proximity
-        # to the question's anchored seeds is the signal we actually want.
-        induced = self._kg.subgraph(subgraph_nodes)
-        induced_undir = induced.to_undirected(as_view=True)
-        node_dist: dict[str, int] = {}
-        for seed in seeds:
-            for n, d in nx.single_source_shortest_path_length(
-                induced_undir, seed, cutoff=self._k_hop
-            ).items():
-                if d < node_dist.get(n, _INFINITY):
-                    node_dist[n] = d
+        node_dist = subgraph_node_distances(self._kg, seeds, self._k_hop)
+        if not node_dist:
+            return []
+        induced = self._kg.subgraph(node_dist.keys())
 
         # Collect entity-entity / event-entity / event-event triples — skip:
         # - any edge touching a non-{entity,event} node (passages have 2 KB
