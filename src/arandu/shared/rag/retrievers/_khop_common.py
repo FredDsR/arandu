@@ -15,6 +15,7 @@ variant ever appears, it imports from here too.
 
 from __future__ import annotations
 
+import math
 import re
 import threading
 import unicodedata
@@ -24,9 +25,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    import networkx as nx
+
 _TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 _MIN_TOKEN_LEN = 3
+# Kept for backward compat — khop_subgraph and khop_triple still import this
+# until Tasks 3 and 4 migrate them to link_entities.
 _DEFAULT_MAX_POSTINGS = 200
+_DEFAULT_TOP_K_SEEDS = 50
 
 # Linkable node types (used by both arms during entity-linking). Concept
 # nodes ARE linkable — a question may name a concept directly — but the
@@ -136,3 +142,95 @@ def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
     if filter_stopwords:
         tokens = [t for t in tokens if t not in _STOPWORDS and len(t) >= _MIN_TOKEN_LEN]
     return tokens
+
+
+def build_label_index(kg: nx.DiGraph) -> tuple[dict[str, set[str]], int]:
+    """Build the token->nodes inverted index over linkable node labels.
+
+    Returns ``(token_to_nodes, n_linkable)`` where ``n_linkable`` is the
+    number of linkable nodes (the IDF document count — the universe the
+    labels are drawn from). Labels are NOT stopword-filtered (index-build
+    path) so multi-word names stay linkable on their rare half.
+
+    Args:
+        kg: A NetworkX directed graph with node attributes ``id`` (label text)
+            and ``type`` (used to decide linkability via ``_LINKABLE_TYPES``).
+
+    Returns:
+        A tuple of (token_to_nodes, n_linkable) where token_to_nodes maps each
+        token to the set of node IDs whose label contains it, and n_linkable is
+        the count of linkable nodes.
+    """
+    from collections import defaultdict
+
+    token_to_nodes: dict[str, set[str]] = defaultdict(set)
+    n_linkable = 0
+    for node_id, attrs in kg.nodes(data=True):
+        if attrs.get("type") in _LINKABLE_TYPES:
+            n_linkable += 1
+            for token in _tokenize(attrs.get("id", "")):
+                token_to_nodes[token].add(node_id)
+    return token_to_nodes, n_linkable
+
+
+def score_seeds(
+    question: str, token_to_nodes: dict[str, set[str]], n_linkable: int
+) -> dict[str, float]:
+    """Map candidate seed node -> summed smoothed-IDF weight of its linking tokens.
+
+    Smoothed IDF ``log((N+1)/(df+1))`` stays strictly non-negative (a token in
+    every node still contributes a weight of 0.0, so the rarest available token
+    can always seed). A node matched by several query tokens accumulates their
+    weights.
+
+    Args:
+        question: Raw question text; query tokens are stopword-filtered.
+        token_to_nodes: Inverted index from :func:`build_label_index`.
+        n_linkable: Total linkable node count from :func:`build_label_index`.
+
+    Returns:
+        Dict mapping node IDs to their accumulated IDF-weight score.
+    """
+    from collections import defaultdict
+
+    weights: dict[str, float] = defaultdict(float)
+    for token in set(_tokenize(question, filter_stopwords=True)):
+        postings = token_to_nodes.get(token)
+        if not postings:
+            continue
+        idf = math.log((n_linkable + 1) / (len(postings) + 1))
+        for node in postings:
+            weights[node] += idf
+    return weights
+
+
+def link_entities(
+    question: str,
+    token_to_nodes: dict[str, set[str]],
+    n_linkable: int,
+    *,
+    top_k_seeds: int = _DEFAULT_TOP_K_SEEDS,
+) -> list[str]:
+    """Entity-link a question to the top-K KG seed nodes by IDF weight.
+
+    Keeps every matched token (no hard drop); weights candidate seeds by
+    summed smoothed IDF; returns the top-K by weight. Empty only when no
+    query token matches any label (true graph-floor). The top-K budget
+    bounds downstream ego-graph size (the role the old ``max_postings``
+    cap played).
+
+    Args:
+        question: Raw question text used to identify seed nodes.
+        token_to_nodes: Inverted index from :func:`build_label_index`.
+        n_linkable: Total linkable node count from :func:`build_label_index`.
+        top_k_seeds: Maximum number of seed nodes to return.
+
+    Returns:
+        List of node IDs (strings), ranked by descending IDF weight, capped
+        at ``top_k_seeds``. Returns ``[]`` when no query token matches any label.
+    """
+    weights = score_seeds(question, token_to_nodes, n_linkable)
+    if not weights:
+        return []
+    ranked = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
+    return [node for node, _ in ranked[:top_k_seeds]]
