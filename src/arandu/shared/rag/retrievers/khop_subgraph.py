@@ -37,7 +37,6 @@ Implementation notes:
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
@@ -51,6 +50,7 @@ from arandu.shared.rag.retrievers._khop_common import (
     _DEFAULT_TOP_K_SEEDS,
     build_label_index,
     link_entities,
+    subgraph_node_distances,
 )
 from arandu.shared.rag.schemas import RetrievedPassage
 
@@ -164,40 +164,32 @@ class KHopSubgraphRetriever:
         if not seeds:
             return []
 
-        # Union the k-hop ego graph of each seed. NetworkX's `ego_graph`
-        # returns a copy already; we union node IDs only.
-        subgraph_nodes: set[str] = set()
-        for seed in seeds:
-            ego = nx.ego_graph(self._kg, seed, radius=self._k_hop, undirected=True)
-            subgraph_nodes.update(ego.nodes)
-
-        # Passage scoring: a passage counts only if its NODE is in the
-        # subgraph (i.e. reachable from a seed within k_hop edges). The
-        # score is how many other subgraph nodes reference it via
-        # `file_id` (atlas-rag's mention-attribution convention; cf.
-        # `kg/atlas_backend.py`). Limiting "candidate passages" to those
-        # actually in the subgraph is what makes the `k_hop` knob
-        # meaningful — without it, any seed entity would surface its own
-        # passage regardless of edge connectivity, defeating the
-        # "graph-quality vs retrieval-tool" decomposition this baseline
-        # exists to test.
-        candidate_passages = {n for n in subgraph_nodes if n in self._passage_text}
-        passage_counts: Counter[str] = Counter()
-        for node_id in subgraph_nodes:
-            if node_id in candidate_passages:
-                # Don't count a passage's own self-mention.
-                continue
-            file_id_attr = self._kg.nodes[node_id].get("file_id", "")
-            if not file_id_attr:
-                continue
-            for pid in (p.strip() for p in file_id_attr.split(",")):
-                if pid and pid in candidate_passages:
-                    passage_counts[pid] += 1
-
-        if not passage_counts:
+        node_dist = subgraph_node_distances(self._kg, seeds, self._k_hop)
+        if not node_dist:
             return []
 
-        # Convert KG passage-node hashes to atlas-rag synthesized passage_ids
+        # Project proximal entity/event nodes onto their source passages via
+        # file_id (atlas-rag mention attribution). Each passage scores by its
+        # CLOSEST node's proximity (1/(1+dist)); passages absent from
+        # _passage_text (concept_file sentinel / corpus drift) are dropped.
+        passage_score: dict[str, float] = {}
+        for node, dist in node_dist.items():
+            file_id_attr = self._kg.nodes[node].get("file_id", "")
+            if not file_id_attr:
+                continue
+            prox = 1.0 / (1.0 + dist)
+            for passage_node in (p.strip() for p in file_id_attr.split(",")):
+                if (
+                    passage_node
+                    and passage_node in self._passage_text
+                    and prox > passage_score.get(passage_node, 0.0)
+                ):
+                    passage_score[passage_node] = prox
+
+        if not passage_score:
+            return []
+
+        # Convert KG passage-node keys to atlas-rag synthesized passage_ids
         # (``<source_file_id>:<chunk_index>`` — same namespace as
         # `passage_offsets.json` from PR #100). KG passage nodes that have no
         # matching `kg_extraction` JSONL record are dropped — they're either
@@ -205,25 +197,31 @@ class KHopSubgraphRetriever:
         # downstream identity, and surfacing them in `RetrievedPassage`
         # would carry an opaque hash that can't be joined with the offset
         # sidecar the judges consult.
-        ranked: list[tuple[str, int, str]] = []
-        for passage_node_id, count in passage_counts.most_common():
-            text = self._passage_text[passage_node_id]
+        ranked: list[tuple[str, float, str]] = []
+        seen_atlas: set[str] = set()
+        for passage_node, score in sorted(
+            passage_score.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            text = self._passage_text[passage_node]
             atlas_passage_id = self._text_to_passage_id.get(text)
             if atlas_passage_id is None:
                 logger.debug(
                     "Skipping KG passage node %s — no matching kg_extraction "
                     "record (text-equality miss).",
-                    passage_node_id,
+                    passage_node,
                 )
                 continue
-            ranked.append((atlas_passage_id, count, text))
+            if atlas_passage_id in seen_atlas:
+                continue
+            seen_atlas.add(atlas_passage_id)
+            ranked.append((atlas_passage_id, score, text))
             if len(ranked) >= top_k:
                 break
 
         if not ranked:
             return []
 
-        max_count = ranked[0][1]
+        max_score = ranked[0][1]
         # Carry the passage text inline in `payload` (marked prose) so the
         # Answerer doesn't re-resolve `chunk_id` through `passage_offsets.json`
         # at answer time — the retriever already holds the exact text.
@@ -240,16 +238,16 @@ class KHopSubgraphRetriever:
             RetrievedPassage(
                 chunk_id=atlas_passage_id,
                 rank=rank,
-                score=count / max_count,
+                score=score / max_score,
                 payload=strip_atlas_header(text),
                 payload_is_prose=True,
                 retriever_meta={
-                    "score_method": "node_freq_khop",
+                    "score_method": "seed_proximity",
                     "k_hop": self._k_hop,
                     "top_k_seeds": self._top_k_seeds,
                 },
             )
-            for rank, (atlas_passage_id, count, text) in enumerate(ranked)
+            for rank, (atlas_passage_id, score, text) in enumerate(ranked)
         ]
 
     def _entity_link(self, question: str) -> Iterable[str]:
