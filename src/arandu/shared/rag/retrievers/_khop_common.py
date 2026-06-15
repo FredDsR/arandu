@@ -23,7 +23,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     import networkx as nx
 
@@ -231,3 +231,41 @@ def link_entities(
         return []
     ranked = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
     return [node for node, _ in ranked[:top_k_seeds]]
+
+
+def subgraph_node_distances(kg: nx.DiGraph, seeds: Iterable[str], k_hop: int) -> dict[str, int]:
+    """Min undirected hop-distance from any seed to each node within ``k_hop``.
+
+    Unions the ``k_hop`` ego graph of each seed, induces that node set, and runs
+    single-source shortest paths (undirected, cutoff ``k_hop``) from every seed,
+    keeping the minimum distance per reached node. Seeds map to 0. The returned
+    dict's keys are exactly the in-``k_hop`` subgraph node set, so callers that
+    also need that subgraph can use ``kg.subgraph(dist.keys())`` without a second
+    ego-graph pass.
+
+    Args:
+        kg: The knowledge graph.
+        seeds: Entity-linked seed node IDs.
+        k_hop: Ego-graph radius / shortest-path cutoff.
+
+    Returns:
+        ``{node_id: min_distance}`` for every node within ``k_hop`` of a seed;
+        empty when ``seeds`` is empty.
+    """
+    import networkx as nx
+
+    seeds = list(seeds)
+    if not seeds:
+        return {}
+    subgraph_nodes: set[str] = set()
+    for seed in seeds:
+        subgraph_nodes.update(nx.ego_graph(kg, seed, radius=k_hop, undirected=True).nodes)
+    induced_undir = kg.subgraph(subgraph_nodes).to_undirected(as_view=True)
+    dist: dict[str, int] = {}
+    for seed in seeds:
+        for node, d in nx.single_source_shortest_path_length(
+            induced_undir, seed, cutoff=k_hop
+        ).items():
+            if node not in dist or d < dist[node]:
+                dist[node] = d
+    return dist
