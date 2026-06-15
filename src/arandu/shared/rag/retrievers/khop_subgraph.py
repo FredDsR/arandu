@@ -37,7 +37,7 @@ Implementation notes:
 from __future__ import annotations
 
 import logging
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
@@ -48,9 +48,9 @@ from arandu.kg.passage_offsets import (
     strip_atlas_header,
 )
 from arandu.shared.rag.retrievers._khop_common import (
-    _DEFAULT_MAX_POSTINGS,
-    _LINKABLE_TYPES,
-    _tokenize,
+    _DEFAULT_TOP_K_SEEDS,
+    build_label_index,
+    link_entities,
 )
 from arandu.shared.rag.schemas import RetrievedPassage
 
@@ -77,7 +77,7 @@ class KHopSubgraphRetriever:
         kg_outputs_dir: Path,
         keyword: str = "transcriptions.json",
         k_hop: int = 2,
-        max_postings: int = _DEFAULT_MAX_POSTINGS,
+        top_k_seeds: int = _DEFAULT_TOP_K_SEEDS,
         retriever_id: str | None = None,
     ) -> None:
         """Load the KG, the ``passage_text → passage_id`` map, and the entity-label index.
@@ -92,27 +92,21 @@ class KHopSubgraphRetriever:
                 convention ``"transcriptions.json"`` (cf.
                 :mod:`arandu.kg.atlas_backend`).
             k_hop: Ego-graph radius used at retrieval time. Must be ``>= 1``.
-            max_postings: A poor-person's IDF threshold. Tokens whose
-                inverted-index posting list exceeds this size are treated
-                as too common and dropped from the entity link. Bounds the
-                worst-case subgraph size: with ``max_postings=200`` and
-                ``k_hop=2`` the per-query work stays in the seconds-range
-                on a 14k-node KG. Without it, common-but-topical tokens
-                like "enchente" (which name-matches thousands of entities
-                in a flood-themed corpus) blow the ego-graph up to most of
-                the giant component, producing identical results across
-                very different questions in minutes-per-query.
+            top_k_seeds: Max entity-link seeds kept per question (ranked by
+                summed smoothed-IDF weight); bounds ego-graph size. A smaller
+                value prunes low-weight seeds that would otherwise expand the
+                subgraph with loosely related nodes.
             retriever_id: Optional override of :attr:`DEFAULT_RETRIEVER_ID`.
 
         Raises:
             FileNotFoundError: If the graphml or the ``kg_extraction/``
                 directory is missing under ``kg_outputs_dir``.
-            ValueError: If ``k_hop < 1`` or ``max_postings < 1``.
+            ValueError: If ``k_hop < 1`` or ``top_k_seeds < 1``.
         """
         if k_hop < 1:
             raise ValueError(f"k_hop must be >= 1, got {k_hop}")
-        if max_postings < 1:
-            raise ValueError(f"max_postings must be >= 1, got {max_postings}")
+        if top_k_seeds < 1:
+            raise ValueError(f"top_k_seeds must be >= 1, got {top_k_seeds}")
 
         graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
         if not graphml_path.exists():
@@ -127,7 +121,7 @@ class KHopSubgraphRetriever:
 
         self.retriever_id = retriever_id or self.DEFAULT_RETRIEVER_ID
         self._k_hop = k_hop
-        self._max_postings = max_postings
+        self._top_k_seeds = top_k_seeds
         self._kg: nx.DiGraph = nx.read_graphml(str(graphml_path))
 
         # passage_text → "<source_file_id>:<chunk_index>" — built from the
@@ -140,20 +134,14 @@ class KHopSubgraphRetriever:
             kg_extraction_dir
         )
 
-        # Token-level inverted index: token → set of linkable node_ids whose
-        # label tokenizes to include that token. Lets entity-link be O(Q)
-        # where Q is the question's distinct token count, instead of
-        # O(N * Q) over every node every query.
-        self._token_to_nodes: dict[str, set[str]] = defaultdict(set)
-        self._passage_text: dict[str, str] = {}
-        for node_id, attrs in self._kg.nodes(data=True):
-            node_type = attrs.get("type")
-            label = attrs.get("id", "")
-            if node_type in _LINKABLE_TYPES:
-                for token in _tokenize(label):
-                    self._token_to_nodes[token].add(node_id)
-            elif node_type == "passage":
-                self._passage_text[node_id] = label
+        # Shared IDF-weighted inverted index (build_label_index covers
+        # linkable nodes only) + passage-text map (iterated once here).
+        self._token_to_nodes, self._n_linkable = build_label_index(self._kg)
+        self._passage_text: dict[str, str] = {
+            node_id: attrs.get("id", "")
+            for node_id, attrs in self._kg.nodes(data=True)
+            if attrs.get("type") == "passage"
+        }
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
         """Run the entity-link + k-hop + frequency-scoring pipeline.
@@ -258,35 +246,14 @@ class KHopSubgraphRetriever:
                 retriever_meta={
                     "score_method": "node_freq_khop",
                     "k_hop": self._k_hop,
-                    "max_postings": self._max_postings,
+                    "top_k_seeds": self._top_k_seeds,
                 },
             )
             for rank, (atlas_passage_id, count, text) in enumerate(ranked)
         ]
 
     def _entity_link(self, question: str) -> Iterable[str]:
-        """Find seed nodes whose label tokens overlap the question's tokens.
-
-        Token-level intersection — a question token "Uruguai" hits any
-        linkable node whose label tokenizes to include "uruguai" (case-
-        folded). Returns deduplicated node IDs. Empty when no token matches
-        (graph-floor guarantee fires upstream).
-
-        Query tokens are filtered via :func:`_tokenize`'s stopword mode so
-        common particles like "que" / "a" / "de" don't link to thousands of
-        unrelated entities. Node-label tokens at index-build time are NOT
-        stopword-filtered so multi-word names like "rio Uruguai" remain
-        linkable when the question mentions only the rare half ("Uruguai").
-        """
-        question_tokens = set(_tokenize(question, filter_stopwords=True))
-        if not question_tokens:
-            return []
-        seeds: set[str] = set()
-        for token in question_tokens:
-            postings = self._token_to_nodes.get(token, ())
-            if len(postings) > self._max_postings:
-                # Token is too common in the KG — likely a topical word that
-                # would explode the seed set. Skip it (IDF-style threshold).
-                continue
-            seeds.update(postings)
-        return seeds
+        """IDF-weighted top-K lexical entity link (see _khop_common.link_entities)."""
+        return link_entities(
+            question, self._token_to_nodes, self._n_linkable, top_k_seeds=self._top_k_seeds
+        )

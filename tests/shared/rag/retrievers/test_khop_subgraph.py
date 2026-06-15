@@ -270,12 +270,12 @@ class TestKHopSubgraphRetrieverRetrieve:
 
     def test_retriever_meta_records_score_method(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2, max_postings=50)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2, top_k_seeds=50)
         results = retriever.retrieve("enchente", top_k=1)
         assert results[0].retriever_meta == {
             "score_method": "node_freq_khop",
             "k_hop": 2,
-            "max_postings": 50,
+            "top_k_seeds": 50,
         }
 
     def test_empty_entity_link_returns_empty(self, tmp_path: Path) -> None:
@@ -297,30 +297,32 @@ class TestKHopSubgraphRetrieverRetrieve:
         results = retriever.retrieve("Uruguai", top_k=3)
         assert any(r.chunk_id == "p_a:0" for r in results)
 
-    def test_too_common_tokens_dropped_via_postings_cap(self, tmp_path: Path) -> None:
-        # If a question token name-matches more than `max_postings` linkable
-        # nodes, drop it (IDF-style threshold). Without this, topical words
-        # in narrow-domain KGs (e.g. "enchente" in a flood corpus) link to
-        # thousands of entities and blow up the ego graph.
+    def test_rare_seeds_ranked_above_common_via_idf(self, tmp_path: Path) -> None:
+        # The shared IDF linker ranks seeds by summed smoothed-IDF weight.
+        # A token that appears in many nodes (high df) scores lower than a
+        # token that appears in only one node (rare). With top_k_seeds=1 only
+        # the highest-IDF seed survives, demonstrating that common tokens are
+        # down-ranked and rare tokens rise to the top.
         kg = nx.DiGraph()
-        # 5 entities all containing the word "common" → 5 postings for "common".
+        # 5 entities all containing the word "common" → high df, low IDF weight.
         for i in range(5):
             kg.add_node(f"e_{i}", type="entity", id=f"common label {i}", file_id="p_x")
-        # Plus a rare token only on one entity.
+        # One entity with a rare token → low df, high IDF weight.
         kg.add_node("e_rare", type="entity", id="raretoken specifictoken", file_id="p_x")
         kg.add_node("p_x", type="passage", id="Target passage.", file_id="p_x")
         for n in [f"e_{i}" for i in range(5)] + ["e_rare"]:
             kg.add_edge(n, "p_x")
         path = _write_kg_layout(kg, tmp_path)
 
-        # max_postings=4 < 5 → "common" gets dropped; "raretoken" survives.
-        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1, max_postings=4)
-        results = retriever.retrieve("common common raretoken", top_k=5)
-        # "raretoken" still links e_rare → passage scored via the surviving seed.
+        # top_k_seeds=1 → only the top-ranked (highest-IDF) seed survives.
+        # "raretoken" has a much higher IDF than "common" (df=1 vs df=5),
+        # so e_rare is the seed; p_x is reachable via e_rare → p_x.
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1, top_k_seeds=1)
+        results = retriever.retrieve("common raretoken", top_k=5)
         assert any(r.chunk_id == "p_x:0" for r in results)
 
-        # With ONLY common tokens (all over the cap), the link is empty.
-        empty = retriever.retrieve("common only words", top_k=5)
+        # A question with no matching tokens still returns empty (graph-floor).
+        empty = retriever.retrieve("totallyunrelated xyzzy", top_k=5)
         assert empty == []
 
     def test_stopword_only_query_returns_empty(self, tmp_path: Path) -> None:
@@ -362,3 +364,16 @@ class TestKHopContainment:
         retriever3 = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=3)
         results3 = retriever3.retrieve("mid_token", top_k=5)
         assert any(r.chunk_id == "p_far:0" for r in results3)
+
+
+# -- signature contract --------------------------------------------------
+
+
+def test_top_k_seeds_param_and_no_max_postings() -> None:
+    import inspect
+
+    from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+
+    sig = inspect.signature(KHopSubgraphRetriever.__init__)
+    assert "top_k_seeds" in sig.parameters
+    assert "max_postings" not in sig.parameters
