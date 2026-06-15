@@ -16,7 +16,13 @@ variant ever appears, it imports from here too.
 from __future__ import annotations
 
 import re
+import threading
 import unicodedata
+from functools import lru_cache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 _MIN_TOKEN_LEN = 3
@@ -65,19 +71,68 @@ _STOPWORDS: frozenset[str] = frozenset(
 )  # fmt: skip
 
 
-def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
-    """Whitespace + punctuation split, lowercased + NFKC-normalised.
+@lru_cache(maxsize=1)
+def _lemmatizer() -> Callable[[str], list[str]] | None:
+    """Lazy spaCy lemmatizer (pt_core_news_sm); None when unavailable.
 
-    When ``filter_stopwords`` is true, tokens in :data:`_STOPWORDS` and
-    tokens shorter than :data:`_MIN_TOKEN_LEN` are dropped. We do NOT
-    filter at index-build time (node labels keep all tokens so multi-word
-    names like "rio Uruguai" remain linkable when the question mentions
-    only the rare half); only the QUERY tokens are filtered, so a question
-    composed only of stopwords degenerates to an empty entity link and
-    the graph-floor guarantee fires (returns ``[]``).
+    Returns:
+        A callable that accepts a string and returns a list of casefolded lemmas,
+        or ``None`` if spaCy or its Portuguese model is not installed.
     """
-    normalised = unicodedata.normalize("NFKC", text).casefold()
-    tokens = _TOKEN_RE.findall(normalised)
+    try:
+        import spacy
+    except ImportError:
+        return None
+    try:
+        nlp = spacy.load("pt_core_news_sm", disable=["ner", "parser"])
+    except OSError:
+        return None
+
+    # spaCy does not formally guarantee thread safety for a shared Language
+    # object (Vocab/StringStore mutate during calls). Mirror the lock pattern
+    # from _bm25_tokenize._spacy_tokenizer to serialize access across workers.
+    lock = threading.Lock()
+
+    def lemmatize(text: str) -> list[str]:
+        with lock:
+            return [tok.lemma_.casefold() for tok in nlp(text) if not tok.is_space]
+
+    return lemmatize
+
+
+def _tokenize(text: str, *, filter_stopwords: bool = False) -> list[str]:
+    """Tokenize ``text`` with spaCy lemmatization when available, else whitespace split.
+
+    Uses ``pt_core_news_sm`` lemmatization to collapse inflectional variants so
+    that query tokens match node labels regardless of number or conjugation (e.g.
+    "enchentes" -> "enchente", "pescavam" -> "pescar"). Derivational variants
+    (e.g. "pescador" vs "pesca") remain distinct — accepted limitation of
+    lexical-only matching.
+
+    When spaCy or ``pt_core_news_sm`` is unavailable, falls back to NFKC
+    normalisation + ``\\w+`` regex split (the original whitespace path).
+
+    When ``filter_stopwords`` is true, tokens in :data:`_STOPWORDS` and tokens
+    shorter than :data:`_MIN_TOKEN_LEN` are dropped. We do NOT filter at
+    index-build time (node labels keep all tokens so multi-word names like
+    "rio Uruguai" remain linkable when the question mentions only the rare
+    half); only the QUERY tokens are filtered, so a question composed only of
+    stopwords degenerates to an empty entity link and the graph-floor guarantee
+    fires (returns ``[]``).
+
+    Args:
+        text: Raw text to tokenize.
+        filter_stopwords: When ``True``, drop stopwords and short tokens.
+
+    Returns:
+        List of casefolded token strings (lemmatized when spaCy is available).
+    """
+    lemmatize = _lemmatizer()
+    if lemmatize is not None:
+        tokens = lemmatize(text)
+    else:
+        normalised = unicodedata.normalize("NFKC", text).casefold()
+        tokens = _TOKEN_RE.findall(normalised)
     if filter_stopwords:
         tokens = [t for t in tokens if t not in _STOPWORDS and len(t) >= _MIN_TOKEN_LEN]
     return tokens
