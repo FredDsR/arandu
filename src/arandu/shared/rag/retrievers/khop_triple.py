@@ -27,16 +27,15 @@ offset-based source-text resolution.
 from __future__ import annotations
 
 import hashlib
-from collections import defaultdict
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from arandu.shared.rag.retrievers._khop_common import (
-    _DEFAULT_MAX_POSTINGS,
-    _LINKABLE_TYPES,
-    _tokenize,
+    _DEFAULT_TOP_K_SEEDS,
+    build_label_index,
+    link_entities,
 )
 from arandu.shared.rag.schemas import RetrievedPassage
 
@@ -105,7 +104,7 @@ class KHopTripleRetriever:
         kg_outputs_dir: Path,
         keyword: str = "transcriptions.json",
         k_hop: int = 2,
-        max_postings: int = _DEFAULT_MAX_POSTINGS,
+        top_k_seeds: int = _DEFAULT_TOP_K_SEEDS,
         retriever_id: str | None = None,
     ) -> None:
         """Load the KG and pre-build the entity-label index.
@@ -118,20 +117,18 @@ class KHopTripleRetriever:
                 needed — this retriever operates purely on the graphml.
             keyword: atlas-rag's filename pattern.
             k_hop: Ego-graph radius. Must be ``>= 1``.
-            max_postings: IDF-style threshold for the entity link
-                (drops question tokens that hit more than this many
-                linkable nodes). See :class:`KHopSubgraphRetriever` for the
-                calibration rationale.
+            top_k_seeds: Max entity-link seeds kept per question, ranked by
+                summed smoothed-IDF weight; bounds ego-graph size.
             retriever_id: Optional override of :attr:`DEFAULT_RETRIEVER_ID`.
 
         Raises:
             FileNotFoundError: If the graphml is missing.
-            ValueError: If ``k_hop < 1`` or ``max_postings < 1``.
+            ValueError: If ``k_hop < 1`` or ``top_k_seeds < 1``.
         """
         if k_hop < 1:
             raise ValueError(f"k_hop must be >= 1, got {k_hop}")
-        if max_postings < 1:
-            raise ValueError(f"max_postings must be >= 1, got {max_postings}")
+        if top_k_seeds < 1:
+            raise ValueError(f"top_k_seeds must be >= 1, got {top_k_seeds}")
 
         graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
         if not graphml_path.exists():
@@ -139,15 +136,10 @@ class KHopTripleRetriever:
 
         self.retriever_id = retriever_id or self.DEFAULT_RETRIEVER_ID
         self._k_hop = k_hop
-        self._max_postings = max_postings
+        self._top_k_seeds = top_k_seeds
         self._kg: nx.DiGraph = nx.read_graphml(str(graphml_path))
 
-        # Token-level inverted index over linkable node labels.
-        self._token_to_nodes: dict[str, set[str]] = defaultdict(set)
-        for node_id, attrs in self._kg.nodes(data=True):
-            if attrs.get("type") in _LINKABLE_TYPES:
-                for token in _tokenize(attrs.get("id", "")):
-                    self._token_to_nodes[token].add(node_id)
+        self._token_to_nodes, self._n_linkable = build_label_index(self._kg)
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
         """Run entity-link + k-hop subgraph + triple linearization.
@@ -246,14 +238,7 @@ class KHopTripleRetriever:
         ]
 
     def _entity_link(self, question: str) -> Iterable[str]:
-        """Identical contract to :meth:`KHopSubgraphRetriever._entity_link`."""
-        question_tokens = set(_tokenize(question, filter_stopwords=True))
-        if not question_tokens:
-            return []
-        seeds: set[str] = set()
-        for token in question_tokens:
-            postings = self._token_to_nodes.get(token, ())
-            if len(postings) > self._max_postings:
-                continue
-            seeds.update(postings)
-        return seeds
+        """IDF-weighted top-K lexical entity link (see _khop_common.link_entities)."""
+        return link_entities(
+            question, self._token_to_nodes, self._n_linkable, top_k_seeds=self._top_k_seeds
+        )

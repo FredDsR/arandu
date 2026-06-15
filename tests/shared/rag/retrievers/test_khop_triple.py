@@ -108,10 +108,10 @@ class TestKHopTripleConstructorValidation:
         with pytest.raises(ValueError, match="k_hop"):
             KHopTripleRetriever(kg_outputs_dir=path, k_hop=0)
 
-    def test_invalid_max_postings_raises(self, tmp_path: Path) -> None:
+    def test_invalid_top_k_seeds_raises(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
-        with pytest.raises(ValueError, match="max_postings"):
-            KHopTripleRetriever(kg_outputs_dir=path, max_postings=0)
+        with pytest.raises(ValueError, match="top_k_seeds"):
+            KHopTripleRetriever(kg_outputs_dir=path, top_k_seeds=0)
 
 
 # -- retrieve() behaviour ------------------------------------------------
@@ -309,3 +309,13 @@ class TestKHopTripleRetrieve:
         results = retriever.retrieve("Alpha", top_k=5)
         assert results
         assert any("related_to" in r.payload for r in results)
+
+
+def test_top_k_seeds_param_and_no_max_postings() -> None:
+    import inspect
+
+    from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
+
+    sig = inspect.signature(KHopTripleRetriever.__init__)
+    assert "top_k_seeds" in sig.parameters
+    assert "max_postings" not in sig.parameters

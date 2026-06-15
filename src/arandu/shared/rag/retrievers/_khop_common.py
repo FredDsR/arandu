@@ -29,9 +29,6 @@ if TYPE_CHECKING:
 
 _TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 _MIN_TOKEN_LEN = 3
-# Kept for backward compat — khop_subgraph and khop_triple still import this
-# until Tasks 3 and 4 migrate them to link_entities.
-_DEFAULT_MAX_POSTINGS = 200
 _DEFAULT_TOP_K_SEEDS = 50
 
 # Linkable node types (used by both arms during entity-linking). Concept
