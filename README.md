@@ -154,8 +154,7 @@ arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
 
 # With custom Bloom distribution
 arandu generate-cep-qa results/ \
-    --bloom-dist "remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2" \
-    --questions 15
+    --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
 
 # With OpenAI
 arandu generate-cep-qa results/ \
@@ -172,7 +171,6 @@ Configuration:
 ```bash
 export ARANDU_QA_PROVIDER=ollama                # ollama, openai, custom
 export ARANDU_QA_MODEL_ID=qwen3:14b             # Model for generation
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT=10     # QA pairs per document
 export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1  # Ollama API URL
 export ARANDU_CEP_ENABLE_VALIDATION=true        # Enable LLM-as-a-Judge
 export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b  # Validator model
@@ -249,7 +247,6 @@ The system can be configured via:
 |----------|---------|-------------|
 | `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
 | `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
-| `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature |
 | `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API base URL |
 | `ARANDU_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
@@ -371,7 +368,6 @@ arandu/
     │   ├── cli-reference.md
     │   ├── transcription.md
     │   ├── transcription-validation.md
-    │   ├── qa-generation.md
     │   ├── cep-qa-generation.md
     │   ├── kg-construction.md           # Planned
     │   ├── evaluation.md                # Planned
@@ -412,7 +408,6 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 - [CLI Reference](docs/user-guide/cli-reference.md)
 - [Transcription Guide](docs/user-guide/transcription.md)
 - [Transcription Validation Guide](docs/user-guide/transcription-validation.md)
-- [QA Generation Guide](docs/user-guide/qa-generation.md)
 - [CEP QA Generation Guide](docs/user-guide/cep-qa-generation.md)
 - [KG Construction Guide](docs/user-guide/kg-construction.md) (Planned)
 - [Evaluation Guide](docs/user-guide/evaluation.md) (Planned)

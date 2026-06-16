@@ -423,4 +423,4 @@ docker compose --profile kg up
 
 ---
 
-**See also**: [QA Generation](/guides/qa-generation/) | [Evaluation](/guides/evaluation/) | [Configuration](/configuration/)
+**See also**: [CEP QA Generation](/guides/cep-qa-generation/) | [Evaluation](/guides/evaluation/) | [Configuration](/configuration/)

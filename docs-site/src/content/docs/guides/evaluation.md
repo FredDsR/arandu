@@ -403,4 +403,4 @@ tail -f logs/arandu-eval_<jobid>.out
 
 ---
 
-**See also**: [QA Generation](/guides/qa-generation/) | [KG Construction](/guides/kg-construction/) | [Configuration](/configuration/)
+**See also**: [CEP QA Generation](/guides/cep-qa-generation/) | [KG Construction](/guides/kg-construction/) | [Configuration](/configuration/)

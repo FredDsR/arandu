@@ -105,13 +105,13 @@ arandu judge-qa cep_dataset/ --files 2 --pairs 3
 Generates CEP QA pairs from transcription outputs.
 
 Key options: `--output-dir/-o`, `--provider`, `--model-id/-m`, `--workers/-w`,
-`--questions`, `--temperature`, `--ollama-url`, `--base-url`, `--language/-l`,
+`--temperature`, `--ollama-url`, `--base-url`, `--language/-l`,
 `--bloom-dist`, `--jsonl/--no-jsonl`, `--id`.
 
 Example:
 
 ```bash
-arandu generate-cep-qa results/ --output-dir cep_dataset/ --questions 12
+arandu generate-cep-qa results/ --output-dir cep_dataset/
 ```
 
 Then run QA judging:

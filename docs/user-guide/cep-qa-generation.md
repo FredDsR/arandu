@@ -72,7 +72,6 @@ arandu generate-cep-qa results/ --id etno-project-001
 | `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
 | `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
 | `ARANDU_QA_OLLAMA_URL` | `http://ollama:11434/v1` | Ollama API URL |
-| `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
 | `ARANDU_QA_WORKERS` | `2` | Parallel workers |
 
@@ -111,7 +110,6 @@ arandu generate-cep-qa results/ \
 # QA Generation Settings
 ARANDU_QA_PROVIDER=ollama
 ARANDU_QA_MODEL_ID=qwen3:14b
-ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_WORKERS=4
 

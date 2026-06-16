@@ -61,7 +61,6 @@ Current settings classes:
 | `model_id` | `ARANDU_QA_MODEL_ID` | `qwen3:14b` |
 | `ollama_url` | `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` |
 | `base_url` | `ARANDU_QA_BASE_URL` | `None` |
-| `questions_per_document` | `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` |
 | `temperature` | `ARANDU_QA_TEMPERATURE` | `0.7` |
 | `max_tokens` | `ARANDU_QA_MAX_TOKENS` | `2048` |
 | `output_dir` | `ARANDU_QA_OUTPUT_DIR` | `qa_dataset` |
@@ -74,7 +73,7 @@ Current settings classes:
 |---|---|---|
 | `enable_reasoning_traces` | `ARANDU_CEP_ENABLE_REASONING_TRACES` | `true` |
 | `bloom_levels` | `ARANDU_CEP_BLOOM_LEVELS` | `remember,understand,analyze,evaluate` |
-| `bloom_distribution` | `ARANDU_CEP_BLOOM_DISTRIBUTION` | `{"remember":0.2,"understand":0.3,"analyze":0.3,"evaluate":0.2}` |
+| `bloom_distribution` | `ARANDU_CEP_BLOOM_DISTRIBUTION` | `{"remember":3,"understand":1,"analyze":1,"evaluate":1}` |
 | `enable_scaffolding_context` | `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` |
 | `max_scaffolding_pairs` | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` |
 | `max_hop_count` | `ARANDU_CEP_MAX_HOP_COUNT` | `3` |

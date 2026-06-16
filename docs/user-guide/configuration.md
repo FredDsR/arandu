@@ -501,7 +501,6 @@ export ARANDU_RETRY_DELAY=1.0
 ```bash
 export ARANDU_QA_PROVIDER=openai
 export ARANDU_QA_MODEL_ID=gpt-4o-mini
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT=15
 export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 export ARANDU_QA_LANGUAGE=pt
 ```
@@ -583,7 +582,6 @@ ARANDU_RETRY_DELAY=1.0
 ARANDU_QA_PROVIDER=ollama
 ARANDU_QA_MODEL_ID=qwen3:14b
 ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
-ARANDU_QA_QUESTIONS_PER_DOCUMENT=10
 ARANDU_QA_LANGUAGE=pt
 
 # CEP (Cognitive Elicitation Pipeline)
@@ -625,7 +623,6 @@ OPENAI_API_KEY=sk-your-key-here
 # QA Generation with OpenAI
 ARANDU_QA_PROVIDER=openai
 ARANDU_QA_MODEL_ID=gpt-4o-mini
-ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_LANGUAGE=en
 
@@ -661,7 +658,6 @@ OPENAI_API_KEY=sk-your-key-here
 # QA with OpenAI (higher quality)
 ARANDU_QA_PROVIDER=openai
 ARANDU_QA_MODEL_ID=gpt-4o
-ARANDU_QA_QUESTIONS_PER_DOCUMENT=15
 
 # KG with Ollama (cost-effective)
 ARANDU_KG_PROVIDER=ollama
@@ -686,7 +682,6 @@ export ARANDU_QA_PROVIDER=ollama
 export ARANDU_QA_MODEL_ID=qwen3:14b
 export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 export ARANDU_QA_WORKERS=8
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 
 # Use $SCRATCH for I/O
 export ARANDU_RESULTS_BASE_DIR=$SCRATCH/results
@@ -710,7 +705,6 @@ services:
       - ARANDU_QA_MODEL_ID=qwen3:14b
       - ARANDU_QA_OLLAMA_URL=http://host.docker.internal:11434/v1
       - ARANDU_QA_WORKERS=4
-      - ARANDU_QA_QUESTIONS_PER_DOCUMENT=10
     volumes:
       - ./results:/app/results:ro
       - ./qa_dataset:/app/qa_dataset:rw
@@ -926,7 +920,6 @@ ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 # ARANDU_QA_BASE_URL=  # For custom OpenAI-compatible endpoints
 
 # Generation
-ARANDU_QA_QUESTIONS_PER_DOCUMENT=10
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_MAX_TOKENS=2048
 

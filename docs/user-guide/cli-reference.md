@@ -526,7 +526,6 @@ export ARANDU_QUANTIZE=true
 # QA settings
 export ARANDU_QA_PROVIDER=ollama
 export ARANDU_QA_MODEL_ID=qwen3:14b
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 
 # CEP settings
 export ARANDU_CEP_ENABLE_VALIDATION=true
