@@ -22,7 +22,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 **Command Categories**:
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
 - **QA Generation**: `generate-cep-qa`
-- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `validate-transcriptions`, `rebuild-index`
+- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `judge-transcription`, `rebuild-index`
 
 **Global Options**:
 - `--help` - Show command help
@@ -359,50 +359,48 @@ arandu run-info latest --pipeline cep
 
 ---
 
-### `validate-transcriptions`
+### `judge-transcription`
 
-Validate existing transcriptions for quality issues (wrong language/script, repeated words, suspicious patterns, empty content).
+Judge transcription quality with a two-stage filter pipeline: pure-Python heuristics (always) plus optional LLM criteria. A record passes only when it clears every criterion in each filter stage; there is no aggregate score. See the [Transcription Validation guide](transcription-validation.md) for the full model.
 
 **Usage**:
 ```bash
-arandu validate-transcriptions INPUT_DIR [OPTIONS]
+arandu judge-transcription INPUT_DIR [OPTIONS]
 ```
 
 **Arguments**:
-- `INPUT_DIR` - Directory containing transcription JSON files to validate
+- `INPUT_DIR` - Directory containing `*_transcription.json` files to judge
 
 **Options**:
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--output-dir` | `-o` | Path | In-place update | Directory to save validated results |
-| `--threshold` | `-t` | float | `0.5` | Quality threshold (0.0-1.0) for marking as valid |
 | `--language` | `-l` | str | `pt` | Expected language code (e.g., 'pt', 'en') |
-| `--report-only` | | flag | `False` | Only display report without updating files |
+| `--validator-model` | | str | (none) | Model ID enabling the LLM filter stage. Falls back to `ARANDU_JUDGE_VALIDATOR_MODEL` |
+| `--validator-provider` | | str | inferred | `openai`, `ollama`, or `custom`. Falls back to `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
+| `--validator-base-url` | | str | inferred | Validator base URL. Falls back to `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then `ARANDU_LLM_BASE_URL` |
+| `--validator-temperature` | | float | `0.3` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
+| `--validator-max-tokens` | | int | `2048` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
+| `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every record; `--resume` skips already-judged records |
 
 **Examples**:
 ```bash
-# Validate and update in-place
-arandu validate-transcriptions results/
+# Heuristics only, update in-place
+arandu judge-transcription results/
 
-# Validate with custom threshold
-arandu validate-transcriptions results/ --threshold 0.6
+# Enable the LLM filter stage (language_drift + hallucination_loop)
+arandu judge-transcription results/ --validator-model qwen3:14b
 
-# Validate English transcriptions
-arandu validate-transcriptions results/ --language en
+# Judge English transcriptions
+arandu judge-transcription results/ --language en
 
-# Report only (no file updates)
-arandu validate-transcriptions results/ --report-only
-
-# Save validated files to new directory
-arandu validate-transcriptions results/ --output-dir validated/
+# Force a fresh pass over every record
+arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
 ```
 
-**Quality Checks**:
-- Script match (Latin characters for pt/en)
-- Repetition detection (words and phrases)
-- Segment quality (natural timestamps)
-- Content density (words per minute)
+**Stages**:
+- Heuristic filter (always): content length floor, script match, repetition, content density, segment quality
+- LLM filter (optional): `language_drift`, `hallucination_loop`
 
 ---
 
@@ -441,9 +439,9 @@ arandu batch-transcribe input/catalog.csv \
     --quantize \
     --id etno-001
 
-# Step 2: Validate transcription quality
-arandu validate-transcriptions results/ \
-    --threshold 0.6
+# Step 2: Judge transcription quality
+arandu judge-transcription results/ \
+    --validator-model qwen3:14b
 
 # Step 3: Generate CEP QA pairs
 arandu generate-cep-qa results/ \
@@ -545,7 +543,7 @@ Use consistent pipeline IDs across related steps:
 PIPELINE_ID="etno-project-001"
 
 arandu batch-transcribe input/catalog.csv --id $PIPELINE_ID
-arandu validate-transcriptions results/ 
+arandu judge-transcription results/
 arandu generate-cep-qa results/ --id $PIPELINE_ID
 
 # View all runs for this pipeline
@@ -638,13 +636,13 @@ arandu generate-cep-qa results/ --workers $(nproc)
 arandu batch-transcribe catalog.csv --workers 2
 ```
 
-### 5. Validate Quality
+### 5. Judge Quality
 
-Always validate transcriptions before downstream tasks:
+Always judge transcriptions before downstream tasks:
 
 ```bash
-# Validate first
-arandu validate-transcriptions results/ --threshold 0.6
+# Judge first
+arandu judge-transcription results/ --validator-model qwen3:14b
 
 # Then generate QA
 arandu generate-cep-qa results/ --workers 4
