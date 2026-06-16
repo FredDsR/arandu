@@ -100,16 +100,21 @@ Transcription is performed using **OpenAI Whisper** (`whisper-large-v3` or `whis
 
 ### 3.4 Transcription Quality Validation
 
-Each transcription undergoes a heuristic quality validation composed of four weighted dimensions:
+Each transcription is screened by a **two-stage filter pipeline**. A record must clear *every* criterion in a stage to pass it; failing any single criterion rejects the record. The full per-criterion result is stored in the record's `validation` field, and `is_valid` is derived from it -- there is no aggregate weighted score.
 
-| Dimension | Weight | What It Detects |
-|-----------|--------|-----------------|
-| **Script/Charset Match** | 35% | Wrong language output (e.g., CJK characters for Portuguese audio) |
-| **Repetition Detection** | 30% | Repeated words, phrases, or hallucinated loops |
-| **Segment Patterns** | 20% | Suspicious timestamps or degenerate segments |
-| **Content Density** | 15% | Words per minute outside plausible range (30--300 wpm) |
+**Stage 1 -- Heuristic filter** (always runs) applies five independent checks, each with its own pass threshold:
 
-Records scoring below **0.5** are flagged as `is_valid: false` and **automatically excluded** from downstream pipelines. This prevents low-quality transcriptions from degrading QA generation and knowledge graph construction.
+| Criterion | What It Detects | Pass Threshold |
+|-----------|-----------------|----------------|
+| **Content-Length Floor** | Transcripts too short to be usable (< 200 characters or < 30 words); a binary gate | 0.5 |
+| **Script/Charset Match** | Wrong-script output (e.g., non-Latin characters for Portuguese audio) | 0.6 |
+| **Repetition Detection** | Repeated words, phrases, or hallucinated loops | 0.5 |
+| **Content Density** | Words per minute outside the plausible 30--300 wpm range | 0.4 |
+| **Segment Patterns** | Degenerate timestamps, empty segments, or suspiciously uniform intervals | 0.4 |
+
+**Stage 2 -- LLM filter** (optional; runs only when a validator model is configured) adds two text-only LLM criteria -- **language drift** and **hallucination loop** -- that catch failure modes the heuristics miss, such as subtle mid-transcript language switching and semantic repetition below the n-gram threshold. When no validator model is configured, this stage is skipped.
+
+A record passes only if it clears every active stage. Rejected records are **automatically excluded** from downstream QA generation and knowledge graph construction, preventing low-quality transcriptions from degrading those pipelines.
 
 ### 3.5 Output
 
@@ -149,13 +154,13 @@ Higher-order levels (Analyze, Evaluate, Create) are especially relevant for surf
 
 The pipeline uses four of the six Bloom levels: **Remember**, **Understand**, **Analyze**, and **Evaluate**. Each level serves a distinct role in the elicitation process:
 
-- **Remember** (20%) establishes the **factual foundation**. It extracts and confirms concrete facts explicitly stated in the transcription -- entities, locations, dates, and events. Although it does not elicit tacit knowledge directly, Remember is indispensable: it provides a verifiable **fidelity anchor** (if the pipeline cannot recover explicit facts, inferences at higher levels are untrustworthy), supplies the first scaffolding context for subsequent levels, and populates the **entity nodes** that the Knowledge Graph requires. In Phase 4 evaluation, the Knowledge Coverage metric relies on Remember-level entities as the baseline for measuring graph completeness.
+- **Remember** (3 of 6 pairs per chunk) establishes the **factual foundation**. It extracts and confirms concrete facts explicitly stated in the transcription -- entities, locations, dates, and events. Although it does not elicit tacit knowledge directly, Remember is indispensable: it provides a verifiable **fidelity anchor** (if the pipeline cannot recover explicit facts, inferences at higher levels are untrustworthy), supplies the first scaffolding context for subsequent levels, and populates the **entity nodes** that the Knowledge Graph requires. In Phase 4 evaluation, the Knowledge Coverage metric relies on Remember-level entities as the baseline for measuring graph completeness.
 
-- **Understand** (30%) bridges factual recall and analytical reasoning. It verifies **semantic comprehension** -- whether processes, mechanisms, and concepts can be paraphrased and explained beyond literal repetition. In ethnographic interviews, much domain expertise is processual: how a technique works, what a natural sign indicates, how a seasonal cycle affects daily routines. This processual knowledge is not captured by factual questions (Remember) nor by evaluative judgment (Evaluate), yet it is central to the Knowledge Graph representation. Understand also plays a critical scaffolding role: without this intermediate conceptual layer, the LLM would have to leap from raw facts directly to causal analysis, losing the comprehension base that Analyze depends on.
+- **Understand** (1 of 6 pairs per chunk) bridges factual recall and analytical reasoning. It verifies **semantic comprehension** -- whether processes, mechanisms, and concepts can be paraphrased and explained beyond literal repetition. In ethnographic interviews, much domain expertise is processual: how a technique works, what a natural sign indicates, how a seasonal cycle affects daily routines. This processual knowledge is not captured by factual questions (Remember) nor by evaluative judgment (Evaluate), yet it is central to the Knowledge Graph representation. Understand also plays a critical scaffolding role: without this intermediate conceptual layer, the LLM would have to leap from raw facts directly to causal analysis, losing the comprehension base that Analyze depends on.
 
-- **Analyze** (30%) is where the pipeline begins to extract **tacit knowledge** in earnest. It identifies causal relationships, hidden patterns, and connections between elements that the interviewee did not necessarily articulate explicitly. This is the level where Module II (Reasoning & Grounding) is most active: Analyze-level questions frequently require **multi-hop reasoning**, synthesizing information from distant parts of the transcript into explicit causal chains. It also drives **tacit inference extraction** -- surfacing implicit domain knowledge that interviewees assumed as shared understanding but never verbalized. From a Knowledge Graph perspective, Analyze maps directly to **relation edges** (subject-predicate-object triples): while Remember populates graph nodes, Analyze populates the connections between them, providing the richest ground truth for the Graph Structure evaluation dimension.
+- **Analyze** (1 of 6 pairs per chunk) is where the pipeline begins to extract **tacit knowledge** in earnest. It identifies causal relationships, hidden patterns, and connections between elements that the interviewee did not necessarily articulate explicitly. This is the level where Module II (Reasoning & Grounding) is most active: Analyze-level questions frequently require **multi-hop reasoning**, synthesizing information from distant parts of the transcript into explicit causal chains. It also drives **tacit inference extraction** -- surfacing implicit domain knowledge that interviewees assumed as shared understanding but never verbalized. From a Knowledge Graph perspective, Analyze maps directly to **relation edges** (subject-predicate-object triples): while Remember populates graph nodes, Analyze populates the connections between them, providing the richest ground truth for the Graph Structure evaluation dimension.
 
-- **Evaluate** (20%) is the highest level employed and targets **expert judgment** -- decisions, priorities, and criteria that domain experts apply based on years of experience but rarely verbalize explicitly. The distinction from Analyze is cognitive in nature: Analyze identifies relationships descriptively (*why* X causes Y), while Evaluate requires prescriptive judgment (*is X worth doing? When should one act? Which alternative is better?*). Evaluate has the strongest dependency on scaffolding, receiving QA pairs from all three prior levels, enabling the LLM to construct judgment questions grounded in established facts (Remember), conceptual understanding (Understand), and causal connections (Analyze). For GraphRAG evaluation, Evaluate-level questions represent the most demanding test: if the Knowledge Graph can answer questions requiring synthesis of multiple relations to support an expert judgment, it demonstrates the capacity to represent not just facts but the implicit decision-making logic of the interviewees.
+- **Evaluate** (1 of 6 pairs per chunk) is the highest level employed and targets **expert judgment** -- decisions, priorities, and criteria that domain experts apply based on years of experience but rarely verbalize explicitly. The distinction from Analyze is cognitive in nature: Analyze identifies relationships descriptively (*why* X causes Y), while Evaluate requires prescriptive judgment (*is X worth doing? When should one act? Which alternative is better?*). Evaluate has the strongest dependency on scaffolding, receiving QA pairs from all three prior levels, enabling the LLM to construct judgment questions grounded in established facts (Remember), conceptual understanding (Understand), and causal connections (Analyze). For GraphRAG evaluation, Evaluate-level questions represent the most demanding test: if the Knowledge Graph can answer questions requiring synthesis of multiple relations to support an expert judgment, it demonstrates the capacity to represent not just facts but the implicit decision-making logic of the interviewees.
 
 #### Excluded Levels
 
@@ -169,14 +174,16 @@ The four selected levels form a coherent spectrum for tacit knowledge elicitatio
 
 ### 4.3 Module I -- Bloom Scaffolding
 
-Questions are generated according to a configurable **Bloom level distribution**:
+Questions are generated according to a configurable **Bloom level distribution**, expressed as the **number of QA pairs to generate at each level, per chunk**. The thesis run locks this to a **3/1/1/1** split (six pairs per chunk):
 
-| Cognitive Level | Default Allocation | Purpose |
-|-----------------|-------------------|---------|
-| **Remember** | 20% | Establish factual baseline from the transcript |
-| **Understand** | 30% | Verify conceptual comprehension of described processes |
-| **Analyze** | 30% | Identify causal relationships and hidden patterns |
-| **Evaluate** | 20% | Surface expert judgment and decision-making rationale |
+| Cognitive Level | Pairs per Chunk | Share | Purpose |
+|-----------------|-----------------|-------|---------|
+| **Remember** | 3 | 50.0% | Establish factual baseline from the transcript |
+| **Understand** | 1 | 16.7% | Verify conceptual comprehension of described processes |
+| **Analyze** | 1 | 16.7% | Identify causal relationships and hidden patterns |
+| **Evaluate** | 1 | 16.7% | Surface expert judgment and decision-making rationale |
+
+The distribution is specified directly as the **integer number of pairs per level**: the counts' keys are the levels to generate -- a single source of truth -- and the per-chunk ladder size is their sum (six). This ladder runs **independently on every chunk** (it is not divided across chunks), so each chunk covers all four levels and the document-level total scales with the number of chunks. The split forms two equal-sized groups: a factual base (Remember = 3) and a cognitive group (Understand + Analyze + Evaluate = 3). The larger Remember share is not an end in itself but the **scaffolding ground** -- a broader factual base yields better-grounded, more diverse cognitive questions -- while the three cognitive levels are weighted equally to avoid privileging any single higher-order skill. The total is bounded to a maximum of 50 pairs per chunk to guard against runaway generation.
 
 A key design feature is **scaffolding context**: when generating higher-level questions (Analyze, Evaluate), the prompt includes QA pairs already generated at lower levels. This mirrors how human cognition builds complex understanding on top of foundational knowledge.
 
