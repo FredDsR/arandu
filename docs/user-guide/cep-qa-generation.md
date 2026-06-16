@@ -72,7 +72,6 @@ arandu generate-cep-qa results/ --id etno-project-001
 | `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
 | `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
 | `ARANDU_QA_OLLAMA_URL` | `http://ollama:11434/v1` | Ollama API URL |
-| `ARANDU_QA_QUESTIONS_PER_DOCUMENT` | `10` | QA pairs per document |
 | `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature (0.0-2.0) |
 | `ARANDU_QA_WORKERS` | `2` | Parallel workers |
 
@@ -89,19 +88,20 @@ arandu generate-cep-qa results/ --id etno-project-001
 
 ### Bloom Distribution
 
-Default distribution allocates questions across cognitive levels:
+The distribution is the absolute number of QA pairs to generate at each
+cognitive level, per chunk. The per-chunk ladder size is their sum.
 
-| Level | Default Weight | Description |
+| Level | Default Count | Description |
 |-------|---------------|-------------|
-| `remember` | 20% | Recall explicit facts |
-| `understand` | 30% | Explain and interpret concepts |
-| `analyze` | 30% | Identify relationships and patterns |
-| `evaluate` | 20% | Make judgments and justify decisions |
+| `remember` | 3 | Recall explicit facts (factual base / scaffolding ground) |
+| `understand` | 1 | Explain and interpret concepts |
+| `analyze` | 1 | Identify relationships and patterns |
+| `evaluate` | 1 | Make judgments and justify decisions |
 
-Customize via CLI:
+Customize via CLI (integer counts, not weights):
 ```bash
 arandu generate-cep-qa results/ \
-  --bloom-dist "remember:0.1,understand:0.2,analyze:0.4,evaluate:0.3"
+  --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
 ```
 
 ### Example .env Configuration
@@ -110,7 +110,6 @@ arandu generate-cep-qa results/ \
 # QA Generation Settings
 ARANDU_QA_PROVIDER=ollama
 ARANDU_QA_MODEL_ID=qwen3:14b
-ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_WORKERS=4
 

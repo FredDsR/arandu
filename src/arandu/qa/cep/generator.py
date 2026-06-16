@@ -100,17 +100,12 @@ class CEPQAGenerator:
             )
 
         # The full Bloom ladder runs independently on each chunk: every chunk
-        # produces ``questions_per_document`` pairs scaffolded across the Bloom
-        # hierarchy (remember -> understand -> analyze -> evaluate), so the
-        # earlier-level pairs ground the later-level pairs within that same
-        # chunk. The budget is NOT divided across chunks: splitting it shrinks
-        # the per-chunk count below the number of Bloom levels, which collapses
-        # the ladder to the last level (the remainder-absorbing ``evaluate``)
-        # and leaves later levels with no earlier-level pairs to scaffold from.
-        # Total pairs therefore scale with chunk count
-        # (``questions_per_document`` * ``len(chunks)``).
-        questions_per_chunk = self.qa_config.questions_per_document
-
+        # produces ``sum(bloom_distribution.values())`` pairs scaffolded across
+        # the Bloom hierarchy (remember -> understand -> analyze -> evaluate), so
+        # the earlier-level pairs ground the later-level pairs within that same
+        # chunk. The counts are NOT divided across chunks, so each chunk covers
+        # every configured level and the document total scales with the chunk
+        # count.
         all_pairs: list[QAPairCEP] = []
 
         for i, chunk in enumerate(chunks):
@@ -119,7 +114,6 @@ class CEPQAGenerator:
             # Module I: Bloom Scaffolding Generation
             pairs = self._bloom_generator.generate(
                 context,
-                questions_per_chunk,
                 source_metadata=transcription.source_metadata,
             )
             logger.debug(f"Chunk {i + 1}: Generated {len(pairs)} pairs")

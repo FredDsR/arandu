@@ -12,7 +12,6 @@
 #   ARANDU_QA_MODEL_ID - Ollama model to use (default: qwen3:14b)
 #   ARANDU_QA_PROVIDER - LLM provider (default: ollama)
 #   ARANDU_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
-#   ARANDU_QA_QUESTIONS_PER_DOCUMENT - Questions per document (default: 10)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
 # =============================================================================
 
@@ -27,7 +26,6 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 export ARANDU_QA_PROVIDER="${ARANDU_QA_PROVIDER:-ollama}"
 export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
 export ARANDU_QA_OLLAMA_URL="${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}"
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT="${ARANDU_QA_QUESTIONS_PER_DOCUMENT:-10}"
 export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
 
 # GPU mode for Ollama (partition scripts set this)
@@ -55,7 +53,6 @@ echo "=============================================="
 echo "QA Provider:   $ARANDU_QA_PROVIDER"
 echo "QA Model:      $ARANDU_QA_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
-echo "Questions/Doc: $ARANDU_QA_QUESTIONS_PER_DOCUMENT"
 echo "Workers:       $ARANDU_QA_WORKERS"
 echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "=============================================="

@@ -12,7 +12,7 @@
 #   ARANDU_QA_MODEL_ID - Ollama model to use (default: qwen3:14b)
 #   ARANDU_QA_PROVIDER - LLM provider (default: ollama)
 #   ARANDU_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
-#   ARANDU_QA_QUESTIONS_PER_DOCUMENT - Questions per document (default: 10)
+#   ARANDU_CEP_BLOOM_DISTRIBUTION - JSON pairs/level (default: 3/1/1/1)
 #   ARANDU_CEP_ENABLE_VALIDATION - Enable LLM-as-a-Judge validation (default: true)
 #   ARANDU_CEP_VALIDATOR_MODEL_ID - Validator model (default: qwen3:14b)
 #   ARANDU_CEP_LANGUAGE - Language for prompts (default: pt)
@@ -30,10 +30,14 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 export ARANDU_QA_PROVIDER="${ARANDU_QA_PROVIDER:-ollama}"
 export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
 export ARANDU_QA_OLLAMA_URL="${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}"
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT="${ARANDU_QA_QUESTIONS_PER_DOCUMENT:-10}"
 export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
 
 # CEP-specific settings
+# Bloom pairs/level as JSON integer counts. The per-chunk ladder size is the
+# sum of these counts; the default is the thesis 3/1/1/1 split. Set the var
+# before sbatch to override (e.g. '{"remember": 2, "understand": 2, "analyze": 1, "evaluate": 1}').
+DEFAULT_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
+export ARANDU_CEP_BLOOM_DISTRIBUTION="${ARANDU_CEP_BLOOM_DISTRIBUTION:-$DEFAULT_BLOOM_DISTRIBUTION}"
 export ARANDU_CEP_ENABLE_VALIDATION="${ARANDU_CEP_ENABLE_VALIDATION:-true}"
 export ARANDU_CEP_VALIDATOR_PROVIDER="${ARANDU_CEP_VALIDATOR_PROVIDER:-ollama}"
 export ARANDU_CEP_VALIDATOR_MODEL_ID="${ARANDU_CEP_VALIDATOR_MODEL_ID:-qwen3:14b}"
@@ -64,7 +68,7 @@ echo "=============================================="
 echo "QA Provider:   $ARANDU_QA_PROVIDER"
 echo "QA Model:      $ARANDU_QA_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
-echo "Questions/Doc: $ARANDU_QA_QUESTIONS_PER_DOCUMENT"
+echo "Bloom dist:    $ARANDU_CEP_BLOOM_DISTRIBUTION"
 echo "Workers:       $ARANDU_QA_WORKERS"
 echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "=============================================="

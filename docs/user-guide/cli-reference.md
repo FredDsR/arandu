@@ -192,14 +192,13 @@ arandu generate-cep-qa INPUT_DIR [OPTIONS]
 | `--provider` | | str | `ollama` | LLM provider: openai, ollama, custom |
 | `--model-id` | `-m` | str | `qwen3:14b` | Model ID for QA generation |
 | `--workers` | `-w` | int | `2` | Number of parallel workers |
-| `--questions` | | int | `10` | Number of QA pairs per document (1-50) |
 | `--temperature` | | float | `0.7` | LLM temperature for generation (0.0-2.0) |
 | `--ollama-url` | | str | `http://localhost:11434/v1` | Ollama API base URL |
 | `--base-url` | | str | `None` | Custom base URL for OpenAI-compatible endpoints |
 | `--language` | `-l` | str | `pt` | Language for prompts: 'pt' or 'en' |
 | `--validate/--no-validate` | | flag | `True` | Enable LLM-as-a-Judge validation |
 | `--validator-model` | | str | `qwen3:14b` | Model ID for validation |
-| `--bloom-dist` | | str | `None` | Bloom level distribution (e.g., 'remember:0.2,understand:0.3') |
+| `--bloom-dist` | | str | `None` | Bloom level pair counts (e.g., 'remember:3,understand:1,analyze:1,evaluate:1') |
 | `--jsonl/--no-jsonl` | | flag | `False` | Export QA pairs to JSONL format for training |
 | `--id` | | str | Auto-resolved | Pipeline ID (auto-resolves transcription outputs) |
 
@@ -208,10 +207,9 @@ arandu generate-cep-qa INPUT_DIR [OPTIONS]
 # Basic usage with Ollama
 arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
 
-# With custom Bloom distribution
+# With custom Bloom distribution (integer pair counts per level)
 arandu generate-cep-qa results/ \
-    --bloom-dist "remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2" \
-    --questions 15
+    --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
 
 # With OpenAI
 arandu generate-cep-qa results/ \
@@ -226,18 +224,15 @@ arandu generate-cep-qa results/ \
 
 # With custom validator model
 arandu generate-cep-qa results/ \
-    --validator-model qwen3:14b \
-    --questions 12
+    --validator-model qwen3:14b
 
 # Export to JSONL for KGQA training
 arandu generate-cep-qa results/ \
-    --jsonl \
-    --questions 20
+    --jsonl
 
 # English prompts
 arandu generate-cep-qa results/ \
-    --language en \
-    --questions 10
+    --language en
 
 # With pipeline ID
 arandu generate-cep-qa results/ --id my-project-001
@@ -453,7 +448,6 @@ arandu validate-transcriptions results/ \
 # Step 3: Generate CEP QA pairs
 arandu generate-cep-qa results/ \
     --workers 4 \
-    --questions 12 \
     --language pt \
     --id etno-001
 
@@ -532,7 +526,6 @@ export ARANDU_QUANTIZE=true
 # QA settings
 export ARANDU_QA_PROVIDER=ollama
 export ARANDU_QA_MODEL_ID=qwen3:14b
-export ARANDU_QA_QUESTIONS_PER_DOCUMENT=12
 
 # CEP settings
 export ARANDU_CEP_ENABLE_VALIDATION=true

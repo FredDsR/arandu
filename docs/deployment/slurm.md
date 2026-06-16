@@ -101,7 +101,6 @@ Override via command line or in script:
 | `QA_MODEL` | Model for QA generation |
 | `KG_MODEL` | Model for KG construction |
 | `QA_PROVIDER` | LLM provider (ollama, openai) |
-| `QUESTIONS_PER_DOCUMENT` | QA pairs per document |
 | `KG_LANGUAGE` | Language for KG extraction |
 
 ## Using Docker on SLURM

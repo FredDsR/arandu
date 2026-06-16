@@ -420,4 +420,4 @@ docker compose --profile kg up
 
 ---
 
-**See also**: [QA Generation](qa-generation.md) | [Evaluation](evaluation.md) | [Configuration](configuration.md)
+**See also**: [CEP QA Generation](cep-qa-generation.md) | [Evaluation](evaluation.md) | [Configuration](configuration.md)

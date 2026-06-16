@@ -132,7 +132,7 @@ export OPENAI_API_KEY=sk-...
 |------|-------|
 | Process multiple files | [Transcription Guide](/guides/transcription/) |
 | Validate transcriptions | [Transcription Validation Guide](/guides/transcription-validation/) |
-| Generate QA pairs | [QA Generation Guide](/guides/qa-generation/) |
+| Generate QA pairs | [CEP QA Generation Guide](/guides/cep-qa-generation/) |
 | Build knowledge graphs | [KG Construction Guide](/guides/kg-construction/) |
 | Evaluate quality | [Evaluation Guide](/guides/evaluation/) |
 | Configure settings | [Configuration Reference](/configuration/) |

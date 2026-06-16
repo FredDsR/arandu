@@ -97,32 +97,9 @@ class TestQAConfig:
         assert config.model_id == "qwen3:14b"
         assert config.ollama_url == "http://localhost:11434/v1"
         assert config.base_url is None
-        assert config.questions_per_document == 10
         assert config.temperature == 0.7
         assert config.max_tokens == 8192
         assert config.workers == 2
-
-    def test_questions_per_document_boundary_min(self) -> None:
-        """Test minimum boundary for questions_per_document."""
-        config = QAConfig(questions_per_document=1)
-        assert config.questions_per_document == 1
-
-    def test_questions_per_document_boundary_max(self) -> None:
-        """Test maximum boundary for questions_per_document."""
-        config = QAConfig(questions_per_document=50)
-        assert config.questions_per_document == 50
-
-    def test_questions_per_document_below_min(self) -> None:
-        """Test validation error when questions_per_document is below minimum."""
-        with pytest.raises(ValidationError) as exc_info:
-            QAConfig(questions_per_document=0)
-        assert "greater than or equal to 1" in str(exc_info.value)
-
-    def test_questions_per_document_above_max(self) -> None:
-        """Test validation error when questions_per_document is above maximum."""
-        with pytest.raises(ValidationError) as exc_info:
-            QAConfig(questions_per_document=51)
-        assert "less than or equal to 50" in str(exc_info.value)
 
     def test_temperature_boundary_min(self) -> None:
         """Test minimum boundary for temperature."""
@@ -293,45 +270,63 @@ class TestCEPConfig:
         config = CEPConfig()
 
         assert config.enable_reasoning_traces is True
-        assert config.bloom_levels == ["remember", "understand", "analyze", "evaluate"]
         assert config.max_hop_count == 3
         assert config.validation_threshold == 0.6
         assert config.language == "pt"
 
-    def test_valid_bloom_levels(self) -> None:
-        """Test valid Bloom taxonomy levels."""
-        config = CEPConfig(bloom_levels=["remember", "understand", "apply", "analyze"])
-        assert config.bloom_levels == ["remember", "understand", "apply", "analyze"]
-
-    def test_invalid_bloom_level(self) -> None:
-        """Test validation error for invalid Bloom level."""
-        with pytest.raises(ValidationError) as exc_info:
-            CEPConfig(bloom_levels=["remember", "invalid_level"])
-        assert "Invalid Bloom level" in str(exc_info.value)
-
     def test_valid_bloom_distribution(self) -> None:
-        """Test valid Bloom distribution summing to 1.0."""
+        """Test valid Bloom distribution with integer pair counts."""
         config = CEPConfig(
             bloom_distribution={
-                "remember": 0.25,
-                "understand": 0.25,
-                "analyze": 0.25,
-                "evaluate": 0.25,
+                "remember": 3,
+                "understand": 1,
+                "analyze": 1,
+                "evaluate": 1,
             }
         )
-        assert sum(config.bloom_distribution.values()) == 1.0
+        assert config.bloom_distribution["remember"] == 3
+        assert sum(config.bloom_distribution.values()) == 6
 
-    def test_invalid_bloom_distribution_sum(self) -> None:
-        """Test validation error when Bloom distribution doesn't sum to 1.0."""
+    def test_pairs_per_chunk_sums_distribution(self) -> None:
+        """pairs_per_chunk exposes the per-chunk ladder size (sum of counts)."""
+        config = CEPConfig(
+            bloom_distribution={"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}
+        )
+        assert config.pairs_per_chunk == 6
+
+    def test_invalid_bloom_distribution_exceeds_max(self) -> None:
+        """Test validation error when the per-chunk ladder exceeds the cap."""
         with pytest.raises(ValidationError) as exc_info:
-            CEPConfig(
-                bloom_distribution={
-                    "remember": 0.5,
-                    "understand": 0.5,
-                    "analyze": 0.5,  # Sum = 1.5, invalid
-                }
-            )
-        assert "must sum to 1.0" in str(exc_info.value)
+            CEPConfig(bloom_distribution={"remember": 51})
+        assert "at most" in str(exc_info.value)
+
+    def test_default_bloom_distribution_is_3_1_1_1(self) -> None:
+        """The thesis-run default is the integer 3/1/1/1 split."""
+        config = CEPConfig()
+        assert config.bloom_distribution == {
+            "remember": 3,
+            "understand": 1,
+            "analyze": 1,
+            "evaluate": 1,
+        }
+
+    def test_invalid_bloom_distribution_empty(self) -> None:
+        """Test validation error when the distribution totals zero pairs."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"remember": 0, "understand": 0})
+        assert "at least 1 pair" in str(exc_info.value)
+
+    def test_invalid_bloom_distribution_negative_count(self) -> None:
+        """Test validation error when a level has a negative count."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"remember": -1})
+        assert ">= 0" in str(exc_info.value)
+
+    def test_invalid_bloom_distribution_unknown_level(self) -> None:
+        """Test validation error when a distribution key is not a Bloom level."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"made_up": 1})
+        assert "Invalid Bloom level" in str(exc_info.value)
 
     def test_valid_language(self) -> None:
         """Test valid language codes for CEP."""

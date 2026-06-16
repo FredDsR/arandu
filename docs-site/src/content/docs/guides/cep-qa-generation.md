@@ -10,7 +10,7 @@ Quality judging is performed afterward using `judge-qa`.
 
 ```bash
 # Generate CEP QA pairs
-arandu generate-cep-qa results/ --output-dir cep_dataset/ --questions 12
+arandu generate-cep-qa results/ --output-dir cep_dataset/
 
 # Judge generated QA pairs
 arandu judge-qa cep_dataset/ --model qwen3:14b

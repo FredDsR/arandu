@@ -32,7 +32,6 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
 def qa_config() -> QAConfig:
     """Create a QA config for testing."""
     return QAConfig(
-        questions_per_document=10,
         temperature=0.7,
         max_tokens=2048,
     )
@@ -40,14 +39,13 @@ def qa_config() -> QAConfig:
 
 @pytest.fixture
 def cep_config() -> CEPConfig:
-    """Create a CEP config for testing."""
+    """Create a CEP config for testing (one pair per level, four levels)."""
     return CEPConfig(
-        bloom_levels=["remember", "understand", "analyze", "evaluate"],
         bloom_distribution={
-            "remember": 0.25,
-            "understand": 0.25,
-            "analyze": 0.25,
-            "evaluate": 0.25,
+            "remember": 1,
+            "understand": 1,
+            "analyze": 1,
+            "evaluate": 1,
         },
         language="pt",
     )
@@ -80,40 +78,39 @@ class TestBloomScaffoldingGenerator:
         assert generator.qa_config == qa_config
         assert generator.cep_config == cep_config
 
-    def test_calculate_level_distribution_equal(
+    def test_calculate_level_distribution_returns_configured_counts(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test level distribution calculation with equal weights."""
+        """The distribution is the configured per-level counts, verbatim."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
             cep_config=cep_config,
         )
 
-        # With 4 levels and 10 questions (25% each)
-        distribution = generator._calculate_level_distribution(8)
+        distribution = generator._calculate_level_distribution()
 
-        # Each level should get 2 questions (8 * 0.25 = 2)
-        assert distribution["remember"] == 2
-        assert distribution["understand"] == 2
-        assert distribution["analyze"] == 2
-        # Last level gets remaining
-        assert distribution["evaluate"] == 2
+        # Fixture configures one pair per level across four levels
+        assert distribution == {
+            "remember": 1,
+            "understand": 1,
+            "analyze": 1,
+            "evaluate": 1,
+        }
 
     def test_calculate_level_distribution_uneven(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
     ) -> None:
-        """Test level distribution with uneven weights."""
+        """Test level distribution with uneven counts."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={
-                "remember": 0.7,
-                "understand": 0.3,
+                "remember": 7,
+                "understand": 3,
             },
         )
 
@@ -123,9 +120,8 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        distribution = generator._calculate_level_distribution(10)
+        distribution = generator._calculate_level_distribution()
 
-        # remember: 10 * 0.7 = 7, understand gets remaining = 3
         assert distribution["remember"] == 7
         assert distribution["understand"] == 3
 
@@ -150,9 +146,9 @@ class TestBloomScaffoldingGenerator:
         )
 
         context = "Este é um texto de contexto para teste."
-        pairs = generator.generate(context, num_questions=4)
+        pairs = generator.generate(context)
 
-        # With 4 questions distributed across 4 levels (1 each), should call LLM 4 times
+        # Fixture: 4 levels at 1 pair each -> 4 LLM calls
         # (tenacity retries don't add extra calls when responses are valid)
         assert mock_llm_client.generate.call_count == 4
         assert len(pairs) == 4
@@ -390,8 +386,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that FileNotFoundError is raised when prompt file doesn't exist."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 1},
             language="pt",
         )
 
@@ -413,8 +408,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that FileNotFoundError is raised when template file doesn't exist."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 1},
             language="pt",
         )
 
@@ -434,10 +428,9 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test generation when a Bloom level has zero questions allocated."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={
-                "remember": 1.0,
-                "understand": 0.0,  # Zero weight
+                "remember": 2,
+                "understand": 0,  # Zero count
             },
             language="pt",
         )
@@ -450,7 +443,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        pairs = generator.generate("Context.", num_questions=2)
+        pairs = generator.generate("Context.")
 
         # Only 'remember' level should be called (2 times), not 'understand'
         assert mock_llm_client.generate.call_count == 2
@@ -472,7 +465,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        pairs = generator.generate("Context.", num_questions=2)
+        pairs = generator.generate("Context.")
 
         assert pairs == []
 
@@ -502,8 +495,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generate does not pass response_format to LLM client."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 1},
             language="pt",
         )
 
@@ -515,7 +507,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        generator.generate("Context text.", num_questions=1)
+        generator.generate("Context text.")
 
         call_kwargs = mock_llm_client.generate.call_args.kwargs
         assert "response_format" not in call_kwargs
@@ -527,8 +519,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that disabled scaffolding preserves config order, not hierarchy."""
         cep_config = CEPConfig(
-            bloom_levels=["evaluate", "remember"],
-            bloom_distribution={"evaluate": 0.5, "remember": 0.5},
+            bloom_distribution={"evaluate": 2, "remember": 2},
             enable_scaffolding_context=False,
             language="pt",
         )
@@ -549,7 +540,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        generator.generate("Context.", num_questions=4)
+        generator.generate("Context.")
 
         assert call_order == ["evaluate", "evaluate", "remember", "remember"]
 
@@ -560,8 +551,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that enabled scaffolding sorts levels by Bloom hierarchy."""
         cep_config = CEPConfig(
-            bloom_levels=["evaluate", "remember", "analyze"],
-            bloom_distribution={"evaluate": 0.34, "remember": 0.33, "analyze": 0.33},
+            bloom_distribution={"evaluate": 2, "remember": 1, "analyze": 3},
             enable_scaffolding_context=True,
             language="pt",
         )
@@ -582,11 +572,10 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        generator.generate("Context.", num_questions=6)
+        generator.generate("Context.")
 
-        # With 6 questions and distribution 0.34, 0.33, 0.33:
-        # Using int() truncation (floor): evaluate=2, remember=1, analyze=3 (remaining)
-        # Should follow hierarchy: remember (1) → analyze (3) → evaluate (2)
+        # Counts evaluate=2, remember=1, analyze=3 are emitted in Bloom
+        # hierarchy order: remember (1) → analyze (3) → evaluate (2)
         assert call_order == ["remember", "analyze", "analyze", "analyze", "evaluate", "evaluate"]
 
     def test_scaffolding_includes_prior_pairs_in_prompt(
@@ -596,8 +585,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that each prompt includes all prior pairs (within and across levels)."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
-            bloom_distribution={"remember": 0.5, "understand": 0.5},
+            bloom_distribution={"remember": 2, "understand": 2},
             enable_scaffolding_context=True,
             language="pt",
         )
@@ -624,7 +612,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        generator.generate("Context.", num_questions=4)
+        generator.generate("Context.")
 
         # With 4 questions: 2 remember, 2 understand = 4 LLM calls
         assert len(prompts_captured) == 4
@@ -650,8 +638,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that the first pair has no scaffolding header."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
-            bloom_distribution={"remember": 0.5, "understand": 0.5},
+            bloom_distribution={"remember": 2, "understand": 2},
             enable_scaffolding_context=True,
             language="pt",
         )
@@ -670,7 +657,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        generator.generate("Context.", num_questions=4)
+        generator.generate("Context.")
 
         # First prompt (first remember pair) should not contain scaffolding header
         scaffolding_header = generator._prompts["scaffolding_header"]
@@ -766,8 +753,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generate() produces pairs with non-None generation_prompt."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 1},
             language="pt",
         )
 
@@ -779,7 +765,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        pairs = generator.generate("Context text.", num_questions=1)
+        pairs = generator.generate("Context text.")
 
         assert len(pairs) >= 1
         for pair in pairs:
@@ -793,8 +779,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that only last N pairs are included when exceeding limit."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
-            bloom_distribution={"remember": 0.5, "understand": 0.5},
+            bloom_distribution={"remember": 2, "understand": 2},
             max_scaffolding_pairs=3,
             language="pt",
         )
@@ -837,8 +822,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that GenerateResult.thinking is stored in QAPairCEP.generation_thinking."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 2},
             language="pt",
         )
 
@@ -853,7 +837,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        pairs = generator.generate("Context.", num_questions=2)
+        pairs = generator.generate("Context.")
 
         assert len(pairs) == 2
         for pair in pairs:
@@ -866,8 +850,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generation_thinking is None when model has no thinking."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 1},
             language="pt",
         )
 
@@ -882,7 +865,7 @@ class TestBloomScaffoldingGenerator:
             cep_config=cep_config,
         )
 
-        pairs = generator.generate("Context.", num_questions=1)
+        pairs = generator.generate("Context.")
 
         assert len(pairs) == 1
         assert pairs[0].generation_thinking is None
@@ -1013,8 +996,7 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that failed pairs are skipped and a summary warning is logged."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
-            bloom_distribution={"remember": 1.0},
+            bloom_distribution={"remember": 2},
             language="pt",
         )
 
@@ -1032,7 +1014,27 @@ class TestBloomScaffoldingGenerator:
             "wait",
             return_value=0,  # type: ignore[union-attr]
         ):
-            pairs = generator.generate("Context.", num_questions=2)
+            pairs = generator.generate("Context.")
 
         assert pairs == []
         assert "Generated 0/2 pairs for remember level" in caplog.text
+
+
+class TestDefaultThesisDistribution:
+    """The locked thesis-run Bloom config (2026-06-16): 3/1/1/1 integer counts.
+
+    remember=3 is the factual base / control group + Bloom-scaffolding ground;
+    understand/analyze/evaluate=1 each are the cognitive group (equal-sized
+    factual-vs-cognitive split). Counts are absolute, so the per-chunk ladder
+    is the sum (6) with no fractional rounding to skew the realized split.
+    """
+
+    def test_default_distribution_is_3_1_1_1(self, mock_llm_client: Any) -> None:
+        cep_config = CEPConfig()  # default 3/1/1/1 integer counts
+        # The per-chunk ladder size is the sum of the configured counts.
+        assert sum(cep_config.bloom_distribution.values()) == 6
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client, qa_config=QAConfig(), cep_config=cep_config
+        )
+        dist = generator._calculate_level_distribution()
+        assert dist == {"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}
