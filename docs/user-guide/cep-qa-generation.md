@@ -1,14 +1,14 @@
 # CEP QA Generation Guide
 
-Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding and LLM-as-a-Judge validation.
+Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding. Validation is a separate step: `generate-cep-qa` generates pairs, and the [`judge-qa`](cli-reference.md#judge-qa) command validates them with LLM-as-a-Judge.
 
 ## Overview
 
-The CEP pipeline extends the standard QA generation with three specialized modules:
+The CEP pipeline generates QA pairs through two specialized modules, then validation runs as a separate command:
 
 1. **Module I: Bloom Scaffolding** - Generates questions distributed across Bloom's taxonomy levels
 2. **Module II: Reasoning & Grounding** - Enriches higher-level questions with reasoning traces
-3. **Module III: LLM-as-a-Judge** - Validates QA pairs for faithfulness, Bloom calibration, and informativeness
+3. **LLM-as-a-Judge (separate `judge-qa` step)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ### Key Features
 
@@ -17,7 +17,7 @@ The CEP pipeline extends the standard QA generation with three specialized modul
 - **Reasoning Traces**: Explicit logical connections for complex questions
 - **Multi-hop Detection**: Identifies questions requiring distant information connection
 - **Tacit Knowledge Extraction**: Surfaces implicit domain knowledge
-- **Quality Validation**: LLM-based scoring for faithfulness and informativeness
+- **Quality Validation** (via `judge-qa`): LLM-based scoring for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ## Prerequisites
 
@@ -50,11 +50,11 @@ sbatch scripts/slurm/cep/sirius.slurm
 ### Using CLI
 
 ```bash
-# Basic usage (validation enabled by default)
+# Generate CEP QA pairs
 arandu generate-cep-qa results/ --output-dir cep_dataset/
 
-# Disable validation for faster processing
-arandu generate-cep-qa results/ --no-validate --output-dir cep_dataset/
+# Validate the generated pairs with LLM-as-a-Judge (separate step)
+arandu judge-qa cep_dataset/ --model qwen3:14b
 
 # Export to JSONL format
 arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
@@ -79,12 +79,20 @@ arandu generate-cep-qa results/ --id etno-project-001
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ARANDU_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
-| `ARANDU_CEP_VALIDATOR_PROVIDER` | `ollama` | Validator LLM provider |
-| `ARANDU_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model |
 | `ARANDU_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
 | `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
 | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
+| `ARANDU_CEP_VALIDATION_THRESHOLD` | `0.6` | Min overall judge score for a pair to pass (used by `judge-qa`) |
+
+### Judge Variables (used by `judge-qa`)
+
+Validation is a separate command; its validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`). There is no `ARANDU_CEP_ENABLE_VALIDATION` switch.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ARANDU_JUDGE_VALIDATOR_MODEL` | (none) | Judge model. Required via this var or `judge-qa --model` |
+| `ARANDU_JUDGE_VALIDATOR_PROVIDER` | inferred | `openai`, `ollama`, or `custom` |
+| `ARANDU_JUDGE_VALIDATOR_BASE_URL` | inferred | Validator base URL (falls back to `ARANDU_LLM_BASE_URL`) |
 
 ### Bloom Distribution
 
@@ -112,15 +120,18 @@ ARANDU_QA_PROVIDER=ollama
 ARANDU_QA_MODEL_ID=qwen3:14b
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_WORKERS=4
+ARANDU_QA_OUTPUT_DIR=cep_dataset
 
 # CEP-Specific Settings
-ARANDU_CEP_ENABLE_VALIDATION=true
-ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
 ARANDU_CEP_LANGUAGE=pt
+ARANDU_CEP_VALIDATION_THRESHOLD=0.6
+
+# Judge Settings (used by judge-qa)
+ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
 
 # Directories
 ARANDU_RESULTS_DIR=./results
-ARANDU_CEP_DIR=./cep_dataset
 ```
 
 ## Usage Examples
@@ -128,15 +139,18 @@ ARANDU_CEP_DIR=./cep_dataset
 ### Basic CEP Generation
 
 ```bash
-# Default configuration (Portuguese prompts, validation enabled)
+# Default configuration (Portuguese prompts); validate separately with judge-qa
 docker compose --profile cep up
 ```
 
-### Without LLM-as-a-Judge Validation
+### Validating Generated Pairs
 
 ```bash
-# Disable validation for faster processing
-ARANDU_CEP_ENABLE_VALIDATION=false docker compose --profile cep up
+# Generation does not validate. Run judge-qa afterwards:
+arandu judge-qa cep_dataset/ --model qwen3:14b
+
+# Sample a subset while iterating
+arandu judge-qa cep_dataset/ --files 2 --pairs 3
 ```
 
 ### GPU-Accelerated Ollama
@@ -272,9 +286,9 @@ Each line contains one QA pair:
 
 ## Validation Criteria
 
-When validation is enabled, each QA pair is scored on three criteria:
+Validation runs via the separate [`judge-qa`](cli-reference.md#judge-qa) command. Each sampled QA pair is scored on four criteria, and the weighted overall score gates the pair against `validation_threshold`. The weights live in `CEPConfig` and must sum to 1.0.
 
-### Faithfulness (40% weight)
+### Faithfulness (30% weight)
 Is the answer grounded in the provided context?
 
 | Score | Description |
@@ -286,7 +300,7 @@ Is the answer grounded in the provided context?
 | 0.2 | Answer weakly grounded |
 | 0.0 | Answer not grounded, hallucinated, or contradictory |
 
-### Bloom Calibration (30% weight)
+### Bloom Calibration (25% weight)
 Does the question match the proposed cognitive level?
 
 | Score | Description |
@@ -297,7 +311,7 @@ Does the question match the proposed cognitive level?
 | 0.4 | Undercalibrated - requires lower cognitive level |
 | 0.0 | Completely miscalibrated |
 
-### Informativeness (30% weight)
+### Informativeness (25% weight)
 Does the answer reveal non-obvious or tacit knowledge?
 
 | Score | Description |
@@ -308,13 +322,22 @@ Does the answer reveal non-obvious or tacit knowledge?
 | 0.4 | Common but well-articulated information |
 | 0.0 | Trivial or obvious information |
 
-The overall score is a weighted average. QA pairs below the threshold (default 0.6) are marked as invalid.
+### Self-Containedness (20% weight)
+Can the question be understood and answered without external context beyond the provided text?
+
+| Score | Description |
+|-------|-------------|
+| 1.0 | Fully self-contained; no outside context needed |
+| 0.6 | Mostly self-contained with minor ambiguity |
+| 0.0 | Depends on context not present in the question/answer |
+
+The overall score is the weighted average of these four criteria. QA pairs below `validation_threshold` (default 0.6) are marked invalid (`is_valid = false`).
 
 ## Programmatic Usage
 
 ```python
-from arandu.schemas import QARecordCEP, QAPairCEP
-from arandu.config import CEPConfig, QAConfig, get_cep_config
+from arandu.qa.schemas import QARecordCEP, QAPairCEP
+from arandu.qa.config import CEPConfig, QAConfig, get_cep_config
 
 # Load existing CEP record
 record = QARecordCEP.load("cep_dataset/1abc123xyz_cep_qa.json")
@@ -340,10 +363,15 @@ jsonl_content = record.to_jsonl()
 # Export to JSONL file
 record.to_jsonl("output.jsonl")
 
+# Inspect per-pair judge verdicts (populated by judge-qa)
+for qa in record.qa_pairs:
+    print(f"{qa.bloom_level}: is_valid={qa.is_valid}")
+
 # Get CEP configuration
 cep_config = get_cep_config()
-print(f"Validation enabled: {cep_config.enable_validation}")
-print(f"Bloom levels: {cep_config.bloom_levels}")
+print(f"Bloom distribution: {cep_config.bloom_distribution}")
+print(f"Pairs per chunk: {cep_config.pairs_per_chunk}")
+print(f"Validation threshold: {cep_config.validation_threshold}")
 ```
 
 ## Monitoring Progress
@@ -390,9 +418,10 @@ The checkpoint file (`cep_dataset/cep_checkpoint.json`) tracks:
 - **llama3.3:70b**: Highest quality for final production runs (48GB+ GPU)
 
 ### Validation Strategy
-1. Keep validation enabled (default) for quality assurance
-2. Disable validation (`--no-validate`) for faster iteration during development
-3. Use validation threshold of 0.6-0.7 to balance coverage and quality
+1. Generate first, then validate with `judge-qa` as a separate step
+2. During development, sample with `judge-qa --files N --pairs M` for faster iteration
+3. Use `ARANDU_CEP_VALIDATION_THRESHOLD` of 0.6-0.7 to balance coverage and quality
+4. Re-run with `judge-qa --rejudge` after changing the validator model
 
 ### Bloom Distribution
 - Start with default distribution
