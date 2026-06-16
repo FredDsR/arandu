@@ -143,9 +143,10 @@ Configuration settings for the QA generation pipeline.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `questions_per_document` | `int` | `10` | Number of QA pairs to generate per document (min: 1, max: 50) |
 | `temperature` | `float` | `0.7` | Temperature for QA generation LLM (range: 0.0-2.0) |
 | `max_tokens` | `int` | `2048` | Max tokens for QA generation LLM (min: 1) |
+
+> **Note**: The per-chunk ladder size is no longer a separate QAConfig knob. It is the sum of `CEPConfig.bloom_distribution` (the integer pair counts per Bloom level), so the distribution is the single source of truth.
 
 ### Output Settings
 
@@ -167,7 +168,6 @@ from arandu.config import QAConfig
 config = QAConfig(
     provider="ollama",
     model_id="qwen3:14b",
-    questions_per_document=15,
     language="pt"
 )
 ```
@@ -192,7 +192,7 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `bloom_levels` | `list[str]` | `["remember", "understand", "analyze", "evaluate"]` | Bloom levels for question generation |
-| `bloom_distribution` | `dict[str, float]` | `{"remember": 0.2, "understand": 0.3, "analyze": 0.3, "evaluate": 0.2}` | Distribution per level (must sum to 1.0) |
+| `bloom_distribution` | `dict[str, int]` | `{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}` | Absolute number of QA pairs to generate at each Bloom level, per chunk. Counts must be non-negative and total at least 1; the per-chunk ladder size is their sum. |
 | `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
 | `max_scaffolding_pairs` | `int` | `10` | Max prior QA pairs to include as scaffolding context (min: 1, max: 50) |
 
@@ -235,7 +235,7 @@ from arandu.config import CEPConfig
 
 config = CEPConfig(
     bloom_levels=["remember", "understand", "analyze"],
-    bloom_distribution={"remember": 0.3, "understand": 0.4, "analyze": 0.3},
+    bloom_distribution={"remember": 3, "understand": 2, "analyze": 1},
     enable_scaffolding_context=True,
     validation_threshold=0.7
 )
@@ -612,7 +612,7 @@ ARANDU_QUALITY_QUALITY_THRESHOLD=0.5
 arandu generate-cep-qa results/
 
 # Override specific settings
-arandu generate-cep-qa results/ --questions 15 --provider ollama
+arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --provider ollama
 ```
 
 ### Example 2: Production with OpenAI API
@@ -761,12 +761,11 @@ The configuration system includes validation rules enforced by Pydantic.
 ### Type Validation
 
 ```python
-# From QAConfig
-questions_per_document: int = Field(
-    default=10,
-    ge=1,        # Must be >= 1
-    le=50,       # Must be <= 50
-)
+# From CEPConfig — counts must be non-negative and total at least 1
+@field_validator("bloom_distribution")
+@classmethod
+def validate_bloom_distribution(cls, v: dict[str, int]) -> dict[str, int]:
+    ...  # each count >= 0, valid Bloom level, sum >= 1
 ```
 
 ### Pattern Validation
@@ -818,7 +817,7 @@ Pydantic Settings loads configuration in the following priority order (highest t
 
 1. **Command-line arguments** (highest priority):
    ```bash
-   arandu generate-cep-qa results/ --provider ollama --questions 15
+   arandu generate-cep-qa results/ --provider ollama --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
    ```
 
 2. **Environment variables**:

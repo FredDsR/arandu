@@ -39,13 +39,6 @@ def generate_cep_qa(
     workers: Annotated[
         int | None, typer.Option("--workers", "-w", help="Number of parallel workers.")
     ] = None,
-    questions: Annotated[
-        int | None,
-        typer.Option(
-            "--questions",
-            help="Bloom-ladder size generated per chunk (1-50); document total scales with chunks.",
-        ),
-    ] = None,
     temperature: Annotated[
         float | None,
         typer.Option("--temperature", help="LLM temperature for generation (0.0-2.0)."),
@@ -69,8 +62,8 @@ def generate_cep_qa(
         str | None,
         typer.Option(
             "--bloom-dist",
-            help="Bloom level distribution as 'level:weight,...' "
-            "(e.g., 'remember:0.2,understand:0.3,analyze:0.3,evaluate:0.2').",
+            help="Bloom level pair counts as 'level:count,...' "
+            "(e.g., 'remember:3,understand:1,analyze:1,evaluate:1').",
         ),
     ] = None,
     export_jsonl: Annotated[
@@ -99,9 +92,9 @@ def generate_cep_qa(
         # Basic CEP generation (default: Portuguese)
         arandu generate-cep-qa results/ -o cep_dataset/
 
-        # Adjust Bloom level distribution
+        # Adjust Bloom level pair counts
         arandu generate-cep-qa results/ \\
-            --bloom-dist "remember:0.1,understand:0.3,analyze:0.4,evaluate:0.2"
+            --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
 
         # Export to JSONL for KGQA training
         arandu generate-cep-qa results/ --jsonl
@@ -123,8 +116,6 @@ def generate_cep_qa(
         qa_overrides["ollama_url"] = ollama_url
     if base_url is not None:
         qa_overrides["base_url"] = base_url
-    if questions is not None:
-        qa_overrides["questions_per_document"] = questions
     if temperature is not None:
         qa_overrides["temperature"] = temperature
     if output_dir is not None:
@@ -145,13 +136,13 @@ def generate_cep_qa(
         try:
             dist_dict = {}
             for item in bloom_dist.split(","):
-                level, weight = item.strip().split(":")
-                dist_dict[level.strip()] = float(weight.strip())
+                level, count = item.strip().split(":")
+                dist_dict[level.strip()] = int(count.strip())
             cep_overrides["bloom_distribution"] = dist_dict
             cep_overrides["bloom_levels"] = list(dist_dict.keys())
         except ValueError as e:
             print_error(f"Invalid bloom-dist format: {e}")
-            print_error("Expected format: 'level:weight,level:weight,...'")
+            print_error("Expected format: 'level:count,level:count,...'")
             raise typer.Exit(code=1) from e
 
     if cep_overrides:
@@ -164,10 +155,6 @@ def generate_cep_qa(
     # Validate configs
     if qa_config.workers < 1:
         print_error("Number of workers must be at least 1")
-        raise typer.Exit(code=1)
-
-    if qa_config.questions_per_document < 1 or qa_config.questions_per_document > 50:
-        print_error("Number of questions must be between 1 and 50")
         raise typer.Exit(code=1)
 
     valid_languages = {"en", "pt"}
@@ -184,10 +171,10 @@ def generate_cep_qa(
     console.print(f"[cyan]Provider:[/cyan] {qa_config.provider}")
     console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
     console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
-    console.print(f"[cyan]Questions per document:[/cyan] {qa_config.questions_per_document}")
     console.print(f"[cyan]Language:[/cyan] {cep_config.language}")
     console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_levels)}")
-    console.print(f"[cyan]Bloom Distribution:[/cyan] {cep_config.bloom_distribution}")
+    console.print(f"[cyan]Bloom Distribution (pairs/level):[/cyan] {cep_config.bloom_distribution}")
+    console.print(f"[cyan]Pairs per chunk:[/cyan] {sum(cep_config.bloom_distribution.values())}")
     console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
     console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
     if qa_config.provider == "ollama":

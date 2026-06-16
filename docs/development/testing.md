@@ -91,10 +91,12 @@ Tests for configuration classes that load from environment variables:
 
 **Example**:
 ```python
-def test_questions_per_document_boundary_max() -> None:
-    """Test maximum boundary for questions_per_document."""
-    config = QAConfig(questions_per_document=50)
-    assert config.questions_per_document == 50
+def test_default_bloom_distribution_is_3_1_1_1() -> None:
+    """The thesis-run default is the integer 3/1/1/1 split."""
+    config = CEPConfig()
+    assert config.bloom_distribution == {
+        "remember": 3, "understand": 1, "analyze": 1, "evaluate": 1
+    }
 ```
 
 ### 2. Schema Tests (`test_schemas.py`)
@@ -256,8 +258,8 @@ Don't just test the happy path. Test error conditions:
 ### 3. Use Descriptive Test Names
 Test names should describe what they test:
 ```python
-def test_questions_per_document_above_max() -> None:
-    """Test validation error when questions_per_document is above maximum."""
+def test_invalid_bloom_distribution_negative_count() -> None:
+    """Test validation error when a Bloom level has a negative count."""
 ```
 
 ### 4. Use Fixtures

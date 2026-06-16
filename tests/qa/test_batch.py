@@ -491,7 +491,6 @@ class TestGenerateCEPQAForTranscription:
         qa_config_dict = QAConfig(
             provider="ollama",
             model_id="llama3.1:8b",
-            questions_per_document=1,
         ).model_dump()
 
         cep_config_dict = CEPConfig().model_dump()
@@ -591,7 +590,6 @@ class TestGenerateCEPQAForTranscription:
         qa_config_dict = QAConfig(
             provider="ollama",
             model_id="llama3.1:8b",
-            questions_per_document=1,
         ).model_dump()
 
         cep_config_dict = CEPConfig().model_dump()
@@ -731,7 +729,6 @@ class TestRunBatchCEPGeneration:
         qa_config = QAConfig(
             provider="ollama",
             model_id="llama3.1:8b",
-            questions_per_document=1,
         )
         cep_config = CEPConfig()
 
@@ -813,7 +810,6 @@ class TestRunBatchCEPGeneration:
         qa_config = QAConfig(
             provider="ollama",
             model_id="llama3.1:8b",
-            questions_per_document=1,
         )
         cep_config = CEPConfig()
 
@@ -1038,7 +1034,6 @@ class TestRunBatchCEPGeneration:
         qa_config = QAConfig(
             provider="ollama",
             model_id="llama3.1:8b",
-            questions_per_document=1,
         )
         cep_config = CEPConfig()
 

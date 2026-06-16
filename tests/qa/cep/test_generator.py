@@ -39,7 +39,6 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
 def qa_config() -> QAConfig:
     """Create a QA config for testing."""
     return QAConfig(
-        questions_per_document=8,
         temperature=0.7,
         max_tokens=2048,
     )
@@ -47,15 +46,15 @@ def qa_config() -> QAConfig:
 
 @pytest.fixture
 def cep_config() -> CEPConfig:
-    """Create a CEP config for testing."""
+    """Create a CEP config for testing (two pairs per level, four levels)."""
     return CEPConfig(
         enable_reasoning_traces=True,
         bloom_levels=["remember", "understand", "analyze", "evaluate"],
         bloom_distribution={
-            "remember": 0.25,
-            "understand": 0.25,
-            "analyze": 0.25,
-            "evaluate": 0.25,
+            "remember": 2,
+            "understand": 2,
+            "analyze": 2,
+            "evaluate": 2,
         },
         language="pt",
     )
@@ -153,11 +152,11 @@ class TestCEPQAGenerator:
     ) -> None:
         """Each chunk gets the full Bloom ladder; the budget is not divided.
 
-        Regression: dividing ``questions_per_document`` across chunks shrinks
-        the per-chunk count below the number of Bloom levels, collapsing the
-        ladder to the remainder-absorbing ``evaluate`` level. The full ladder
-        must run independently on every chunk, so the document total scales
-        with the chunk count and each chunk covers all configured levels.
+        Regression: dividing the per-chunk counts across chunks would shrink
+        each chunk's ladder below the number of Bloom levels and drop levels.
+        The full ladder must run independently on every chunk, so the document
+        total scales with the chunk count and each chunk covers all configured
+        levels.
         """
         long_text = "Frase de teste sobre o evento climático e a comunidade ribeirinha. " * 250
         transcription = EnrichedRecord(
@@ -188,7 +187,8 @@ class TestCEPQAGenerator:
         result = generator.generate_qa_pairs(transcription)
 
         # Full ladder per chunk -> total scales with chunk count, no doc trim.
-        assert len(result.qa_pairs) == qa_config.questions_per_document * n_chunks
+        pairs_per_chunk = sum(cep_config.bloom_distribution.values())
+        assert len(result.qa_pairs) == pairs_per_chunk * n_chunks
 
         # Every chunk covers all configured Bloom levels (no collapse).
         from collections import Counter, defaultdict

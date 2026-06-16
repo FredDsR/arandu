@@ -89,19 +89,20 @@ arandu generate-cep-qa results/ --id etno-project-001
 
 ### Bloom Distribution
 
-Default distribution allocates questions across cognitive levels:
+The distribution is the absolute number of QA pairs to generate at each
+cognitive level, per chunk. The per-chunk ladder size is their sum.
 
-| Level | Default Weight | Description |
+| Level | Default Count | Description |
 |-------|---------------|-------------|
-| `remember` | 20% | Recall explicit facts |
-| `understand` | 30% | Explain and interpret concepts |
-| `analyze` | 30% | Identify relationships and patterns |
-| `evaluate` | 20% | Make judgments and justify decisions |
+| `remember` | 3 | Recall explicit facts (factual base / scaffolding ground) |
+| `understand` | 1 | Explain and interpret concepts |
+| `analyze` | 1 | Identify relationships and patterns |
+| `evaluate` | 1 | Make judgments and justify decisions |
 
-Customize via CLI:
+Customize via CLI (integer counts, not weights):
 ```bash
 arandu generate-cep-qa results/ \
-  --bloom-dist "remember:0.1,understand:0.2,analyze:0.4,evaluate:0.3"
+  --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
 ```
 
 ### Example .env Configuration

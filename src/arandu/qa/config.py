@@ -43,21 +43,6 @@ class QAConfig(BaseSettings):
     )
 
     # Generation settings
-    questions_per_document: int = Field(
-        default=6,
-        ge=1,
-        le=50,
-        description=(
-            "Size of the Bloom-scaffolded ladder generated per chunk (Q). Each "
-            "chunk independently produces this many pairs across the Bloom "
-            "levels; the document total is this value times the chunk count. "
-            "Locked at 6 for the thesis run (2026-06-16): pairs with the 3/1/1/1 "
-            "bloom_distribution to give a balanced factual(3)-vs-cognitive(3) "
-            "split. NOTE bloom_distribution weights are tuned to this Q via the "
-            "int(total*weight) floor in BloomScaffoldingGenerator; changing Q "
-            "without re-checking the realized per-level split can skew it."
-        ),
-    )
     temperature: float = Field(
         default=0.7,
         ge=0.0,
@@ -133,19 +118,22 @@ class CEPConfig(BaseSettings):
         default=["remember", "understand", "analyze", "evaluate"],
         description="Bloom levels to use for question generation",
     )
-    bloom_distribution: dict[str, float] = Field(
+    bloom_distribution: dict[str, int] = Field(
         default={
-            "remember": 0.5,
-            "understand": 0.17,
-            "analyze": 0.17,
-            "evaluate": 0.16,
+            "remember": 3,
+            "understand": 1,
+            "analyze": 1,
+            "evaluate": 1,
         },
         description=(
-            "Distribution of questions per Bloom level (must sum to 1.0). Tuned "
-            "so the int(total*weight) floor realizes 3/1/1/1 at Q=6 (thesis run, "
-            "2026-06-16): remember is the factual base/control + Bloom-scaffolding "
-            "ground; understand/analyze/evaluate are the equal-sized cognitive "
-            "group. (0.17 not 1/6 on purpose: 6*(1/6) floats to 0.999...->floor 0.)"
+            "Absolute number of QA pairs to generate at each Bloom level, per "
+            "chunk. The per-chunk ladder size is the sum of these counts (the "
+            "document total scales with the chunk count). Locked at 3/1/1/1 for "
+            "the thesis run (2026-06-16): remember=3 is the factual base/control "
+            "+ Bloom-scaffolding ground; understand/analyze/evaluate=1 each are "
+            "the equal-sized cognitive group (balanced factual-vs-cognitive "
+            "split). Integer counts, not weights: there is no fractional rounding "
+            "to skew the realized split."
         ),
     )
     enable_scaffolding_context: bool = Field(
@@ -243,11 +231,27 @@ class CEPConfig(BaseSettings):
 
     @field_validator("bloom_distribution")
     @classmethod
-    def validate_bloom_distribution(cls, v: dict[str, float]) -> dict[str, float]:
-        """Validate Bloom distribution sums to 1.0."""
+    def validate_bloom_distribution(cls, v: dict[str, int]) -> dict[str, int]:
+        """Validate Bloom distribution counts.
+
+        Each value is the absolute number of pairs to generate at that level
+        (per chunk). Counts must reference valid Bloom levels, be non-negative,
+        and total at least one pair.
+        """
+        valid_levels = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
+        for level, count in v.items():
+            if level not in valid_levels:
+                raise ValueError(
+                    f"Invalid Bloom level in distribution: {level!r}. "
+                    f"Must be one of {sorted(valid_levels)}"
+                )
+            if count < 0:
+                raise ValueError(
+                    f"Bloom distribution count for {level!r} must be >= 0, got {count}"
+                )
         total = sum(v.values())
-        if not (0.99 <= total <= 1.01):  # Allow small floating point errors
-            raise ValueError(f"Bloom distribution must sum to 1.0, got {total}")
+        if total < 1:
+            raise ValueError(f"Bloom distribution must total at least 1 pair, got {total}")
         return v
 
     @field_validator("language")
