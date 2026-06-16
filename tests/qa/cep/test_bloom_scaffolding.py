@@ -1036,3 +1036,23 @@ class TestBloomScaffoldingGenerator:
 
         assert pairs == []
         assert "Generated 0/2 pairs for remember level" in caplog.text
+
+
+class TestDefaultThesisDistribution:
+    """The locked thesis-run Bloom config (2026-06-16): Q=6, 3/1/1/1.
+
+    remember=3 is the factual base / control group + Bloom-scaffolding ground;
+    understand/analyze/evaluate=1 each are the cognitive group (equal-sized
+    factual-vs-cognitive split). Guards against the int(total*weight) float
+    floor collapsing 1/6-style weights to 0 (which would yield 3/0/0/3).
+    """
+
+    def test_default_distribution_is_3_1_1_1_at_q6(self, mock_llm_client: Any) -> None:
+        # Q (per-chunk ladder size) lives on QAConfig; the split on CEPConfig.
+        assert QAConfig().questions_per_document == 6
+        cep_config = CEPConfig()  # default 3/1/1/1-tuned weights
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client, qa_config=QAConfig(), cep_config=cep_config
+        )
+        dist = generator._calculate_level_distribution(6)
+        assert dist == {"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}

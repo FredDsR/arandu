@@ -44,13 +44,18 @@ class QAConfig(BaseSettings):
 
     # Generation settings
     questions_per_document: int = Field(
-        default=10,
+        default=6,
         ge=1,
         le=50,
         description=(
-            "Size of the Bloom-scaffolded ladder generated per chunk. Each "
+            "Size of the Bloom-scaffolded ladder generated per chunk (Q). Each "
             "chunk independently produces this many pairs across the Bloom "
-            "levels; the document total is this value times the chunk count."
+            "levels; the document total is this value times the chunk count. "
+            "Locked at 6 for the thesis run (2026-06-16): pairs with the 3/1/1/1 "
+            "bloom_distribution to give a balanced factual(3)-vs-cognitive(3) "
+            "split. NOTE bloom_distribution weights are tuned to this Q via the "
+            "int(total*weight) floor in BloomScaffoldingGenerator; changing Q "
+            "without re-checking the realized per-level split can skew it."
         ),
     )
     temperature: float = Field(
@@ -130,12 +135,18 @@ class CEPConfig(BaseSettings):
     )
     bloom_distribution: dict[str, float] = Field(
         default={
-            "remember": 0.2,
-            "understand": 0.3,
-            "analyze": 0.3,
-            "evaluate": 0.2,
+            "remember": 0.5,
+            "understand": 0.17,
+            "analyze": 0.17,
+            "evaluate": 0.16,
         },
-        description="Distribution of questions per Bloom level (must sum to 1.0)",
+        description=(
+            "Distribution of questions per Bloom level (must sum to 1.0). Tuned "
+            "so the int(total*weight) floor realizes 3/1/1/1 at Q=6 (thesis run, "
+            "2026-06-16): remember is the factual base/control + Bloom-scaffolding "
+            "ground; understand/analyze/evaluate are the equal-sized cognitive "
+            "group. (0.17 not 1/6 on purpose: 6*(1/6) floats to 0.999...->floor 0.)"
+        ),
     )
     enable_scaffolding_context: bool = Field(
         default=True,
