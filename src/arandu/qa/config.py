@@ -9,6 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
 
+# Upper bound on the per-chunk Bloom ladder (sum of bloom_distribution counts).
+# Each pair is one LLM call per chunk, so an unbounded sum would let a typo
+# (e.g. --bloom-dist "remember:9999") fan out into a runaway, very expensive run.
+MAX_BLOOM_PAIRS_PER_CHUNK = 50
+
 
 class QAConfig(BaseSettings):
     """Configuration settings for the QA generation pipeline.
@@ -114,10 +119,6 @@ class CEPConfig(BaseSettings):
     )
 
     # Module I - Bloom Scaffolding settings
-    bloom_levels: list[str] = Field(
-        default=["remember", "understand", "analyze", "evaluate"],
-        description="Bloom levels to use for question generation",
-    )
     bloom_distribution: dict[str, int] = Field(
         default={
             "remember": 3,
@@ -127,7 +128,8 @@ class CEPConfig(BaseSettings):
         },
         description=(
             "Absolute number of QA pairs to generate at each Bloom level, per "
-            "chunk. The per-chunk ladder size is the sum of these counts (the "
+            "chunk. The keys are the Bloom levels to generate (single source of "
+            "truth); the per-chunk ladder size is the sum of these counts (the "
             "document total scales with the chunk count). Locked at 3/1/1/1 for "
             "the thesis run (2026-06-16): remember=3 is the factual base/control "
             "+ Bloom-scaffolding ground; understand/analyze/evaluate=1 each are "
@@ -217,18 +219,6 @@ class CEPConfig(BaseSettings):
         description="Language for CEP prompts (ISO 639-1: 'pt' or 'en')",
     )
 
-    @field_validator("bloom_levels")
-    @classmethod
-    def validate_bloom_levels(cls, v: list[str]) -> list[str]:
-        """Validate Bloom taxonomy levels."""
-        valid_levels = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
-        for level in v:
-            if level not in valid_levels:
-                raise ValueError(
-                    f"Invalid Bloom level: {level!r}. Must be one of {sorted(valid_levels)}"
-                )
-        return v
-
     @field_validator("bloom_distribution")
     @classmethod
     def validate_bloom_distribution(cls, v: dict[str, int]) -> dict[str, int]:
@@ -236,7 +226,7 @@ class CEPConfig(BaseSettings):
 
         Each value is the absolute number of pairs to generate at that level
         (per chunk). Counts must reference valid Bloom levels, be non-negative,
-        and total at least one pair.
+        and total between one pair and ``MAX_BLOOM_PAIRS_PER_CHUNK`` (inclusive).
         """
         valid_levels = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
         for level, count in v.items():
@@ -252,6 +242,11 @@ class CEPConfig(BaseSettings):
         total = sum(v.values())
         if total < 1:
             raise ValueError(f"Bloom distribution must total at least 1 pair, got {total}")
+        if total > MAX_BLOOM_PAIRS_PER_CHUNK:
+            raise ValueError(
+                f"Bloom distribution must total at most {MAX_BLOOM_PAIRS_PER_CHUNK} pairs "
+                f"per chunk, got {total}"
+            )
         return v
 
     @field_validator("language")
@@ -283,6 +278,15 @@ class CEPConfig(BaseSettings):
                 f"self_containedness={self.self_containedness_weight})"
             )
         return self
+
+    @property
+    def pairs_per_chunk(self) -> int:
+        """Per-chunk Bloom ladder size (sum of the ``bloom_distribution`` counts).
+
+        Each chunk independently generates this many pairs across the configured
+        Bloom levels; the document total scales with the chunk count.
+        """
+        return sum(self.bloom_distribution.values())
 
 
 class JudgeConfig(BaseSettings):

@@ -72,7 +72,10 @@ class BloomScaffoldingGenerator:
         self.qa_config = qa_config
         self.cep_config = cep_config
         self._prompts = self._load_prompts()
-        logger.info(f"BloomScaffoldingGenerator initialized with levels: {cep_config.bloom_levels}")
+        logger.info(
+            "BloomScaffoldingGenerator initialized with levels: "
+            f"{list(cep_config.bloom_distribution.keys())}"
+        )
 
     def _load_prompts(self) -> dict[str, Any]:
         """Load CEP prompt templates based on language configuration.
@@ -174,20 +177,16 @@ class BloomScaffoldingGenerator:
         return pairs
 
     def _calculate_level_distribution(self) -> dict[str, int]:
-        """Return the configured pair count for each enabled Bloom level.
+        """Return the configured pair count for each Bloom level.
 
-        ``bloom_distribution`` holds absolute counts, so this simply selects
-        the levels listed in ``bloom_levels`` and returns their counts in
+        ``bloom_distribution`` is the single source of truth: its keys are the
+        levels to generate and its values are the absolute per-chunk counts, in
         configuration order. No rounding or remainder absorption is involved.
 
         Returns:
             Dictionary mapping Bloom level to question count.
         """
-        return {
-            level: self.cep_config.bloom_distribution[level]
-            for level in self.cep_config.bloom_levels
-            if level in self.cep_config.bloom_distribution
-        }
+        return dict(self.cep_config.bloom_distribution)
 
     def _generate_for_level(
         self,

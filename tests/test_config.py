@@ -270,21 +270,9 @@ class TestCEPConfig:
         config = CEPConfig()
 
         assert config.enable_reasoning_traces is True
-        assert config.bloom_levels == ["remember", "understand", "analyze", "evaluate"]
         assert config.max_hop_count == 3
         assert config.validation_threshold == 0.6
         assert config.language == "pt"
-
-    def test_valid_bloom_levels(self) -> None:
-        """Test valid Bloom taxonomy levels."""
-        config = CEPConfig(bloom_levels=["remember", "understand", "apply", "analyze"])
-        assert config.bloom_levels == ["remember", "understand", "apply", "analyze"]
-
-    def test_invalid_bloom_level(self) -> None:
-        """Test validation error for invalid Bloom level."""
-        with pytest.raises(ValidationError) as exc_info:
-            CEPConfig(bloom_levels=["remember", "invalid_level"])
-        assert "Invalid Bloom level" in str(exc_info.value)
 
     def test_valid_bloom_distribution(self) -> None:
         """Test valid Bloom distribution with integer pair counts."""
@@ -298,6 +286,19 @@ class TestCEPConfig:
         )
         assert config.bloom_distribution["remember"] == 3
         assert sum(config.bloom_distribution.values()) == 6
+
+    def test_pairs_per_chunk_sums_distribution(self) -> None:
+        """pairs_per_chunk exposes the per-chunk ladder size (sum of counts)."""
+        config = CEPConfig(
+            bloom_distribution={"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}
+        )
+        assert config.pairs_per_chunk == 6
+
+    def test_invalid_bloom_distribution_exceeds_max(self) -> None:
+        """Test validation error when the per-chunk ladder exceeds the cap."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"remember": 51})
+        assert "at most" in str(exc_info.value)
 
     def test_default_bloom_distribution_is_3_1_1_1(self) -> None:
         """The thesis-run default is the integer 3/1/1/1 split."""

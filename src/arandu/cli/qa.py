@@ -139,7 +139,6 @@ def generate_cep_qa(
                 level, count = item.strip().split(":")
                 dist_dict[level.strip()] = int(count.strip())
             cep_overrides["bloom_distribution"] = dist_dict
-            cep_overrides["bloom_levels"] = list(dist_dict.keys())
         except ValueError as e:
             print_error(f"Invalid bloom-dist format: {e}")
             print_error("Expected format: 'level:count,level:count,...'")
@@ -172,9 +171,9 @@ def generate_cep_qa(
     console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
     console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
     console.print(f"[cyan]Language:[/cyan] {cep_config.language}")
-    console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_levels)}")
+    console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_distribution.keys())}")
     console.print(f"[cyan]Bloom Distribution (pairs/level):[/cyan] {cep_config.bloom_distribution}")
-    console.print(f"[cyan]Pairs per chunk:[/cyan] {sum(cep_config.bloom_distribution.values())}")
+    console.print(f"[cyan]Pairs per chunk:[/cyan] {cep_config.pairs_per_chunk}")
     console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
     console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
     if qa_config.provider == "ollama":

@@ -49,7 +49,6 @@ def cep_config() -> CEPConfig:
     """Create a CEP config for testing (two pairs per level, four levels)."""
     return CEPConfig(
         enable_reasoning_traces=True,
-        bloom_levels=["remember", "understand", "analyze", "evaluate"],
         bloom_distribution={
             "remember": 2,
             "understand": 2,
@@ -141,7 +140,7 @@ class TestCEPQAGenerator:
 
         assert result.bloom_distribution is not None
         # Should have distribution for all configured levels
-        for level in cep_config.bloom_levels:
+        for level in cep_config.bloom_distribution:
             assert level in result.bloom_distribution
 
     def test_full_bloom_ladder_per_chunk(
@@ -198,7 +197,7 @@ class TestCEPQAGenerator:
             by_chunk[pair.chunk_id][pair.bloom_level] += 1
         assert len(by_chunk) == n_chunks
         for levels in by_chunk.values():
-            assert set(levels) == set(cep_config.bloom_levels)
+            assert set(levels) == set(cep_config.bloom_distribution)
 
     def test_generate_qa_pairs_without_validation(
         self,

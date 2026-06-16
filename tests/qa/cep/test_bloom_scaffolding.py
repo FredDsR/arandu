@@ -41,7 +41,6 @@ def qa_config() -> QAConfig:
 def cep_config() -> CEPConfig:
     """Create a CEP config for testing (one pair per level, four levels)."""
     return CEPConfig(
-        bloom_levels=["remember", "understand", "analyze", "evaluate"],
         bloom_distribution={
             "remember": 1,
             "understand": 1,
@@ -109,7 +108,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test level distribution with uneven counts."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={
                 "remember": 7,
                 "understand": 3,
@@ -388,7 +386,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that FileNotFoundError is raised when prompt file doesn't exist."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 1},
             language="pt",
         )
@@ -411,7 +408,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that FileNotFoundError is raised when template file doesn't exist."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 1},
             language="pt",
         )
@@ -432,7 +428,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test generation when a Bloom level has zero questions allocated."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={
                 "remember": 2,
                 "understand": 0,  # Zero count
@@ -500,7 +495,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generate does not pass response_format to LLM client."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 1},
             language="pt",
         )
@@ -525,7 +519,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that disabled scaffolding preserves config order, not hierarchy."""
         cep_config = CEPConfig(
-            bloom_levels=["evaluate", "remember"],
             bloom_distribution={"evaluate": 2, "remember": 2},
             enable_scaffolding_context=False,
             language="pt",
@@ -558,7 +551,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that enabled scaffolding sorts levels by Bloom hierarchy."""
         cep_config = CEPConfig(
-            bloom_levels=["evaluate", "remember", "analyze"],
             bloom_distribution={"evaluate": 2, "remember": 1, "analyze": 3},
             enable_scaffolding_context=True,
             language="pt",
@@ -593,7 +585,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that each prompt includes all prior pairs (within and across levels)."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={"remember": 2, "understand": 2},
             enable_scaffolding_context=True,
             language="pt",
@@ -647,7 +638,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that the first pair has no scaffolding header."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={"remember": 2, "understand": 2},
             enable_scaffolding_context=True,
             language="pt",
@@ -763,7 +753,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generate() produces pairs with non-None generation_prompt."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 1},
             language="pt",
         )
@@ -790,7 +779,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that only last N pairs are included when exceeding limit."""
         cep_config = CEPConfig(
-            bloom_levels=["remember", "understand"],
             bloom_distribution={"remember": 2, "understand": 2},
             max_scaffolding_pairs=3,
             language="pt",
@@ -834,7 +822,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that GenerateResult.thinking is stored in QAPairCEP.generation_thinking."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 2},
             language="pt",
         )
@@ -863,7 +850,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that generation_thinking is None when model has no thinking."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 1},
             language="pt",
         )
@@ -1010,7 +996,6 @@ class TestBloomScaffoldingGenerator:
     ) -> None:
         """Test that failed pairs are skipped and a summary warning is logged."""
         cep_config = CEPConfig(
-            bloom_levels=["remember"],
             bloom_distribution={"remember": 2},
             language="pt",
         )
