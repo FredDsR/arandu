@@ -8,11 +8,11 @@ Complete reference for all configuration settings in the Arandu pipeline.
 2. [TranscriberConfig](#transcriberconfig)
 3. [QAConfig](#qaconfig)
 4. [CEPConfig](#cepconfig)
-5. [KGConfig](#kgconfig)
-6. [EvaluationConfig](#evaluationconfig)
-7. [LLMConfig](#llmconfig)
-8. [ResultsConfig](#resultsconfig)
-9. [TranscriptionQualityConfig](#transcriptionqualityconfig)
+5. [JudgeConfig](#judgeconfig)
+6. [KGConfig](#kgconfig)
+7. [EvaluationConfig](#evaluationconfig)
+8. [LLMConfig](#llmconfig)
+9. [ResultsConfig](#resultsconfig)
 10. [Environment Variables](#environment-variables)
 11. [Configuration Examples](#configuration-examples)
 
@@ -25,23 +25,25 @@ The Arandu project uses **Pydantic Settings** for configuration management with 
 1. **Command-line arguments** (highest priority)
 2. **Environment variables** with config-specific prefixes
 3. **`.env` file** in project root
-4. **Default values** in `config.py` (lowest priority)
+4. **Default values** in each config class (lowest priority)
 
-**Configuration File**: `src/arandu/config.py`
+**Configuration modules**: there is no flat `config.py`. Each config class lives next to the domain it configures:
 
-**Architecture**: The system uses **8 separate configuration classes**, each with its own environment variable prefix:
-- `TranscriberConfig` - Prefix: `ARANDU_`
-- `QAConfig` - Prefix: `ARANDU_QA_`
-- `CEPConfig` - Prefix: `ARANDU_CEP_`
-- `KGConfig` - Prefix: `ARANDU_KG_`
-- `EvaluationConfig` - Prefix: `ARANDU_EVAL_`
-- `LLMConfig` - No prefix (uses aliases like `OPENAI_API_KEY`)
-- `ResultsConfig` - Prefix: `ARANDU_RESULTS_`
-- `TranscriptionQualityConfig` - Prefix: `ARANDU_QUALITY_`
+| Config Class | Module | Prefix |
+|--------------|--------|--------|
+| `TranscriberConfig` | `arandu.transcription.config` | `ARANDU_` |
+| `QAConfig` | `arandu.qa.config` | `ARANDU_QA_` |
+| `CEPConfig` | `arandu.qa.config` | `ARANDU_CEP_` |
+| `JudgeConfig` | `arandu.qa.config` | `ARANDU_JUDGE_` |
+| `KGConfig` | `arandu.kg.config` | `ARANDU_KG_` |
+| `EvaluationConfig` | `arandu.shared.config` | `ARANDU_EVAL_` |
+| `LLMConfig` | `arandu.shared.config` | (no prefix; uses aliases like `OPENAI_API_KEY`) |
+| `ResultsConfig` | `arandu.shared.config` | `ARANDU_RESULTS_` |
 
 **Usage**:
 ```python
-from arandu.config import TranscriberConfig, QAConfig
+from arandu.transcription.config import TranscriberConfig
+from arandu.qa.config import QAConfig
 
 transcriber_config = TranscriberConfig()
 qa_config = QAConfig()
@@ -55,7 +57,7 @@ print(qa_config.provider)  # ollama
 
 Configuration settings for the transcription pipeline.
 
-**Environment Prefix**: `ARANDU_`
+**Module**: `arandu.transcription.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_`
 
 ### Model Settings
 
@@ -105,20 +107,20 @@ Configuration settings for the transcription pipeline.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `temp_dir` | `str` | `"/tmp/arandu"` (platform-specific) | Temporary directory for file processing |
+| `temp_dir` | `str` | `"<tmp>/arandu"` (platform-specific) | Temporary directory for file processing |
 | `max_retries` | `int` | `3` | Maximum number of retry attempts for failed operations |
 | `retry_delay` | `float` | `1.0` | Delay in seconds between retry attempts |
 
 **Example Configuration**:
 ```python
-from arandu.config import TranscriberConfig
+from arandu.transcription.config import TranscriberConfig
 
 config = TranscriberConfig()
 # Or with custom settings:
 config = TranscriberConfig(
     model_id="openai/whisper-large-v3",
     force_cpu=False,
-    workers=4
+    workers=4,
 )
 ```
 
@@ -128,7 +130,7 @@ config = TranscriberConfig(
 
 Configuration settings for the QA generation pipeline.
 
-**Environment Prefix**: `ARANDU_QA_`
+**Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_QA_`
 
 ### LLM Provider Settings
 
@@ -144,9 +146,9 @@ Configuration settings for the QA generation pipeline.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `temperature` | `float` | `0.7` | Temperature for QA generation LLM (range: 0.0-2.0) |
-| `max_tokens` | `int` | `2048` | Max tokens for QA generation LLM (min: 1) |
+| `max_tokens` | `int` | `8192` | Max tokens for QA generation LLM. Sized for thinking models (Qwen3, Gemini 2.5) whose reasoning tokens consume the budget before the JSON output |
 
-> **Note**: The per-chunk ladder size is no longer a separate QAConfig knob. It is the sum of `CEPConfig.bloom_distribution` (the integer pair counts per Bloom level), so the distribution is the single source of truth.
+> **Note**: The per-chunk ladder size is not a QAConfig knob. It is the sum of `CEPConfig.bloom_distribution` (the integer pair counts per Bloom level), so the distribution is the single source of truth.
 
 ### Output Settings
 
@@ -163,12 +165,12 @@ Configuration settings for the QA generation pipeline.
 
 **Example Configuration**:
 ```python
-from arandu.config import QAConfig
+from arandu.qa.config import QAConfig
 
 config = QAConfig(
     provider="ollama",
     model_id="qwen3:14b",
-    language="pt"
+    language="pt",
 )
 ```
 
@@ -176,52 +178,49 @@ config = QAConfig(
 
 ## CEPConfig
 
-Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding and LLM-as-a-Judge validation.
+Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. Generation and validation are separate steps: `generate-cep-qa` only generates pairs; `judge-qa` validates them using the scoring weights and threshold defined here.
 
-**Environment Prefix**: `ARANDU_CEP_`
+**Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_CEP_`
 
 ### Module Toggles
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `enable_reasoning_traces` | `bool` | `True` | Enable reasoning trace generation for answers |
-| `enable_validation` | `bool` | `True` | Enable LLM-as-a-Judge validation (requires additional LLM calls) |
+| `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
+| `enable_source_metadata_context` | `bool` | `True` | Include extracted source metadata (participant name, location, date) in CEP prompt context |
 
 ### Module I - Bloom Scaffolding Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `bloom_levels` | `list[str]` | `["remember", "understand", "analyze", "evaluate"]` | Bloom levels for question generation |
-| `bloom_distribution` | `dict[str, int]` | `{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}` | Absolute number of QA pairs to generate at each Bloom level, per chunk. Counts must be non-negative and total at least 1; the per-chunk ladder size is their sum. |
-| `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
+| `bloom_distribution` | `dict[str, int]` | `{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}` | Absolute number of QA pairs to generate at each Bloom level, per chunk (single source of truth). Counts must be non-negative; the total must be between 1 and `MAX_BLOOM_PAIRS_PER_CHUNK` (50). Locked at 3/1/1/1 for the thesis run. |
 | `max_scaffolding_pairs` | `int` | `10` | Max prior QA pairs to include as scaffolding context (min: 1, max: 50) |
 
 **Valid Bloom Levels**: `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`
+
+**Derived property**: `pairs_per_chunk` returns the sum of `bloom_distribution` values (the per-chunk ladder size). There is no `bloom_levels` field; the keys of `bloom_distribution` are the levels to generate.
 
 ### Module II - Reasoning Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `max_hop_count` | `int` | `3` | Maximum reasoning hops to detect for multi-hop questions (min: 1, max: 5) |
+| `reasoning_max_tokens` | `int` | `8192` | Max tokens for reasoning enrichment responses (min: 128, max: 8192). Sized for thinking models |
 
-### Module III - LLM-as-a-Judge Validation Settings
+### Judge Scoring Settings
+
+These fields drive `judge-qa` (the four-criterion LLM-as-a-Judge over generated pairs). The validator *client* settings (model, provider, base URL) live in [`JudgeConfig`](#judgeconfig).
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `validator_provider` | `str` | `"ollama"` | LLM provider for validation: "openai", "ollama", "custom" |
-| `validator_model_id` | `str` | `"qwen3:14b"` | Model ID for LLM-as-a-Judge validation |
-| `validator_temperature` | `float` | `0.3` | Temperature for validator (low for consistent evaluation, range: 0.0-1.0) |
 | `validation_threshold` | `float` | `0.6` | Minimum overall score to pass validation (range: 0.0-1.0) |
+| `faithfulness_weight` | `float` | `0.30` | Weight for faithfulness score |
+| `bloom_calibration_weight` | `float` | `0.25` | Weight for Bloom calibration score |
+| `informativeness_weight` | `float` | `0.25` | Weight for informativeness score |
+| `self_containedness_weight` | `float` | `0.20` | Weight for self-containedness score |
 
-### Validation Scoring Weights
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `faithfulness_weight` | `float` | `0.4` | Weight for faithfulness score in overall calculation (range: 0.0-1.0) |
-| `bloom_calibration_weight` | `float` | `0.3` | Weight for Bloom calibration score in overall calculation (range: 0.0-1.0) |
-| `informativeness_weight` | `float` | `0.3` | Weight for informativeness score in overall calculation (range: 0.0-1.0) |
-
-> **Note**: The three scoring weights (`faithfulness_weight`, `bloom_calibration_weight`, `informativeness_weight`) must sum to 1.0. A `@model_validator` enforces this constraint.
+> **Note**: The four scoring weights must sum to 1.0. A `@model_validator` (`validate_scoring_weights`) enforces this constraint.
 
 ### Language Settings
 
@@ -231,14 +230,41 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 
 **Example Configuration**:
 ```python
-from arandu.config import CEPConfig
+from arandu.qa.config import CEPConfig
 
 config = CEPConfig(
-    bloom_levels=["remember", "understand", "analyze"],
     bloom_distribution={"remember": 3, "understand": 2, "analyze": 1},
     enable_scaffolding_context=True,
-    validation_threshold=0.7
+    validation_threshold=0.7,
 )
+print(config.pairs_per_chunk)  # 6
+```
+
+---
+
+## JudgeConfig
+
+Configuration for the composable judge pipeline. Supplies the validator LLM client settings shared by the `judge-transcription` LLM filter stage and the `judge-qa` command. Replaces the removed `TranscriptionQualityConfig` (transcription validation is now a filter pipeline, not a weighted-score config; see the [Transcription Validation guide](transcription-validation.md)).
+
+**Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_JUDGE_`
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `language` | `str` | `"pt"` | Language for judge criterion prompts (ISO 639-1: 'pt' or 'en') |
+| `temperature` | `float` | `0.3` | Temperature for judge LLM (low for consistent evaluation, range: 0.0-1.0) |
+| `max_tokens` | `int` | `8192` | Max tokens for judge responses (min: 128, max: 8192) |
+| `validator_model` | `str \| None` | `None` | Model ID enabling the LLM stage (e.g. `qwen3:14b`, `gemini-2.5-flash`). When unset, `judge-transcription` runs heuristic-only and skips the LLM stage |
+| `validator_provider` | `str \| None` | `None` | Provider: "openai", "ollama", or "custom". Inferred from `ARANDU_LLM_BASE_URL` (custom when set, else ollama) when unspecified |
+| `validator_base_url` | `str \| None` | `None` | Base URL for the validator provider. Inherits `ARANDU_LLM_BASE_URL` only when the resolved provider is "custom" |
+
+**Example Configuration**:
+```python
+from arandu.qa.config import JudgeConfig
+
+config = JudgeConfig()
+# Loaded from ARANDU_JUDGE_* env vars; e.g.
+# ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+# ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
 ```
 
 ---
@@ -247,7 +273,14 @@ config = CEPConfig(
 
 Configuration settings for the knowledge graph construction pipeline.
 
-**Environment Prefix**: `ARANDU_KG_`
+**Module**: `arandu.kg.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_KG_`
+
+### Backend Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `backend` | `str` | `"atlas"` | KGC backend: `"atlas"` (AutoSchemaKG). Must match pattern `^(atlas)$` |
+| `backend_options` | `dict` | `{}` | Backend-specific options passed through to the constructor (e.g., `chunk_size`, `batch_size_triple`, `max_workers`) |
 
 ### LLM Provider Settings
 
@@ -257,15 +290,6 @@ Configuration settings for the knowledge graph construction pipeline.
 | `model_id` | `str` | `"llama3.1:8b"` | Model ID for KG construction |
 | `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL for KG construction |
 | `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
-
-### Backend Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `backend` | `str` | `"atlas"` | KGC backend: `"atlas"` (AutoSchemaKG) |
-| `backend_options` | `dict` | `{}` | Backend-specific options (e.g., `chunk_size`, `batch_size_triple`, `max_workers`) |
-
-**Backend Validation**: Must match pattern `^(atlas)$`
 
 ### LLM Settings
 
@@ -289,7 +313,7 @@ Prompts are stored in `prompts/kg/atlas/` using language-keyed JSON files. The a
 
 **Example Configuration**:
 ```python
-from arandu.config import KGConfig
+from arandu.kg.config import KGConfig
 
 config = KGConfig(
     backend="atlas",
@@ -318,7 +342,7 @@ config = KGConfig(
 
 Configuration settings for the evaluation pipeline.
 
-**Environment Prefix**: `ARANDU_EVAL_`
+**Module**: `arandu.shared.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_EVAL_`
 
 ### Metrics Settings
 
@@ -349,11 +373,11 @@ Configuration settings for the evaluation pipeline.
 
 **Example Configuration**:
 ```python
-from arandu.config import EvaluationConfig
+from arandu.shared.config import EvaluationConfig
 
 config = EvaluationConfig(
     metrics=["qa", "entity", "semantic"],
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
 )
 ```
 
@@ -363,7 +387,7 @@ config = EvaluationConfig(
 
 Shared LLM configuration settings for API keys and shared LLM settings across pipelines.
 
-**Environment Prefix**: None (uses field aliases)
+**Module**: `arandu.shared.config` &nbsp;|&nbsp; **Environment Prefix**: None (uses field aliases)
 
 ### API Keys
 
@@ -374,7 +398,7 @@ Shared LLM configuration settings for API keys and shared LLM settings across pi
 
 **Example Configuration**:
 ```python
-from arandu.config import LLMConfig
+from arandu.shared.config import LLMConfig
 
 config = LLMConfig()
 # Loaded from OPENAI_API_KEY and ARANDU_LLM_BASE_URL env vars
@@ -392,7 +416,7 @@ export ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
 
 Configuration for versioned results management.
 
-**Environment Prefix**: `ARANDU_RESULTS_`
+**Module**: `arandu.shared.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_RESULTS_`
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
@@ -401,66 +425,15 @@ Configuration for versioned results management.
 
 **Example Configuration**:
 ```python
-from arandu.config import ResultsConfig
+from pathlib import Path
+
+from arandu.shared.config import ResultsConfig
 
 config = ResultsConfig(
     base_dir=Path("/data/results"),
-    enable_versioning=True
+    enable_versioning=True,
 )
 ```
-
----
-
-## TranscriptionQualityConfig
-
-Configuration for transcription quality validation with heuristic quality checks.
-
-**Environment Prefix**: `ARANDU_QUALITY_`
-
-### General Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `enabled` | `bool` | `True` | Enable transcription quality validation |
-| `quality_threshold` | `float` | `0.5` | Minimum quality score to mark transcription as valid (range: 0.0-1.0) |
-| `expected_language` | `str` | `"pt"` | Expected language code (e.g., 'pt', 'en') |
-
-### Scoring Weights
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `script_match_weight` | `float` | `0.35` | Weight for script/charset match check |
-| `repetition_weight` | `float` | `0.30` | Weight for repetition detection |
-| `segment_quality_weight` | `float` | `0.20` | Weight for segment pattern analysis |
-| `content_density_weight` | `float` | `0.15` | Weight for content density check |
-
-> **Note**: The four dimension weights must sum to 1.0. A `@model_validator` enforces this constraint at initialization.
-
-### Validation Thresholds
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `max_non_latin_ratio` | `float` | `0.1` | Maximum ratio of non-Latin characters for Latin languages |
-| `max_word_repetition_ratio` | `float` | `0.15` | Maximum ratio of most repeated word |
-| `max_phrase_repetition_count` | `int` | `4` | Maximum allowed repetitions of same phrase |
-| `suspicious_uniform_intervals` | `int` | `5` | Number of consecutive uniform 1-second intervals to flag |
-| `min_words_per_minute` | `float` | `30.0` | Minimum words per minute threshold |
-| `max_words_per_minute` | `float` | `300.0` | Maximum words per minute threshold |
-| `max_empty_segment_ratio` | `float` | `0.2` | Maximum ratio of empty segments before flagging |
-| `uniform_interval_tolerance` | `float` | `0.1` | Tolerance (±seconds) for detecting uniform 1-second intervals |
-
-**Example Configuration**:
-```python
-from arandu.config import TranscriptionQualityConfig
-
-config = TranscriptionQualityConfig(
-    enabled=True,
-    quality_threshold=0.6,
-    expected_language="pt"
-)
-```
-
-**See also**: [Transcription Validation Guide](transcription-validation.md) for full usage details
 
 ---
 
@@ -474,12 +447,12 @@ Configuration settings are loaded from environment variables with config-specifi
 |--------------|--------|---------|
 | `TranscriberConfig` | `ARANDU_` | `ARANDU_MODEL_ID` |
 | `QAConfig` | `ARANDU_QA_` | `ARANDU_QA_PROVIDER` |
-| `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_ENABLE_VALIDATION` |
+| `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_VALIDATION_THRESHOLD` |
+| `JudgeConfig` | `ARANDU_JUDGE_` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `KGConfig` | `ARANDU_KG_` | `ARANDU_KG_PROVIDER` |
 | `EvaluationConfig` | `ARANDU_EVAL_` | `ARANDU_EVAL_METRICS` |
 | `LLMConfig` | (No prefix) | `OPENAI_API_KEY`, `ARANDU_LLM_BASE_URL` |
 | `ResultsConfig` | `ARANDU_RESULTS_` | `ARANDU_RESULTS_BASE_DIR` |
-| `TranscriptionQualityConfig` | `ARANDU_QUALITY_` | `ARANDU_QUALITY_ENABLED` |
 
 ### Format
 
@@ -507,17 +480,24 @@ export ARANDU_QA_LANGUAGE=pt
 
 **CEPConfig** (`ARANDU_CEP_`):
 ```bash
-export ARANDU_CEP_ENABLE_VALIDATION=true
-export ARANDU_CEP_BLOOM_LEVELS=remember,understand,analyze
 export ARANDU_CEP_VALIDATION_THRESHOLD=0.7
-export ARANDU_CEP_VALIDATOR_PROVIDER=ollama
+export ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
+export ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
+# Bloom distribution is a dict; set it as JSON
+export ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
+```
+
+**JudgeConfig** (`ARANDU_JUDGE_`):
+```bash
+export ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+export ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
+export ARANDU_JUDGE_TEMPERATURE=0.3
 ```
 
 **KGConfig** (`ARANDU_KG_`):
 ```bash
 export ARANDU_KG_PROVIDER=openai
 export ARANDU_KG_MODEL_ID=gpt-4o
-export ARANDU_KG_MERGE_GRAPHS=true
 export ARANDU_KG_LANGUAGE=pt
 export ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
 ```
@@ -538,13 +518,6 @@ export ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
 ```bash
 export ARANDU_RESULTS_BASE_DIR=/data/results
 export ARANDU_RESULTS_ENABLE_VERSIONING=true
-```
-
-**TranscriptionQualityConfig** (`ARANDU_QUALITY_`):
-```bash
-export ARANDU_QUALITY_ENABLED=true
-export ARANDU_QUALITY_QUALITY_THRESHOLD=0.6
-export ARANDU_QUALITY_EXPECTED_LANGUAGE=pt
 ```
 
 ### API Keys
@@ -585,29 +558,29 @@ ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 ARANDU_QA_LANGUAGE=pt
 
 # CEP (Cognitive Elicitation Pipeline)
-ARANDU_CEP_ENABLE_VALIDATION=true
 ARANDU_CEP_VALIDATION_THRESHOLD=0.6
+
+# Judge (validator client for judge-qa / judge-transcription)
+ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
 
 # KG Construction
 ARANDU_KG_PROVIDER=ollama
 ARANDU_KG_MODEL_ID=llama3.1:8b
 ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
-ARANDU_KG_MERGE_GRAPHS=true
-ARANDU_KG_OUTPUT_FORMAT=graphml
 ARANDU_KG_LANGUAGE=pt
 
 # Evaluation
 ARANDU_EVAL_METRICS=qa,entity,relation,semantic
-
-# Transcription Quality Validation
-ARANDU_QUALITY_ENABLED=true
-ARANDU_QUALITY_QUALITY_THRESHOLD=0.5
 ```
 
 **CLI Usage**:
 ```bash
 # QA generation (uses .env settings)
 arandu generate-cep-qa results/
+
+# Validate the generated pairs (separate step)
+arandu judge-qa qa_dataset/
 
 # Override specific settings
 arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --provider ollama
@@ -626,17 +599,15 @@ ARANDU_QA_MODEL_ID=gpt-4o-mini
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_LANGUAGE=en
 
-# CEP with OpenAI
-ARANDU_CEP_ENABLE_VALIDATION=true
-ARANDU_CEP_VALIDATOR_PROVIDER=openai
-ARANDU_CEP_VALIDATOR_MODEL_ID=gpt-4o-mini
+# Judge with OpenAI
+ARANDU_JUDGE_VALIDATOR_PROVIDER=openai
+ARANDU_JUDGE_VALIDATOR_MODEL=gpt-4o-mini
 ARANDU_CEP_VALIDATION_THRESHOLD=0.7
 
 # KG Construction with OpenAI
 ARANDU_KG_PROVIDER=openai
 ARANDU_KG_MODEL_ID=gpt-4o
 ARANDU_KG_TEMPERATURE=0.5
-ARANDU_KG_MERGE_GRAPHS=true
 
 # Results versioning
 ARANDU_RESULTS_BASE_DIR=/data/transcriptions
@@ -696,8 +667,6 @@ docker compose --profile qa up arandu-qa --abort-on-container-exit
 
 **docker-compose.override.yml** (local overrides):
 ```yaml
-version: '3.8'
-
 services:
   arandu-qa:
     environment:
@@ -714,8 +683,6 @@ services:
       - ARANDU_KG_PROVIDER=ollama
       - ARANDU_KG_MODEL_ID=llama3.1:8b
       - ARANDU_KG_OLLAMA_URL=http://host.docker.internal:11434/v1
-      - ARANDU_KG_MERGE_GRAPHS=true
-      - ARANDU_KG_WORKERS=2
     volumes:
       - ./results:/app/results:ro
       - ./knowledge_graphs:/app/knowledge_graphs:rw
@@ -727,23 +694,23 @@ services:
 ```bash
 # CEP Settings
 ARANDU_CEP_ENABLE_REASONING_TRACES=true
-ARANDU_CEP_ENABLE_VALIDATION=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
 ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
 
-# Bloom Levels (custom distribution)
-ARANDU_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
+# Bloom distribution (integer pair counts per level; single source of truth)
+ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
 
-# LLM-as-a-Judge Validation
-ARANDU_CEP_VALIDATOR_PROVIDER=ollama
-ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
-ARANDU_CEP_VALIDATOR_TEMPERATURE=0.3
+# Judge scoring (used by judge-qa)
 ARANDU_CEP_VALIDATION_THRESHOLD=0.7
+ARANDU_CEP_FAITHFULNESS_WEIGHT=0.30
+ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT=0.25
+ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.25
+ARANDU_CEP_SELF_CONTAINEDNESS_WEIGHT=0.20
 
-# Scoring weights (must sum to 1.0)
-ARANDU_CEP_FAITHFULNESS_WEIGHT=0.4
-ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT=0.3
-ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.3
+# Validator client
+ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
+ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+ARANDU_JUDGE_TEMPERATURE=0.3
 ```
 
 ---
@@ -752,54 +719,41 @@ ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.3
 
 The configuration system includes validation rules enforced by Pydantic.
 
-### Type Validation
+### Custom Field Validation
 
 ```python
-# From CEPConfig — counts must be non-negative and total at least 1
+# From CEPConfig — counts must be non-negative, reference valid Bloom levels,
+# and total between 1 and MAX_BLOOM_PAIRS_PER_CHUNK (50)
 @field_validator("bloom_distribution")
 @classmethod
 def validate_bloom_distribution(cls, v: dict[str, int]) -> dict[str, int]:
-    ...  # each count >= 0, valid Bloom level, sum >= 1
+    ...  # each count >= 0, valid level, 1 <= sum <= 50
 ```
 
 ### Pattern Validation
 
 ```python
 # From KGConfig
-output_format: str = Field(
-    default="graphml",
-    pattern="^(graphml|json)$"  # Must match pattern
+backend: str = Field(
+    default="atlas",
+    pattern="^(atlas)$",  # only the atlas backend is supported
 )
-```
-
-### Custom Field Validation
-
-```python
-# From CEPConfig
-@field_validator("bloom_levels")
-@classmethod
-def validate_bloom_levels(cls, v: list[str]) -> list[str]:
-    valid_levels = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
-    for level in v:
-        if level not in valid_levels:
-            raise ValueError(f"Invalid Bloom level: {level!r}")
-    return v
 ```
 
 ### Model Validation (Cross-Field)
 
 ```python
-# From TranscriptionQualityConfig
+# From CEPConfig — the four judge scoring weights must sum to 1.0
 @model_validator(mode="after")
-def validate_scoring_weights(self) -> TranscriptionQualityConfig:
+def validate_scoring_weights(self) -> CEPConfig:
     total = (
-        self.script_match_weight
-        + self.repetition_weight
-        + self.segment_quality_weight
-        + self.content_density_weight
+        self.faithfulness_weight
+        + self.bloom_calibration_weight
+        + self.informativeness_weight
+        + self.self_containedness_weight
     )
     if not (0.99 <= total <= 1.01):
-        raise ValueError(f"Quality scoring weights must sum to 1.0, got {total:.3f}")
+        raise ValueError(f"Scoring weights must sum to 1.0, got {total:.3f}")
     return self
 ```
 
@@ -826,7 +780,7 @@ Pydantic Settings loads configuration in the following priority order (highest t
    ARANDU_QA_MODEL_ID=qwen3:14b
    ```
 
-4. **Default values** in `config.py` (lowest priority):
+4. **Default values** in each config class (lowest priority):
    ```python
    provider: str = Field(default="ollama")
    model_id: str = Field(default="qwen3:14b")
@@ -921,7 +875,7 @@ ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 
 # Generation
 ARANDU_QA_TEMPERATURE=0.7
-ARANDU_QA_MAX_TOKENS=2048
+ARANDU_QA_MAX_TOKENS=8192
 
 # Output
 ARANDU_QA_OUTPUT_DIR=qa_dataset
@@ -936,33 +890,42 @@ ARANDU_QA_WORKERS=2
 
 # Module toggles
 ARANDU_CEP_ENABLE_REASONING_TRACES=true
-ARANDU_CEP_ENABLE_VALIDATION=true
-
-# Bloom scaffolding
-ARANDU_CEP_BLOOM_LEVELS=remember,understand,analyze,evaluate
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
+
+# Bloom scaffolding (integer pair counts per level; single source of truth)
+ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
 ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=10
 
 # Reasoning
 ARANDU_CEP_MAX_HOP_COUNT=3
 
-# LLM-as-a-Judge validation
-ARANDU_CEP_VALIDATOR_PROVIDER=ollama
-ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
-ARANDU_CEP_VALIDATOR_TEMPERATURE=0.3
+# Judge scoring (used by judge-qa; weights must sum to 1.0)
 ARANDU_CEP_VALIDATION_THRESHOLD=0.6
-
-# Scoring weights (must sum to 1.0)
-ARANDU_CEP_FAITHFULNESS_WEIGHT=0.4
-ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT=0.3
-ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.3
+ARANDU_CEP_FAITHFULNESS_WEIGHT=0.30
+ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT=0.25
+ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.25
+ARANDU_CEP_SELF_CONTAINEDNESS_WEIGHT=0.20
 
 # Language
 ARANDU_CEP_LANGUAGE=pt
 
 # ============================================================================
+# JudgeConfig (ARANDU_JUDGE_) - validator client for judge-qa / judge-transcription
+# ============================================================================
+
+ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama  # openai, ollama, custom
+# ARANDU_JUDGE_VALIDATOR_BASE_URL=  # For custom OpenAI-compatible endpoints
+ARANDU_JUDGE_TEMPERATURE=0.3
+ARANDU_JUDGE_LANGUAGE=pt
+
+# ============================================================================
 # KGConfig (ARANDU_KG_)
 # ============================================================================
+
+# Backend
+ARANDU_KG_BACKEND=atlas
 
 # LLM Provider
 ARANDU_KG_PROVIDER=ollama  # openai, ollama, custom
@@ -970,21 +933,14 @@ ARANDU_KG_MODEL_ID=llama3.1:8b
 ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
 # ARANDU_KG_BASE_URL=  # For custom OpenAI-compatible endpoints
 
-# Graph settings
-ARANDU_KG_MERGE_GRAPHS=true
-ARANDU_KG_OUTPUT_FORMAT=graphml  # graphml or json
-ARANDU_KG_SCHEMA_MODE=dynamic  # dynamic or predefined
-
 # LLM settings
 ARANDU_KG_TEMPERATURE=0.5
 
 # Language and prompts
 ARANDU_KG_LANGUAGE=pt
-ARANDU_KG_PROMPT_PATH=prompts/pt_prompts.json
 
 # Output
 ARANDU_KG_OUTPUT_DIR=knowledge_graphs
-ARANDU_KG_WORKERS=2
 
 # ============================================================================
 # EvaluationConfig (ARANDU_EVAL_)
@@ -1018,35 +974,10 @@ ARANDU_EVAL_OUTPUT_DIR=evaluation
 
 ARANDU_RESULTS_BASE_DIR=./results
 ARANDU_RESULTS_ENABLE_VERSIONING=true
-
-# ============================================================================
-# TranscriptionQualityConfig (ARANDU_QUALITY_)
-# ============================================================================
-
-# General
-ARANDU_QUALITY_ENABLED=true
-ARANDU_QUALITY_QUALITY_THRESHOLD=0.5
-ARANDU_QUALITY_EXPECTED_LANGUAGE=pt
-
-# Scoring weights (must sum to 1.0)
-ARANDU_QUALITY_SCRIPT_MATCH_WEIGHT=0.35
-ARANDU_QUALITY_REPETITION_WEIGHT=0.30
-ARANDU_QUALITY_SEGMENT_QUALITY_WEIGHT=0.20
-ARANDU_QUALITY_CONTENT_DENSITY_WEIGHT=0.15
-
-# Thresholds (advanced - usually keep defaults)
-# ARANDU_QUALITY_MAX_NON_LATIN_RATIO=0.1
-# ARANDU_QUALITY_MAX_WORD_REPETITION_RATIO=0.15
-# ARANDU_QUALITY_MAX_PHRASE_REPETITION_COUNT=4
-# ARANDU_QUALITY_SUSPICIOUS_UNIFORM_INTERVALS=5
-# ARANDU_QUALITY_MIN_WORDS_PER_MINUTE=30.0
-# ARANDU_QUALITY_MAX_WORDS_PER_MINUTE=300.0
-# ARANDU_QUALITY_MAX_EMPTY_SEGMENT_RATIO=0.2
-# ARANDU_QUALITY_UNIFORM_INTERVAL_TOLERANCE=0.1
 ```
 
 ---
 
-**Document Version**: 2.0  
-**Last Updated**: 2025-01-24  
-**Changes**: Complete rewrite to reflect actual implementation with 8 separate config classes
+**Document Version**: 3.0  
+**Last Updated**: 2026-06-16  
+**Changes**: Synced to the per-domain config modules (no flat `config.py`); replaced the removed `TranscriptionQualityConfig` with `JudgeConfig`; CEP now uses `bloom_distribution` (no `bloom_levels`/`enable_validation`) with four judge weights; removed nonexistent KG `merge_graphs`/`output_format`/`schema_mode`/`prompt_path` fields.
