@@ -36,6 +36,21 @@ PIPELINE_ID=<run-id> [overrides] sbatch [--exclude=<nodes>] scripts/slurm/<step>
 | `MIN_DISK_GB` | 15 | Disk-floor preflight on the Docker root partition |
 | `USE_GPU_OLLAMA` | set by partition script | Selects `kg-gpu` vs `kg` compose profile |
 
+## Partitions: access + GPU (confirmed 2026-06-15 — do NOT re-test)
+
+- **tupi** — the ONLY GPU partition we can use. Every GPU/ollama stage
+  (build-kg, cep, judge-qa, answer, judge-answers, atlas_rag retrieve) runs
+  here. Frequently saturated by other users; when it is, **wait** — there is
+  no faster GPU alternative for this account.
+- **draco** — **CPU-only, no GPU.** Idle and fast to schedule; use it for
+  CPU-only work (root-container result prep, the khop retrieve, rag-analysis,
+  chunk, kg-link-passages). NEVER submit a GPU/ollama stage here.
+- **grace** — NO ACCESS (uid not in the allowed group); jobs PEND forever
+  with `uid_..._not_in_group_permitted_to_use_this_partition`. Do not submit.
+
+Never reroute a stuck GPU job to grace or draco to "beat the queue" — grace is
+denied and draco has no GPU. The lever is: wait, or ask the user.
+
 ## Node selection (tupi partition)
 
 Prefer `--exclude=<broken-nodes>` over pinning a node with `--nodelist`: a pin

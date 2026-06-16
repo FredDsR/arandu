@@ -37,7 +37,6 @@ Implementation notes:
 from __future__ import annotations
 
 import logging
-from collections import Counter, defaultdict
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
@@ -48,9 +47,10 @@ from arandu.kg.passage_offsets import (
     strip_atlas_header,
 )
 from arandu.shared.rag.retrievers._khop_common import (
-    _DEFAULT_MAX_POSTINGS,
-    _LINKABLE_TYPES,
-    _tokenize,
+    _DEFAULT_TOP_K_SEEDS,
+    build_label_index,
+    link_entities,
+    subgraph_node_distances,
 )
 from arandu.shared.rag.schemas import RetrievedPassage
 
@@ -77,7 +77,7 @@ class KHopSubgraphRetriever:
         kg_outputs_dir: Path,
         keyword: str = "transcriptions.json",
         k_hop: int = 2,
-        max_postings: int = _DEFAULT_MAX_POSTINGS,
+        top_k_seeds: int = _DEFAULT_TOP_K_SEEDS,
         retriever_id: str | None = None,
     ) -> None:
         """Load the KG, the ``passage_text → passage_id`` map, and the entity-label index.
@@ -92,27 +92,21 @@ class KHopSubgraphRetriever:
                 convention ``"transcriptions.json"`` (cf.
                 :mod:`arandu.kg.atlas_backend`).
             k_hop: Ego-graph radius used at retrieval time. Must be ``>= 1``.
-            max_postings: A poor-person's IDF threshold. Tokens whose
-                inverted-index posting list exceeds this size are treated
-                as too common and dropped from the entity link. Bounds the
-                worst-case subgraph size: with ``max_postings=200`` and
-                ``k_hop=2`` the per-query work stays in the seconds-range
-                on a 14k-node KG. Without it, common-but-topical tokens
-                like "enchente" (which name-matches thousands of entities
-                in a flood-themed corpus) blow the ego-graph up to most of
-                the giant component, producing identical results across
-                very different questions in minutes-per-query.
+            top_k_seeds: Max entity-link seeds kept per question (ranked by
+                summed smoothed-IDF weight); bounds ego-graph size. A smaller
+                value prunes low-weight seeds that would otherwise expand the
+                subgraph with loosely related nodes.
             retriever_id: Optional override of :attr:`DEFAULT_RETRIEVER_ID`.
 
         Raises:
             FileNotFoundError: If the graphml or the ``kg_extraction/``
                 directory is missing under ``kg_outputs_dir``.
-            ValueError: If ``k_hop < 1`` or ``max_postings < 1``.
+            ValueError: If ``k_hop < 1`` or ``top_k_seeds < 1``.
         """
         if k_hop < 1:
             raise ValueError(f"k_hop must be >= 1, got {k_hop}")
-        if max_postings < 1:
-            raise ValueError(f"max_postings must be >= 1, got {max_postings}")
+        if top_k_seeds < 1:
+            raise ValueError(f"top_k_seeds must be >= 1, got {top_k_seeds}")
 
         graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
         if not graphml_path.exists():
@@ -127,7 +121,7 @@ class KHopSubgraphRetriever:
 
         self.retriever_id = retriever_id or self.DEFAULT_RETRIEVER_ID
         self._k_hop = k_hop
-        self._max_postings = max_postings
+        self._top_k_seeds = top_k_seeds
         self._kg: nx.DiGraph = nx.read_graphml(str(graphml_path))
 
         # passage_text → "<source_file_id>:<chunk_index>" — built from the
@@ -140,20 +134,14 @@ class KHopSubgraphRetriever:
             kg_extraction_dir
         )
 
-        # Token-level inverted index: token → set of linkable node_ids whose
-        # label tokenizes to include that token. Lets entity-link be O(Q)
-        # where Q is the question's distinct token count, instead of
-        # O(N * Q) over every node every query.
-        self._token_to_nodes: dict[str, set[str]] = defaultdict(set)
-        self._passage_text: dict[str, str] = {}
-        for node_id, attrs in self._kg.nodes(data=True):
-            node_type = attrs.get("type")
-            label = attrs.get("id", "")
-            if node_type in _LINKABLE_TYPES:
-                for token in _tokenize(label):
-                    self._token_to_nodes[token].add(node_id)
-            elif node_type == "passage":
-                self._passage_text[node_id] = label
+        # Shared IDF-weighted inverted index (build_label_index covers
+        # linkable nodes only) + passage-text map (iterated once here).
+        self._token_to_nodes, self._n_linkable = build_label_index(self._kg)
+        self._passage_text: dict[str, str] = {
+            node_id: attrs.get("id", "")
+            for node_id, attrs in self._kg.nodes(data=True)
+            if attrs.get("type") == "passage"
+        }
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
         """Run the entity-link + k-hop + frequency-scoring pipeline.
@@ -176,40 +164,32 @@ class KHopSubgraphRetriever:
         if not seeds:
             return []
 
-        # Union the k-hop ego graph of each seed. NetworkX's `ego_graph`
-        # returns a copy already; we union node IDs only.
-        subgraph_nodes: set[str] = set()
-        for seed in seeds:
-            ego = nx.ego_graph(self._kg, seed, radius=self._k_hop, undirected=True)
-            subgraph_nodes.update(ego.nodes)
-
-        # Passage scoring: a passage counts only if its NODE is in the
-        # subgraph (i.e. reachable from a seed within k_hop edges). The
-        # score is how many other subgraph nodes reference it via
-        # `file_id` (atlas-rag's mention-attribution convention; cf.
-        # `kg/atlas_backend.py`). Limiting "candidate passages" to those
-        # actually in the subgraph is what makes the `k_hop` knob
-        # meaningful — without it, any seed entity would surface its own
-        # passage regardless of edge connectivity, defeating the
-        # "graph-quality vs retrieval-tool" decomposition this baseline
-        # exists to test.
-        candidate_passages = {n for n in subgraph_nodes if n in self._passage_text}
-        passage_counts: Counter[str] = Counter()
-        for node_id in subgraph_nodes:
-            if node_id in candidate_passages:
-                # Don't count a passage's own self-mention.
-                continue
-            file_id_attr = self._kg.nodes[node_id].get("file_id", "")
-            if not file_id_attr:
-                continue
-            for pid in (p.strip() for p in file_id_attr.split(",")):
-                if pid and pid in candidate_passages:
-                    passage_counts[pid] += 1
-
-        if not passage_counts:
+        node_dist = subgraph_node_distances(self._kg, seeds, self._k_hop)
+        if not node_dist:
             return []
 
-        # Convert KG passage-node hashes to atlas-rag synthesized passage_ids
+        # Project proximal entity/event nodes onto their source passages via
+        # file_id (atlas-rag mention attribution). Each passage scores by its
+        # CLOSEST node's proximity (1/(1+dist)); passages absent from
+        # _passage_text (concept_file sentinel / corpus drift) are dropped.
+        passage_score: dict[str, float] = {}
+        for node, dist in node_dist.items():
+            file_id_attr = self._kg.nodes[node].get("file_id", "")
+            if not file_id_attr:
+                continue
+            prox = 1.0 / (1.0 + dist)
+            for passage_node in (p.strip() for p in file_id_attr.split(",")):
+                if (
+                    passage_node
+                    and passage_node in self._passage_text
+                    and prox > passage_score.get(passage_node, 0.0)
+                ):
+                    passage_score[passage_node] = prox
+
+        if not passage_score:
+            return []
+
+        # Convert KG passage-node keys to atlas-rag synthesized passage_ids
         # (``<source_file_id>:<chunk_index>`` — same namespace as
         # `passage_offsets.json` from PR #100). KG passage nodes that have no
         # matching `kg_extraction` JSONL record are dropped — they're either
@@ -217,25 +197,31 @@ class KHopSubgraphRetriever:
         # downstream identity, and surfacing them in `RetrievedPassage`
         # would carry an opaque hash that can't be joined with the offset
         # sidecar the judges consult.
-        ranked: list[tuple[str, int, str]] = []
-        for passage_node_id, count in passage_counts.most_common():
-            text = self._passage_text[passage_node_id]
+        ranked: list[tuple[str, float, str]] = []
+        seen_atlas: set[str] = set()
+        for passage_node, score in sorted(
+            passage_score.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            text = self._passage_text[passage_node]
             atlas_passage_id = self._text_to_passage_id.get(text)
             if atlas_passage_id is None:
                 logger.debug(
                     "Skipping KG passage node %s — no matching kg_extraction "
                     "record (text-equality miss).",
-                    passage_node_id,
+                    passage_node,
                 )
                 continue
-            ranked.append((atlas_passage_id, count, text))
+            if atlas_passage_id in seen_atlas:
+                continue
+            seen_atlas.add(atlas_passage_id)
+            ranked.append((atlas_passage_id, score, text))
             if len(ranked) >= top_k:
                 break
 
         if not ranked:
             return []
 
-        max_count = ranked[0][1]
+        max_score = ranked[0][1]
         # Carry the passage text inline in `payload` (marked prose) so the
         # Answerer doesn't re-resolve `chunk_id` through `passage_offsets.json`
         # at answer time — the retriever already holds the exact text.
@@ -252,41 +238,20 @@ class KHopSubgraphRetriever:
             RetrievedPassage(
                 chunk_id=atlas_passage_id,
                 rank=rank,
-                score=count / max_count,
+                score=score / max_score,
                 payload=strip_atlas_header(text),
                 payload_is_prose=True,
                 retriever_meta={
-                    "score_method": "node_freq_khop",
+                    "score_method": "seed_proximity",
                     "k_hop": self._k_hop,
-                    "max_postings": self._max_postings,
+                    "top_k_seeds": self._top_k_seeds,
                 },
             )
-            for rank, (atlas_passage_id, count, text) in enumerate(ranked)
+            for rank, (atlas_passage_id, score, text) in enumerate(ranked)
         ]
 
     def _entity_link(self, question: str) -> Iterable[str]:
-        """Find seed nodes whose label tokens overlap the question's tokens.
-
-        Token-level intersection — a question token "Uruguai" hits any
-        linkable node whose label tokenizes to include "uruguai" (case-
-        folded). Returns deduplicated node IDs. Empty when no token matches
-        (graph-floor guarantee fires upstream).
-
-        Query tokens are filtered via :func:`_tokenize`'s stopword mode so
-        common particles like "que" / "a" / "de" don't link to thousands of
-        unrelated entities. Node-label tokens at index-build time are NOT
-        stopword-filtered so multi-word names like "rio Uruguai" remain
-        linkable when the question mentions only the rare half ("Uruguai").
-        """
-        question_tokens = set(_tokenize(question, filter_stopwords=True))
-        if not question_tokens:
-            return []
-        seeds: set[str] = set()
-        for token in question_tokens:
-            postings = self._token_to_nodes.get(token, ())
-            if len(postings) > self._max_postings:
-                # Token is too common in the KG — likely a topical word that
-                # would explode the seed set. Skip it (IDF-style threshold).
-                continue
-            seeds.update(postings)
-        return seeds
+        """IDF-weighted top-K lexical entity link (see _khop_common.link_entities)."""
+        return link_entities(
+            question, self._token_to_nodes, self._n_linkable, top_k_seeds=self._top_k_seeds
+        )

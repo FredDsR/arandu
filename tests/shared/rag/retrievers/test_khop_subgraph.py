@@ -270,12 +270,12 @@ class TestKHopSubgraphRetrieverRetrieve:
 
     def test_retriever_meta_records_score_method(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
-        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2, max_postings=50)
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2, top_k_seeds=50)
         results = retriever.retrieve("enchente", top_k=1)
         assert results[0].retriever_meta == {
-            "score_method": "node_freq_khop",
+            "score_method": "seed_proximity",
             "k_hop": 2,
-            "max_postings": 50,
+            "top_k_seeds": 50,
         }
 
     def test_empty_entity_link_returns_empty(self, tmp_path: Path) -> None:
@@ -297,30 +297,32 @@ class TestKHopSubgraphRetrieverRetrieve:
         results = retriever.retrieve("Uruguai", top_k=3)
         assert any(r.chunk_id == "p_a:0" for r in results)
 
-    def test_too_common_tokens_dropped_via_postings_cap(self, tmp_path: Path) -> None:
-        # If a question token name-matches more than `max_postings` linkable
-        # nodes, drop it (IDF-style threshold). Without this, topical words
-        # in narrow-domain KGs (e.g. "enchente" in a flood corpus) link to
-        # thousands of entities and blow up the ego graph.
+    def test_rare_seeds_ranked_above_common_via_idf(self, tmp_path: Path) -> None:
+        # The shared IDF linker ranks seeds by summed smoothed-IDF weight.
+        # A token that appears in many nodes (high df) scores lower than a
+        # token that appears in only one node (rare). With top_k_seeds=1 only
+        # the highest-IDF seed survives, demonstrating that common tokens are
+        # down-ranked and rare tokens rise to the top.
         kg = nx.DiGraph()
-        # 5 entities all containing the word "common" → 5 postings for "common".
+        # 5 entities all containing the word "common" → high df, low IDF weight.
         for i in range(5):
             kg.add_node(f"e_{i}", type="entity", id=f"common label {i}", file_id="p_x")
-        # Plus a rare token only on one entity.
+        # One entity with a rare token → low df, high IDF weight.
         kg.add_node("e_rare", type="entity", id="raretoken specifictoken", file_id="p_x")
         kg.add_node("p_x", type="passage", id="Target passage.", file_id="p_x")
         for n in [f"e_{i}" for i in range(5)] + ["e_rare"]:
             kg.add_edge(n, "p_x")
         path = _write_kg_layout(kg, tmp_path)
 
-        # max_postings=4 < 5 → "common" gets dropped; "raretoken" survives.
-        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1, max_postings=4)
-        results = retriever.retrieve("common common raretoken", top_k=5)
-        # "raretoken" still links e_rare → passage scored via the surviving seed.
+        # top_k_seeds=1 → only the top-ranked (highest-IDF) seed survives.
+        # "raretoken" has a much higher IDF than "common" (df=1 vs df=5),
+        # so e_rare is the seed; p_x is reachable via e_rare → p_x.
+        retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1, top_k_seeds=1)
+        results = retriever.retrieve("common raretoken", top_k=5)
         assert any(r.chunk_id == "p_x:0" for r in results)
 
-        # With ONLY common tokens (all over the cap), the link is empty.
-        empty = retriever.retrieve("common only words", top_k=5)
+        # A question with no matching tokens still returns empty (graph-floor).
+        empty = retriever.retrieve("totallyunrelated xyzzy", top_k=5)
         assert empty == []
 
     def test_stopword_only_query_returns_empty(self, tmp_path: Path) -> None:
@@ -343,22 +345,136 @@ class TestKHopSubgraphRetrieverRetrieve:
 class TestKHopContainment:
     """k_hop bounds how far the subgraph walk reaches."""
 
-    def test_distant_entity_excluded_at_k_hop_1(self, tmp_path: Path) -> None:
-        # Build a chain: q_token → mid → far → p_far. With k_hop=1 only
-        # `mid` is in the subgraph (so p_far is NOT reached); with k_hop=2
-        # `far` joins, but p_far still isn't reached (3 hops away); with
-        # k_hop=3 p_far is reached.
+    def test_distant_entity_excluded_when_beyond_k_hop(self, tmp_path: Path) -> None:
+        # Build a chain: seed (hop1) → mid → projector, where only
+        # `projector` has a file_id pointing to p_far. With k_hop=1 only
+        # `mid` is reachable from `hop1`; `projector` is 2 hops away and
+        # is excluded — so p_far (attributed only via `projector`'s file_id)
+        # must NOT appear in results. With k_hop=2 `projector` enters the
+        # subgraph and p_far IS surfaced.
+        #
+        # Under the seed-proximity model, passages qualify via entity file_id
+        # projection. k_hop therefore bounds which entity nodes can project
+        # their passages — an entity outside k_hop cannot project.
         kg = nx.DiGraph()
         kg.add_node("p_far", type="passage", id="Far passage.", file_id="p_far")
-        kg.add_node("mid", type="entity", id="mid_token", file_id="p_far")
-        kg.add_node("far", type="entity", id="far_token", file_id="p_far")
-        kg.add_edge("mid", "far")
-        kg.add_edge("far", "p_far")
+        # mid: no file_id -> cannot project itself
+        kg.add_node("mid", type="entity", id="mid_token", file_id="")
+        # projector is 2 hops from hop1 (seed); only it has file_id="p_far"
+        kg.add_node("projector", type="entity", id="projector_token", file_id="p_far")
+        kg.add_node("hop1", type="entity", id="hop1_token", file_id="")
+        kg.add_edge("hop1", "mid")
+        kg.add_edge("mid", "projector")
+        kg.add_edge("projector", "p_far")
         path = _write_kg_layout(kg, tmp_path)
 
+        # k_hop=1: only mid is reachable; projector (dist=2) is excluded
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1)
-        assert retriever.retrieve("mid_token", top_k=5) == []
+        assert retriever.retrieve("hop1_token", top_k=5) == []
 
-        retriever3 = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=3)
-        results3 = retriever3.retrieve("mid_token", top_k=5)
-        assert any(r.chunk_id == "p_far:0" for r in results3)
+        # k_hop=2: projector enters the subgraph and projects p_far
+        retriever2 = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
+        results2 = retriever2.retrieve("hop1_token", top_k=5)
+        assert any(r.chunk_id == "p_far:0" for r in results2)
+
+
+# -- signature contract --------------------------------------------------
+
+
+def test_top_k_seeds_param_and_no_max_postings() -> None:
+    import inspect
+
+    from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+
+    sig = inspect.signature(KHopSubgraphRetriever.__init__)
+    assert "top_k_seeds" in sig.parameters
+    assert "max_postings" not in sig.parameters
+
+
+# -- seed-proximity projection scoring (v2) ---------------------------------
+
+
+def _passage_kg() -> nx.DiGraph:
+    import networkx as nx
+
+    g = nx.DiGraph()
+    g.add_node("seed", id="seed", type="entity", file_id="")
+    g.add_node("near", id="near", type="entity", file_id="P1")
+    g.add_node("far", id="far", type="entity", file_id="P2")
+    g.add_edge("seed", "near", relation="r")  # near: 1 hop
+    g.add_edge("near", "far", relation="r")  # far: 2 hops
+    return g
+
+
+def test_passage_near_entity_outranks_far() -> None:
+    from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+
+    r = KHopSubgraphRetriever.__new__(KHopSubgraphRetriever)
+    r.retriever_id = "khop_test"
+    r._kg = _passage_kg()
+    r._k_hop = 3
+    r._top_k_seeds = 50
+    r._passage_text = {"P1": "passage one text", "P2": "passage two text"}
+    r._text_to_passage_id = {"passage one text": "src:0", "passage two text": "src:1"}
+    r._entity_link = lambda _q: ["seed"]  # type: ignore[method-assign]
+
+    results = r.retrieve("q", top_k=10)
+    ids = [p.chunk_id for p in results]
+    assert ids[0] == "src:0"
+    assert results[0].score == pytest.approx(1.0)
+    assert all(p.retriever_meta["score_method"] == "seed_proximity" for p in results)
+
+
+def test_passage_scored_by_closest_node() -> None:
+    from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+
+    g = _passage_kg()
+    g.add_node("alsonear", id="alsonear", type="entity", file_id="P2")
+    g.add_edge("seed", "alsonear", relation="r")  # P2 now also reachable at 1 hop
+    r = KHopSubgraphRetriever.__new__(KHopSubgraphRetriever)
+    r.retriever_id = "khop_test"
+    r._kg = g
+    r._k_hop = 3
+    r._top_k_seeds = 50
+    r._passage_text = {"P1": "p1", "P2": "p2"}
+    r._text_to_passage_id = {"p1": "src:0", "p2": "src:1"}
+    r._entity_link = lambda _q: ["seed"]  # type: ignore[method-assign]
+
+    results = r.retrieve("q", top_k=10)
+    scores = {p.chunk_id: p.score for p in results}
+    assert scores["src:0"] == pytest.approx(1.0)
+    assert scores["src:1"] == pytest.approx(1.0)
+
+
+def test_dedup_and_unresolvable_dropped() -> None:
+    from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+
+    g = _passage_kg()
+    g.nodes["near"]["file_id"] = "P1,PX"  # PX has no text -> dropped
+    r = KHopSubgraphRetriever.__new__(KHopSubgraphRetriever)
+    r.retriever_id = "khop_test"
+    r._kg = g
+    r._k_hop = 3
+    r._top_k_seeds = 50
+    r._passage_text = {"P1": "p1", "P2": "p2"}
+    r._text_to_passage_id = {"p1": "src:0", "p2": "src:1"}
+    r._entity_link = lambda _q: ["seed"]  # type: ignore[method-assign]
+
+    results = r.retrieve("q", top_k=10)
+    ids = [p.chunk_id for p in results]
+    assert ids.count("src:0") == 1
+    assert "PX" not in ids
+
+
+def test_empty_seeds_returns_empty() -> None:
+    from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+
+    r = KHopSubgraphRetriever.__new__(KHopSubgraphRetriever)
+    r.retriever_id = "khop_test"
+    r._kg = _passage_kg()
+    r._k_hop = 3
+    r._top_k_seeds = 50
+    r._passage_text = {"P1": "p1"}
+    r._text_to_passage_id = {"p1": "src:0"}
+    r._entity_link = lambda _q: []  # type: ignore[method-assign]
+    assert r.retrieve("q", top_k=10) == []

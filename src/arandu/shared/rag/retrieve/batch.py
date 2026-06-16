@@ -107,7 +107,7 @@ def run_retrieve_batch(
             benchmark is almost certainly a misconfiguration.
         bm25_settings: BM25 arm settings (chunker view). Defaults
             instantiated from env when omitted.
-        khop_settings: K-hop arm settings (k_hop, max_postings, keyword).
+        khop_settings: K-hop arm settings (k_hop, top_k_seeds, keyword).
             Defaults instantiated from env when omitted.
         atlas_rag_settings: atlas-rag arm settings (LLM provider/model/
             api_key/base_url + keyword/include_events/include_concept).

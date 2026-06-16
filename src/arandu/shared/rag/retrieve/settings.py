@@ -175,11 +175,9 @@ class KHopRetrieveSettings(BaseSettings):
             more recall, slower, more dilution. The 2026-05-23 calibration
             against ``test-kg-04`` runs at ``k_hop=2`` for seconds-per-query
             wall time.
-        max_postings: IDF-style cap on per-token entity-link expansion.
-            Tokens whose inverted-index posting list exceeds this size
-            are dropped from the entity link (e.g. ``"enchente"`` in a
-            flood-themed corpus would otherwise link to thousands of
-            entities and dominate the ego graph).
+        top_k_seeds: Max entity-link seeds kept per question, ranked by
+            summed smoothed-IDF weight. Bounds ego-graph size; replaces
+            the previous per-token hard cap on inverted-index expansion.
         keyword: atlas-rag's filename pattern for the graphml. Defaults
             to project convention ``"transcriptions.json"`` (see
             :mod:`arandu.kg.atlas_backend`).
@@ -191,10 +189,14 @@ class KHopRetrieveSettings(BaseSettings):
         ge=1,
         description="Ego-graph radius around entity-linked seeds.",
     )
-    max_postings: int = Field(
-        default=200,
+    top_k_seeds: int = Field(
+        default=50,
         ge=1,
-        description="IDF-style cap on per-token entity-link expansion.",
+        description=(
+            "Max entity-link seeds kept per question, ranked by summed "
+            "smoothed-IDF weight. Bounds ego-graph size (replaces the old "
+            "previous per-token posting hard cap)."
+        ),
     )
     keyword: str = Field(
         default="transcriptions.json",

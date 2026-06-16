@@ -129,7 +129,7 @@ def build_retriever(
             kg_outputs_dir=kg_outputs_dir,
             keyword=khop_settings.keyword,
             k_hop=khop_settings.k_hop,
-            max_postings=khop_settings.max_postings,
+            top_k_seeds=khop_settings.top_k_seeds,
         )
 
     if arm == "atlas_rag":
