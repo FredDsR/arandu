@@ -100,16 +100,21 @@ Transcription is performed using **OpenAI Whisper** (`whisper-large-v3` or `whis
 
 ### 3.4 Transcription Quality Validation
 
-Each transcription undergoes a heuristic quality validation composed of four weighted dimensions:
+Each transcription is screened by a **two-stage filter pipeline**. A record must clear *every* criterion in a stage to pass it; failing any single criterion rejects the record. The full per-criterion result is stored in the record's `validation` field, and `is_valid` is derived from it -- there is no aggregate weighted score.
 
-| Dimension | Weight | What It Detects |
-|-----------|--------|-----------------|
-| **Script/Charset Match** | 35% | Wrong language output (e.g., CJK characters for Portuguese audio) |
-| **Repetition Detection** | 30% | Repeated words, phrases, or hallucinated loops |
-| **Segment Patterns** | 20% | Suspicious timestamps or degenerate segments |
-| **Content Density** | 15% | Words per minute outside plausible range (30--300 wpm) |
+**Stage 1 -- Heuristic filter** (always runs) applies five independent checks, each with its own pass threshold:
 
-Records scoring below **0.5** are flagged as `is_valid: false` and **automatically excluded** from downstream pipelines. This prevents low-quality transcriptions from degrading QA generation and knowledge graph construction.
+| Criterion | What It Detects | Pass Threshold |
+|-----------|-----------------|----------------|
+| **Content-Length Floor** | Transcripts too short to be usable (< 200 characters or < 30 words); a binary gate | 0.5 |
+| **Script/Charset Match** | Wrong-script output (e.g., non-Latin characters for Portuguese audio) | 0.6 |
+| **Repetition Detection** | Repeated words, phrases, or hallucinated loops | 0.5 |
+| **Content Density** | Words per minute outside the plausible 30--300 wpm range | 0.4 |
+| **Segment Patterns** | Degenerate timestamps, empty segments, or suspiciously uniform intervals | 0.4 |
+
+**Stage 2 -- LLM filter** (optional; runs only when a validator model is configured) adds two text-only LLM criteria -- **language drift** and **hallucination loop** -- that catch failure modes the heuristics miss, such as subtle mid-transcript language switching and semantic repetition below the n-gram threshold. When no validator model is configured, this stage is skipped.
+
+A record passes only if it clears every active stage. Rejected records are **automatically excluded** from downstream QA generation and knowledge graph construction, preventing low-quality transcriptions from degrading those pipelines.
 
 ### 3.5 Output
 
