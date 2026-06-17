@@ -6,10 +6,11 @@ Complete documentation of all project dependencies for the Knowledge Graph Const
 
 1. [Existing Dependencies](#existing-dependencies)
 2. [New Dependencies](#new-dependencies)
-3. [Dependency Groups](#dependency-groups)
-4. [Installation Instructions](#installation-instructions)
-5. [Version Compatibility](#version-compatibility)
-6. [License Information](#license-information)
+3. [Optional Dependencies (Extras)](#optional-dependencies-extras)
+4. [Dependency Groups](#dependency-groups)
+5. [Installation Instructions](#installation-instructions)
+6. [Version Compatibility](#version-compatibility)
+7. [License Information](#license-information)
 
 ---
 
@@ -23,6 +24,8 @@ Dependencies from the original transcription pipeline:
 |---------|---------|---------|
 | `accelerate` | >=1.12.0 | Model acceleration and device management |
 | `bitsandbytes` | >=0.49.1 | Quantization and memory optimization |
+| `fastapi` | >=0.115.0 | Web framework backing the report dashboard server (`serve-report`) |
+| `uvicorn[standard]` | >=0.34.0 | ASGI server for the dashboard |
 | `google-api-python-client` | >=2.100.0 | Google Drive API integration |
 | `google-auth-httplib2` | >=0.1.0 | Google authentication |
 | `google-auth-oauthlib` | >=1.0.0 | OAuth2 flow |
@@ -41,6 +44,48 @@ Dependencies from the original transcription pipeline:
 | `torch` | (via uv sources) | PyTorch deep learning framework (CUDA 12.4) |
 | `torchvision` | (via uv sources) | Vision processing utilities |
 | `torchaudio` | (via uv sources) | Audio processing |
+
+### RAG & NLP Dependencies
+
+Core dependencies powering Phase C retrieval and chunking:
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `networkx` | >=3.1 | Graph data structures and algorithms (KG loading, metrics, k-hop traversal) |
+| `chonkie` | >=1.6.6 | Text chunking for the chunker views |
+| `rank-bm25` | >=0.2.2 | BM25 lexical retriever arm |
+| `spacy` | >=3.8.14 | Lemmatization for k-hop seed weighting (`shared/rag/retrievers/_khop_common.py`) |
+| `pt-core-news-sm` | (pinned wheel) | spaCy Portuguese model used for k-hop seed lemmatization |
+| `en-core-web-sm` | (pinned wheel) | spaCy English model for k-hop seed lemmatization |
+
+---
+
+## Optional Dependencies (Extras)
+
+Install with `uv sync --extra <name>` (or `pip install -e ".[<name>]"`).
+
+### `report`
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `plotly` | >=6.0.0 | Interactive charts for the HTML report |
+| `jinja2` | >=3.1.0 | HTML templating |
+| `kaleido` | >=0.2.1 | Static PNG export of Plotly charts |
+
+### `kg`
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `atlas-rag` | >=0.0.5 | AutoSchemaKG knowledge graph construction backend |
+| `pyarrow` | >=15,<21 | Columnar storage used by atlas-rag / datasets |
+| `datasets` | >=2.18 | Dataset loading for atlas-rag |
+| `faiss-cpu` | >=1.7 | Vector index for the atlas-rag retriever |
+
+### `dashboard`
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `textual` | >=3.0.0 | Terminal UI dashboard |
 
 ---
 
@@ -61,12 +106,7 @@ Dependencies added for P2 functionality:
 
 The following dependencies are planned for future phases but are **not currently in `pyproject.toml`**:
 
-### Knowledge Graph Construction (Planned for KG Phase)
-
-| Package | Version | Purpose | Planned Module |
-|---------|---------|---------|---------|
-| `atlas-rag` | >=0.0.5 | AutoSchemaKG framework | `kg_builder.py` |
-| `networkx` | >=3.1 | Graph data structures and algorithms | `kg_builder.py`, `metrics.py` |
+> `atlas-rag` and `networkx` are no longer planned — both are installed (`networkx` is core; `atlas-rag` is in the `kg` extra). See the sections above.
 
 ### Evaluation and Metrics (Planned for Evaluation Phase)
 
@@ -92,6 +132,7 @@ Required for running the application:
 dependencies = [
     "accelerate>=1.12.0",
     "bitsandbytes>=0.49.1",
+    "fastapi>=0.115.0",
     "google-api-python-client>=2.100.0",
     "google-auth-httplib2>=0.1.0",
     "google-auth-oauthlib>=1.0.0",
@@ -102,10 +143,23 @@ dependencies = [
     "tenacity>=8.0.0",
     "transformers>=4.57.3",
     "typer[all]>=0.9.0",
+    "uvicorn[standard]>=0.34.0",
     # LLM Integration (OpenAI SDK supports Ollama and other compatible endpoints)
     "openai>=1.0.0",
     "httpx>=0.27.0",
+    # Graph loading, chunking, retrieval
+    "networkx>=3.1",
+    "chonkie>=1.6.6",
+    "rank-bm25>=0.2.2",
+    "spacy>=3.8.14",
+    "pt-core-news-sm",
+    "en-core-web-sm",
 ]
+
+[project.optional-dependencies]
+report = ["plotly>=6.0.0", "jinja2>=3.1.0", "kaleido>=0.2.1"]
+kg = ["atlas-rag>=0.0.5", "pyarrow>=15,<21", "datasets>=2.18", "faiss-cpu>=1.7"]
+dashboard = ["textual>=3.0.0"]
 ```
 
 ### Development Dependencies
@@ -328,15 +382,15 @@ For **general use**:
 
 ---
 
-## Planned Dependency Information
+## Dependency Information
 
-> **Note**: The following packages are not yet installed but are documented for future implementation phases.
+> **Note**: `atlas-rag` (kg extra) and `networkx` (core) are installed and in use. `scikit-learn`, `sentence-transformers`, `nltk`, and `sacrebleu` are still planned for the evaluation phase.
 
-### atlas-rag (>=0.0.5)
+### atlas-rag (>=0.0.5) — installed (`kg` extra)
 
 **Purpose**: AutoSchemaKG framework for knowledge graph construction
 
-**Features Planned**:
+**Features Used**:
 - Triple extraction
 - Dynamic schema induction
 - Graph construction
@@ -351,15 +405,15 @@ For **general use**:
 
 **Paper**: https://arxiv.org/abs/2505.23628
 
-### networkx (>=3.1)
+### networkx (>=3.1) — installed (core)
 
 **Purpose**: Graph data structures and algorithms
 
-**Features Planned**:
+**Features Used**:
 - Graph creation and manipulation
 - Node and edge attributes
 - Graph algorithms (connectivity, density)
-- JSON serialization
+- k-hop traversal for the `khop_passage` / `khop_triple` retriever arms
 - GraphML export
 
 **Documentation**: https://networkx.org/documentation/stable/
@@ -430,6 +484,10 @@ nltk.download('stopwords')
 - `pydantic`
 - `typer`
 - `rich`
+- `networkx`
+- `atlas-rag`
+- `rank-bm25`
+- `fastapi`
 
 ### Apache 2.0 Licensed
 
@@ -449,17 +507,15 @@ nltk.download('stopwords')
 
 ### MIT Licensed (Planned)
 
-- `networkx`
 - `nltk`
 - `sacrebleu`
-- `atlas-rag`
 
 ### Apache 2.0 Licensed (Planned)
 
 - `sentence-transformers`
 - `scikit-learn`
 
-### AutoSchemaKG Citation (When Added)
+### AutoSchemaKG Citation
 
 If using `atlas-rag` for published research, citation is required:
 
@@ -579,5 +635,5 @@ For reproducible builds, `uv.lock` is automatically maintained by uv.
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-14
+**Document Version**: 1.1
+**Last Updated**: 2026-06-17
