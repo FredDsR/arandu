@@ -10,7 +10,7 @@ from pytest import MonkeyPatch
 
 from arandu.kg.config import KGConfig, get_kg_config
 from arandu.qa.config import CEPConfig, QAConfig, get_cep_config, get_qa_config
-from arandu.shared.config import EvaluationConfig, LLMConfig, get_evaluation_config, get_llm_config
+from arandu.shared.config import LLMConfig, get_llm_config
 from arandu.transcription.config import (
     TranscriberConfig,
     _get_default_temp_dir,
@@ -194,40 +194,6 @@ class TestKGConfig:
             KGConfig(language="fr")
 
 
-class TestEvaluationConfig:
-    """Tests for EvaluationConfig."""
-
-    def test_default_initialization(self) -> None:
-        """Test default Evaluation configuration initialization."""
-        config = EvaluationConfig()
-
-        assert config.metrics == ["qa", "entity", "relation", "semantic"]
-        assert config.embedding_model == "sentence-transformers/all-MiniLM-L6-v2"
-        assert isinstance(config.output_dir, Path)
-        assert str(config.output_dir) == "evaluation"
-        assert isinstance(config.qa_dir, Path)
-        assert isinstance(config.kg_dir, Path)
-
-    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
-        """Test Evaluation config loading from environment variables."""
-        monkeypatch.setenv("ARANDU_EVAL_EMBEDDING_MODEL", "custom-model")
-
-        config = EvaluationConfig()
-
-        assert config.embedding_model == "custom-model"
-
-    def test_valid_metrics(self) -> None:
-        """Test valid evaluation metrics."""
-        config = EvaluationConfig(metrics=["qa", "entity"])
-        assert config.metrics == ["qa", "entity"]
-
-    def test_invalid_metric(self) -> None:
-        """Test validation error for invalid metric."""
-        with pytest.raises(ValidationError) as exc_info:
-            EvaluationConfig(metrics=["qa", "invalid_metric"])
-        assert "Invalid evaluation metric" in str(exc_info.value)
-
-
 class TestConfigEnvPrefix:
     """Test environment variable prefix handling."""
 
@@ -248,12 +214,6 @@ class TestConfigEnvPrefix:
         monkeypatch.setenv("ARANDU_KG_MODEL_ID", "test-kg-model")
         config = KGConfig()
         assert config.model_id == "test-kg-model"
-
-    def test_eval_prefix(self, monkeypatch: MonkeyPatch) -> None:
-        """Test ARANDU_EVAL_ prefix for EvaluationConfig."""
-        monkeypatch.setenv("ARANDU_EVAL_EMBEDDING_MODEL", "test-eval-model")
-        config = EvaluationConfig()
-        assert config.embedding_model == "test-eval-model"
 
     def test_case_insensitive(self, monkeypatch: MonkeyPatch) -> None:
         """Test case insensitivity of environment variables."""
@@ -479,11 +439,6 @@ class TestConfigHelperFunctions:
         """Test get_kg_config returns KGConfig instance."""
         config = get_kg_config()
         assert isinstance(config, KGConfig)
-
-    def test_get_evaluation_config(self) -> None:
-        """Test get_evaluation_config returns EvaluationConfig instance."""
-        config = get_evaluation_config()
-        assert isinstance(config, EvaluationConfig)
 
     def test_get_llm_config(self) -> None:
         """Test get_llm_config returns LLMConfig instance."""

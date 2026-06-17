@@ -9,10 +9,9 @@ can compare across the five retriever arms, identified by their canonical ids:
 (k-hop over the atlas-rag KG, using lemmatized smoothed-IDF seed weighting and
 seed-proximity scoring), and `null` (no-retrieval baseline).
 
-> **What changed (2026-05-26)**: Phase C replaces the legacy QA / KG
-> evaluation tables ([evaluation.md](evaluation.md)) for retrieval comparison.
-> Use `rag-analysis` when you want to compare retrievers; use `evaluation.md`
-> for QA-dataset and KG-graph quality (unchanged).
+> **What changed (2026-05-26)**: Phase C `rag-analysis` is the retrieval-arm
+> comparison. It superseded an earlier QA/KG metrics pipeline (the classic
+> `evaluate` command), which has been removed.
 
 ---
 
@@ -227,6 +226,5 @@ These are intentional first-cut scope - tracked for follow-up PRs:
 ## Related
 
 - [CLI reference](cli-reference.md) - full command list.
-- [Evaluation](evaluation.md) - legacy QA + KG evaluation (unchanged).
 - [`docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md`](../superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md)
   - Phase C design spec; §8 is the analysis-stage methodology.

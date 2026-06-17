@@ -10,7 +10,7 @@ transcription, and rag at once.
 
 | Path | Role |
 | ---- | ---- |
-| `config.py` | `LLMConfig`, `EvaluationConfig`, `ResultsConfig` (shared, cross-pipeline) |
+| `config.py` | `LLMConfig`, `ResultsConfig` (shared, cross-pipeline) |
 | `llm_settings.py` | `LLMSettings` base + `REASONING_MODEL_MAX_TOKENS` (8192, the shared token headroom); subclass this per stage |
 | `llm_client.py` | Unified OpenAI-SDK client (`build_llm_client_from_settings`, `parse_provider`); provider dispatch + backoff. Never construct `OpenAI()` directly |
 | `results_manager.py` | `ResultsManager`: versioned `results/<id>/<stage>/outputs/`, run metadata, `index.json` |

@@ -256,12 +256,6 @@ The system can be configured via:
 | `ARANDU_KG_MERGE_GRAPHS` | `true` | Merge into corpus graph |
 | `ARANDU_KG_OUTPUT_FORMAT` | `graphml` | Output format: `graphml`, `json` |
 
-### Evaluation Settings (Planned)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARANDU_EVAL_METRICS` | `qa,entity,relation,semantic` | Metrics to compute |
-| `ARANDU_EVAL_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Semantic embeddings model |
-
 ### Results & Quality Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -365,7 +359,6 @@ arandu/
     │   ├── transcription-validation.md
     │   ├── cep-qa-generation.md
     │   ├── kg-construction.md           # Planned
-    │   ├── evaluation.md                # Planned
     │   └── configuration.md
     ├── development/
     │   ├── architecture.md
@@ -405,7 +398,6 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 - [Transcription Validation Guide](docs/user-guide/transcription-validation.md)
 - [CEP QA Generation Guide](docs/user-guide/cep-qa-generation.md)
 - [KG Construction Guide](docs/user-guide/kg-construction.md) (Planned)
-- [Evaluation Guide](docs/user-guide/evaluation.md) (Planned)
 - [Configuration Reference](docs/user-guide/configuration.md)
 - [Architecture](docs/development/architecture.md)
 - [Schemas Reference](docs/development/schemas.md)

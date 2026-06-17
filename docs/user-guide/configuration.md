@@ -10,11 +10,10 @@ Complete reference for all configuration settings in the Arandu pipeline.
 4. [CEPConfig](#cepconfig)
 5. [JudgeConfig](#judgeconfig)
 6. [KGConfig](#kgconfig)
-7. [EvaluationConfig](#evaluationconfig)
-8. [LLMConfig](#llmconfig)
-9. [ResultsConfig](#resultsconfig)
-10. [Environment Variables](#environment-variables)
-11. [Configuration Examples](#configuration-examples)
+7. [LLMConfig](#llmconfig)
+8. [ResultsConfig](#resultsconfig)
+9. [Environment Variables](#environment-variables)
+10. [Configuration Examples](#configuration-examples)
 
 ---
 
@@ -36,7 +35,6 @@ The Arandu project uses **Pydantic Settings** for configuration management with 
 | `CEPConfig` | `arandu.qa.config` | `ARANDU_CEP_` |
 | `JudgeConfig` | `arandu.qa.config` | `ARANDU_JUDGE_` |
 | `KGConfig` | `arandu.kg.config` | `ARANDU_KG_` |
-| `EvaluationConfig` | `arandu.shared.config` | `ARANDU_EVAL_` |
 | `LLMConfig` | `arandu.shared.config` | (no prefix; uses aliases like `OPENAI_API_KEY`) |
 | `ResultsConfig` | `arandu.shared.config` | `ARANDU_RESULTS_` |
 
@@ -338,51 +336,6 @@ config = KGConfig(
 
 ---
 
-## EvaluationConfig
-
-Configuration settings for the evaluation pipeline.
-
-**Module**: `arandu.shared.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_EVAL_`
-
-### Metrics Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `metrics` | `list[str]` | `["qa", "entity", "relation", "semantic"]` | Metrics to compute |
-| `embedding_model` | `str` | `"sentence-transformers/all-MiniLM-L6-v2"` | Sentence transformer model for semantic embeddings |
-
-**Valid Metrics**: `qa`, `entity`, `relation`, `semantic`
-- `qa` - QA-based metrics (EM, F1, BLEU)
-- `entity` - Entity coverage metrics
-- `relation` - Relation density metrics
-- `semantic` - Semantic quality metrics
-
-### Output Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `output_dir` | `Path` | `Path("evaluation")` | Output directory for evaluation reports |
-
-### Input Directory Overrides
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `qa_dir` | `Path` | `Path("qa_dataset")` | Directory containing QA dataset |
-| `kg_dir` | `Path` | `Path("knowledge_graphs")` | Directory containing knowledge graphs |
-| `results_dir` | `Path` | `Path("results")` | Directory containing transcription results |
-
-**Example Configuration**:
-```python
-from arandu.shared.config import EvaluationConfig
-
-config = EvaluationConfig(
-    metrics=["qa", "entity", "semantic"],
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-)
-```
-
----
-
 ## LLMConfig
 
 Shared LLM configuration settings for API keys and shared LLM settings across pipelines.
@@ -450,7 +403,6 @@ Configuration settings are loaded from environment variables with config-specifi
 | `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_VALIDATION_THRESHOLD` |
 | `JudgeConfig` | `ARANDU_JUDGE_` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `KGConfig` | `ARANDU_KG_` | `ARANDU_KG_PROVIDER` |
-| `EvaluationConfig` | `ARANDU_EVAL_` | `ARANDU_EVAL_METRICS` |
 | `LLMConfig` | (No prefix) | `OPENAI_API_KEY`, `ARANDU_LLM_BASE_URL` |
 | `ResultsConfig` | `ARANDU_RESULTS_` | `ARANDU_RESULTS_BASE_DIR` |
 
@@ -500,12 +452,6 @@ export ARANDU_KG_PROVIDER=openai
 export ARANDU_KG_MODEL_ID=gpt-4o
 export ARANDU_KG_LANGUAGE=pt
 export ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
-```
-
-**EvaluationConfig** (`ARANDU_EVAL_`):
-```bash
-export ARANDU_EVAL_METRICS=qa,entity,relation,semantic
-export ARANDU_EVAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
 **LLMConfig** (No prefix, uses aliases):
@@ -569,9 +515,6 @@ ARANDU_KG_PROVIDER=ollama
 ARANDU_KG_MODEL_ID=llama3.1:8b
 ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
 ARANDU_KG_LANGUAGE=pt
-
-# Evaluation
-ARANDU_EVAL_METRICS=qa,entity,relation,semantic
 ```
 
 **CLI Usage**:
@@ -616,7 +559,6 @@ ARANDU_RESULTS_ENABLE_VERSIONING=true
 # Output directories
 ARANDU_QA_OUTPUT_DIR=/data/qa_dataset
 ARANDU_KG_OUTPUT_DIR=/data/knowledge_graphs
-ARANDU_EVAL_OUTPUT_DIR=/data/evaluation
 ```
 
 ### Example 3: Hybrid Approach (OpenAI + Ollama)
@@ -940,22 +882,6 @@ ARANDU_KG_LANGUAGE=pt
 
 # Output
 ARANDU_KG_OUTPUT_DIR=knowledge_graphs
-
-# ============================================================================
-# EvaluationConfig (ARANDU_EVAL_)
-# ============================================================================
-
-# Metrics
-ARANDU_EVAL_METRICS=qa,entity,relation,semantic
-ARANDU_EVAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
-# Output
-ARANDU_EVAL_OUTPUT_DIR=evaluation
-
-# Input directories (optional overrides)
-# ARANDU_EVAL_QA_DIR=qa_dataset
-# ARANDU_EVAL_KG_DIR=knowledge_graphs
-# ARANDU_EVAL_RESULTS_DIR=results
 
 # ============================================================================
 # LLMConfig (No prefix - uses aliases)

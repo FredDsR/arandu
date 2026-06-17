@@ -24,7 +24,6 @@ Current settings classes:
 - `CEPConfig` (`ARANDU_CEP_`)
 - `JudgeConfig` (`ARANDU_JUDGE_`)
 - `KGConfig` (`ARANDU_KG_`)
-- `EvaluationConfig` (`ARANDU_EVAL_`)
 - `ResultsConfig` (`ARANDU_RESULTS_`)
 - `LLMConfig` (aliases: `OPENAI_API_KEY`, `ARANDU_LLM_BASE_URL`)
 
@@ -109,17 +108,6 @@ Current settings classes:
 | `temperature` | `ARANDU_KG_TEMPERATURE` | `0.5` |
 | `language` | `ARANDU_KG_LANGUAGE` | `pt` |
 | `output_dir` | `ARANDU_KG_OUTPUT_DIR` | `knowledge_graphs` |
-
-## `EvaluationConfig` (`ARANDU_EVAL_`)
-
-| Field | Env var | Default |
-|---|---|---|
-| `metrics` | `ARANDU_EVAL_METRICS` | `qa,entity,relation,semantic` |
-| `embedding_model` | `ARANDU_EVAL_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` |
-| `output_dir` | `ARANDU_EVAL_OUTPUT_DIR` | `evaluation` |
-| `qa_dir` | `ARANDU_EVAL_QA_DIR` | `qa_dataset` |
-| `kg_dir` | `ARANDU_EVAL_KG_DIR` | `knowledge_graphs` |
-| `results_dir` | `ARANDU_EVAL_RESULTS_DIR` | `results` |
 
 ## `ResultsConfig` (`ARANDU_RESULTS_`)
 
