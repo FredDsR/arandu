@@ -12,7 +12,7 @@ This guide covers running Arandu on any SLURM-based HPC cluster.
 
 Scripts live under `scripts/slurm/<step>/` as thin **per-partition** files
 (`<partition>.slurm`) that source a shared `<step>_common.sh`. There is no
-single `run_<x>.slurm` entry point — you submit the partition script for the
+single `run_<x>.slurm` entry point; you submit the partition script for the
 node type you want.
 
 | Step | Scripts | Description |
@@ -188,15 +188,18 @@ scripts/slurm/cep/
 ### Submit CEP Jobs
 
 ```bash
-# Grace partition (best for large models)
-sbatch scripts/slurm/cep/grace.slurm
-
-# Tupi partition (good balance of speed/availability)
-sbatch scripts/slurm/cep/tupi.slurm
+# Tupi partition (the GPU partition to use on PCAD)
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
 
 # Sirius partition (CPU-only, for AMD nodes)
-sbatch scripts/slurm/cep/sirius.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/sirius.slurm
 ```
+
+> **Partition access (PCAD)**: `tupi` is the only usable GPU partition;
+> `grace` is **not accessible** (jobs PEND forever with
+> `uid_..._not_in_group_permitted`), so `cep/grace.slurm` exists but won't run
+> as submitted. See [`scripts/slurm/AGENTS.md`](../../scripts/slurm/AGENTS.md)
+> for the authoritative partition rules.
 
 ### CEP Script Architecture
 
@@ -246,15 +249,15 @@ sbatch scripts/slurm/judge/qa/tupi.slurm
 
 | Partition | GPUs | Workers | Best For |
 |-----------|------|---------|----------|
-| Grace (L40S) | 1 | 4 | Large models (70B), validation |
-| Tupi (RTX 4090) | 1 | 3 | Standard generation (14B models) |
+| Tupi (RTX 4090) | 1 | 3 | Standard generation (14B models); the GPU partition to use |
 | Sirius (AMD) | 0 | 2 | CPU-only fallback |
+| Grace (L40S) | 1 | 4 | Large models (70B) **but not accessible** on PCAD (jobs PEND); script exists, do not submit |
 
 ### Monitor CEP Jobs
 
 ```bash
 # View job output
-tail -f logs/cep_grace_<jobid>.out
+tail -f logs/cep_tupi_<jobid>.out
 
 # Check container status
 docker ps --filter name=ollama-cep
@@ -264,7 +267,7 @@ docker ps --filter name=arandu-cep
 ## Checkpoint and Resume
 
 All pipelines checkpoint under `results/<id>/`. If a job fails or hits the wall
-limit, resubmit the exact same command — it resumes automatically (KG extraction
+limit, resubmit the exact same command; it resumes automatically (KG extraction
 and concept generation both checkpoint, so a `TIMEOUT` just needs a resubmit):
 
 ```bash
