@@ -62,7 +62,7 @@ Current settings classes:
 | `ollama_url` | `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` |
 | `base_url` | `ARANDU_QA_BASE_URL` | `None` |
 | `temperature` | `ARANDU_QA_TEMPERATURE` | `0.7` |
-| `max_tokens` | `ARANDU_QA_MAX_TOKENS` | `2048` |
+| `max_tokens` | `ARANDU_QA_MAX_TOKENS` | `8192` |
 | `output_dir` | `ARANDU_QA_OUTPUT_DIR` | `qa_dataset` |
 | `language` | `ARANDU_QA_LANGUAGE` | `pt` |
 | `workers` | `ARANDU_QA_WORKERS` | `2` |
@@ -72,12 +72,11 @@ Current settings classes:
 | Field | Env var | Default |
 |---|---|---|
 | `enable_reasoning_traces` | `ARANDU_CEP_ENABLE_REASONING_TRACES` | `true` |
-| `bloom_levels` | `ARANDU_CEP_BLOOM_LEVELS` | `remember,understand,analyze,evaluate` |
 | `bloom_distribution` | `ARANDU_CEP_BLOOM_DISTRIBUTION` | `{"remember":3,"understand":1,"analyze":1,"evaluate":1}` |
 | `enable_scaffolding_context` | `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` |
 | `max_scaffolding_pairs` | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` |
 | `max_hop_count` | `ARANDU_CEP_MAX_HOP_COUNT` | `3` |
-| `reasoning_max_tokens` | `ARANDU_CEP_REASONING_MAX_TOKENS` | `2048` |
+| `reasoning_max_tokens` | `ARANDU_CEP_REASONING_MAX_TOKENS` | `8192` |
 | `validation_threshold` | `ARANDU_CEP_VALIDATION_THRESHOLD` | `0.6` |
 | `faithfulness_weight` | `ARANDU_CEP_FAITHFULNESS_WEIGHT` | `0.30` |
 | `bloom_calibration_weight` | `ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT` | `0.25` |
@@ -92,7 +91,7 @@ Current settings classes:
 |---|---|---|
 | `language` | `ARANDU_JUDGE_LANGUAGE` | `pt` |
 | `temperature` | `ARANDU_JUDGE_TEMPERATURE` | `0.3` |
-| `max_tokens` | `ARANDU_JUDGE_MAX_TOKENS` | `2048` |
+| `max_tokens` | `ARANDU_JUDGE_MAX_TOKENS` | `8192` |
 | `validator_model` | `ARANDU_JUDGE_VALIDATOR_MODEL` | `None` |
 | `validator_provider` | `ARANDU_JUDGE_VALIDATOR_PROVIDER` | `None` (inferred) |
 | `validator_base_url` | `ARANDU_JUDGE_VALIDATOR_BASE_URL` | `None` |

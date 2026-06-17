@@ -199,22 +199,33 @@ Each partition script sources `cep_common.sh` which handles:
 |----------|-------------|---------|
 | `ARANDU_QA_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
 | `USE_GPU_OLLAMA` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
-| `ARANDU_CEP_ENABLE_VALIDATION` | Enable LLM-as-a-Judge validation | `true` |
 | `ARANDU_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
+
+> **Note**: `generate-cep-qa` only generates pairs; it has no validation toggle
+> (CEPConfig has no `enable_validation`). CEP-pair validation runs as the separate
+> `judge-qa` command, configured via `ARANDU_JUDGE_VALIDATOR_*`. Run it after
+> generation (e.g. a chained job with `--dependency=afterok:`).
 
 ### Override CEP Settings
 
 ```bash
-# Disable validation for faster processing
-ARANDU_CEP_ENABLE_VALIDATION=false \
-sbatch scripts/slurm/cep/tupi.slurm
-
-# Use custom validator model
-ARANDU_CEP_VALIDATOR_MODEL_ID=llama3.3:70b \
-sbatch scripts/slurm/cep/grace.slurm
-
 # Use English prompts
 ARANDU_CEP_LANGUAGE=en sbatch scripts/slurm/cep/tupi.slurm
+```
+
+### Validating CEP Pairs (separate job)
+
+Validation runs as the dedicated `judge-qa` job, configured with `ARANDU_JUDGE_*`:
+
+```bash
+# Judge a populated run's CEP dataset
+PIPELINE_ID=test-cep-01 \
+ARANDU_JUDGE_VALIDATOR_MODEL=llama3.3:70b \
+sbatch scripts/slurm/judge/qa/tupi.slurm
+
+# Force a fresh pass over already-judged pairs
+PIPELINE_ID=test-cep-01 JUDGE_REJUDGE=1 \
+sbatch scripts/slurm/judge/qa/tupi.slurm
 ```
 
 ### CEP Resource Recommendations

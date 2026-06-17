@@ -26,7 +26,6 @@ arandu judge-qa cep_dataset/ --model qwen3:14b
 
 Main `ARANDU_CEP_*` knobs:
 
-- `ARANDU_CEP_BLOOM_LEVELS`
 - `ARANDU_CEP_BLOOM_DISTRIBUTION`
 - `ARANDU_CEP_ENABLE_REASONING_TRACES`
 - `ARANDU_CEP_MAX_HOP_COUNT`
@@ -36,7 +35,7 @@ Main `ARANDU_CEP_*` knobs:
 - `ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT`
 - `ARANDU_CEP_LANGUAGE`
 
-Legacy weighted-score fields still exist in `CEPConfig` for compatibility/reporting:
+Judge scoring fields live in `CEPConfig` and drive `judge-qa` (the four weights must sum to 1.0):
 
 - `ARANDU_CEP_VALIDATION_THRESHOLD`
 - `ARANDU_CEP_FAITHFULNESS_WEIGHT`
