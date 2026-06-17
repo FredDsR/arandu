@@ -641,11 +641,11 @@ ARANDU_WORKERS=4
 
 ### Example 4: SLURM Cluster Configuration
 
-**SLURM script** (`run_qa_generation.slurm`):
+**SLURM script** (use the partition script under `scripts/slurm/cep/`):
 ```bash
 #!/bin/bash
-#SBATCH --job-name=arandu-qa
-#SBATCH --partition=grace
+#SBATCH --job-name=arandu-cep
+#SBATCH --partition=tupi
 #SBATCH --cpus-per-task=16
 
 # Set configuration via environment
@@ -658,9 +658,8 @@ export ARANDU_QA_WORKERS=8
 export ARANDU_RESULTS_BASE_DIR=$SCRATCH/results
 export ARANDU_QA_OUTPUT_DIR=$SCRATCH/qa_dataset
 
-# Run via Docker
-source scripts/slurm/job_common.sh
-docker compose --profile qa up arandu-qa --abort-on-container-exit
+# Run via Docker (the cep_common.sh helper wraps this)
+docker compose --profile cep up arandu-cep --abort-on-container-exit
 ```
 
 ### Example 5: Docker Compose Environment
@@ -668,7 +667,7 @@ docker compose --profile qa up arandu-qa --abort-on-container-exit
 **docker-compose.override.yml** (local overrides):
 ```yaml
 services:
-  arandu-qa:
+  arandu-cep:
     environment:
       - ARANDU_QA_PROVIDER=ollama
       - ARANDU_QA_MODEL_ID=qwen3:14b

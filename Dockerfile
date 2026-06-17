@@ -1,6 +1,6 @@
 # Arandu Docker Image (arandu:latest)
-# Used by compose services: arandu, arandu-cpu, arandu-qa, arandu-cep,
-# arandu-judge, arandu-eval. KG/RAG use Dockerfile.kg instead.
+# Used by compose services: arandu, arandu-cpu, arandu-cep, arandu-judge.
+# KG/RAG use Dockerfile.kg instead.
 # Multi-stage build for optimized image size using official uv images
 
 # Stage 1: Builder - Use official uv image

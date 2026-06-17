@@ -197,32 +197,27 @@ Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
 
 | Profile | Services | Pipeline |
 |---------|----------|----------|
-| `cep` | ollama, arandu-cep | CEP QA Pipeline |
-| `qa` | ollama, arandu-qa | QA Pipeline |
-| `kg` | ollama, arandu-kg | KG Pipeline (planned) |
-| `evaluate` | arandu-eval | Evaluation (planned) |
+| `cep` (`cep-gpu`) | ollama, arandu-cep | CEP QA generation (`generate-cep-qa`) |
+| `judge` (`judge-gpu`) | ollama, arandu-judge | LLM-as-a-Judge (`judge-transcription` / `judge-qa`) |
+| `kg` (`kg-gpu`) | ollama, arandu-kg | KG construction (`build-kg`) |
+| `rag` (`rag-gpu` / `rag-cpu`) | ollama, arandu-rag | Phase C RAG evaluation chain |
 | `cpu` | arandu-cpu | Transcription (CPU) |
 | `rocm` | arandu-rocm | Transcription (AMD GPU) |
 
 ## SLURM Execution
 
-SLURM scripts are organized by pipeline:
+SLURM scripts are organized as `scripts/slurm/<step>/<partition>.slurm`, each
+sourcing a shared `<step>_common.sh`. Submit with `PIPELINE_ID` set (see
+[scripts/slurm/AGENTS.md](scripts/slurm/AGENTS.md) for the full wiring + the
+tupi/draco partition rules):
 
 ```bash
-# Transcription Pipeline
-sbatch scripts/slurm/transcription/batch_transcribe.slurm
-
-# QA Pipeline
-sbatch scripts/slurm/qa/generate_qa.slurm
-
-# CEP Pipeline
-sbatch scripts/slurm/cep/generate_cep_qa.slurm
-
-# KG Pipeline (planned)
-sbatch scripts/slurm/kg/build_kg.slurm
-
-# Evaluation (planned)
-sbatch scripts/slurm/evaluation/evaluate.slurm
+# Transcription / CEP / Judge / KG / RAG — pick the partition script
+PIPELINE_ID=run-01 sbatch scripts/slurm/transcription/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/judge/qa/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/kg/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/rag/retrieve.slurm
 ```
 
 ## Configuration

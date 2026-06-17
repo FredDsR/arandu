@@ -17,23 +17,19 @@ env and writes `results/<id>/<stage>/outputs/`.
 | Step | `arandu` command(s) | Config class · env prefix | Compose service | Profiles | Image · Dockerfile | SLURM dir |
 | ---- | ------------------- | ------------------------- | --------------- | -------- | ------------------ | --------- |
 | Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | `arandu` / `arandu-cpu` / `arandu-rocm` | (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
-| QA | `generate-qa` †legacy | `QAConfig` · `ARANDU_QA_` | `arandu-qa` | `qa` / `qa-gpu` | `arandu:latest` · `Dockerfile` | `qa/` |
-| CEP | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | `arandu-cep` | `cep` / `cep-gpu` | `arandu:latest` · `Dockerfile` | `cep/` |
+| CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | `arandu-cep` | `cep` / `cep-gpu` | `arandu:latest` · `Dockerfile` | `cep/` |
 | Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | `arandu-judge` | `judge` / `judge-gpu` | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
 | KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | `arandu-kg` | `kg` / `kg-gpu` | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
 | RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | `arandu-rag` / `arandu-rag-cpu` | `rag` / `rag-gpu` / `rag-cpu` | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
-| Evaluation | `evaluate` †legacy | `EvaluationConfig` · `ARANDU_EVAL_` | `arandu-eval` | `evaluate` | `arandu:latest` · `Dockerfile` | `evaluation/` |
 
-> **†legacy**: the `arandu-qa` (`generate-qa`) and `arandu-eval` (`evaluate`)
-> compose services name commands that are **not currently registered** in
-> `cli/app.py`, so they will not run as written. The live QA path is
-> `generate-cep-qa` (+ `judge-qa`); Phase C retrieval evaluation is the `rag-*`
-> chain. The rows are kept because the compose services + SLURM dirs still exist.
+QA generation is the CEP path (`generate-cep-qa`); there is no separate
+`generate-qa`. Evaluation of retrieval is the Phase C `rag-*` chain (there is no
+standalone `evaluate` command).
 
 Config-class fields + env prefixes are the contract; see
 [docs/user-guide/configuration.md](../../docs/user-guide/configuration.md).
 
-**Two images.** `arandu:latest` (`Dockerfile`) covers transcription/qa/cep/judge/eval.
+**Two images.** `arandu:latest` (`Dockerfile`) covers transcription/cep/judge.
 `arandu-kg:latest` (`Dockerfile.kg` = base **+ `uv sync --extra kg`**, i.e. atlas-rag)
 covers **kg and rag**. A dep bump in the `kg` extra needs a `Dockerfile.kg` rebuild,
 not the base one. Both images `COPY` `src/`, `pyproject.toml`+`uv.lock`, and `prompts/`
@@ -53,7 +49,7 @@ config field, so it did nothing — CEP-pair validation lives in the separate
 | Path | Role |
 | ---- | ---- |
 | `transcription/<partition>.slurm` + `job_common.sh` | Whisper transcription (GPU) |
-| `cep/`, `qa/`, `judge/` + `*_common.sh` | CEP/QA generation and LLM judges |
+| `cep/`, `judge/` + `*_common.sh` | CEP QA generation and LLM judges |
 | `kg/<partition>.slurm` + `kg_common.sh` | atlas-rag KG construction (extraction + concept gen) |
 | `rag/<stage>.slurm` + `rag_common.sh` | Phase C eval chain (chunk, link-passages, retriever-index, non-answerable, retrieve, answer, judge-answers, rag-analysis) |
 | `general/cleanup.slurm`, `kg/pipeline-cleanup.slurm` | Docker/disk cleanup jobs |
