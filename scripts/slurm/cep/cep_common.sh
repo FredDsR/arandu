@@ -13,10 +13,11 @@
 #   ARANDU_QA_PROVIDER - LLM provider (default: ollama)
 #   ARANDU_QA_OLLAMA_URL - Ollama API URL (default: http://ollama:11434/v1)
 #   ARANDU_CEP_BLOOM_DISTRIBUTION - JSON pairs/level (default: 3/1/1/1)
-#   ARANDU_CEP_ENABLE_VALIDATION - Enable LLM-as-a-Judge validation (default: true)
-#   ARANDU_CEP_VALIDATOR_MODEL_ID - Validator model (default: qwen3:14b)
 #   ARANDU_CEP_LANGUAGE - Language for prompts (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
+#
+# NOTE: This job only generates CEP pairs. Validation is a separate step run by
+# the judge-qa SLURM job (scripts/slurm/judge/), configured via ARANDU_JUDGE_*.
 # =============================================================================
 
 set -euo pipefail
@@ -38,9 +39,6 @@ export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
 # before sbatch to override (e.g. '{"remember": 2, "understand": 2, "analyze": 1, "evaluate": 1}').
 DEFAULT_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
 export ARANDU_CEP_BLOOM_DISTRIBUTION="${ARANDU_CEP_BLOOM_DISTRIBUTION:-$DEFAULT_BLOOM_DISTRIBUTION}"
-export ARANDU_CEP_ENABLE_VALIDATION="${ARANDU_CEP_ENABLE_VALIDATION:-true}"
-export ARANDU_CEP_VALIDATOR_PROVIDER="${ARANDU_CEP_VALIDATOR_PROVIDER:-ollama}"
-export ARANDU_CEP_VALIDATOR_MODEL_ID="${ARANDU_CEP_VALIDATOR_MODEL_ID:-qwen3:14b}"
 export ARANDU_CEP_LANGUAGE="${ARANDU_CEP_LANGUAGE:-pt}"
 
 # GPU mode for Ollama (partition scripts set this)
@@ -73,10 +71,7 @@ echo "Workers:       $ARANDU_QA_WORKERS"
 echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "=============================================="
 echo "CEP Language:  $ARANDU_CEP_LANGUAGE"
-echo "Validation:    $ARANDU_CEP_ENABLE_VALIDATION"
-if [ "$ARANDU_CEP_ENABLE_VALIDATION" = "true" ]; then
-    echo "Validator:     $ARANDU_CEP_VALIDATOR_MODEL_ID"
-fi
+echo "(validation runs separately via the judge-qa job)"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -141,9 +136,6 @@ for i in {1..30}; do
 done
 if [ "$OLLAMA_UP" = true ]; then
     REQUIRED_MODELS=("$ARANDU_QA_MODEL_ID")
-    if [ "$ARANDU_CEP_ENABLE_VALIDATION" = "true" ]; then
-        REQUIRED_MODELS+=("$ARANDU_CEP_VALIDATOR_MODEL_ID")
-    fi
     INSTALLED=$(docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list 2>/dev/null | tail -n +2 | awk '{print $1}') || true
     for model in $INSTALLED; do
         is_required=false
@@ -191,14 +183,6 @@ if [ "$ARANDU_QA_PROVIDER" = "ollama" ]; then
     echo ""
     echo "Pulling model: $ARANDU_QA_MODEL_ID"
     docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$ARANDU_QA_MODEL_ID"
-
-    # Pull validator model if validation is enabled and it's different from QA model
-    if [ "$ARANDU_CEP_ENABLE_VALIDATION" = "true" ] && \
-       [ "$ARANDU_CEP_VALIDATOR_MODEL_ID" != "$ARANDU_QA_MODEL_ID" ]; then
-        echo ""
-        echo "Pulling validator model: $ARANDU_CEP_VALIDATOR_MODEL_ID"
-        docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$ARANDU_CEP_VALIDATOR_MODEL_ID"
-    fi
 fi
 
 echo ""
