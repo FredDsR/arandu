@@ -73,7 +73,7 @@ The `detected_language` field provides the language code directly. There is **no
   ],
   "validation": {
     "stage_results": {
-      "heuristic": {
+      "heuristic_filter": {
         "criterion_scores": {
           "content_length": {
             "score": 1.0,
@@ -181,7 +181,7 @@ Result of running the full multi-stage judge pipeline.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `stage_results` | `dict[str, JudgeStepResult]` | Yes | Per-stage results, keyed by stage name (e.g. `"heuristic"`, `"llm"`) |
+| `stage_results` | `dict[str, JudgeStepResult]` | Yes | Per-stage results, keyed by stage name (e.g. `"heuristic_filter"`, `"llm_filter"` for transcription; `"cep_validation"` for QA) |
 | `passed` | `bool` | Yes | Whether the record cleared every non-skipped stage |
 | `rejected_at` | `str \| None` | No | Name of the stage that rejected the record, if any |
 
@@ -213,7 +213,7 @@ A continuous criterion's `passed` is `score >= threshold`; an ordinal criterion 
 ```json
 {
   "stage_results": {
-    "heuristic": {
+    "heuristic_filter": {
       "criterion_scores": {
         "script_match": {
           "score": 0.95,
@@ -365,7 +365,7 @@ There is no separate `ValidationScore` or `QAPairValidated` model. A judged CEP 
   "bloom_level": "analyze",
   "validation": {
     "stage_results": {
-      "qa_judge": {
+      "cep_validation": {
         "criterion_scores": {
           "faithfulness": {"score": 0.9, "scale": "continuous", "threshold": 0.6, "rationale": "..."},
           "bloom_calibration": {"score": 0.8, "scale": "continuous", "threshold": 0.6, "rationale": "..."},

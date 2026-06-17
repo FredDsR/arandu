@@ -5,8 +5,8 @@ Complete documentation of all project dependencies for the Knowledge Graph Const
 ## Table of Contents
 
 1. [Existing Dependencies](#existing-dependencies)
-2. [New Dependencies](#new-dependencies)
-3. [Optional Dependencies (Extras)](#optional-dependencies-extras)
+2. [Optional Dependencies (Extras)](#optional-dependencies-extras)
+3. [New Dependencies](#new-dependencies)
 4. [Dependency Groups](#dependency-groups)
 5. [Installation Instructions](#installation-instructions)
 6. [Version Compatibility](#version-compatibility)
