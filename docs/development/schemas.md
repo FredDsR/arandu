@@ -237,7 +237,7 @@ The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for cog
 
 ### QAPairCEP
 
-Extends `QAPair` with CEP cognitive elicitation fields. **Inherits from QAPair**, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation.
+Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `EnrichedRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once `judge-qa` has run.
 
 **Fields** (in addition to QAPair base fields):
 
@@ -256,6 +256,10 @@ Extends `QAPair` with CEP cognitive elicitation fields. **Inherits from QAPair**
 | `hop_count` | `int \| None` | No | Number of reasoning hops (1-5 when is_multi_hop=True) |
 | `tacit_inference` | `str \| None` | No | Explanation of implicit domain knowledge surfaced |
 | `generation_prompt` | `str \| None` | No | LLM prompt used to generate this QA pair |
+| `generation_thinking` | `str \| None` | No | Model thinking/reasoning trace for this specific QA pair |
+| `chunk_id` | `str \| None` | No | Reference into the source ChunkSet for the chunker view used at generation |
+| `validation` | `JudgePipelineResult \| None` | No | Judge verdict (from `JudgeResultMixin`). None until judged by `judge-qa` |
+| `is_valid` | `bool \| None` | Computed | Derived from `validation.passed` (None when not yet judged) |
 
 **BloomLevel**: `Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]`
 
@@ -296,8 +300,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
-class QAPairCEP(QAPair):
-    """Extended QA pair with CEP cognitive elicitation fields."""
+class QAPairCEP(QAPair, JudgeResultMixin):
+    """Extended QA pair with CEP cognitive elicitation fields.
+
+    The ``validation`` (JudgePipelineResult) field and the computed ``is_valid``
+    property are inherited from ``JudgeResultMixin``; they are not declared here.
+    """
     bloom_level: BloomLevel = Field(
         ..., description="Bloom's taxonomy cognitive level for this question"
     )
@@ -325,6 +333,12 @@ class QAPairCEP(QAPair):
     generation_prompt: str | None = Field(
         None, description="LLM prompt used to generate this QA pair"
     )
+    generation_thinking: str | None = Field(
+        None, description="Model thinking/reasoning trace for this specific QA pair"
+    )
+    chunk_id: str | None = Field(
+        default=None, description="Reference into the source ChunkSet for the chunker view"
+    )
 
     @model_validator(mode="after")
     def validate_multi_hop(self) -> Self:
@@ -336,61 +350,11 @@ class QAPairCEP(QAPair):
         return self
 ```
 
-### ValidationScore
+### QA-pair validation
 
-Represents LLM-as-a-Judge validation scores for a QA pair.
+There is no separate `ValidationScore` or `QAPairValidated` model. A judged CEP pair is just a `QAPairCEP` whose `validation` field (from [`JudgeResultMixin`](#judgeresultmixin)) holds a [`JudgePipelineResult`](#judgepipelineresult); `is_valid` is computed from `validation.passed`. The four QA criteria (`faithfulness`, `bloom_calibration`, `informativeness`, `self_containedness`) are individual `CriterionScore` entries under the judge stage — there is no aggregate `overall_score` field on the pair. The criterion weights and `validation_threshold` that gate a pair live in `CEPConfig`.
 
-**Fields**:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `faithfulness` | `float` | Yes | Answer grounded in context (0.0-1.0) |
-| `bloom_calibration` | `float` | Yes | Question matches declared cognitive level (0.0-1.0) |
-| `informativeness` | `float` | Yes | Answer reveals non-obvious knowledge (0.0-1.0) |
-| `overall_score` | `float` | Yes | Weighted average of criteria |
-| `judge_rationale` | `str \| None` | No | LLM's explanation of the scores |
-
-**Scoring Weights** (default):
-- Faithfulness: 40%
-- Bloom Calibration: 30%
-- Informativeness: 30%
-
-**Example**:
-```json
-{
-  "faithfulness": 0.85,
-  "bloom_calibration": 0.78,
-  "informativeness": 0.72,
-  "overall_score": 0.79,
-  "judge_rationale": "Answer well grounded, question requires appropriate analysis level."
-}
-```
-
-**Python Implementation**:
-```python
-from pydantic import BaseModel, Field
-
-class ValidationScore(BaseModel):
-    """LLM-as-a-Judge validation scores."""
-    faithfulness: float = Field(ge=0.0, le=1.0)
-    bloom_calibration: float = Field(ge=0.0, le=1.0)
-    informativeness: float = Field(ge=0.0, le=1.0)
-    overall_score: float = Field(ge=0.0, le=1.0)
-    judge_rationale: str | None = None
-```
-
-### QAPairValidated
-
-Extends QAPairCEP with validation results.
-
-**Fields** (in addition to QAPairCEP fields):
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `validation` | `ValidationScore \| None` | No | Validation scores from LLM-as-a-Judge |
-| `is_valid` | `bool` | Yes | Whether pair passes validation threshold |
-
-**Example**:
+**Example** (a judged `QAPairCEP`):
 ```json
 {
   "question": "Por que o pescador guarda o barco?",
@@ -400,10 +364,18 @@ Extends QAPairCEP with validation results.
   "confidence": 0.9,
   "bloom_level": "analyze",
   "validation": {
-    "faithfulness": 0.9,
-    "bloom_calibration": 0.8,
-    "informativeness": 0.7,
-    "overall_score": 0.81
+    "stage_results": {
+      "qa_judge": {
+        "criterion_scores": {
+          "faithfulness": {"score": 0.9, "scale": "continuous", "threshold": 0.6, "rationale": "..."},
+          "bloom_calibration": {"score": 0.8, "scale": "continuous", "threshold": 0.6, "rationale": "..."},
+          "informativeness": {"score": 0.7, "scale": "continuous", "threshold": 0.6, "rationale": "..."},
+          "self_containedness": {"score": 0.85, "scale": "continuous", "threshold": 0.6, "rationale": "..."}
+        }
+      }
+    },
+    "passed": true,
+    "rejected_at": null
   },
   "is_valid": true
 }
@@ -419,8 +391,10 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
 |-------|------|----------|-------------|
 | `source_file_id` | `str` | Yes | Unique identifier of the original media file (e.g. Google Drive file ID) |
 | `source_filename` | `str` | Yes | Original filename |
+| `source_metadata` | `SourceMetadata \| None` | No | Source interview metadata for provenance tracking |
 | `transcription_text` | `str` | Yes | Full transcription text |
-| `qa_pairs` | `list[QAPairValidated \| QAPairCEP]` | Yes | CEP-enhanced QA pairs (validated or unvalidated) |
+| `qa_pairs` | `list[QAPairCEP]` | Yes | CEP-enhanced QA pairs (each carries its own `validation` once judged) |
+| `chunker_id` | `str` | Yes | Chunker view used to slice `transcription_text` (default: "cep_4k") |
 | `model_id` | `str` | Yes | LLM model used for generation |
 | `validator_model_id` | `str \| None` | No | LLM model used for validation (if enabled) |
 | `provider` | `Literal["openai", "ollama", "custom"]` | Yes | LLM provider used |
@@ -434,8 +408,7 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
 | `cep_version` | `str` | Yes | CEP pipeline version (default: "1.0") |
 
 **Important Notes**:
-- `qa_pairs` accepts both `QAPairValidated` and `QAPairCEP` in a union type
-- `QAPairValidated` must be listed first in the union for Pydantic to correctly preserve validation fields
+- `qa_pairs` is `list[QAPairCEP]`; each pair carries its own `validation` (`JudgePipelineResult`) once `judge-qa` has run. There is no separate `QAPairValidated` type.
 - `validation_summary` is a plain `dict[str, float]`, **NOT** a ValidationSummary class (this class does not exist)
 - `validation_rate` is a computed property: `validated_pairs / total_pairs`
 
@@ -463,7 +436,7 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
     "avg_faithfulness": 0.85,
     "avg_bloom_calibration": 0.78,
     "avg_informativeness": 0.72,
-    "avg_overall_score": 0.79
+    "avg_self_containedness": 0.81
   },
   "validation_rate": 0.833,
   "cep_version": "1.0"
@@ -500,9 +473,13 @@ class QARecordCEP(BaseModel):
     """Extended QA dataset record with CEP metadata and validation summary."""
     source_file_id: str = Field(..., alias="source_gdrive_id", description="Unique identifier of the original media file")
     source_filename: str = Field(..., description="Original filename")
+    source_metadata: SourceMetadata | None = Field(
+        default=None, description="Source interview metadata for provenance tracking"
+    )
     transcription_text: str = Field(..., description="Full transcription text")
-    qa_pairs: list[QAPairValidated | QAPairCEP] = Field(
-        ..., description="List of CEP-enhanced QA pairs"
+    qa_pairs: list[QAPairCEP] = Field(..., description="List of CEP-enhanced QA pairs")
+    chunker_id: str = Field(
+        default="cep_4k", description="Chunker view used to slice transcription_text"
     )
     model_id: str = Field(..., description="LLM model used for generation")
     validator_model_id: str | None = Field(
@@ -1340,8 +1317,8 @@ graph TD
     A[EnrichedRecord] --> P[CEPQAGenerator]
     P --> Q[QARecordCEP]
     Q --> R[QAPairCEP]
-    R --> S[ValidationScore]
-    R --> T[QAPairValidated]
+    R --> S["validation: JudgePipelineResult (via JudgeResultMixin)"]
+    A --> S
 
     A --> E[AutoSchemaKG]
     E --> F[GraphML File]
