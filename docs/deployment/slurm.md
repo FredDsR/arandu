@@ -10,34 +10,50 @@ This guide covers running Arandu on any SLURM-based HPC cluster.
 
 ## SLURM Scripts
 
-Arandu provides SLURM scripts for each pipeline in `scripts/slurm/`:
+Scripts live under `scripts/slurm/<step>/` as thin **per-partition** files
+(`<partition>.slurm`) that source a shared `<step>_common.sh`. There is no
+single `run_<x>.slurm` entry point; you submit the partition script for the
+node type you want.
 
-| Script | Pipeline | Description |
-|--------|----------|-------------|
-| `run_transcription.slurm` | Transcription | Batch transcription with Whisper |
-| `run_qa_generation.slurm` | QA | Generate QA pairs from transcriptions |
-| `cep/grace.slurm` | CEP QA | Cognitive QA generation (Grace/L40S) |
-| `cep/tupi.slurm` | CEP QA | Cognitive QA generation (Tupi/RTX 4090) |
-| `cep/sirius.slurm` | CEP QA | Cognitive QA generation (Sirius/AMD CPU) |
-| `run_kg_construction.slurm` | KG | Build knowledge graphs |
-| `run_evaluation.slurm` | Evaluation | Compute quality metrics |
+| Step | Scripts | Description |
+|------|---------|-------------|
+| Transcription | `transcription/<partition>.slurm` + `job_common.sh` | Batch Whisper transcription |
+| CEP QA | `cep/{grace,tupi,sirius}.slurm` + `cep_common.sh` | Bloom-scaffolded QA generation (`generate-cep-qa`) |
+| Judge | `judge/transcription/tupi.slurm`, `judge/qa/tupi.slurm` + `judge_common.sh` | LLM-as-a-Judge (`judge-transcription` / `judge-qa`) |
+| KG | `kg/{grace,tupi,sirius}.slurm` + `kg_common.sh` | atlas-rag KG construction (`build-kg`) |
+| RAG (Phase C) | `rag/<stage>.slurm` + `rag_common.sh` | chunk / retrieve / answer / judge-answers / rag-analysis / generate-non-answerable |
+| Cleanup | `general/cleanup.slurm`, `kg/pipeline-cleanup.slurm` | Docker/disk cleanup |
+
+For the authoritative cluster reference (partition access + GPU rules, the
+code→config→compose→image→SLURM wiring, the rsync deploy flow), see
+[`scripts/slurm/AGENTS.md`](../../scripts/slurm/AGENTS.md) and the
+[PCAD Guide](pcad.md).
 
 ## Basic Usage
 
 ### Submit a Job
 
+Every job takes a `PIPELINE_ID` (groups all of a run's stages under
+`results/<id>/`). Submit the partition script for the node you want:
+
 ```bash
-sbatch scripts/slurm/run_qa_generation.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/kg/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/rag/retrieve.slurm
 ```
 
 ### Override Settings
 
-```bash
-# Override workers and model
-WORKERS=8 QA_MODEL=qwen3:14b sbatch scripts/slurm/run_qa_generation.slurm
+Overrides are environment variables passed at submit time (the scripts read the
+same `ARANDU_*` config the CLI does):
 
-# Override partition
-sbatch --partition=gpu scripts/slurm/run_kg_construction.slurm
+```bash
+# Different model + worker count for a CEP run
+PIPELINE_ID=run-01 ARANDU_QA_MODEL_ID=qwen3:14b ARANDU_QA_WORKERS=3 \
+  sbatch scripts/slurm/cep/tupi.slurm
+
+# Avoid a known-bad node instead of pinning one
+PIPELINE_ID=run-01 sbatch --exclude=tupi5 scripts/slurm/kg/tupi.slurm
 ```
 
 ### Monitor Jobs
@@ -61,78 +77,76 @@ scancel <job_id>
 
 ## Script Structure
 
-A typical SLURM script:
+A partition script is thin: `#SBATCH` directives, then it sources the step's
+`<step>_common.sh`, which builds the image, starts the Ollama sidecar (for LLM
+stages), and runs the pipeline container via `docker compose`. For example
+`scripts/slurm/cep/tupi.slurm`:
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=arandu-qa
-#SBATCH --partition=gpu
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
+#SBATCH --job-name=arandu-cep
+#SBATCH --partition=tupi
 #SBATCH --gres=gpu:1
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/arandu_%j.out
-#SBATCH --error=logs/arandu_%j.err
+#SBATCH --output=logs/cep_tupi_%j.out
+#SBATCH --error=logs/cep_tupi_%j.err
 
-# Load modules (cluster-specific)
-module load python/3.13
-module load cuda/12.4
-
-# Activate environment
-source .venv/bin/activate
-
-# Set environment variables
-export ARANDU_QA_PROVIDER=ollama
-export ARANDU_QA_MODEL_ID=${QA_MODEL:-qwen3:14b}
-export ARANDU_WORKERS=${WORKERS:-4}
-
-# Run pipeline
-arandu generate-cep-qa results/ -o qa_dataset/
+export USE_GPU_OLLAMA=true          # selects the cep-gpu compose profile
+export ARANDU_QA_WORKERS=3
+source "$(dirname "$0")/cep_common.sh"   # builds image, runs `arandu generate-cep-qa` via compose
 ```
+
+The container runs `arandu <command>` off the image `ENTRYPOINT`; the
+`<step>_common.sh` helper handles image build, the Ollama sidecar, model pull,
+and cleanup. See [`scripts/slurm/AGENTS.md`](../../scripts/slurm/AGENTS.md) for
+the full step→service→profile→image mapping.
 
 ## Environment Variables
 
-Override via command line or in script:
+Set these at submit time; the scripts forward them to the container, where the
+matching `*Config` reads them (same contract as the CLI):
 
 | Variable | Description |
 |----------|-------------|
-| `WORKERS` | Number of parallel workers |
-| `QA_MODEL` | Model for QA generation |
-| `KG_MODEL` | Model for KG construction |
-| `QA_PROVIDER` | LLM provider (ollama, openai) |
-| `KG_LANGUAGE` | Language for KG extraction |
+| `PIPELINE_ID` | **Required.** Groups a run's stages under `results/<id>/` |
+| `USE_GPU_OLLAMA` | `true` selects the `-gpu` compose profile (set by GPU partition scripts) |
+| `ARANDU_QA_WORKERS` | Parallel workers for CEP/QA generation |
+| `ARANDU_QA_MODEL_ID` / `ARANDU_KG_MODEL_ID` | Generation / KG model override |
+| `ARANDU_JUDGE_VALIDATOR_MODEL` | Validator model for `judge-qa` / `judge-transcription` |
+| `JUDGE_REJUDGE` | `1` forces a fresh judge pass instead of resume |
+| `ARANDU_CEP_LANGUAGE` | Prompt language (`pt` or `en`) |
 
 ## Using Docker on SLURM
 
-If Docker is available:
+The repo scripts already drive Docker Compose through `<step>_common.sh`. To run
+a compose profile directly (the `<step>_common.sh` scripts do this for you):
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=arandu-qa
-#SBATCH --partition=gpu
+#SBATCH --job-name=arandu-cep
+#SBATCH --partition=tupi
 #SBATCH --gres=gpu:1
 
-# Run via Docker Compose
-docker compose --profile qa up --abort-on-container-exit
+# cep / judge / kg / rag (+ -gpu variants); each brings up its ollama sidecar
+docker compose --profile cep up --abort-on-container-exit
 ```
 
 ## Using Singularity/Apptainer
 
-For HPC clusters without Docker:
+For HPC clusters without Docker, build a `.sif` from the locally built image
+(`docker build -f Dockerfile -t arandu:latest .`; KG/RAG use `Dockerfile.kg`):
 
 ```bash
 #!/bin/bash
-#SBATCH --job-name=arandu-qa
-#SBATCH --partition=gpu
+#SBATCH --job-name=arandu-cep
+#SBATCH --partition=tupi
 #SBATCH --gres=gpu:1
 
-# Build container (once)
-singularity build arandu.sif docker://ghcr.io/fredDsR/arandu:latest
+# Build the .sif once from the local Docker image
+singularity build arandu.sif docker-daemon://arandu:latest
 
-# Run
-singularity exec --nv arandu.sif \
-    arandu generate-cep-qa results/ -o qa_dataset/
+# Run a pipeline command (ENTRYPOINT is `arandu`)
+singularity exec --nv arandu.sif arandu generate-cep-qa results/ -o qa_dataset/
 ```
 
 ## Resource Recommendations
@@ -174,15 +188,18 @@ scripts/slurm/cep/
 ### Submit CEP Jobs
 
 ```bash
-# Grace partition (best for large models)
-sbatch scripts/slurm/cep/grace.slurm
-
-# Tupi partition (good balance of speed/availability)
-sbatch scripts/slurm/cep/tupi.slurm
+# Tupi partition (the GPU partition to use on PCAD)
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
 
 # Sirius partition (CPU-only, for AMD nodes)
-sbatch scripts/slurm/cep/sirius.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/sirius.slurm
 ```
+
+> **Partition access (PCAD)**: `tupi` is the only usable GPU partition;
+> `grace` is **not accessible** (jobs PEND forever with
+> `uid_..._not_in_group_permitted`), so `cep/grace.slurm` exists but won't run
+> as submitted. See [`scripts/slurm/AGENTS.md`](../../scripts/slurm/AGENTS.md)
+> for the authoritative partition rules.
 
 ### CEP Script Architecture
 
@@ -232,15 +249,15 @@ sbatch scripts/slurm/judge/qa/tupi.slurm
 
 | Partition | GPUs | Workers | Best For |
 |-----------|------|---------|----------|
-| Grace (L40S) | 1 | 4 | Large models (70B), validation |
-| Tupi (RTX 4090) | 1 | 3 | Standard generation (14B models) |
+| Tupi (RTX 4090) | 1 | 3 | Standard generation (14B models); the GPU partition to use |
 | Sirius (AMD) | 0 | 2 | CPU-only fallback |
+| Grace (L40S) | 1 | 4 | Large models (70B) **but not accessible** on PCAD (jobs PEND); script exists, do not submit |
 
 ### Monitor CEP Jobs
 
 ```bash
 # View job output
-tail -f logs/cep_grace_<jobid>.out
+tail -f logs/cep_tupi_<jobid>.out
 
 # Check container status
 docker ps --filter name=ollama-cep
@@ -249,19 +266,16 @@ docker ps --filter name=arandu-cep
 
 ## Checkpoint and Resume
 
-All pipelines support checkpointing. If a job fails:
+All pipelines checkpoint under `results/<id>/`. If a job fails or hits the wall
+limit, resubmit the exact same command; it resumes automatically (KG extraction
+and concept generation both checkpoint, so a `TIMEOUT` just needs a resubmit):
 
 ```bash
-# Simply resubmit - checkpoint resumes automatically
-sbatch scripts/slurm/run_qa_generation.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
 ```
 
-To start fresh:
-
-```bash
-rm qa_dataset/qa_checkpoint.json
-sbatch scripts/slurm/run_qa_generation.slurm
-```
+To start fresh, remove that run's checkpoint under
+`results/<id>/<stage>/` before resubmitting.
 
 ## Troubleshooting
 
@@ -276,12 +290,16 @@ cat logs/arandu_<job_id>.err
 
 Reduce workers:
 ```bash
-WORKERS=2 sbatch scripts/slurm/run_qa_generation.slurm
+PIPELINE_ID=run-01 ARANDU_QA_WORKERS=2 sbatch scripts/slurm/cep/tupi.slurm
 ```
 
-### Module Not Found
+### A "silent" log is not a hang
 
-Ensure Python environment is activated in script.
+Long LLM loops (KG concept generation especially) buffer stdout and write
+progress to result files instead. Check artifact mtimes under
+`results/<id>/...` before assuming a job is stuck. See
+[`scripts/slurm/AGENTS.md`](../../scripts/slurm/AGENTS.md) for how to attach to a
+running allocation.
 
 ---
 
