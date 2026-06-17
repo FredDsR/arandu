@@ -17,7 +17,7 @@ This document provides complete specifications for all data schemas used in the 
 
 ### EnrichedRecord
 
-Represents a transcription record with enrichment metadata. Extends `InputRecord` with transcription results and quality checks.
+Represents a transcription record with enrichment metadata. Extends `InputRecord` (transcription results) and `JudgeResultMixin` (judge verdict fields).
 
 **Fields** (inherits all fields from InputRecord):
 
@@ -38,8 +38,10 @@ Represents a transcription record with enrichment metadata. Extends `InputRecord
 | `transcription_status` | `str` | Yes | Status of transcription process |
 | `created_at_enrichment` | `datetime` | Yes | Timestamp of enrichment |
 | `segments` | `list[TranscriptionSegment] \| None` | No | Detailed timestamp segments |
-| `transcription_quality` | `TranscriptionQualityScore \| None` | No | Transcription quality check results |
-| `is_valid` | `bool \| None` | No | Whether transcription passes quality check (None = not yet checked) |
+| `validation` | `JudgePipelineResult \| None` | No | Full judge pipeline result (from `JudgeResultMixin`). None = not yet judged |
+| `is_valid` | `bool \| None` | Computed | Derived from `validation.passed` (None when not yet judged). See `JudgeResultMixin` |
+
+> **Note**: A `@model_validator` migrates records that still carry the retired `transcription_quality` key: an interim `JudgePipelineResult` payload is renamed to `validation`; the very old weighted-score struct is dropped (the record becomes re-judgeable).
 
 **Language Routing Note**:
 
@@ -69,14 +71,27 @@ The `detected_language` field provides the language code directly. There is **no
       "end": 5.2
     }
   ],
-  "transcription_quality": {
-    "script_match_score": 0.95,
-    "repetition_score": 0.92,
-    "segment_quality_score": 0.88,
-    "content_density_score": 0.90,
-    "overall_score": 0.91,
-    "issues_detected": [],
-    "quality_rationale": "High-quality transcription with natural pacing"
+  "validation": {
+    "stage_results": {
+      "heuristic": {
+        "criterion_scores": {
+          "content_length": {
+            "score": 1.0,
+            "scale": "continuous",
+            "threshold": 1.0,
+            "rationale": "Transcription length above the minimum floor"
+          },
+          "script_match": {
+            "score": 0.95,
+            "scale": "continuous",
+            "threshold": 0.9,
+            "rationale": "Text uses the expected Latin script"
+          }
+        }
+      }
+    },
+    "passed": true,
+    "rejected_at": null
   },
   "is_valid": true
 }
@@ -87,14 +102,20 @@ The `detected_language` field provides the language code directly. There is **no
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+from arandu.shared.judge.schemas import JudgeResultMixin
+
 class TranscriptionSegment(BaseModel):
     """Schema for a transcription segment with timestamp information."""
     text: str = Field(..., description="Transcribed text for this segment")
     start: float = Field(..., description="Start time in seconds")
     end: float = Field(..., description="End time in seconds")
 
-class EnrichedRecord(InputRecord):
-    """Schema for output records containing transcription results and metadata."""
+class EnrichedRecord(InputRecord, JudgeResultMixin):
+    """Schema for output records containing transcription results and metadata.
+
+    The ``validation`` field and the computed ``is_valid`` property come from
+    ``JudgeResultMixin``; they are not declared here.
+    """
     transcription_text: str = Field(..., description="Full transcription text")
     detected_language: str = Field(..., description="Detected language code")
     language_probability: float = Field(..., description="Confidence score for detected language")
@@ -108,17 +129,10 @@ class EnrichedRecord(InputRecord):
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"
     )
-    transcription_quality: TranscriptionQualityScore | None = Field(
-        None, description="Transcription quality check results"
-    )
-    is_valid: bool | None = Field(
-        default=None,
-        description="Whether transcription passes quality check (None = not yet checked)",
-    )
 
     def ensure_language_metadata(self) -> None:
         """Ensure metadata compatibility for AutoSchemaKG language routing.
-        
+
         Note: The detected_language field already provides the language code.
         """
         pass
@@ -126,58 +140,93 @@ class EnrichedRecord(InputRecord):
 
 ---
 
-## Transcription Quality Schemas
+## Judge Result Schemas
 
-### TranscriptionQualityScore
+Transcription quality is no longer a single weighted score. It is the verdict of a multi-stage **filter pipeline** (pure-Python heuristics, plus an optional LLM stage), and the same domain-agnostic result types are reused for QA-pair judging. A record passes only when it clears every criterion in each non-skipped stage; there is no aggregate `overall_score`. See the [Transcription Validation guide](../user-guide/transcription-validation.md) for the full model.
 
-Quality scores for transcription validation using heuristics. Distinct from `ValidationScore` (LLM-as-a-Judge for QA pairs). This evaluates Whisper transcription output quality.
+### JudgeResultMixin
+
+Mixin that adds the canonical judge verdict fields to any record schema (e.g. `EnrichedRecord`). Stores the full pipeline result under `validation` and derives `is_valid` from it so the two cannot drift.
+
+**Fields / computed properties**:
+
+| Member | Type | Kind | Description |
+|--------|------|------|-------------|
+| `validation` | `JudgePipelineResult \| None` | Field | Full judge pipeline result. None when the record has not been judged yet |
+| `is_valid` | `bool \| None` | Computed | `validation.passed` when judged, else None |
+
+**Python Implementation**:
+```python
+from pydantic import BaseModel, Field, computed_field
+
+class JudgeResultMixin(BaseModel):
+    """Adds judge verdict fields to a record schema."""
+    validation: "JudgePipelineResult | None" = Field(
+        default=None,
+        description="Full judge pipeline result. None when not yet judged.",
+    )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_valid(self) -> bool | None:
+        """Pass/fail verdict derived from ``validation.passed`` (None if unjudged)."""
+        return self.validation.passed if self.validation is not None else None
+```
+
+### JudgePipelineResult
+
+Result of running the full multi-stage judge pipeline.
 
 **Fields**:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `script_match_score` | `float` | Yes | Text uses expected character set (0.0-1.0, Latin for pt/en) |
-| `repetition_score` | `float` | Yes | Text is free from excessive repetition (0.0-1.0) |
-| `segment_quality_score` | `float` | Yes | Segment timestamps are natural, not suspicious (0.0-1.0) |
-| `content_density_score` | `float` | Yes | Words per minute within reasonable range (0.0-1.0) |
-| `overall_score` | `float` | Yes | Weighted average of all scores (0.0-1.0) |
-| `issues_detected` | `list[str]` | Yes | List of quality issues (default: empty list) |
-| `quality_rationale` | `str \| None` | No | Explanation of quality assessment |
+| `stage_results` | `dict[str, JudgeStepResult]` | Yes | Per-stage results, keyed by stage name (e.g. `"heuristic"`, `"llm"`) |
+| `passed` | `bool` | Yes | Whether the record cleared every non-skipped stage |
+| `rejected_at` | `str \| None` | No | Name of the stage that rejected the record, if any |
 
-**Example**:
+### JudgeStepResult
+
+Result of running all criteria in a single stage. Its `passed` property is True only when every criterion met its threshold.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `criterion_scores` | `dict[str, CriterionScore]` | Yes | Per-criterion results, keyed by criterion name |
+
+### CriterionScore
+
+Result of a single criterion evaluation. Carries either a continuous `score` or an `ordinal_score`, selected by `scale`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `score` | `float \| None` | No | Continuous score in [0, 1] (default scale) |
+| `ordinal_score` | `int \| None` | No | Integer label for ordinal criteria (e.g. emic validity {1..5}) |
+| `scale` | `Literal["continuous", "ordinal"]` | No | Which scale this criterion uses (default `"continuous"`) |
+| `threshold` | `float` | Yes | Pass threshold for continuous criteria |
+| `rationale` | `str` | Yes | Explanation of the verdict |
+| `thinking` | `str \| None` | No | Optional reasoning trace from the LLM |
+| `error` | `str \| None` | No | Error message; `passed` is always False when set |
+
+A continuous criterion's `passed` is `score >= threshold`; an ordinal criterion runs in score mode (any downstream filter threshold is applied separately).
+
+**Example** (`validation` payload on a judged record):
 ```json
 {
-  "script_match_score": 0.95,
-  "repetition_score": 0.88,
-  "segment_quality_score": 0.92,
-  "content_density_score": 0.85,
-  "overall_score": 0.90,
-  "issues_detected": ["Minor repetition in segment 3-5"],
-  "quality_rationale": "Good quality transcription with minor repetition issues"
+  "stage_results": {
+    "heuristic": {
+      "criterion_scores": {
+        "script_match": {
+          "score": 0.95,
+          "scale": "continuous",
+          "threshold": 0.9,
+          "rationale": "Text uses the expected Latin script"
+        }
+      }
+    }
+  },
+  "passed": true,
+  "rejected_at": null
 }
-```
-
-**Python Implementation**:
-```python
-from pydantic import BaseModel, Field
-
-class TranscriptionQualityScore(BaseModel):
-    """Quality scores for transcription validation."""
-    script_match_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Text uses expected character set (Latin for pt/en)"
-    )
-    repetition_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Text is free from excessive repetition"
-    )
-    segment_quality_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Segment timestamps are natural, not suspicious"
-    )
-    content_density_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Words per minute within reasonable range"
-    )
-    overall_score: float = Field(..., ge=0.0, le=1.0, description="Weighted average of all scores")
-    issues_detected: list[str] = Field(default_factory=list, description="List of quality issues")
-    quality_rationale: str | None = Field(None, description="Explanation of quality assessment")
 ```
 
 ---

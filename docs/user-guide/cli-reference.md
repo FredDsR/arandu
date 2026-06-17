@@ -7,9 +7,11 @@ Complete reference for all command-line interface commands in Arandu.
 1. [Command Overview](#command-overview)
 2. [Transcription Commands](#transcription-commands)
 3. [QA Generation Commands](#qa-generation-commands)
-4. [Utilities Commands](#utilities-commands)
-5. [Usage Examples](#usage-examples)
-6. [Common Patterns](#common-patterns)
+4. [Judging Commands](#judging-commands)
+5. [Knowledge Graph & RAG Commands (Phase C)](#knowledge-graph--rag-commands-phase-c)
+6. [Utilities Commands](#utilities-commands)
+7. [Usage Examples](#usage-examples)
+8. [Common Patterns](#common-patterns)
 
 ---
 
@@ -21,8 +23,10 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 
 **Command Categories**:
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
-- **QA Generation**: `generate-cep-qa`
-- **Utilities**: `refresh-auth`, `info`, `list-runs`, `run-info`, `judge-transcription`, `rebuild-index`
+- **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
+- **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
+- **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `emic-prepass`, `build-human-eval-sample`, `rag-analysis`
+- **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
 - `--help` - Show command help
@@ -174,7 +178,7 @@ arandu batch-transcribe input/catalog.csv --id my-project-001
 
 ### `generate-cep-qa`
 
-Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with Bloom-level scaffolding and LLM-as-a-Judge validation.
+Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with Bloom-level scaffolding. Generation and validation are now separate steps: this command only generates pairs. Run [`judge-qa`](#judge-qa) afterwards to evaluate them with LLM-as-a-Judge.
 
 **Usage**:
 ```bash
@@ -196,8 +200,6 @@ arandu generate-cep-qa INPUT_DIR [OPTIONS]
 | `--ollama-url` | | str | `http://localhost:11434/v1` | Ollama API base URL |
 | `--base-url` | | str | `None` | Custom base URL for OpenAI-compatible endpoints |
 | `--language` | `-l` | str | `pt` | Language for prompts: 'pt' or 'en' |
-| `--validate/--no-validate` | | flag | `True` | Enable LLM-as-a-Judge validation |
-| `--validator-model` | | str | `qwen3:14b` | Model ID for validation |
 | `--bloom-dist` | | str | `None` | Bloom level pair counts (e.g., 'remember:3,understand:1,analyze:1,evaluate:1') |
 | `--jsonl/--no-jsonl` | | flag | `False` | Export QA pairs to JSONL format for training |
 | `--id` | | str | Auto-resolved | Pipeline ID (auto-resolves transcription outputs) |
@@ -217,14 +219,9 @@ arandu generate-cep-qa results/ \
     --model-id gpt-4o-mini \
     --workers 2
 
-# Without validation (faster)
-arandu generate-cep-qa results/ \
-    --no-validate \
-    --workers 4
-
-# With custom validator model
-arandu generate-cep-qa results/ \
-    --validator-model qwen3:14b
+# Generate, then validate as a separate step
+arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
+arandu judge-qa qa_dataset/ --model qwen3:14b
 
 # Export to JSONL for KGQA training
 arandu generate-cep-qa results/ \
@@ -241,9 +238,159 @@ arandu generate-cep-qa results/ --id my-project-001
 **Output Structure**:
 ```
 qa_dataset/
-├── cep_qa_1abc123xyz.json
-├── cep_qa_2def456uvw.json
+├── 1abc123xyz_cep_qa.json
+├── 2def456uvw_cep_qa.json
 └── cep_qa_checkpoint.json
+```
+
+---
+
+### `generate-non-answerable`
+
+Generate a non-answerable benchmark from validated CEP pairs and the knowledge graph. Used to measure whether the RAG arms correctly abstain on questions the corpus cannot answer.
+
+**Usage**:
+```bash
+arandu generate-non-answerable INPUT_DIR [OPTIONS]
+```
+
+Run `arandu generate-non-answerable --help` for the full option list.
+
+---
+
+## Judging Commands
+
+The judging commands share the `ARANDU_JUDGE_VALIDATOR_*` environment fallbacks (model, provider, base URL) and the `--rejudge/--resume` resume semantics.
+
+### `judge-transcription`
+
+Judge transcription quality with a two-stage filter pipeline: pure-Python heuristics (always) plus optional LLM criteria. A record passes only when it clears every criterion in each filter stage; there is no aggregate score. See the [Transcription Validation guide](transcription-validation.md) for the full model.
+
+**Usage**:
+```bash
+arandu judge-transcription INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing `*_transcription.json` files to judge
+
+**Options**:
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--language` | `-l` | str | `pt` | Expected language code (e.g., 'pt', 'en') |
+| `--validator-model` | | str | (none) | Model ID enabling the LLM filter stage. Falls back to `ARANDU_JUDGE_VALIDATOR_MODEL` |
+| `--validator-provider` | | str | inferred | `openai`, `ollama`, or `custom`. Falls back to `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
+| `--validator-base-url` | | str | inferred | Validator base URL. Falls back to `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then `ARANDU_LLM_BASE_URL` |
+| `--validator-temperature` | | float | `0.3` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
+| `--validator-max-tokens` | | int | `2048` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
+| `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every record; `--resume` skips already-judged records |
+
+**Examples**:
+```bash
+# Heuristics only, update in-place
+arandu judge-transcription results/
+
+# Enable the LLM filter stage (language_drift + hallucination_loop)
+arandu judge-transcription results/ --validator-model qwen3:14b
+
+# Judge English transcriptions
+arandu judge-transcription results/ --language en
+
+# Force a fresh pass over every record
+arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
+```
+
+**Stages**:
+- Heuristic filter (always): content length floor, script match, repetition, content density, segment quality
+- LLM filter (optional): `language_drift`, `hallucination_loop`
+
+---
+
+### `judge-qa`
+
+Judge CEP QA pairs with LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, self-containedness). Each judged pair is persisted back into its `*_cep_qa.json` file via the pair's `validation` field; `is_valid` is derived from `validation.passed`. There is no aggregate side-file. This is the validation step that used to be folded into `generate-cep-qa`.
+
+**Usage**:
+```bash
+arandu judge-qa INPUT_DIR [OPTIONS]
+```
+
+**Arguments**:
+- `INPUT_DIR` - Directory containing `*_cep_qa.json` files to judge
+
+**Options**:
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--model` | `-m` | str | (none) | Judge model ID. Required via flag or `ARANDU_JUDGE_VALIDATOR_MODEL` |
+| `--provider` | | str | inferred | `openai`, `ollama`, or `custom`. Falls back to `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
+| `--base-url` | | str | inferred | Custom/OpenAI-compatible URL. Falls back to `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then `ARANDU_LLM_BASE_URL` |
+| `--language` | `-l` | str | `pt` | Language for judge prompts: 'pt' or 'en' |
+| `--files` | | int | All | Maximum number of QA files to sample |
+| `--pairs` | | int | All | Maximum QA pairs to judge per file |
+| `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every sampled pair; `--resume` skips pairs already carrying a `validation` payload |
+
+**Examples**:
+```bash
+# Defaults from ARANDU_JUDGE_* env vars
+arandu judge-qa qa_dataset/
+
+# Explicit Ollama model
+arandu judge-qa qa_dataset/ --provider ollama --model qwen3:14b
+
+# OpenAI-compatible custom endpoint
+arandu judge-qa qa_dataset/ --provider custom --model gemini-2.5-flash \
+    --base-url https://generativelanguage.googleapis.com/v1beta/openai/
+
+# Sample a subset, then force a fresh pass
+arandu judge-qa qa_dataset/ --files 2 --pairs 3
+arandu judge-qa qa_dataset/ --rejudge
+```
+
+---
+
+### `judge-answers`
+
+Run the gated answer judge over every `AnswerRecord` in a populated Phase C run, scoring generated RAG answers. See the [RAG evaluation docs](rag-analysis.md) for the scoring model.
+
+**Usage**:
+```bash
+arandu judge-answers RUN_ID [OPTIONS]
+```
+
+Run `arandu judge-answers --help` for the full option list.
+
+---
+
+## Knowledge Graph & RAG Commands (Phase C)
+
+These commands implement the Phase C retrieval-augmented-generation evaluation chain: build a knowledge graph from transcriptions, link passages, build retriever indices, retrieve, answer, and analyze. They operate on a populated run identified by a pipeline/run ID. Each command exposes its full option set via `--help`; the summaries below cover the common workflow.
+
+| Command | Description |
+|---------|-------------|
+| `chunk` | Build `ChunkSets` across one or more chunker views |
+| `build-kg` | Build a knowledge graph from transcription records |
+| `kg-link-passages` | Map atlas-rag passages back to char offsets in source `EnrichedRecord` space |
+| `kg-build-retriever-index` | Build the atlas-rag retriever's precomputed index for a run |
+| `retrieve` | Run Phase C retrievers over a populated run |
+| `answer` | Run the Answerer LLM over every `RetrievalRecord` in a populated run |
+| `emic-prepass` | Score canonical-approved CEP pairs for emic validity (ordinal 1-5) |
+| `build-human-eval-sample` | Build the stratified human-comparison sample (80 pairs) for a run |
+| `rag-analysis` | Aggregate judged answers and emit `report.json` + `tables.md` |
+
+**Typical Phase C chain**:
+```bash
+# Build the KG and retriever index for a run
+arandu build-kg results/ --id project-001
+arandu kg-link-passages project-001
+arandu kg-build-retriever-index project-001
+
+# Retrieve, answer, judge, analyze
+arandu retrieve project-001
+arandu answer project-001
+arandu judge-answers project-001
+arandu rag-analysis project-001
 ```
 
 ---
@@ -359,51 +506,6 @@ arandu run-info latest --pipeline cep
 
 ---
 
-### `judge-transcription`
-
-Judge transcription quality with a two-stage filter pipeline: pure-Python heuristics (always) plus optional LLM criteria. A record passes only when it clears every criterion in each filter stage; there is no aggregate score. See the [Transcription Validation guide](transcription-validation.md) for the full model.
-
-**Usage**:
-```bash
-arandu judge-transcription INPUT_DIR [OPTIONS]
-```
-
-**Arguments**:
-- `INPUT_DIR` - Directory containing `*_transcription.json` files to judge
-
-**Options**:
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--language` | `-l` | str | `pt` | Expected language code (e.g., 'pt', 'en') |
-| `--validator-model` | | str | (none) | Model ID enabling the LLM filter stage. Falls back to `ARANDU_JUDGE_VALIDATOR_MODEL` |
-| `--validator-provider` | | str | inferred | `openai`, `ollama`, or `custom`. Falls back to `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
-| `--validator-base-url` | | str | inferred | Validator base URL. Falls back to `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then `ARANDU_LLM_BASE_URL` |
-| `--validator-temperature` | | float | `0.3` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
-| `--validator-max-tokens` | | int | `2048` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
-| `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every record; `--resume` skips already-judged records |
-
-**Examples**:
-```bash
-# Heuristics only, update in-place
-arandu judge-transcription results/
-
-# Enable the LLM filter stage (language_drift + hallucination_loop)
-arandu judge-transcription results/ --validator-model qwen3:14b
-
-# Judge English transcriptions
-arandu judge-transcription results/ --language en
-
-# Force a fresh pass over every record
-arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
-```
-
-**Stages**:
-- Heuristic filter (always): content length floor, script match, repetition, content density, segment quality
-- LLM filter (optional): `language_drift`, `hallucination_loop`
-
----
-
 ### `rebuild-index`
 
 Rebuild index.json from existing run directories by scanning all pipeline ID directories for run_metadata.json files.
@@ -423,6 +525,19 @@ arandu rebuild-index [OPTIONS]
 ```bash
 arandu rebuild-index --results-dir /path/to/results
 ```
+
+---
+
+### Other utilities
+
+Concise reference for the remaining run-management and reporting commands. Run `arandu <command> --help` for the full option list.
+
+| Command | Description |
+|---------|-------------|
+| `replicate SOURCE_PIPELINE_ID` | Replicate (clone) an existing pipeline run to a new ID |
+| `enrich-metadata INPUT_DIR OUTPUT_DIR` | Enrich existing transcription JSONs with source metadata |
+| `report` | Generate interactive HTML dashboard and PNG charts for pipeline results |
+| `serve-report RESULTS_DIR` | Launch interactive dashboard for pipeline results exploration |
 
 ---
 
@@ -449,10 +564,13 @@ arandu generate-cep-qa results/ \
     --language pt \
     --id etno-001
 
-# Step 4: List all runs
+# Step 4: Judge the generated QA pairs
+arandu judge-qa qa_dataset/ --model qwen3:14b
+
+# Step 5: List all runs
 arandu list-runs
 
-# Step 5: View run details
+# Step 6: View run details
 arandu run-info latest --pipeline cep
 ```
 
@@ -525,9 +643,9 @@ export ARANDU_QUANTIZE=true
 export ARANDU_QA_PROVIDER=ollama
 export ARANDU_QA_MODEL_ID=qwen3:14b
 
-# CEP settings
-export ARANDU_CEP_ENABLE_VALIDATION=true
-export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b
+# Judge settings (used by judge-qa and judge-transcription)
+export ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
+export ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
 
 # Now run with defaults
 arandu batch-transcribe input/catalog.csv
@@ -650,6 +768,6 @@ arandu generate-cep-qa results/ --workers 4
 
 ---
 
-**Document Version**: 2.0  
-**Last Updated**: 2026-02-11  
+**Document Version**: 2.1  
+**Last Updated**: 2026-06-16  
 **Status**: Aligned with codebase v0.1.0
