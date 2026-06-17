@@ -35,9 +35,10 @@ orchestrator, and report via Rich. They are fire-and-forget: side effects land i
 
 ## Complex logic worth knowing
 
-- CLI command functions are the one place exempt from the strict
-  type-annotation rule (Typer's `Annotated` wrapping obscures inference) — see
-  the root `AGENTS.md`. Helpers in `_helpers.py` are *not* exempt.
+- CLI functions are exempt from the strict type-annotation rule (Typer's
+  `Annotated` wrapping obscures inference) — see the root `AGENTS.md`. The
+  exemption is a Ruff per-file-ignore on the whole `cli/*.py` glob (ANN001/ANN201),
+  so it also covers `_helpers.py`; still annotate helper logic where practical.
 - Settings are constructed fresh per invocation (no global singleton), so env
   changes take effect across reruns in the same shell. CLI flags always override
   env, which overrides `.env`, which overrides defaults.

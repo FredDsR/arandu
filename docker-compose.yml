@@ -3,13 +3,15 @@
 # <step>_common.sh scripts pick a profile and forward ARANDU_<PREFIX>_* env.
 #
 #   profile (CPU / -gpu)   service          command            image
-#   qa     / qa-gpu        arandu-qa        generate-qa        arandu:latest
+#   qa     / qa-gpu        arandu-qa        generate-qa †      arandu:latest
 #   cep    / cep-gpu       arandu-cep       generate-cep-qa    arandu:latest
 #   judge  / judge-gpu     arandu-judge     judge-*            arandu:latest
-#   evaluate              arandu-eval      evaluate           arandu:latest
+#   evaluate              arandu-eval      evaluate †         arandu:latest
 #   kg     / kg-gpu        arandu-kg        build-kg           arandu-kg:latest (Dockerfile.kg, +extra kg)
 #   rag/rag-gpu/rag-cpu   arandu-rag(-cpu) chunk/retrieve/...  arandu-kg:latest
 #   (transcription uses arandu / arandu-cpu / arandu-rocm, no ollama sidecar)
+#   † generate-qa and evaluate are NOT currently registered in cli/app.py (legacy
+#     services); the live QA path is generate-cep-qa, evaluation is the rag-* chain.
 #
 # An ARANDU_<PREFIX>_* var below only takes effect if it is also a real field on
 # the step's *Config class (qa/kg/shared/config.py); unknown vars are ignored.

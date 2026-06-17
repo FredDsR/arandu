@@ -17,12 +17,18 @@ env and writes `results/<id>/<stage>/outputs/`.
 | Step | `arandu` command(s) | Config class · env prefix | Compose service | Profiles | Image · Dockerfile | SLURM dir |
 | ---- | ------------------- | ------------------------- | --------------- | -------- | ------------------ | --------- |
 | Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | `arandu` / `arandu-cpu` / `arandu-rocm` | (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
-| QA | `generate-qa` | `QAConfig` · `ARANDU_QA_` | `arandu-qa` | `qa` / `qa-gpu` | `arandu:latest` · `Dockerfile` | `qa/` |
+| QA | `generate-qa` †legacy | `QAConfig` · `ARANDU_QA_` | `arandu-qa` | `qa` / `qa-gpu` | `arandu:latest` · `Dockerfile` | `qa/` |
 | CEP | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | `arandu-cep` | `cep` / `cep-gpu` | `arandu:latest` · `Dockerfile` | `cep/` |
 | Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | `arandu-judge` | `judge` / `judge-gpu` | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
 | KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | `arandu-kg` | `kg` / `kg-gpu` | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
 | RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | `arandu-rag` / `arandu-rag-cpu` | `rag` / `rag-gpu` / `rag-cpu` | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
-| Evaluation | `evaluate` | `EvaluationConfig` · `ARANDU_EVAL_` | `arandu-eval` | `evaluate` | `arandu:latest` · `Dockerfile` | `evaluation/` |
+| Evaluation | `evaluate` †legacy | `EvaluationConfig` · `ARANDU_EVAL_` | `arandu-eval` | `evaluate` | `arandu:latest` · `Dockerfile` | `evaluation/` |
+
+> **†legacy**: the `arandu-qa` (`generate-qa`) and `arandu-eval` (`evaluate`)
+> compose services name commands that are **not currently registered** in
+> `cli/app.py`, so they will not run as written. The live QA path is
+> `generate-cep-qa` (+ `judge-qa`); Phase C retrieval evaluation is the `rag-*`
+> chain. The rows are kept because the compose services + SLURM dirs still exist.
 
 Config-class fields + env prefixes are the contract; see
 [docs/user-guide/configuration.md](../../docs/user-guide/configuration.md).

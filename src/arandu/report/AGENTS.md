@@ -21,9 +21,10 @@ a read-only view over `results/`.
 
 - **Discover runs by walking `results/`, never `index.json`** — the PCAD sync can
   leave the index stale (`collector.py` is explicit about this).
-- **New chart**: add `charts/<name>.py` with a `build_*` function returning a
-  Plotly `go.Figure`; pull colors/layout from `charts/style.py` — no magic hex,
-  so the colorblind palette stays consistent.
+- **New chart**: add `charts/<name>.py` with a `create_*` function (the existing
+  convention: `create_transcription_quality_chart`, `create_bloom_distribution_chart`,
+  ...) returning a Plotly `go.Figure`; pull colors/layout from `charts/style.py` —
+  no magic hex, so the colorblind palette stays consistent.
 - **New endpoint**: keep the `api.py` handler thin, put logic in a `ReportService`
   method, and return a `schemas.*` model (not a raw dict).
 - **Template edits**: `templates/report.html.j2` keeps autoescape on; pass data

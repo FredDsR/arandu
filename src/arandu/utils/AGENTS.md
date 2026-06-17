@@ -35,8 +35,10 @@ No pipeline logic lives here — keep it dependency-light and side-effect-free.
   to async code.
 - `map_concurrent(workers=1)` runs inline (no pool); `workers>1` keeps a bounded
   submission window so memory stays flat across tens of thousands of items.
-- `validate_ordinal_score` rounds reasoning-model fractional labels half-up
-  (e.g. `3.5 → 4`) so a stray decimal doesn't poison the result into an error.
+- `validate_ordinal_score` coerces whole-number floats (`5.0 → 5`) and clamps
+  out-of-range labels to the nearest bound; **non-numeric or fractional values
+  fall back to `default`** (3), they are not rounded. It's a safety net after an
+  LLM returns an ordinal label, not a rounder.
 
 ## Gotchas
 
