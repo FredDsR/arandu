@@ -131,7 +131,7 @@ export OPENAI_API_KEY=sk-...
 | Validate transcriptions | [Transcription Validation Guide](transcription-validation.md) |
 | Generate QA pairs | [CEP QA Generation Guide](cep-qa-generation.md) |
 | Build knowledge graphs | [KG Construction Guide](kg-construction.md) |
-| Evaluate quality | [Evaluation Guide](evaluation.md) |
+| Compare retrieval arms | [RAG Analysis Guide](rag-analysis.md) |
 | Configure settings | [Configuration Reference](configuration.md) |
 
 ## Pipeline Overview

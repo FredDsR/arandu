@@ -33,7 +33,6 @@ export default defineConfig({
               label: 'CEP QA Generation',
               link: '/guides/cep-qa-generation/',
             },
-            { label: 'Evaluation', link: '/guides/evaluation/' },
           ],
         },
         {

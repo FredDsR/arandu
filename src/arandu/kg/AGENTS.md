@@ -6,6 +6,12 @@ point is `arandu kg` (`cli/kg.py` -> `batch.run_batch_kg_construction`), which
 resolves transcriptions via `ResultsManager` and writes under
 `results/<pipeline-id>/kg/outputs/`.
 
+**Deployment surface**: this module (and RAG) ships in `arandu-kg:latest`
+(`Dockerfile.kg` = base + `--extra kg` for atlas-rag), run by the `arandu-kg`
+compose service under the `kg`/`kg-gpu` profile via `scripts/slurm/kg/`. A dep
+bump in the `kg` extra needs a `Dockerfile.kg` rebuild. Full cross-layer map:
+[scripts/slurm/AGENTS.md](../../../scripts/slurm/AGENTS.md).
+
 ## Module map
 
 | File | Role |

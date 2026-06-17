@@ -21,7 +21,7 @@ Guides for each processing pipeline:
 | Transcription | [transcription.md](user-guide/transcription.md) | Audio/video to text |
 | CEP QA Generation | [cep-qa-generation.md](user-guide/cep-qa-generation.md) | Cognitive scaffolding with Bloom's Taxonomy |
 | KG Construction | [kg-construction.md](user-guide/kg-construction.md) | Build knowledge graphs |
-| Evaluation | [evaluation.md](user-guide/evaluation.md) | Measure quality metrics |
+| RAG Analysis | [rag-analysis.md](user-guide/rag-analysis.md) | Cross-arm retrieval evaluation (Phase C) |
 
 ### Operators & DevOps
 
@@ -55,7 +55,7 @@ docs/
 │   ├── transcription.md
 │   ├── cep-qa-generation.md  # CEP cognitive scaffolding pipeline
 │   ├── kg-construction.md
-│   ├── evaluation.md
+│   ├── rag-analysis.md       # Cross-arm retrieval evaluation (Phase C)
 │   ├── configuration.md
 │   └── cli-reference.md
 ├── deployment/               # Deployment guides

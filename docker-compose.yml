@@ -1,3 +1,16 @@
+# Deployment wiring (see scripts/slurm/AGENTS.md "How the layers connect").
+# Each service runs `arandu <command>` off the image ENTRYPOINT; SLURM
+# <step>_common.sh scripts pick a profile and forward ARANDU_<PREFIX>_* env.
+#
+#   profile (CPU / -gpu)   service          command            image
+#   cep    / cep-gpu       arandu-cep       generate-cep-qa    arandu:latest
+#   judge  / judge-gpu     arandu-judge     judge-*            arandu:latest
+#   kg     / kg-gpu        arandu-kg        build-kg           arandu-kg:latest (Dockerfile.kg, +extra kg)
+#   rag/rag-gpu/rag-cpu   arandu-rag(-cpu) chunk/retrieve/...  arandu-kg:latest
+#   (transcription uses arandu / arandu-cpu / arandu-rocm, no ollama sidecar)
+#
+# An ARANDU_<PREFIX>_* var below only takes effect if it is also a real field on
+# the step's *Config class (qa/kg/shared/config.py); unknown vars are ignored.
 services:
   arandu:
     build:
@@ -204,7 +217,6 @@ services:
       start_period: 10s
 
     profiles:
-      - qa
       - kg
       - cep
       - judge
@@ -256,65 +268,11 @@ services:
       start_period: 10s
 
     profiles:
-      - qa-gpu
       - kg-gpu
       - cep-gpu
       - judge-gpu
       - ollama-gpu
       - rag-gpu
-
-  # QA Generation Service
-  arandu-qa:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: arandu:latest
-    container_name: arandu-qa-${SLURM_JOB_ID:-local}
-    working_dir: /app
-
-    # No GPU needed (QA generation is CPU/API-based)
-    deploy: {}
-
-    # Wait for Ollama to be ready when using Ollama provider
-    depends_on:
-      ollama:
-        condition: service_healthy
-        required: false  # Allow running without Ollama (e.g., with OpenAI)
-
-    environment:
-      - ARANDU_QA_PROVIDER=${ARANDU_QA_PROVIDER:-ollama}
-      - ARANDU_QA_MODEL_ID=${ARANDU_QA_MODEL_ID:-qwen3:14b}
-      # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
-      - ARANDU_QA_OLLAMA_URL=${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
-      - ARANDU_QA_TEMPERATURE=${ARANDU_QA_TEMPERATURE:-0.7}
-      - ARANDU_QA_WORKERS=${ARANDU_QA_WORKERS:-2}
-      - HF_HOME=/app/.cache/huggingface
-      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
-
-    command: >
-      generate-qa
-      /app/results
-      --id ${PIPELINE_ID:-}
-      --workers ${ARANDU_QA_WORKERS:-2}
-
-    volumes:
-      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
-      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
-
-    shm_size: '16gb'
-    restart: "no"
-
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "3"
-
-    profiles:
-      - qa
-      - qa-gpu
 
   # Judge Service (runs any `arandu judge-*` CLI command against results/)
   # Generic by design: the specific subcommand + args are supplied at run time
@@ -482,47 +440,6 @@ services:
     profiles:
       - kg
       - kg-gpu
-
-  # Evaluation Service
-  arandu-eval:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: arandu:latest
-    container_name: arandu-eval-${SLURM_JOB_ID:-local}
-    working_dir: /app
-
-    # No GPU needed (evaluation is CPU-based)
-    deploy: {}
-
-    environment:
-      - ARANDU_EVAL_METRICS=${ARANDU_EVAL_METRICS:-qa,entity,relation,semantic}
-      - ARANDU_EVAL_EMBEDDING_MODEL=${ARANDU_EVAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
-      - HF_HOME=/app/.cache/huggingface
-      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
-
-    command: >
-      evaluate
-      /app/results
-      --id ${PIPELINE_ID:-}
-      --output /app/evaluation/report.json
-
-    volumes:
-      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:ro
-      - ${ARANDU_EVAL_DIR:-./evaluation}:/app/evaluation:rw
-      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
-
-    shm_size: '16gb'
-    restart: "no"
-
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "3"
-
-    profiles:
-      - evaluate
 
   # Phase C RAG eval-chain Service (chunk / kg-link-passages /
   # kg-build-retriever-index / generate-non-answerable / retrieve / answer /

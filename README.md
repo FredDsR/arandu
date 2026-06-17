@@ -197,32 +197,27 @@ Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
 
 | Profile | Services | Pipeline |
 |---------|----------|----------|
-| `cep` | ollama, arandu-cep | CEP QA Pipeline |
-| `qa` | ollama, arandu-qa | QA Pipeline |
-| `kg` | ollama, arandu-kg | KG Pipeline (planned) |
-| `evaluate` | arandu-eval | Evaluation (planned) |
+| `cep` (`cep-gpu`) | ollama, arandu-cep | CEP QA generation (`generate-cep-qa`) |
+| `judge` (`judge-gpu`) | ollama, arandu-judge | LLM-as-a-Judge (`judge-transcription` / `judge-qa`) |
+| `kg` (`kg-gpu`) | ollama, arandu-kg | KG construction (`build-kg`) |
+| `rag` (`rag-gpu` / `rag-cpu`) | ollama, arandu-rag | Phase C RAG evaluation chain |
 | `cpu` | arandu-cpu | Transcription (CPU) |
 | `rocm` | arandu-rocm | Transcription (AMD GPU) |
 
 ## SLURM Execution
 
-SLURM scripts are organized by pipeline:
+SLURM scripts are organized as `scripts/slurm/<step>/<partition>.slurm`, each
+sourcing a shared `<step>_common.sh`. Submit with `PIPELINE_ID` set (see
+[scripts/slurm/AGENTS.md](scripts/slurm/AGENTS.md) for the full wiring + the
+tupi/draco partition rules):
 
 ```bash
-# Transcription Pipeline
-sbatch scripts/slurm/transcription/batch_transcribe.slurm
-
-# QA Pipeline
-sbatch scripts/slurm/qa/generate_qa.slurm
-
-# CEP Pipeline
-sbatch scripts/slurm/cep/generate_cep_qa.slurm
-
-# KG Pipeline (planned)
-sbatch scripts/slurm/kg/build_kg.slurm
-
-# Evaluation (planned)
-sbatch scripts/slurm/evaluation/evaluate.slurm
+# Transcription / CEP / Judge / KG / RAG — pick the partition script
+PIPELINE_ID=run-01 sbatch scripts/slurm/transcription/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/judge/qa/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/kg/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/rag/retrieve.slurm
 ```
 
 ## Configuration
@@ -260,12 +255,6 @@ The system can be configured via:
 | `ARANDU_KG_LANGUAGE` | `pt` | Language code: `pt`, `en`, `es` |
 | `ARANDU_KG_MERGE_GRAPHS` | `true` | Merge into corpus graph |
 | `ARANDU_KG_OUTPUT_FORMAT` | `graphml` | Output format: `graphml`, `json` |
-
-### Evaluation Settings (Planned)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARANDU_EVAL_METRICS` | `qa,entity,relation,semantic` | Metrics to compute |
-| `ARANDU_EVAL_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Semantic embeddings model |
 
 ### Results & Quality Settings
 | Variable | Default | Description |
@@ -370,7 +359,6 @@ arandu/
     │   ├── transcription-validation.md
     │   ├── cep-qa-generation.md
     │   ├── kg-construction.md           # Planned
-    │   ├── evaluation.md                # Planned
     │   └── configuration.md
     ├── development/
     │   ├── architecture.md
@@ -410,7 +398,6 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 - [Transcription Validation Guide](docs/user-guide/transcription-validation.md)
 - [CEP QA Generation Guide](docs/user-guide/cep-qa-generation.md)
 - [KG Construction Guide](docs/user-guide/kg-construction.md) (Planned)
-- [Evaluation Guide](docs/user-guide/evaluation.md) (Planned)
 - [Configuration Reference](docs/user-guide/configuration.md)
 - [Architecture](docs/development/architecture.md)
 - [Schemas Reference](docs/development/schemas.md)

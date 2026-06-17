@@ -6,6 +6,16 @@ This project aims to implement the composable pipelines for the transcription of
 
 **CRITICAL**: All guidelines are mandatory. Code that violates these standards will be rejected.
 
+## Deployment & Cluster
+
+Pipelines run as Docker Compose services on the pcad SLURM cluster. The full
+cross-layer map (each step's `arandu` command ↔ `*Config`/env prefix ↔ compose
+service ↔ profile ↔ image/Dockerfile ↔ SLURM dir), the two-image split
+(`arandu:latest` vs `arandu-kg:latest`), and the env→compose→config contract
+live in [scripts/slurm/AGENTS.md](scripts/slurm/AGENTS.md) ("How the layers
+connect"). Touching env vars, Dockerfiles, `docker-compose.yml`, or SLURM
+scripts? Read that first.
+
 ## Quick Start Checklist
 
 Before making any changes:
