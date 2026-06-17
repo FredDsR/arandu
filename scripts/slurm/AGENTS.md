@@ -6,6 +6,42 @@ directory with thin partition-specific scripts that source a shared
 flat working copy with NO `.git`: deploy changes via `rsync` + `md5sum` verify,
 never `git pull`.
 
+## How the layers connect (code ↔ config ↔ compose ↔ image ↔ SLURM)
+
+Every step is the same chain. A SLURM partition script exports env and sources
+its `<step>_common.sh`; the common script runs `docker compose --profile <profile>
+up <service>`; the service (in `docker-compose.yml`) runs `arandu <command>` off
+the image `ENTRYPOINT`; the CLI loads a `*Config` class from `ARANDU_<PREFIX>_*`
+env and writes `results/<id>/<stage>/outputs/`.
+
+| Step | `arandu` command(s) | Config class · env prefix | Compose service | Profiles | Image · Dockerfile | SLURM dir |
+| ---- | ------------------- | ------------------------- | --------------- | -------- | ------------------ | --------- |
+| Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | `arandu` / `arandu-cpu` / `arandu-rocm` | (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
+| QA | `generate-qa` | `QAConfig` · `ARANDU_QA_` | `arandu-qa` | `qa` / `qa-gpu` | `arandu:latest` · `Dockerfile` | `qa/` |
+| CEP | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | `arandu-cep` | `cep` / `cep-gpu` | `arandu:latest` · `Dockerfile` | `cep/` |
+| Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | `arandu-judge` | `judge` / `judge-gpu` | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
+| KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | `arandu-kg` | `kg` / `kg-gpu` | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
+| RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | `arandu-rag` / `arandu-rag-cpu` | `rag` / `rag-gpu` / `rag-cpu` | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
+| Evaluation | `evaluate` | `EvaluationConfig` · `ARANDU_EVAL_` | `arandu-eval` | `evaluate` | `arandu:latest` · `Dockerfile` | `evaluation/` |
+
+Config-class fields + env prefixes are the contract; see
+[docs/user-guide/configuration.md](../../docs/user-guide/configuration.md).
+
+**Two images.** `arandu:latest` (`Dockerfile`) covers transcription/qa/cep/judge/eval.
+`arandu-kg:latest` (`Dockerfile.kg` = base **+ `uv sync --extra kg`**, i.e. atlas-rag)
+covers **kg and rag**. A dep bump in the `kg` extra needs a `Dockerfile.kg` rebuild,
+not the base one. Both images `COPY` `src/`, `pyproject.toml`+`uv.lock`, and `prompts/`
+at build time, so a deploy only takes effect after a rebuild (this is why the deploy
+rules below ship those trees).
+
+**An env var only takes effect when all three agree:** (1) it is a real field on the
+step's `*Config` class, (2) `docker-compose.yml` forwards it in the service's
+`environment:`, and (3) the SLURM script exports it. Break any link and the var is
+silently ignored (`*Config` uses `extra="ignore"`). This has bitten us: a stale
+`ARANDU_CEP_VALIDATOR_*` once lingered in the CEP script + compose with no matching
+config field, so it did nothing — CEP-pair validation lives in the separate
+`judge-qa` step under `ARANDU_JUDGE_*`, not in `generate-cep-qa`.
+
 ## Layout
 
 | Path | Role |

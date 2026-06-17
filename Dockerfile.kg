@@ -1,5 +1,6 @@
-# Arandu KG Construction Image
-# Extends the base image with atlas-rag for knowledge graph construction
+# Arandu KG Construction Image (arandu-kg:latest)
+# Base image + `uv sync --extra kg` (atlas-rag). Used by compose services:
+# arandu-kg, arandu-rag, arandu-rag-cpu. A kg-extra dep bump needs THIS rebuild.
 # Multi-stage build for optimized image size using official uv images
 
 # Stage 1: Builder - Use official uv image

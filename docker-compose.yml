@@ -1,3 +1,18 @@
+# Deployment wiring (see scripts/slurm/AGENTS.md "How the layers connect").
+# Each service runs `arandu <command>` off the image ENTRYPOINT; SLURM
+# <step>_common.sh scripts pick a profile and forward ARANDU_<PREFIX>_* env.
+#
+#   profile (CPU / -gpu)   service          command            image
+#   qa     / qa-gpu        arandu-qa        generate-qa        arandu:latest
+#   cep    / cep-gpu       arandu-cep       generate-cep-qa    arandu:latest
+#   judge  / judge-gpu     arandu-judge     judge-*            arandu:latest
+#   evaluate              arandu-eval      evaluate           arandu:latest
+#   kg     / kg-gpu        arandu-kg        build-kg           arandu-kg:latest (Dockerfile.kg, +extra kg)
+#   rag/rag-gpu/rag-cpu   arandu-rag(-cpu) chunk/retrieve/...  arandu-kg:latest
+#   (transcription uses arandu / arandu-cpu / arandu-rocm, no ollama sidecar)
+#
+# An ARANDU_<PREFIX>_* var below only takes effect if it is also a real field on
+# the step's *Config class (qa/kg/shared/config.py); unknown vars are ignored.
 services:
   arandu:
     build:

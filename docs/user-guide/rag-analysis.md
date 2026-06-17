@@ -7,7 +7,7 @@ the judged answers from `arandu judge-answers` and emits per-arm tables you
 can compare across the five retriever arms, identified by their canonical ids:
 `bm25` (lexical), `atlas_rag` (HippoRAG-style), `khop_passage` and `khop_triple`
 (k-hop over the atlas-rag KG, using lemmatized smoothed-IDF seed weighting and
-seed-proximity scoring, PR #129), and `null` (no-retrieval baseline).
+seed-proximity scoring), and `null` (no-retrieval baseline).
 
 > **What changed (2026-05-26)**: Phase C replaces the legacy QA / KG
 > evaluation tables ([evaluation.md](evaluation.md)) for retrieval comparison.
