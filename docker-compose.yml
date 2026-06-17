@@ -402,9 +402,7 @@ services:
       # Bloom pairs/level as JSON int counts; forwarded from the host when set
       # (defaults to the 3/1/1/1 split baked into CEPConfig when unset).
       - ARANDU_CEP_BLOOM_DISTRIBUTION
-      - ARANDU_CEP_ENABLE_VALIDATION=${ARANDU_CEP_ENABLE_VALIDATION:-true}
-      - ARANDU_CEP_VALIDATOR_PROVIDER=${ARANDU_CEP_VALIDATOR_PROVIDER:-ollama}
-      - ARANDU_CEP_VALIDATOR_MODEL_ID=${ARANDU_CEP_VALIDATOR_MODEL_ID:-qwen3:14b}
+      # Validation is a separate step (judge-qa); generate-cep-qa does not validate.
       - ARANDU_CEP_LANGUAGE=${ARANDU_CEP_LANGUAGE:-pt}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
