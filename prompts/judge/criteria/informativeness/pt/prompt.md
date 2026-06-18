@@ -26,10 +26,9 @@ Níveis de pontuação (escolha o valor mais próximo):
 
 Instruções:
 1. Leia atentamente a resposta e avalie o valor informativo do conhecimento revelado
-2. Considere se esta informação seria facilmente encontrada em manuais ou documentação genérica
-3. Identifique conhecimento tácito / saber-fazer conforme as definições de referência acima (experiência vivida, situada e específica), distinguindo-o de informação genérica
-4. Não premie comprimento: uma resposta longa e genérica não é mais informativa que uma curta e específica; avalie a substância, não o tamanho
-5. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
-6. Forneça uma justificativa clara sobre o valor informativo
+2. Identifique conhecimento tácito / saber-fazer conforme as definições de referência acima (experiência vivida, situada e específica), distinguindo-o de informação genérica
+3. Não premie comprimento: uma resposta longa e genérica não é mais informativa que uma curta e específica; avalie a substância, não o tamanho
+4. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
+5. Forneça uma justificativa clara sobre o valor informativo
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

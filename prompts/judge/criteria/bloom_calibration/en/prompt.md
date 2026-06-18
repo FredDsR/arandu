@@ -26,8 +26,7 @@ Scoring levels (choose the closest value):
 Instructions:
 1. Carefully read the question and identify the cognitive level it actually requires, using the reference definitions above
 2. Compare the required level with the declared level ($bloom_level)
-3. Consider whether the answer requires only recall, comprehension, application, analysis, evaluation, or creation
-4. Assign a score from 0.0 to 1.0 following the rubric above
-5. Provide a rationale explaining the match or miscalibration
+3. Assign a score from 0.0 to 1.0 following the rubric above
+4. Provide a rationale explaining the match or miscalibration
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

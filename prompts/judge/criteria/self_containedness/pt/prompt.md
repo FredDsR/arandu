@@ -19,7 +19,7 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.0: Completamente dependente; usa "no texto"/"conforme mencionado", impossível responder sem o contexto
 
 Instruções:
-1. Avalie se a pergunta faz sentido e é respondível por si só, sem acesso ao texto original (que não foi fornecido)
+1. Verifique se a pergunta nomeia suas próprias entidades, locais e técnicas em vez de depender do texto
 2. Identifique referências ao texto ('no texto', 'conforme mencionado', pronomes sem antecedente)
 3. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
 4. Forneça uma justificativa clara

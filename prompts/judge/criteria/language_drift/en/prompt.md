@@ -20,8 +20,7 @@ Scoring levels (choose the closest value):
 Instructions:
 1. Identify the dominant language of the text.
 2. Compare against the expected language ($expected_language).
-3. Ignore short lexical borrowings, proper names, acronyms, and technical terms.
-4. Flag full sentences in another language as drift.
+3. Flag full sentences in another language as drift.
 5. Empty or very short text should receive a score of 1.0 (not evaluable).
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

@@ -20,7 +20,6 @@ Níveis de pontuação (escolha o valor mais próximo):
 Instruções:
 1. Identifique qual é o idioma dominante do texto.
 2. Compare com o idioma esperado ($expected_language).
-3. Ignore empréstimos curtos, nomes próprios, siglas e termos técnicos.
-4. Identifique sentenças completas em outro idioma como deriva.
+3. Identifique sentenças completas em outro idioma como deriva.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

@@ -19,7 +19,7 @@ Scoring levels (choose the closest value):
 - 0.0: Completely dependent; uses "in the text"/"as mentioned", impossible to answer without the context
 
 Instructions:
-1. Assess whether the question makes sense and is answerable on its own, without access to the original text (which is not provided)
+1. Check whether the question names its own entities, places and techniques rather than depending on the text
 2. Identify references to the text ('in the text', 'as mentioned', pronouns without antecedent)
 3. Assign a score from 0.0 to 1.0 following the rubric above
 4. Provide a clear rationale
