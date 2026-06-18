@@ -10,6 +10,10 @@ $answer_text
 System Rationale:
 $rationale
 
+Evaluation Rubric: Abstention
+
+Evaluate whether the answer text expresses a genuine refusal/uncertainty (the system declared it cannot answer) or a substantive claim.
+
 Scoring levels (choose the closest value):
 - 1.0 = genuine abstention (e.g., "there is not enough information in the passages")
 - 0.75 = predominantly a refusal, with minimal hedging

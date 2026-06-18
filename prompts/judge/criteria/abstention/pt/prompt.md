@@ -10,6 +10,10 @@ $answer_text
 Justificativa do Sistema:
 $rationale
 
+Rubrica de Avaliação: Abstenção
+
+Avalie se o texto da resposta expressa uma recusa/incerteza genuína (o sistema declarou que não pode responder) ou uma afirmação substantiva.
+
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = abstenção genuína (e.g., "não há informação suficiente nas passagens")
 - 0.75 = predominantemente recusa, com hesitação mínima

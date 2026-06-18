@@ -10,6 +10,10 @@ $gold_answer
 Retrieved Passages:
 $passages_text
 
+Evaluation Rubric: Retrieval Coverage
+
+Evaluate whether the retrieved passages contain enough information to derive the reference answer.
+
 Scoring levels (choose the closest value):
 - 1.0 = the needed information is clearly and completely present in the passages
 - 0.75 = present, but requires combining or lightly inferring from the passages

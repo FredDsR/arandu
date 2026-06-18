@@ -7,6 +7,10 @@ $passages_text
 Resposta do Sistema:
 $system_answer
 
+Rubrica de Avaliação: Fidelidade da Resposta
+
+Avalie se a resposta do sistema é derivável das passagens recuperadas, sem recorrer a conhecimento externo.
+
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = todas as afirmações podem ser justificadas pelas passagens
 - 0.75 = quase tudo vem das passagens; desvio mínimo

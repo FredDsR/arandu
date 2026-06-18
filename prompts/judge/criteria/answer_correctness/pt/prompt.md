@@ -10,6 +10,10 @@ $gold_answer
 Resposta do Sistema:
 $system_answer
 
+Rubrica de Avaliação: Correção da Resposta
+
+Avalie se a resposta do sistema transmite a mesma informação que a resposta de referência, sem omissões importantes nem contradições.
+
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = transmite exatamente a mesma informação da referência
 - 0.75 = correta, com omissões ou diferenças menores

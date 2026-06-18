@@ -7,6 +7,10 @@ $passages_text
 System Answer:
 $system_answer
 
+Evaluation Rubric: Answer Faithfulness
+
+Evaluate whether the system answer is derivable from the retrieved passages, without relying on external knowledge.
+
 Scoring levels (choose the closest value):
 - 1.0 = every claim can be justified by the passages
 - 0.75 = nearly everything comes from the passages; minimal deviation

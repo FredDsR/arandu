@@ -10,6 +10,10 @@ $gold_answer
 System Answer:
 $system_answer
 
+Evaluation Rubric: Answer Correctness
+
+Evaluate whether the system answer conveys the same information as the reference answer, without important omissions or contradictions.
+
 Scoring levels (choose the closest value):
 - 1.0 = conveys exactly the same information as the reference
 - 0.75 = correct, with minor omissions or differences
