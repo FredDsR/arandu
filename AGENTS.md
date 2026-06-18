@@ -310,6 +310,25 @@ uv run pytest tests/transcription/test_engine.py   # Run specific test
 uv run pytest --cov=arandu          # Run with coverage
 ```
 
+**Environment for the full suite**: a bare `uv sync` installs only the base
+dependencies plus the default `dev` group, which omits both the optional extras
+and the `test` group. To run the whole suite, sync everything:
+
+```bash
+uv sync --all-extras --all-groups   # base + report/kg/dashboard extras + dev/test groups
+uv run pytest
+```
+
+Gotchas:
+
+- `uv sync --extra <x>` or `--all-extras` **alone** drops the non-default `test`
+  group, which removes `pytest-mock`; every test using the `mocker` fixture then
+  errors at setup ("fixture 'mocker' not found"). Always pair extras with
+  `--all-groups` (or `--group test`).
+- `tests/report/` requires the optional `report` extra (`plotly`). Without it,
+  those tests **skip** cleanly via an `importorskip` guard (`tests/report/conftest.py`),
+  so a bare run shows skips, not collection errors.
+
 ## Common Mistakes to Avoid
 
 | ❌ Don't | ✅ Do |
@@ -340,7 +359,8 @@ uv run ruff check --fix src/ && uv run ruff format src/ && uv run pytest
 ### Development Setup
 
 ```bash
-uv sync
+uv sync                              # base deps + default dev group
+uv sync --all-extras --all-groups    # everything (required to run the full test suite)
 uv run arandu --help
 ```
 
