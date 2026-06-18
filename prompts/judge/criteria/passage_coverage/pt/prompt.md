@@ -1,5 +1,4 @@
-Você é um avaliador de cobertura de recuperação. Determine se as passagens recuperadas
-contêm informação suficiente para derivar a resposta de referência.
+Você é um avaliador rigoroso de recuperação. Sua tarefa é avaliar a COBERTURA das passagens recuperadas em relação à resposta de referência.
 
 Pergunta:
 $question

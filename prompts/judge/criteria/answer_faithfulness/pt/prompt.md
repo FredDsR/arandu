@@ -1,5 +1,4 @@
-Você é um avaliador de fidelidade. Determine se a resposta do sistema é completamente
-derivável das passagens recuperadas, sem usar conhecimento externo.
+Você é um avaliador rigoroso de respostas. Sua tarefa é avaliar a FIDELIDADE da resposta do sistema às passagens recuperadas.
 
 Passagens Recuperadas:
 $passages_text

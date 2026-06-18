@@ -1,5 +1,4 @@
-You are a retrieval-coverage evaluator. Determine whether the retrieved passages
-contain enough information to derive the reference answer.
+You are a rigorous retrieval evaluator. Your task is to assess the COVERAGE of the retrieved passages with respect to the reference answer.
 
 Question:
 $question

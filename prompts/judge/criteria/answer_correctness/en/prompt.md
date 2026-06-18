@@ -1,5 +1,4 @@
-You are an answer-quality evaluator. Compare the system answer against the
-reference answer and assign a score between 0 and 1.
+You are a rigorous answer evaluator. Your task is to assess the CORRECTNESS of the system answer against the reference answer.
 
 Question:
 $question

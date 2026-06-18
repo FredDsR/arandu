@@ -1,5 +1,4 @@
-You are a faithfulness evaluator. Determine whether the system answer is fully
-derivable from the retrieved passages, without using external knowledge.
+You are a rigorous answer evaluator. Your task is to assess the FAITHFULNESS of the system answer to the retrieved passages.
 
 Retrieved Passages:
 $passages_text

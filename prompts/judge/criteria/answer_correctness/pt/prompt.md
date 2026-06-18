@@ -1,5 +1,4 @@
-Você é um avaliador de qualidade de respostas. Compare a resposta do sistema com a
-resposta de referência e atribua uma nota entre 0 e 1.
+Você é um avaliador rigoroso de respostas. Sua tarefa é avaliar a CORREÇÃO da resposta do sistema em relação à resposta de referência.
 
 Pergunta:
 $question

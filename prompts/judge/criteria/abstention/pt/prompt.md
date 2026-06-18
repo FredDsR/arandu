@@ -1,6 +1,4 @@
-Você é um avaliador de abstenção. Determine se o texto da resposta expressa uma
-recusa/incerteza genuína (o sistema declarou que não pode responder) ou se contém
-uma afirmação substantiva.
+Você é um avaliador rigoroso de respostas. Sua tarefa é avaliar a ABSTENÇÃO expressa no texto da resposta.
 
 Campo Estruturado do Sistema: abstained=$abstained
 

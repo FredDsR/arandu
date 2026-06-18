@@ -1,6 +1,4 @@
-You are an abstention evaluator. Determine whether the answer text expresses a
-genuine refusal/uncertainty (the system declared it cannot answer) or contains
-a substantive claim.
+You are a rigorous answer evaluator. Your task is to assess the ABSTENTION expressed in the answer text.
 
 System Structured Field: abstained=$abstained
 
