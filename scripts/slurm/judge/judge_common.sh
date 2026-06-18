@@ -61,6 +61,14 @@ export ARANDU_RESULTS_DIR="${ARANDU_RESULTS_DIR:-$PROJECT_DIR/results}"
 export ARANDU_HF_CACHE_DIR="${ARANDU_HF_CACHE_DIR:-$PROJECT_DIR/cache/huggingface}"
 export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
+# Ollama sizing for the LLM filter (language_drift + hallucination_loop).
+# 32768 ctx fits the longest transcripts; NUM_PARALLEL=2 keeps KV-cache
+# (2 x 32768 x ~0.15 MB/token ~= 10 GB + ~9 GB weights) within the 24 GB tupi
+# node so the model stays fully on GPU. Compose defaults NUM_PARALLEL to 3,
+# which would multiply KV-cache and spill layers to CPU; override it here.
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-32768}"
+
 # PIPELINE_ID is required — the judge runs against a specific pipeline's outputs.
 : "${PIPELINE_ID:?PIPELINE_ID env var is required (e.g. 'PIPELINE_ID=test-cep-01 sbatch ...')}"
 export PIPELINE_ID
