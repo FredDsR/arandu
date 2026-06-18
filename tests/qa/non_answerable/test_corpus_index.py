@@ -70,13 +70,22 @@ class TestSourceCorpusIndex:
         assert "enchente" in index
         assert "joana" not in index
 
-    def test_short_tokens_excluded(self, tmp_path: Path, monkeypatch: object) -> None:
+    def test_backstop_catches_terms_the_span_set_misses(
+        self, tmp_path: Path, monkeypatch: object
+    ) -> None:
+        # The fallback span set only holds alpha tokens >= 4 chars; the full-text
+        # word-boundary backstop catches present terms it misses: multi-word
+        # phrases, bare years (non-alpha), and short content words. Absent terms
+        # still read as absent.
         monkeypatch.setattr(ci, "_portuguese_nlp", lambda: None)  # type: ignore[attr-defined]
         tdir = tmp_path / "transcription" / "outputs"
-        _write_transcription(tdir, file_id="src1", text="a de em Maria")
+        _write_transcription(tdir, file_id="src1", text="Em 2012 a avó morava na Ponta da Areia")
         index = SourceCorpusIndex(tdir)
-        assert "maria" in index
-        assert "de" not in index  # len <= 3 excluded
+        assert "Ponta da Areia" in index  # multi-word, not a single span
+        assert "2012" in index  # bare year, not an alpha token
+        assert "avó" in index  # 3-char content word, below the alpha floor
+        assert "Ponta do Sol" not in index  # absent multi-word stays absent
+        assert "2019" not in index  # absent year stays absent
 
     def test_absent_dir_is_empty(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setattr(ci, "_portuguese_nlp", lambda: None)  # type: ignore[attr-defined]

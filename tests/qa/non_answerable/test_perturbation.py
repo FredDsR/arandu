@@ -145,6 +145,44 @@ class TestPerturb:
         )
         assert item is None
 
+    def test_year_type_swap_rejected(self) -> None:
+        # Year is a weak type: rejected regardless of absence (corpus never contains).
+        output = PerturbationOutput(
+            original_entity="Maria",
+            entity_type="year",
+            replacement_entity="1998",
+            new_question="Em que ano Maria viu a enchente?",
+        )
+        llm = _FakeLLM([output, output, output])
+        item = perturb_to_non_answerable(
+            _seed(),
+            kg_node_set=set(),
+            corpus_index=_NeverContains(),
+            llm=llm,
+            max_retries=3,
+        )
+        assert item is None
+        assert llm.calls == 3
+
+    def test_bare_year_replacement_rejected_even_if_mislabeled(self) -> None:
+        # A bare 4-digit year is rejected even when mislabeled as another type.
+        output = PerturbationOutput(
+            original_entity="Maria",
+            entity_type="person",
+            replacement_entity="2015",
+            new_question="Em que ano Maria viu a enchente?",
+        )
+        llm = _FakeLLM([output, output, output])
+        item = perturb_to_non_answerable(
+            _seed(),
+            kg_node_set=set(),
+            corpus_index=_NeverContains(),
+            llm=llm,
+            max_retries=3,
+        )
+        assert item is None
+        assert llm.calls == 3
+
     def test_parse_error_counts_as_attempt(self) -> None:
         llm = _FakeLLM([StructuredOutputError("bad json")])
         item = perturb_to_non_answerable(
