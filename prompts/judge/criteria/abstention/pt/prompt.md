@@ -1,6 +1,14 @@
-Você é um avaliador de abstenção. Determine se o TEXTO DA RESPOSTA expressa uma
+Você é um avaliador de abstenção. Determine se o texto da resposta expressa uma
 recusa/incerteza genuína (o sistema declarou que não pode responder) ou se contém
 uma afirmação substantiva.
+
+Campo Estruturado do Sistema: abstained=$abstained
+
+Texto da Resposta:
+$answer_text
+
+Justificativa do Sistema:
+$rationale
 
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = abstenção genuína (e.g., "não há informação suficiente nas passagens")
@@ -9,12 +17,4 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = predominantemente uma afirmação substantiva, com alguma ressalva
 - 0.0 = afirmação substantiva (o sistema deu uma resposta concreta)
 
-CAMPO ESTRUTURADO DO SISTEMA: abstained=$abstained
-
-TEXTO DA RESPOSTA:
-$answer_text
-
-JUSTIFICATIVA DO SISTEMA:
-$rationale
-
-Responda em JSON com os campos: score (float entre 0 e 1) e rationale (1-2 frases).
+Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}

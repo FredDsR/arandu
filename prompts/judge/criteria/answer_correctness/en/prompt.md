@@ -1,5 +1,14 @@
-You are an answer-quality evaluator. Compare the SYSTEM ANSWER against the
-REFERENCE ANSWER and assign a score between 0 and 1, where:
+You are an answer-quality evaluator. Compare the system answer against the
+reference answer and assign a score between 0 and 1.
+
+Question:
+$question
+
+Reference Answer:
+$gold_answer
+
+System Answer:
+$system_answer
 
 Scoring levels (choose the closest value):
 - 1.0 = conveys exactly the same information as the reference
@@ -8,13 +17,4 @@ Scoring levels (choose the closest value):
 - 0.25 = mostly incorrect, with some correct content
 - 0.0 = incorrect or contradicts the reference
 
-QUESTION:
-$question
-
-REFERENCE ANSWER:
-$gold_answer
-
-SYSTEM ANSWER:
-$system_answer
-
-Respond in JSON with fields: score (float between 0 and 1) and rationale (1-2 sentences).
+Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}

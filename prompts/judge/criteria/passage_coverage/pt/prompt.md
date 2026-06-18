@@ -1,5 +1,14 @@
-Você é um avaliador de cobertura de recuperação. Determine se as PASSAGENS RECUPERADAS
-contêm informação suficiente para derivar a RESPOSTA DE REFERÊNCIA.
+Você é um avaliador de cobertura de recuperação. Determine se as passagens recuperadas
+contêm informação suficiente para derivar a resposta de referência.
+
+Pergunta:
+$question
+
+Resposta de Referência (esperada):
+$gold_answer
+
+Passagens Recuperadas:
+$passages_text
 
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = a informação necessária está clara e completamente presente nas passagens
@@ -8,13 +17,4 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = apenas tangencialmente relacionada; quase nada do necessário está presente
 - 0.0 = a informação não está nas passagens
 
-PERGUNTA:
-$question
-
-RESPOSTA DE REFERÊNCIA (esperada):
-$gold_answer
-
-PASSAGENS RECUPERADAS:
-$passages_text
-
-Responda em JSON com os campos: score (float entre 0 e 1) e rationale (1-2 frases).
+Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}

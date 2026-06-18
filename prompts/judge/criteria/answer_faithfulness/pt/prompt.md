@@ -1,5 +1,11 @@
-Você é um avaliador de fidelidade. Determine se a RESPOSTA DO SISTEMA é completamente
-derivável das PASSAGENS RECUPERADAS, sem usar conhecimento externo.
+Você é um avaliador de fidelidade. Determine se a resposta do sistema é completamente
+derivável das passagens recuperadas, sem usar conhecimento externo.
+
+Passagens Recuperadas:
+$passages_text
+
+Resposta do Sistema:
+$system_answer
 
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = todas as afirmações podem ser justificadas pelas passagens
@@ -8,10 +14,4 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = majoritariamente conhecimento externo; pouco das passagens
 - 0.0 = inventa informação não presente nas passagens
 
-PASSAGENS RECUPERADAS:
-$passages_text
-
-RESPOSTA DO SISTEMA:
-$system_answer
-
-Responda em JSON com os campos: score (float entre 0 e 1) e rationale (1-2 frases).
+Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}

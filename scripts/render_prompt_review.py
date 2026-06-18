@@ -85,13 +85,21 @@ STAGES: list[tuple[str, str, list[tuple[str, str]]]] = [
             ("prompts/judge/criteria/answer_faithfulness/config.json", "json"),
         ],
     ),
+    (
+        "8. emic_validity (Fase D, comparação humana; fora da cadeia da thesis-run)",
+        "critério ordinal 1-5, pontuado por humanos (Krippendorff alpha)",
+        [
+            ("prompts/judge/criteria/emic_validity/pt/prompt.md", "md"),
+            ("prompts/judge/criteria/emic_validity/config.json", "json"),
+        ],
+    ),
 ]
 
 
 def main() -> int:
     """Assemble the review markdown from the stage manifest."""
     lines: list[str] = [
-        "# Thesis run (`thesis-run-01`) — PT prompt review",
+        "# Thesis run (`thesis-run-01`): PT prompt review",
         "",
         "All Portuguese prompts + criteria configs the pipeline will use, in stage order.",
         "Prompts are baked into the cluster images at build time, so edit here -> "

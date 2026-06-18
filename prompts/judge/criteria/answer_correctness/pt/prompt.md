@@ -1,5 +1,14 @@
-Você é um avaliador de qualidade de respostas. Compare a RESPOSTA DO SISTEMA com a
-RESPOSTA DE REFERÊNCIA e atribua uma nota entre 0 e 1, onde:
+Você é um avaliador de qualidade de respostas. Compare a resposta do sistema com a
+resposta de referência e atribua uma nota entre 0 e 1.
+
+Pergunta:
+$question
+
+Resposta de Referência:
+$gold_answer
+
+Resposta do Sistema:
+$system_answer
 
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = transmite exatamente a mesma informação da referência
@@ -8,13 +17,4 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = majoritariamente incorreta, com algum acerto
 - 0.0 = incorreta ou contradiz a referência
 
-PERGUNTA:
-$question
-
-RESPOSTA DE REFERÊNCIA:
-$gold_answer
-
-RESPOSTA DO SISTEMA:
-$system_answer
-
-Responda em JSON com os campos: score (float entre 0 e 1) e rationale (string com 1-2 frases).
+Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
