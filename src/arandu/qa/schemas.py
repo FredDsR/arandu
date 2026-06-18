@@ -29,7 +29,12 @@ class QAPair(BaseModel):
     question_type: Literal["factual", "conceptual", "temporal", "entity"] = Field(
         ..., description="Question generation strategy type"
     )
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Generation confidence score")
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Deprecated generation confidence score; no longer emitted by CEP generation.",
+    )
     start_time: float | None = Field(None, description="Segment start time in seconds")
     end_time: float | None = Field(None, description="Segment end time in seconds")
 
@@ -64,6 +69,15 @@ class QAPairCEP(QAPair, JudgeResultMixin):
 
     bloom_level: BloomLevel = Field(
         ..., description="Bloom's taxonomy cognitive level for this question"
+    )
+    rationale: str | None = Field(
+        None,
+        description=(
+            "Generator's reasoning for how/why it constructed this Q-A pair from the context "
+            "(what prompted the question, how the answer is grounded, why it fits the Bloom "
+            "level). Generation-process aid; never a judge input; not a claim about the "
+            "knowledge itself."
+        ),
     )
     reasoning_trace: str | None = Field(
         None, description="Logical connections between facts leading to the answer"

@@ -113,9 +113,7 @@
     "A resposta DEVE ser fundamentada nas informações disponíveis",
     "A resposta deve conter entre 5-50 palavras",
     "A pergunta deve ser clara, específica e autônoma -- qualquer pessoa deve compreendê-la sem ler o texto original",
-    "Inclua uma pontuação de confiança (0.0-1.0) baseada na clareza da resposta",
-    "Para perguntas de nível 'analyze' ou 'evaluate', inclua o reasoning_trace",
-    "Indique se a pergunta é multi-hop (requer conectar partes distantes do texto)",
+    "Inclua um 'rationale': seu raciocínio ao construir o par -- o que no contexto motivou a pergunta, como a resposta se apoia no contexto, e por que a pergunta corresponde ao nível cognitivo alvo. Descreva o processo de criação, não caracterize o conhecimento em si",
     "PROIBIDO nas perguntas e respostas: 'no texto', 'o texto', 'mencionado no texto', 'descrito no texto', 'no contexto', 'conforme mencionado', 'de acordo com o texto', 'segundo o texto', 'o entrevistado', 'o autor'. Nomeie entidades, locais, pessoas e técnicas explicitamente pelo nome"
   ]
 }

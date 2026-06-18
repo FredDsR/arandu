@@ -23,11 +23,7 @@ Formato de saída (objeto JSON):
   "question": "A pergunta gerada",
   "answer": "A resposta fundamentada nas informações",
   "bloom_level": "$bloom_level",
-  "confidence": 0.85,
-  "reasoning_trace": "Conexões lógicas (para analyze/evaluate)",
-  "is_multi_hop": false,
-  "hop_count": null,
-  "tacit_inference": "Conhecimento implícito (opcional)"
+  "rationale": "Seu raciocínio ao construir este par"
 }
 
 Retorne APENAS o objeto JSON, sem texto adicional.

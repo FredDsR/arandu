@@ -23,11 +23,7 @@ Output format (JSON object):
   "question": "The generated question",
   "answer": "The answer based on the information",
   "bloom_level": "$bloom_level",
-  "confidence": 0.85,
-  "reasoning_trace": "Logical connections (for analyze/evaluate)",
-  "is_multi_hop": false,
-  "hop_count": null,
-  "tacit_inference": "Implicit knowledge (optional)"
+  "rationale": "Your reasoning while constructing this pair"
 }
 
 Return ONLY the JSON object, no additional text.

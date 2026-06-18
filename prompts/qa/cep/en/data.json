@@ -113,9 +113,7 @@
     "The answer MUST be grounded in the available information",
     "The answer should contain between 5-50 words",
     "The question must be clear, specific, and self-contained -- anyone should understand it without reading the original text",
-    "Include a confidence score (0.0-1.0) based on answer clarity",
-    "For 'analyze' or 'evaluate' level questions, include the reasoning_trace",
-    "Indicate if the question is multi-hop (requires connecting distant parts of text)",
+    "Include a 'rationale': your reasoning while constructing the pair -- what in the context prompted the question, how the answer is grounded in the context, and why the question fits the target cognitive level. Describe the construction process, do not characterize the knowledge itself",
     "FORBIDDEN in questions and answers: 'in the text', 'the text', 'mentioned in the text', 'described in the text', 'in the context', 'as mentioned', 'according to the text', 'the interviewee', 'the author'. Name entities, locations, people, and techniques explicitly by name"
   ]
 }

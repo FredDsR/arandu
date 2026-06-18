@@ -114,8 +114,10 @@ class CEPConfig(BaseSettings):
 
     # Module toggles
     enable_reasoning_traces: bool = Field(
-        default=True,
-        description="Enable reasoning trace generation for answers",
+        default=False,
+        description="Enable Module II reasoning-trace enrichment (extra LLM call per analyze/"
+        "evaluate pair). Off by default: traces/multi-hop were unvalidated self-annotations "
+        "unused downstream. The generation 'rationale' field is the inspection aid instead.",
     )
 
     # Module I - Bloom Scaffolding settings
