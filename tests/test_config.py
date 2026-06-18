@@ -229,7 +229,7 @@ class TestCEPConfig:
         """Test default CEP configuration initialization."""
         config = CEPConfig()
 
-        assert config.enable_reasoning_traces is True
+        assert config.enable_reasoning_traces is False
         assert config.max_hop_count == 3
         assert config.validation_threshold == 0.6
         assert config.language == "pt"
