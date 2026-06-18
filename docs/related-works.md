@@ -52,6 +52,8 @@ Arandu employs LLM-as-a-Judge for both QA validation (Phase 2) and Knowledge Cov
 
 A more specific line of work concerns **rating-scale design** for pointwise judges, which directly informs Arandu's scoring convention. **Li et al. (2026)** compare grading-scale granularity head-to-head and find human--LLM alignment highest on a 0--5 scale, above 0--10 and 0--100. **Lee et al. (2025)** analyse self-consistency and inter-scale consistency of LLM evaluators, finding that granularity interacts with rubric detail and that much of the instability at very fine scales stems from round-number clustering. **Stureborg et al. (2024)** document skewed score distributions and anchoring effects that make raw numeric scores unreliable absent explicit anchors. **Yamauchi et al. (2025)**, ablating judge design choices on BIGGEN-Bench, show that removing the per-point rubric degrades human correlation more than removing the reference answer -- anchor quality dominates raw point-count. The open-evaluator line, **Prometheus** and **Prometheus 2 (Kim et al., 2023, 2024)**, shows fine-anchored 1--5 absolute scoring lets small open models reach high human correlation, while **TrustJudge (Wang et al., 2025)** formalises score- and ranking-inconsistencies and probabilistic remedies. Together these motivate Arandu's unified 5-point anchored scale with between-anchor thresholds, and the decision to report per-criterion agreement rather than rely on a single pooled score.
 
+A second line concerns **judge decoding and output structure**. For single-pass pointwise scoring, low or near-greedy temperature is the reproducibility default -- MT-Bench (Zheng et al., 2023) and G-Eval (Liu et al., 2023) decode the judge at $T \approx 0$ -- and **Wei et al. (2024)**, sweeping $T \in [0, 0.7]$, find self-consistency falls as temperature rises while accuracy stays essentially flat, selecting $T = 0.1$ as the highest-consistency setting that avoids the degenerate greedy case. The reliability gains sometimes attributed to higher-temperature judging (Stureborg et al., 2024; Yamauchi et al., 2025) come from *aggregating multiple samples*, not from a single hotter draw, so a single-pass judge is best kept cold. On output structure, **Tam et al. (2024)** show that under constrained JSON decoding, emitting the score before the rationale collapses chain-of-thought and degrades reasoning, recovered by placing the rationale first. Finally, **Wataoka et al. (2024)** find LLM self-preference bias tracks familiarity (low perplexity) rather than authorship, so it is mitigated by reference-grounding rather than by sampling tricks. These results fix Arandu's judge decoding at single-pass $T = 0.1$ with rationale-before-score structured output, and ground every reference-based criterion in its gold answer or source passages.
+
 ---
 
 ## 5. Self-Containedness and Decontextualization
@@ -212,6 +214,8 @@ Liben-Nowell, D., & Kleinberg, J. (2007). The link-prediction problem for social
 
 Liu, A., & Sun, M. (2025). From voices to validity: Leveraging large language models (LLMs) for textual analysis of policy stakeholder interviews. *AERA Open*. arXiv:2312.01202.
 
+Liu, Y., Iter, D., Xu, Y., Wang, S., Xu, R., & Zhu, C. (2023). G-Eval: NLG evaluation using GPT-4 with better human alignment. *Proceedings of EMNLP 2023*. arXiv:2303.16634.
+
 Lu, J. (2025). Tacit knowledge in large language models. *The Review of Austrian Economics*.
 
 Martin, J. F., Roy, E. D., Diemont, S. A., & Ferguson, B. G. (2010). Traditional ecological knowledge (TEK): Ideas, inspiration, and designs for ecological engineering. *Ecological Engineering*, 36(7), 839--849.
@@ -242,9 +246,15 @@ Schroeder, H., Quere, M. A. L., Randazzo, C., Mimno, D., & Schoenebeck, S. (2025
 
 Stureborg, R., Alikaniotis, D., & Suhara, Y. (2024). Large language models are inconsistent and biased evaluators. *arXiv preprint arXiv:2405.01724*.
 
+Tam, Z. R., Wu, C.-K., Tsai, Y.-L., Lin, C.-Y., Lee, H.-y., & Chen, Y.-N. (2024). Let me speak freely? A study on the impact of format restrictions on performance of large language models. *arXiv preprint arXiv:2408.02442*.
+
 Tapu, I. F., & Fa'agau, T. K. (2022). A new age indigenous instrument: Artificial intelligence and its potential for (de)colonialized data. *Harvard Civil Rights-Civil Liberties Law Review*, 57(2), 715--753.
 
 Wang, Y., et al. (2025). TrustJudge: Inconsistencies of LLM-as-a-judge and how to alleviate them. *arXiv preprint arXiv:2509.21117*.
+
+Wataoka, K., Takahashi, T., & Ri, R. (2024). Self-preference bias in LLM-as-a-judge. *arXiv preprint arXiv:2410.21819*.
+
+Wei, H., He, S., Xia, T., Liu, F., Wong, A., Lin, J., & Han, M. (2024). Systematic evaluation of LLM-as-a-judge in LLM alignment tasks: Explainable metrics and diverse prompt templates. *arXiv preprint arXiv:2408.13006*.
 
 Weidlich, D., et al. (2024). BloomLLM: Large language models based question generation combining supervised fine-tuning and Bloom's taxonomy. *Proceedings of ECTEL 2024*, Springer.
 
