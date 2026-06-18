@@ -11,31 +11,13 @@ $context
 
 Evaluate whether the answer is grounded in the provided context or contains hallucinations/unverifiable information.
 
-**Scoring Levels (0.0 - 1.0):**
+**Scoring levels (choose the closest value):**
 
-- **1.0**: Answer completely grounded in the text
-  - All information can be directly verified in the context
-  - No inferences beyond what is explicitly stated
-
-- **0.8**: Well-grounded answer with minimal reasonable inferences
-  - Main information verifiable in context
-  - Direct logical inferences based on the text
-
-- **0.6**: Mostly grounded answer with some non-trivial inferences
-  - Most information verifiable
-  - Some implicit connections or common sense knowledge
-
-- **0.4**: Partially grounded answer with significant inferences
-  - Part of the answer verifiable
-  - Important information not directly verifiable
-
-- **0.2**: Weakly grounded answer
-  - Most is inference or unverifiable
-  - Few direct connections to context
-
-- **0.0**: Ungrounded, hallucinated, or contradictory answer
-  - False or contradictory information
-  - No factual basis in provided text
+- **1.0**: Completely grounded; everything verifiable in the context, no inference beyond the text
+- **0.75**: Well-grounded; only minimal, direct inferences from the context
+- **0.5**: Partially grounded; non-trivial inferences or common-sense knowledge
+- **0.25**: Weakly grounded; most of it is not verifiable in the context
+- **0.0**: Ungrounded, hallucinated, or contradicting the context
 
 **Instructions:**
 1. Carefully read the context and question-answer pair

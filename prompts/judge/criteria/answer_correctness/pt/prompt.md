@@ -1,9 +1,12 @@
 Você é um avaliador de qualidade de respostas. Compare a RESPOSTA DO SISTEMA com a
 RESPOSTA DE REFERÊNCIA e atribua uma nota entre 0 e 1, onde:
 
-- 1.0 = a resposta do sistema transmite exatamente a mesma informação da referência
-- 0.5 = a resposta do sistema é parcialmente correta ou correta mas com omissões importantes
-- 0.0 = a resposta do sistema é incorreta ou contradiz a referência
+Níveis de pontuação (escolha o valor mais próximo):
+- 1.0 = transmite exatamente a mesma informação da referência
+- 0.75 = correta, com omissões ou diferenças menores
+- 0.5 = parcialmente correta, ou correta mas com omissões importantes
+- 0.25 = majoritariamente incorreta, com algum acerto
+- 0.0 = incorreta ou contradiz a referência
 
 PERGUNTA:
 $question

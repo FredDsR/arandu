@@ -9,27 +9,13 @@ $text
 
 Evaluate what fraction of the text's substantive content is in the expected language. Ignore isolated lexical borrowings (e.g., "download", "internet", "link"), proper names, acronyms, and short technical terms.
 
-**Scoring Levels (0.0 - 1.0):**
+**Scoring levels (choose the closest value):**
 
-- **1.0**: Text is entirely in the expected language
-  - Lexical borrowings, proper names, and acronyms are tolerated
-  - No full sentences in another language
-
-- **0.8**: Text is predominantly in the expected language with minimal code-switching
-  - At most 1-2 short sentences in another language (e.g., direct quotes, technical terms)
-  - The rest is clearly in the expected language
-
-- **0.6**: More than half of the text in the expected language, but sustained sections in another language
-  - Multiple sentences or paragraphs in a foreign language
-  - The dominant language is still the expected one
-
-- **0.4**: Roughly half of the text is in a language other than expected
-
-- **0.2**: Most of the text is in another language
-  - Only fragments remain in the expected language
-
-- **0.0**: Text is entirely in another language, or consists of formulaic content clearly not in the expected language
-  - Examples: "Hello everyone, welcome to our channel", "This video is brought to you by...", "C'est parti, on va prendre notre café"
+- **1.0**: Entirely in the expected language (borrowings, proper names, acronyms tolerated; no full sentences in another language)
+- **0.75**: Predominantly the expected language with minimal code-switching (at most 1-2 short sentences in another language)
+- **0.5**: Majority in the expected language, but with sustained sections (multiple sentences/paragraphs) in another language
+- **0.25**: Roughly half or less in the expected language
+- **0.0**: Entirely in another language, or formulaic content clearly not in the expected language
 
 **Instructions:**
 1. Identify the dominant language of the text.

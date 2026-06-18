@@ -168,7 +168,7 @@ The **Apply** and **Create** levels are deliberately excluded:
 
 - **Apply** presupposes procedural knowledge that can be transferred to novel contexts. In ethnographic interviews, domain knowledge is highly situated and context-dependent -- interviewees describe *why* they act in certain ways, not generalizable procedures to replicate elsewhere. The Understand level already covers process comprehension, while Analyze captures the causal reasoning behind actions, making Apply redundant in this domain.
 
-- **Create** requires generating original ideas or artifacts that do not yet exist. This conflicts with the pipeline's **faithfulness constraint**: the LLM-as-a-Judge validation (Module III) assigns 30% weight to faithfulness, requiring answers to be grounded in the source transcription. Questions at the Create level would inevitably produce speculative answers unmoored from the text, either being rejected by the validator or inflating faithfulness scores artificially. Furthermore, since the QA dataset serves as ground truth for **GraphRAG evaluation** (Phase 4), Create-level questions would introduce false negatives -- the knowledge graph cannot represent knowledge that the interviewee never articulated, polluting coverage and coherence metrics with unanswerable queries.
+- **Create** requires generating original ideas or artifacts that do not yet exist. This conflicts with the pipeline's **faithfulness constraint**: the LLM-as-a-Judge validation (Module III) gates every pair on a faithfulness threshold, requiring answers to be grounded in the source transcription. Questions at the Create level would inevitably produce speculative answers unmoored from the text, which the faithfulness gate rejects. Furthermore, since the QA dataset serves as ground truth for **GraphRAG evaluation** (Phase 4), Create-level questions would introduce false negatives -- the knowledge graph cannot represent knowledge that the interviewee never articulated, polluting coverage and coherence metrics with unanswerable queries.
 
 The four selected levels form a coherent spectrum for tacit knowledge elicitation: Remember establishes *what* happened, Understand captures *how* processes work, Analyze reveals *why* things are connected, and Evaluate surfaces *when and whether* expert judgment applies.
 
@@ -187,13 +187,9 @@ The distribution is specified directly as the **integer number of pairs per leve
 
 A key design feature is **scaffolding context**: when generating higher-level questions (Analyze, Evaluate), the prompt includes QA pairs already generated at lower levels. This mirrors how human cognition builds complex understanding on top of foundational knowledge.
 
-### 4.4 Module II -- Reasoning & Grounding
+### 4.4 Module II -- Generation Rationale
 
-For higher-order cognitive levels, this module enriches QA pairs with:
-
-- **Reasoning traces**: Explicit logical chains connecting facts to conclusions (e.g., `"River rises -> Fisherman stores boat -> Reason: avoid equipment loss"`)
-- **Multi-hop detection**: Identifies questions requiring synthesis of information from distant parts of the transcript (1--5 reasoning hops)
-- **Tacit inference extraction**: Surfaces implicit domain knowledge that the interviewee assumed but did not verbalize (e.g., `"Rapid river rise indicates imminent flood risk"`)
+An earlier design enriched higher-order pairs with reasoning traces, multi-hop detection, and tacit-inference extraction via an extra LLM call. These were removed: they were unvalidated generator self-annotations consumed only by reporting, and the multi-hop label in particular conflated abstraction with tacit knowledge. Generation instead emits a single concise **rationale** field recording why each QA pair was constructed from its context. The rationale is a transparency and inspection aid -- it is **never** an input to any judge, preserving the evaluation's independence from the generator's own self-explanation.
 
 ### 4.5 Module III -- LLM-as-a-Judge Validation
 
@@ -210,21 +206,24 @@ flowchart LR
     QA --> I
     QA --> SC
 
-    F["<b>Faithfulness</b><br/><i>Weight: 30%</i><br/>Is the answer grounded<br/>in the source text?"]:::criterion
-    B["<b>Bloom Calibration</b><br/><i>Weight: 25%</i><br/>Does the question match<br/>the declared cognitive level?"]:::criterion
-    I["<b>Informativeness</b><br/><i>Weight: 25%</i><br/>Does the answer reveal<br/>non-obvious knowledge?"]:::criterion
-    SC["<b>Self-Containedness</b><br/><i>Weight: 20%</i><br/>Is the question understandable<br/>without the original context?"]:::criterion
+    F["<b>Faithfulness</b><br/>grounded in source?<br/><i>score &ge; 0.7</i>"]:::criterion
+    B["<b>Bloom Calibration</b><br/>matches declared level?<br/><i>score &ge; 0.6</i>"]:::criterion
+    I["<b>Informativeness</b><br/>reveals non-obvious knowledge?<br/><i>score &ge; 0.6</i>"]:::criterion
+    SC["<b>Self-Containedness</b><br/>understandable without context?<br/><i>score &ge; 0.7</i>"]:::criterion
 
-    F --> WS["Weighted Score<br/><i>0.3F + 0.25B + 0.25I + 0.2SC</i>"]:::score
-    B --> WS
-    I --> WS
-    SC --> WS
-    WS --> G{"score >= 0.6"}:::gate
+    F --> G{"All criteria pass<br/>their thresholds?<br/>(logical AND)"}:::gate
+    B --> G
+    I --> G
+    SC --> G
     G -- "Pass" --> V["Valid QA Pair"]
     G -- "Fail" --> R["Rejected"]
 ```
 
-The **self-containedness** criterion ensures that QA pairs are understandable and answerable without access to the original transcription. This is critical because the QA dataset serves as ground truth for evaluating a **GraphRAG system** (Phase 4), where questions must stand alone -- a retrieval-augmented system cannot rely on the user having read the source interview. The criterion uses a 6-level rubric ranging from completely autonomous (1.0) to completely dependent on the original context (0.0). Questions at the **Remember** level are automatically scored 1.0, since recalling facts from a provided context is inherent to the cognitive task.
+**Unified scoring scale.** Every LLM judge in the pipeline -- this module, the Phase 1 transcription filter, and the Phase 4 answer judges -- scores on a single **5-point anchored scale**, {1.0, 0.75, 0.5, 0.25, 0.0}, with a one-line descriptive anchor per point. The choice follows recent evidence on LLM-as-a-judge rating-scale design: 0--5 scales maximise human--LLM alignment for absolute (pointwise) scoring (Li et al., 2026), and the per-point rubric anchors -- not the raw number of points -- are the dominant lever for judge reliability (Yamauchi et al., 2025; Lee et al., 2025). Per-criterion thresholds are placed strictly *between* anchors, so a discrete judgment is never ambiguous about which side of a gate it falls. We adopt a coarse 5-point scale for human alignment and single-convention simplicity rather than for superior test--retest reliability, which the literature finds to be scale- and task-dependent (Lee et al., 2025; Stureborg et al., 2024); we therefore report inter-rater agreement (Krippendorff's alpha) per criterion rather than pooled.
+
+**Acceptance gate.** A QA pair is accepted only when it meets the threshold on *every* criterion -- a logical **AND** over the per-criterion thresholds, not a weighted-score cutoff. A weighted aggregate (0.3F + 0.25B + 0.25I + 0.2SC) is computed for reporting and inspection only; it does **not** govern acceptance.
+
+The **self-containedness** criterion ensures that QA pairs are understandable and answerable without access to the original transcription. This is critical because the QA dataset serves as ground truth for evaluating a **GraphRAG system** (Phase 4), where questions must stand alone -- a retrieval-augmented system cannot rely on the user having read the source interview. To enforce this structurally rather than by instruction alone, the source transcription is **withheld** from this criterion's prompt: the judge sees only the question and answer, so it cannot reward a question that silently depends on the source. Remember-level pairs are not scored on self-containedness (recalling facts from a provided context is inherent to that cognitive task), and informativeness is likewise not applied to Remember pairs, whose factual-recall content is low-informativeness by design.
 
 To promote self-containedness at generation time, the pipeline employs a **prompt-first approach** inspired by the RAGAS framework (Es et al., 2024): generation prompts include negative constraints (an explicit list of forbidden context-dependent phrases such as "in the text", "as mentioned", "the interviewee") alongside positive instructions for naming entities, locations, and techniques explicitly. This strategy avoids the need for a separate post-processing decontextualization step, reducing pipeline complexity and LLM cost while achieving high standalone comprehensibility (Choi et al., 2021; Gunjal & Durrett, 2024).
 
@@ -232,7 +231,7 @@ This approach ensures that the final QA dataset is **faithful** to the source ma
 
 ### 4.6 Output
 
-Each transcription yields a **QARecordCEP** (JSON) containing: the complete set of QA pairs with Bloom annotations, reasoning traces, validation scores (faithfulness, Bloom calibration, informativeness, self-containedness, and overall weighted score), Bloom distribution summary, and validation pass rates. An optional **JSONL** export provides a flat format suitable for downstream KGQA model training.
+Each transcription yields a **QARecordCEP** (JSON) containing: the complete set of QA pairs with Bloom annotations, the generation rationale, per-criterion validation scores (faithfulness, Bloom calibration, informativeness, self-containedness) and the derived `is_valid` flag (the report-only weighted aggregate is also stored), Bloom distribution summary, and validation pass rates. An optional **JSONL** export provides a flat format suitable for downstream KGQA model training.
 
 ---
 

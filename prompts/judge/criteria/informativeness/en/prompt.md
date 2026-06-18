@@ -11,42 +11,23 @@ $context
 
 Evaluate whether the answer reveals knowledge that would not be found in generic technical manuals or standard documentation.
 
-**Scoring Levels (0.0 - 1.0):**
+**Reference definitions:**
+- **Tacit knowledge / know-how**: practical knowledge tied to lived experience and to specific situations, people, places, or events; hard to state as a general rule (e.g., an artisan who can tell by touch when a material is ready; an adjustment learned only through practice).
+- **Generic / manual knowledge**: general, transferable information that would hold for any similar context and be findable in standard documentation (e.g., "planning improves outcomes"; "good communication prevents conflicts").
+- The informativeness axis runs from **specific / situated / experiential (high)** to **generic / transferable / obvious (low)**, and does not measure correctness or fluency.
 
-- **1.0**: Reveals significant tacit knowledge
-  - Valuable practical 'know-how'
-  - Insights based on real experience
-  - Information difficult to find in standard documentation
+**Scoring levels (choose the closest value):**
 
-- **0.8**: Reveals useful and non-obvious knowledge
-  - Relevant practical information
-  - Specific and applicable context
-  - Goes beyond basic knowledge
-
-- **0.6**: Reveals moderately useful knowledge
-  - Interesting contextual information
-  - Details that add understanding
-  - Intermediate knowledge
-
-- **0.4**: Common but well-articulated information
-  - Well-explained basic knowledge
-  - Findable but organized information
-  - Little novelty value
-
-- **0.2**: Relatively trivial information
-  - Could be easily found
-  - Superficial knowledge
-  - Low informative value
-
-- **0.0**: Trivial or obvious information
-  - Does not add significant value
-  - Common sense knowledge
-  - Redundant or generic information
+- **1.0**: Reveals significant tacit knowledge: practical know-how, insights from real experience, hard to find in standard documentation
+- **0.75**: Reveals useful, non-obvious knowledge; specific and applicable, beyond the basics
+- **0.5**: Moderately useful knowledge; contextual detail that adds understanding
+- **0.25**: Common but well-articulated information; little novelty, easily findable
+- **0.0**: Trivial or obvious; common sense, generic, or redundant
 
 **Instructions:**
 1. Carefully read the answer and assess the informative value of the knowledge revealed
 2. Consider whether this information would be easily found in manuals or generic documentation
-3. Identify if there is tacit knowledge ('know-how'), practical insights, or contextual experience
+3. Identify tacit knowledge / know-how per the reference definitions above (lived, situated, specific experience), distinguishing it from generic information
 4. Assign a score from 0.0 to 1.0 following the rubric above
 5. Provide a clear rationale about the informative value
 

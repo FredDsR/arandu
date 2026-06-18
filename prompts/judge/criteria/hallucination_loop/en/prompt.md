@@ -11,26 +11,15 @@ Evaluate the likelihood that the text contains content fabricated by the transcr
 - Short but artificial loops (e.g., "I'm sorry" repeated dozens of times, "I'm going to take a look at this one" repeated dozens of times)
 - Formulaic template sentences that sound extracted from online videos rather than real conversations
 - Implausibly excessive repetition of interjections, disfluencies, or short words (e.g., "não, não, não..." ×400, "tá, tá, tá..." ×190)
-- Channel names, spoken logos, production-company "signatures"
+- Channel names, jingles or brand/station identifiers spoken aloud, sonic "signatures" of production companies (e.g., "Rede Globo", "you're listening to Radio X")
 
-**Scoring Levels (0.0 - 1.0):**
+**Scoring levels (choose the closest value):**
 
-- **1.0**: Natural, coherent speech with no hallucination signals
-
-- **0.8**: Natural text with small but contextually plausible repetitions
-  - Natural emphasis like "yes, yes, that's right"
-  - Genuine single-instance closing with "thanks"
-
-- **0.6**: Some formulaic phrasing or artificial repetition, but most of the text reads like real speech
-
-- **0.4**: Multiple hallucination signals coexist with plausible passages
-
-- **0.2**: Text is mostly hallucinated, with only fragments of genuine speech
-
-- **0.0**: Text is entirely formulaic or hallucinatory
-  - Example: "Please subscribe to the channel and hit the bell for notifications. Thanks for watching."
-  - Example: infinite repetition of a single short sentence ("It's time to get out of here." × N)
-  - Example: "Hello everyone, welcome back to our channel" repeated
+- **1.0**: Natural, coherent speech with no hallucination signals (or small but contextually plausible repetitions, e.g., "yes, yes, that's right")
+- **0.75**: Some formulaic phrasing or artificial repetition, but most reads like real, well-articulated speech
+- **0.5**: Multiple hallucination signals coexist with plausible passages
+- **0.25**: Mostly hallucinated, with only fragments of genuine speech
+- **0.0**: Entirely formulaic or hallucinatory (e.g., "Please subscribe to the channel and hit the bell..."; one short sentence repeated endlessly)
 
 **Instructions:**
 1. Look for phrases that sound "copied" from online videos/podcasts rather than real dialogue.

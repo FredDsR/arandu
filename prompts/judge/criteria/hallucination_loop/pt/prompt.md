@@ -3,34 +3,23 @@ Você é um avaliador rigoroso da autenticidade de transcrições automáticas d
 **Texto:**
 $text
 
-**Rubrica de Avaliação: Alucinação Formulaica (Hallucination Loop)**
+**Rubrica de Avaliação: Alucinação Formulaica**
 
 Avalie a probabilidade de o texto conter conteúdo fabricado pelo modelo de transcrição a partir de sua distribuição de treino, em vez de fala transcrita fielmente. Sinais típicos de alucinação:
 
 - Frases de abertura/encerramento estilo YouTube ou podcast (ex.: "Se inscreva no canal", "Ative o sininho", "Bem-vindos ao canal", "Obrigado por assistir", "Welcome back to our channel", "Hello everyone", "This video is brought to you by")
 - Loops curtos mas artificiais (ex.: "I'm sorry" repetido dezenas de vezes, "I'm going to take a look at this one" dezenas de vezes)
 - Frases-modelo formulaicas que soam extraídas de vídeos online em vez de conversas reais
-- Repetição excessiva de interjeições, disfluências ou palavras curtas de forma implausível (ex.: "não, não, não..." 400 vezes, "tá, tá, tá..." 190 vezes)
-- Nomes de canal, logos falados, "assinaturas" de produtoras
+- Repetição excessiva de interjeições, disfluências ou palavras curtas de forma implausível (ex.: "não, não, não..." ou "tá, tá, tá..." centenas de vezes)
+- Nomes de canal, vinhetas ou identificações de marca/emissora ditas em voz alta, "assinaturas" sonoras de produtoras (ex.: "Rede Globo", "você está ouvindo a Rádio X")
 
-**Níveis de Pontuação (0.0 - 1.0):**
+**Níveis de pontuação (escolha o valor mais próximo):**
 
-- **1.0**: Fala natural e coerente, sem sinais de alucinação
-
-- **0.8**: Texto natural com repetições pequenas mas plausíveis no contexto
-  - Ex.: ênfase natural como "é, é, isso mesmo"
-  - Fechamento genuíno com "obrigado" único
-
-- **0.6**: Alguma frase formulaica ou repetição artificial, mas a maior parte parece fala real
-
-- **0.4**: Múltiplos sinais de alucinação coexistem com trechos plausíveis
-
-- **0.2**: Texto majoritariamente alucinado, com apenas fragmentos genuínos
-
-- **0.0**: Texto inteiramente formulaico ou alucinatório
-  - Ex.: "Se inscreva no canal e ative o sininho para receber notificações de novos vídeos. Obrigado por assistir."
-  - Ex.: repetição infinita de uma única frase curta ("It's time to get out of here." × N)
-  - Ex.: "Hello everyone, welcome back to our channel" repetido
+- **1.0**: Fala natural e coerente, sem sinais de alucinação (ou repetições pequenas mas plausíveis, ex.: "é, é, isso mesmo")
+- **0.75**: Alguma frase formulaica ou repetição artificial, mas a maior parte é fala real e bem articulada
+- **0.5**: Múltiplos sinais de alucinação coexistem com trechos plausíveis
+- **0.25**: Texto majoritariamente alucinado, com apenas fragmentos genuínos
+- **0.0**: Texto inteiramente formulaico ou alucinatório (ex.: "Se inscreva no canal e ative o sininho..."; uma frase curta repetida ao infinito)
 
 **Instruções:**
 1. Procure frases que parecem "copiadas" de vídeos/podcasts online em vez de diálogo real.
