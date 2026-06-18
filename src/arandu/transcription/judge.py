@@ -141,7 +141,7 @@ class TranscriptionJudge(BaseJudge):
         language: Expected transcription language (default ``"pt"``).
         validator_client: Optional LLM client. When provided, enables the
             ``llm_filter`` stage.
-        temperature: Sampling temperature for LLM criteria (default ``0.3``).
+        temperature: Sampling temperature for LLM criteria (default ``0.1``).
         max_tokens: Max tokens for LLM criterion responses (default
             ``DEFAULT_MAX_TOKENS``; sized for reasoning models).
     """
@@ -151,7 +151,7 @@ class TranscriptionJudge(BaseJudge):
         *,
         language: str = "pt",
         validator_client: LLMClient | None = None,
-        temperature: float = 0.3,
+        temperature: float = 0.1,
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
         """Initialize judge with language and optional LLM client.

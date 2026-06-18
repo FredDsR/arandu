@@ -17,4 +17,10 @@ Scoring levels (choose the closest value):
 - 0.25 = mostly incorrect, with some correct content
 - 0.0 = incorrect or contradicts the reference
 
-Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}
+Instructions:
+1. Compare the system answer against the reference answer, point by point.
+2. Check whether the reference's essential information is present and correct, and whether anything contradicts it.
+3. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers with full coverage.
+4. Assign a score following the rubric above and justify briefly.
+
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

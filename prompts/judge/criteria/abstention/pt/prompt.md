@@ -17,4 +17,4 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = predominantemente uma afirmação substantiva, com alguma ressalva
 - 0.0 = afirmação substantiva (o sistema deu uma resposta concreta)
 
-Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

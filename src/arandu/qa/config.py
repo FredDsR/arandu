@@ -313,10 +313,10 @@ class JudgeConfig(BaseSettings):
 
     # LLM settings for judge (can differ from generator)
     temperature: float = Field(
-        default=0.3,
+        default=0.1,
         ge=0.0,
         le=1.0,
-        description="Temperature for judge LLM (low for consistent evaluation)",
+        description="Temperature for judge LLM (low for reproducible single-shot scoring)",
     )
     max_tokens: int = Field(
         default=REASONING_MODEL_MAX_TOKENS,

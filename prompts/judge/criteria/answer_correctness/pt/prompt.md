@@ -17,4 +17,10 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = majoritariamente incorreta, com algum acerto
 - 0.0 = incorreta ou contradiz a referência
 
-Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
+Instruções:
+1. Compare a resposta do sistema com a resposta de referência, ponto a ponto.
+2. Verifique se a informação essencial da referência está presente e correta, e se há contradições.
+3. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão com cobertura completa.
+4. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

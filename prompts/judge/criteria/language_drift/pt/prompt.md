@@ -23,4 +23,4 @@ Instruções:
 3. Ignore empréstimos curtos, nomes próprios, siglas e termos técnicos.
 4. Identifique sentenças completas em outro idioma como deriva.
 
-Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

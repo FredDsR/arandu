@@ -28,4 +28,4 @@ Instructions:
 4. Language doesn't matter for this criterion: hallucinated content can be in any language, including the expected one.
 5. Empty or very short text should receive a score of 1.0 (not evaluable).
 
-Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

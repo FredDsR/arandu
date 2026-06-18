@@ -14,4 +14,10 @@ Scoring levels (choose the closest value):
 - 0.25 = mostly external knowledge; little from the passages
 - 0.0 = fabricates information not present in the passages
 
-Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}
+Instructions:
+1. Check whether each claim in the answer can be supported by the retrieved passages.
+2. Identify any content that comes from external knowledge or is absent from the passages.
+3. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers faithful to the passages.
+4. Assign a score following the rubric above and justify briefly.
+
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

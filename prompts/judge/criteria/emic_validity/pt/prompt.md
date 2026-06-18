@@ -55,11 +55,23 @@ Nota 4 (troca leve de registro).
 - Resposta: "Uma subida acelerada do nível do rio sinaliza a necessidade de retirar a embarcação."
 - Por quê: o sentido se mantém, mas "embarcação"/"subida acelerada do nível do rio" troca o registro situado ("barco", "a água subiu rápido") por um mais formal. Marcador 5 brando.
 
+Nota 3 (misto: troca de registro com início de moldura externa).
+- Segmento: "quando o rio tá daquele jeito, barrento e revolto, a gente nem bota o pé na água, espera baixar."
+- Pergunta: "Como os moradores decidem se entram no rio?"
+- Resposta: "Os moradores avaliam indicadores de turbidez e correnteza para determinar o risco antes de acessar o rio."
+- Por quê: o sentido geral se mantém (ler o rio antes de entrar), mas troca o registro situado ("barrento e revolto", "espera baixar") por um técnico-analítico ("indicadores de turbidez e correnteza") e começa a enquadrar uma leitura experiencial como avaliação técnica. Marcador 5 somado ao início de uma moldura externa: misto.
+
 Nota 2 (claim externo adicionado).
 - Segmento: "o pescador vive oprimido pelo IBAMA, pela PATRAM (...) em vez de te proteger e te ajudar, eles te prejudicam."
 - Pergunta: "Como o pescador descreve a atuação dos órgãos ambientais?"
 - Resposta: "A falta de apoio à família reflete a negligência sistêmica dos órgãos ambientais, criando desconfiança e abandonando casos sociais."
 - Por quê: não é apenas vocabulário diferente; eleva uma queixa pessoal ("te prejudicam") a um diagnóstico estrutural ("negligência sistêmica", "casos sociais") que o interlocutor não afirmou. Marcador 2 (claim externo adicionado).
+
+Nota 1 (distorção: estereótipo substitui a perspectiva).
+- Segmento: "a gente vai pescando onde dá, às vezes mais pra cima, às vezes mais pra baixo, depende do dia."
+- Pergunta: "Como o pescador escolhe o local de pesca?"
+- Resposta: "Guiado por uma sabedoria ancestral em harmonia com a natureza, o pescador sente intuitivamente onde os peixes estão."
+- Por quê: substitui uma descrição pragmática e variável ("onde dá", "depende do dia") por um estereótipo romantizado ("sabedoria ancestral", "harmonia com a natureza"), distorcendo o sentido. Marcador 3 (estereótipo/romantização) somado ao marcador 1 (distorção).
 
 Avalie o par abaixo. Você vê apenas o segmento de origem, a pergunta e a resposta.
 
@@ -74,4 +86,4 @@ Instruções de saída:
 
 Atribua uma nota inteira de 1 a 5 e uma justificativa curta (no máximo 3 frases). Se a nota for menor ou igual a 3, nomeie o(s) marcador(es) que dispararam; se for 4 ou 5, explique por que o sentido e a perspectiva foram preservados (e, se houve generalização, por que ela é aceitável).
 
-Responda em JSON: {"score": <inteiro 1-5>, "rationale": "<justificativa>"}.
+Responda em JSON: {"rationale": "<justificativa>", "score": <inteiro 1-5>}.

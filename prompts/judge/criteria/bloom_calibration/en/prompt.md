@@ -30,4 +30,4 @@ Instructions:
 4. Assign a score from 0.0 to 1.0 following the rubric above
 5. Provide a rationale explaining the match or miscalibration
 
-Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

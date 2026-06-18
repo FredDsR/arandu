@@ -14,4 +14,10 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = majoritariamente conhecimento externo; pouco das passagens
 - 0.0 = inventa informação não presente nas passagens
 
-Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
+Instruções:
+1. Verifique se cada afirmação da resposta pode ser sustentada pelas passagens recuperadas.
+2. Identifique qualquer conteúdo que venha de conhecimento externo ou que não esteja nas passagens.
+3. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão fiel às passagens.
+4. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

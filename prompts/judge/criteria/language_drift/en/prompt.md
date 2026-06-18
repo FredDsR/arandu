@@ -24,4 +24,4 @@ Instructions:
 4. Flag full sentences in another language as drift.
 5. Empty or very short text should receive a score of 1.0 (not evaluable).
 
-Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

@@ -26,4 +26,4 @@ Instruções:
 4. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
 5. Forneça uma justificativa breve e clara
 
-Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

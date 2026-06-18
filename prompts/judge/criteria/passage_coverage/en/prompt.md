@@ -17,4 +17,10 @@ Scoring levels (choose the closest value):
 - 0.25 = only tangentially related; almost none of what is needed is present
 - 0.0 = the information is not in the passages
 
-Return only a JSON object: {"score": <0-1>, "rationale": "<1-2 sentences>"}
+Instructions:
+1. Read the reference answer and identify the information needed to derive it.
+2. Check whether that information is present in the retrieved passages, even if it requires combining excerpts.
+3. Judge the passages' coverage relative to the reference, not writing quality.
+4. Assign a score following the rubric above and justify briefly.
+
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

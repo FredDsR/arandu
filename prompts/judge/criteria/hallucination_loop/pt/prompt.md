@@ -28,4 +28,4 @@ Instruções:
 4. O idioma não importa para este critério: conteúdo alucinado pode estar em qualquer idioma, inclusive o esperado.
 5. Texto vazio ou muito curto deve receber nota 1.0 (não avaliável).
 
-Retorne apenas um objeto JSON: {"score": <0-1>, "rationale": "<1-2 frases>"}
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}
