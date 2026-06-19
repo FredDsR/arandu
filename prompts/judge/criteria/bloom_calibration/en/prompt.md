@@ -20,8 +20,10 @@ Scoring levels (choose the closest value):
 - 1.0: Perfectly calibrated; requires exactly the declared level, not answerable at a lower level
 - 0.75: Well-calibrated; predominantly the declared level, minimal overlap with adjacent levels
 - 0.5: Reasonably calibrated; requires the declared level with some overlap
-- 0.25: Under-calibrated; requires a lower cognitive level than declared
-- 0.0: Completely miscalibrated; level entirely different from declared
+- 0.25: Miscalibrated by one adjacent level; requires a level different from the declared one (one higher OR one lower)
+- 0.0: Completely miscalibrated; level two or more steps away from the declared one
+
+Note on the ends of the ladder: "remember" is the lowest level (cannot be under-calibrated) and "create" is the highest (cannot be over-calibrated). In those cases, assess miscalibration only in the possible direction.
 
 Instructions:
 1. Carefully read the question and identify the cognitive level it actually requires, using the reference definitions above

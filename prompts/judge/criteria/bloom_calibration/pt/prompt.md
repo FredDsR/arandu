@@ -20,8 +20,10 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 1.0: Perfeitamente calibrada; exige exatamente o nível declarado, não respondível com nível inferior
 - 0.75: Bem calibrada; exige predominantemente o nível declarado, sobreposição mínima com adjacentes
 - 0.5: Razoavelmente calibrada; exige o nível declarado com alguma sobreposição
-- 0.25: Subcalibrada; exige nível cognitivo menor que o declarado
-- 0.0: Totalmente descalibrada; nível completamente diferente do declarado
+- 0.25: Descalibrada por um nível adjacente; exige um nível diferente do declarado (um acima OU um abaixo)
+- 0.0: Totalmente descalibrada; nível a dois ou mais degraus do declarado
+
+Nota sobre os extremos da escada: "remember" é o nível mais baixo (não pode ser sub-calibrada) e "create" é o mais alto (não pode ser super-calibrada). Nesses casos, avalie a descalibração apenas na direção possível.
 
 Instruções:
 1. Leia atentamente a pergunta e identifique o nível cognitivo que ela realmente exige, usando as definições de referência acima
