@@ -12,6 +12,8 @@ Rubrica de Avaliação: Abstenção
 
 Avalie se o texto da resposta expressa uma recusa/incerteza genuína (o sistema declarou que não pode responder) ou uma afirmação substantiva.
 
+Quando o Texto da Resposta estiver vazio, baseie a avaliação na Justificativa do Sistema e no campo abstained: um Texto da Resposta vazio com uma justificativa de recusa (o que faltava nas passagens) é abstenção genuína (1.0).
+
 Níveis de pontuação (escolha o valor mais próximo):
 - 1.0 = abstenção genuína (e.g., "não há informação suficiente nas passagens")
 - 0.75 = predominantemente recusa, com hesitação mínima
