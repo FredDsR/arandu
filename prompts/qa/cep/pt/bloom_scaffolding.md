@@ -20,10 +20,10 @@ $output_rules
 
 Formato de saída (objeto JSON):
 {
+  "rationale": "Seu plano: o que vai perguntar, qual a resposta fundamentada, e por que corresponde ao nível",
   "question": "A pergunta gerada",
   "answer": "A resposta fundamentada nas informações",
-  "bloom_level": "$bloom_level",
-  "rationale": "Seu raciocínio ao construir este par"
+  "bloom_level": "$bloom_level"
 }
 
 Retorne APENAS o objeto JSON, sem texto adicional.
