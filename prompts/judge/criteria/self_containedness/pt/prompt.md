@@ -1,10 +1,9 @@
 Você é um avaliador rigoroso de pares pergunta-resposta. Sua tarefa é avaliar a AUTONOMIA da pergunta.
 
-O texto original NÃO é fornecido de propósito: avalie a pergunta apenas pelo que está nela própria.
+O texto original e a resposta NÃO são fornecidos de propósito: avalie a pergunta apenas pelo que está nela própria. Não use a resposta para resolver referências da pergunta; a pergunta deve se sustentar sozinha.
 
-Par Pergunta-Resposta:
-- Pergunta: $question
-- Resposta: $answer
+Pergunta:
+$question
 
 Rubrica de Avaliação: Autonomia
 

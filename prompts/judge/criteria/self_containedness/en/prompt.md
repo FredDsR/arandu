@@ -1,10 +1,9 @@
 You are a rigorous evaluator of question-answer pairs. Your task is to assess the SELF-CONTAINEDNESS of the question.
 
-The original text is intentionally NOT provided: assess the question only by what it contains.
+The original text and the answer are intentionally NOT provided: assess the question only by what it contains. Do not use the answer to resolve the question's references; the question must stand on its own.
 
-Question-Answer Pair:
-- Question: $question
-- Answer: $answer
+Question:
+$question
 
 Evaluation Rubric: Self-Containedness
 
