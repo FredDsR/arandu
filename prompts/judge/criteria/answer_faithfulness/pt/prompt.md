@@ -20,7 +20,8 @@ Níveis de pontuação (escolha o valor mais próximo):
 Instruções:
 1. Verifique se cada afirmação da resposta pode ser sustentada pelas passagens recuperadas.
 2. Identifique qualquer conteúdo que venha de conhecimento externo ou que não esteja nas passagens.
-3. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão fiel às passagens.
-4. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+3. Precedência: se a resposta inventa informação ausente das passagens ou contradiz as passagens, limite a nota a no máximo 0.5, independentemente da cobertura do restante.
+4. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão fiel às passagens.
+5. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

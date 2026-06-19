@@ -23,7 +23,8 @@ Níveis de pontuação (escolha o valor mais próximo):
 Instruções:
 1. Compare a resposta do sistema com a resposta de referência, ponto a ponto.
 2. Verifique se a informação essencial da referência está presente e correta, e se há contradições.
-3. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão com cobertura completa.
-4. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+3. Precedência: se a resposta contradiz a referência em algum ponto essencial, limite a nota a no máximo 0.25, independentemente de quanta informação correta também contenha.
+4. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão com cobertura completa.
+5. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

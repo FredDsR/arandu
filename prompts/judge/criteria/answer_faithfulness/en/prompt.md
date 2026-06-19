@@ -20,7 +20,8 @@ Scoring levels (choose the closest value):
 Instructions:
 1. Check whether each claim in the answer can be supported by the retrieved passages.
 2. Identify any content that comes from external knowledge or is absent from the passages.
-3. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers faithful to the passages.
-4. Assign a score following the rubric above and justify briefly.
+3. Precedence: if the answer fabricates information absent from the passages or contradicts the passages, cap the score at 0.5, regardless of how much of the rest is covered.
+4. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers faithful to the passages.
+5. Assign a score following the rubric above and justify briefly.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}
