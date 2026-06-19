@@ -20,7 +20,7 @@
     },
     "understand": {
       "description": "Explicar ideias e conceitos",
-      "instruction": "Gere perguntas que testem a compreensão de conceitos e explicações. Foque em perguntas que exijam explicação, interpretação ou resumo. As perguntas devem ser autônomas: nomeie explicitamente pessoas, locais, técnicas e eventos. Não use referências como 'no texto' ou 'conforme mencionado'.",
+      "instruction": "Gere perguntas que testem a compreensão de conceitos e explicações. Foque em perguntas que exijam explicação, interpretação ou resumo.",
       "question_starters": [
         "Por que",
         "Como",
@@ -38,7 +38,7 @@
     },
     "apply": {
       "description": "Usar informação em situações novas",
-      "instruction": "Gere perguntas que testem a capacidade de aplicar conhecimento em contextos diferentes. Foque em perguntas sobre como usar ou demonstrar o conhecimento. As perguntas devem ser autônomas: nomeie explicitamente pessoas, locais, técnicas e eventos. Não use referências como 'no texto' ou 'conforme mencionado'.",
+      "instruction": "Gere perguntas que testem a capacidade de aplicar conhecimento em contextos diferentes. Foque em perguntas sobre como usar ou demonstrar o conhecimento.",
       "question_starters": [
         "Como aplicar",
         "Demonstre",
@@ -54,7 +54,7 @@
     },
     "analyze": {
       "description": "Estabelecer conexões entre ideias",
-      "instruction": "Gere perguntas que exijam análise, comparação e estabelecimento de conexões entre diferentes conceitos ou práticas. As perguntas devem ser autônomas e nomear explicitamente todos os elementos comparados.",
+      "instruction": "Gere perguntas que exijam análise, comparação e estabelecimento de conexões entre diferentes conceitos ou práticas.",
       "question_starters": [
         "Qual a relação",
         "Compare",
@@ -72,7 +72,7 @@
     },
     "evaluate": {
       "description": "Justificar decisões e julgamentos",
-      "instruction": "Gere perguntas que exijam julgamento, avaliação crítica e justificativa de decisões. Foque em perguntas sobre escolhas, riscos e alternativas. As perguntas devem ser autônomas: nomeie explicitamente pessoas, locais, técnicas e eventos sem referenciar 'o texto' ou 'o contexto'.",
+      "instruction": "Gere perguntas que exijam julgamento, avaliação crítica e justificativa de decisões. Foque em perguntas sobre escolhas, riscos e alternativas.",
       "question_starters": [
         "Por que escolheu",
         "Avalie",
@@ -90,7 +90,7 @@
     },
     "create": {
       "description": "Produzir trabalho original",
-      "instruction": "Gere perguntas que estimulem a criação, proposta de soluções ou elaboração de novas ideias baseadas no conhecimento sobre o tema. As perguntas devem ser autônomas e identificar claramente o problema ou processo em questão.",
+      "instruction": "Gere perguntas que estimulem a criação, proposta de soluções ou elaboração de novas ideias baseadas no conhecimento sobre o tema.",
       "question_starters": [
         "Proponha",
         "Elabore",

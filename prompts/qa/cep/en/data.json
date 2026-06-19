@@ -20,7 +20,7 @@
     },
     "understand": {
       "description": "Explain ideas and concepts",
-      "instruction": "Generate questions that test comprehension of concepts and explanations. Focus on questions that require explanation, interpretation, or summary. Questions must be self-contained: explicitly name people, places, techniques, and events. Do not use references like 'in the text' or 'as mentioned'.",
+      "instruction": "Generate questions that test comprehension of concepts and explanations. Focus on questions that require explanation, interpretation, or summary.",
       "question_starters": [
         "Why",
         "How",
@@ -54,7 +54,7 @@
     },
     "analyze": {
       "description": "Establish connections between ideas",
-      "instruction": "Generate questions that require analysis, comparison, and establishing connections between different concepts or practices. Questions must be self-contained and explicitly name all compared elements.",
+      "instruction": "Generate questions that require analysis, comparison, and establishing connections between different concepts or practices.",
       "question_starters": [
         "What is the relationship",
         "Compare",
@@ -72,7 +72,7 @@
     },
     "evaluate": {
       "description": "Justify decisions and judgments",
-      "instruction": "Generate questions that require judgment, critical evaluation, and justification of decisions. Focus on questions about choices, risks, and alternatives. Questions must be self-contained: explicitly name people, places, techniques, and events without referencing 'the text' or 'the context'.",
+      "instruction": "Generate questions that require judgment, critical evaluation, and justification of decisions. Focus on questions about choices, risks, and alternatives.",
       "question_starters": [
         "Why did they choose",
         "Evaluate",
@@ -90,7 +90,7 @@
     },
     "create": {
       "description": "Produce original work",
-      "instruction": "Generate questions that stimulate creation, proposal of solutions, or elaboration of new ideas based on knowledge about the topic. Questions must be self-contained and clearly identify the problem or process in question.",
+      "instruction": "Generate questions that stimulate creation, proposal of solutions, or elaboration of new ideas based on knowledge about the topic.",
       "question_starters": [
         "Propose",
         "Elaborate",
