@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=arandu
+#SBATCH --job-name=arandu-transcription
 #SBATCH --partition=grace
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
