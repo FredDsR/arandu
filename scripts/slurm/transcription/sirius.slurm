@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=corpus_transcription
+#SBATCH --job-name=arandu-transcription
 #SBATCH --partition=sirius
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
