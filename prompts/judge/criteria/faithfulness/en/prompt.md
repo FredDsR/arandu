@@ -1,53 +1,31 @@
-You are a rigorous evaluator of question-answer pairs. Your task is to assess the **FAITHFULNESS** of the answer to the original context.
+You are a rigorous evaluator of question-answer pairs. Your task is to assess the FAITHFULNESS of the answer to the original context.
 
-**Original Context:**
+Original Context:
 $context
 
-**Question-Answer Pair:**
+Question-Answer Pair:
 - Question: $question
 - Answer: $answer
 
-**Evaluation Rubric: Faithfulness**
+Evaluation Rubric: Faithfulness
 
 Evaluate whether the answer is grounded in the provided context or contains hallucinations/unverifiable information.
 
-**Scoring Levels (0.0 - 1.0):**
+Scoring levels (choose the closest value):
 
-- **1.0**: Answer completely grounded in the text
-  - All information can be directly verified in the context
-  - No inferences beyond what is explicitly stated
+- 1.0: Completely grounded; everything verifiable in the context, no inference beyond the text
+- 0.75: Well-grounded; only minimal, direct inferences from the context
+- 0.5: Partially grounded; non-trivial inferences or common-sense knowledge
+- 0.25: Weakly grounded; most of it is not verifiable in the context
+- 0.0: Ungrounded, hallucinated, or contradicting the context
 
-- **0.8**: Well-grounded answer with minimal reasonable inferences
-  - Main information verifiable in context
-  - Direct logical inferences based on the text
-
-- **0.6**: Mostly grounded answer with some non-trivial inferences
-  - Most information verifiable
-  - Some implicit connections or common sense knowledge
-
-- **0.4**: Partially grounded answer with significant inferences
-  - Part of the answer verifiable
-  - Important information not directly verifiable
-
-- **0.2**: Weakly grounded answer
-  - Most is inference or unverifiable
-  - Few direct connections to context
-
-- **0.0**: Ungrounded, hallucinated, or contradictory answer
-  - False or contradictory information
-  - No factual basis in provided text
-
-**Instructions:**
+Instructions:
 1. Carefully read the context and question-answer pair
 2. Verify if each claim in the answer can be found or directly inferred from the context
 3. Identify any hallucinations, unverifiable information, or contradictions
-4. Assign a score from 0.0 to 1.0 following the rubric above
-5. Provide a brief and clear rationale
+4. Precedence: if the answer fabricates information absent from the context or contradicts the context, cap the score at 0.5, regardless of how much of the rest is grounded
+5. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers faithful to the context
+6. Assign a score from 0.0 to 1.0 following the rubric above
+7. Provide a brief and clear rationale
 
-**Return ONLY a JSON object in the following format:**
-```json
-{
-  "score": 0.0,
-  "rationale": "Explanation of the assigned score"
-}
-```
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
@@ -151,14 +152,26 @@ def perturb_to_non_answerable(
     return None
 
 
+# Entity types too weak to yield genuinely non-answerable items: years are
+# densely present in the corpus and a year swap invites generalization rather
+# than abstention (every year-swap leaked in the dry-run). Rejected regardless
+# of the (LLM-assigned, unreliable) entity_type label.
+_WEAK_ENTITY_TYPES = {"year", "ano"}
+
+
 def _is_valid_swap(
     output: PerturbationOutput,
     question: str,
     kg_node_set: set[str],
     corpus_index: SourceCorpusIndex,
 ) -> bool:
-    """Verify the swap: replacement absent everywhere, original really present."""
-    replacement_norm = output.replacement_entity.strip().lower()
+    """Verify the swap: not a weak type, replacement absent, original present."""
+    replacement = output.replacement_entity.strip()
+    if output.entity_type.strip().lower() in _WEAK_ENTITY_TYPES:
+        return False
+    if re.fullmatch(r"\d{4}", replacement):  # bare year, even if mislabeled
+        return False
+    replacement_norm = replacement.lower()
     return (
         replacement_norm not in kg_node_set
         and output.replacement_entity not in corpus_index

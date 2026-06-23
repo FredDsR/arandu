@@ -25,18 +25,21 @@ class AnswererOutput(BaseModel):
     answers, ``answer`` must be non-empty.
 
     Attributes:
+        rationale: Always populated. When ``abstained`` is False, this
+            justifies the answer; when True, it explains what was
+            missing from the passages.
         abstained: Whether the model refused to answer (insufficient
             evidence in the passages, or the question is out of scope).
         answer: Verbatim answer text. ``None`` iff ``abstained`` is
             True; non-empty otherwise.
-        rationale: Always populated. When ``abstained`` is False, this
-            justifies the answer; when True, it explains what was
-            missing from the passages.
     """
 
+    # Field order is emission order under structured output: ``rationale`` is
+    # declared first so the model reasons before it commits to abstaining or
+    # answering (reason-then-answer), mirroring the judge criterion schema.
+    rationale: str = Field(..., min_length=1)
     abstained: bool
     answer: str | None = Field(default=None)
-    rationale: str = Field(..., min_length=1)
 
     @model_validator(mode="after")
     def _consistency(self) -> Self:

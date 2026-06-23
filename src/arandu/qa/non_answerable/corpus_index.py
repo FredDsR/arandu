@@ -13,6 +13,8 @@ spacing differences don't leak a present entity through as "absent".
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from typing import TYPE_CHECKING
 
 from arandu.shared.schemas import EnrichedRecord
@@ -32,6 +34,12 @@ _MIN_ALPHA_TOKEN_LEN = 4
 def _normalize(text: str) -> str:
     """Lower-case + strip; the single normalization used on both sides."""
     return text.strip().lower()
+
+
+def _fold(text: str) -> str:
+    """Accent-fold + lower-case for the full-text word-boundary backstop."""
+    stripped = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return stripped.lower()
 
 
 def load_kg_node_set(graphml_path: Path) -> set[str]:
@@ -72,12 +80,26 @@ class SourceCorpusIndex:
     def __init__(self, transcription_dir: Path) -> None:
         """Build the index from every ``EnrichedRecord`` under ``transcription_dir``."""
         self._spans: set[str] = set()
+        self._corpus_folded: str = ""
         self._nlp = _portuguese_nlp()
         self._build(transcription_dir)
 
     def __contains__(self, candidate: str) -> bool:
-        """True if ``candidate`` (normalized) appears anywhere in the corpus."""
-        return _normalize(candidate) in self._spans
+        """True if ``candidate`` appears in the corpus.
+
+        Two gates: (1) exact membership in the NER-span / alpha-token set, and
+        (2) a word-boundary, accent-folded scan over the full corpus text. The
+        second is a deterministic backstop that catches presences the span set
+        misses: multi-word phrases not tagged as a single NER entity, bare years
+        (digits are not alpha tokens), and short common nouns below the
+        alpha-token length floor.
+        """
+        if _normalize(candidate) in self._spans:
+            return True
+        folded = _fold(candidate).strip()
+        if not folded:
+            return False
+        return re.search(rf"\b{re.escape(folded)}\b", self._corpus_folded) is not None
 
     def __len__(self) -> int:
         """Number of distinct spans indexed."""
@@ -90,6 +112,7 @@ class SourceCorpusIndex:
                 transcription_dir,
             )
             return
+        folded_parts: list[str] = []
         for path in sorted(transcription_dir.glob("*.json")):
             try:
                 record = EnrichedRecord.model_validate_json(path.read_text(encoding="utf-8"))
@@ -97,6 +120,8 @@ class SourceCorpusIndex:
                 logger.warning("Skipping unreadable transcription %s: %s", path, exc)
                 continue
             self._index_text(record.transcription_text)
+            folded_parts.append(_fold(record.transcription_text))
+        self._corpus_folded = " ".join(folded_parts)
 
     def _index_text(self, text: str) -> None:
         if self._nlp is not None:

@@ -168,7 +168,7 @@ class TestTranscriptionJudgeLLMStage:
             assert _GOOD_EN_TEXT in prompt
         # language_drift prompt must include the expected_language substitution
         drift_prompt = next(p for p in prompts_sent if "Language Drift" in p)
-        assert "**Expected language:** en" in drift_prompt
+        assert "Expected language: en" in drift_prompt
 
 
 class TestBuildValidatorClient:

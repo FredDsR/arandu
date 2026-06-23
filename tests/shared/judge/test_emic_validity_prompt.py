@@ -99,11 +99,11 @@ class TestEmicPromptContent:
         assert "não é violação" in low or "desejável" in low
 
     def test_has_five_point_anchors(self, emic_prompt: str) -> None:
-        # Assert the actual anchor format (- **N**:), not bare digits which
-        # appear elsewhere ("3 frases", "1-5", "§3.5") and would pass even if
-        # the anchor list were removed.
+        # Assert the actual anchor format (- N:), not bare digits which appear
+        # elsewhere ("3 frases", "1-5", "§3.5") and would pass even if the
+        # anchor list were removed.
         for level in ("1", "2", "3", "4", "5"):
-            assert f"- **{level}**:" in emic_prompt
+            assert f"- {level}:" in emic_prompt
 
     def test_only_blinded_inputs_referenced(self, emic_prompt: str) -> None:
         # Parity/blinding (§4.2 principle 7): sees only segment + Q + A.

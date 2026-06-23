@@ -88,10 +88,13 @@ class QAJudge(BaseJudge):
             "informativeness",
             "self_containedness",
         ]
+        # Remember pairs are factual recall by design (the 3/1/1/1 factual base),
+        # so informativeness (which scores down trivial/explicit content) is a
+        # conceptual mismatch that rejected ~55% of remember pairs. Judge them on
+        # grounding + level only; self_containedness is auto-1.0 for remember.
         remember_criteria = [
             "faithfulness",
             "bloom_calibration",
-            "informativeness",
         ]
 
         default_step = JudgeStep(criteria=all_criteria, factory=self._factory)
@@ -122,6 +125,7 @@ class QAJudge(BaseJudge):
         """
         try:
             bloom_level_desc = self._get_bloom_level_desc(qa_pair.bloom_level)
+            bloom_ladder = self._get_bloom_ladder()
 
             pipeline = (
                 self._remember_pipeline if qa_pair.bloom_level == "remember" else self._pipeline
@@ -133,6 +137,7 @@ class QAJudge(BaseJudge):
                 answer=qa_pair.answer,
                 bloom_level=qa_pair.bloom_level,
                 bloom_level_desc=bloom_level_desc,
+                bloom_ladder=bloom_ladder,
             )
 
             return qa_pair.model_copy(update={"validation": result})
@@ -158,16 +163,12 @@ class QAJudge(BaseJudge):
         """
         return [self.validate(pair, context) for pair in qa_pairs]
 
-    def _get_bloom_level_desc(self, bloom_level: str) -> str:
-        """Get human-readable Bloom level description.
-
-        Loads from the validation data file and caches on first access.
-
-        Args:
-            bloom_level: Bloom level name (e.g. "remember", "analyze").
+    def _bloom_levels(self) -> dict[str, str]:
+        """Load and cache the Bloom-level descriptions from the validation data file.
 
         Returns:
-            Description string, or the level name itself as fallback.
+            Mapping of Bloom level name to its reference description (empty if the
+            data file is missing).
         """
         if not hasattr(self, "_bloom_level_cache"):
             lang = self.judge_config.language
@@ -177,4 +178,28 @@ class QAJudge(BaseJudge):
                     self._bloom_level_cache: dict[str, str] = json.load(f).get("bloom_levels", {})
             else:
                 self._bloom_level_cache = {}
-        return self._bloom_level_cache.get(bloom_level, bloom_level)
+        return self._bloom_level_cache
+
+    def _get_bloom_level_desc(self, bloom_level: str) -> str:
+        """Get the human-readable description of a single Bloom level.
+
+        Args:
+            bloom_level: Bloom level name (e.g. "remember", "analyze").
+
+        Returns:
+            Description string, or the level name itself as fallback.
+        """
+        return self._bloom_levels().get(bloom_level, bloom_level)
+
+    def _get_bloom_ladder(self) -> str:
+        """Format all Bloom-level definitions as a reference ladder.
+
+        Gives the bloom_calibration judge the full taxonomy (not just the declared
+        level) so it can identify the level a question actually requires against our
+        definitions rather than its own training prior.
+
+        Returns:
+            One ``- <level>: <description>`` line per level, or empty string if no
+            descriptions are available.
+        """
+        return "\n".join(f"- {name}: {desc}" for name, desc in self._bloom_levels().items())

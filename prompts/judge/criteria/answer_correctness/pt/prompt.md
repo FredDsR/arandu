@@ -1,17 +1,30 @@
-Você é um avaliador de qualidade de respostas. Compare a RESPOSTA DO SISTEMA com a
-RESPOSTA DE REFERÊNCIA e atribua uma nota entre 0 e 1, onde:
+Você é um avaliador rigoroso de respostas. Sua tarefa é avaliar a CORREÇÃO da resposta do sistema em relação à resposta de referência.
 
-- 1.0 = a resposta do sistema transmite exatamente a mesma informação da referência
-- 0.5 = a resposta do sistema é parcialmente correta ou correta mas com omissões importantes
-- 0.0 = a resposta do sistema é incorreta ou contradiz a referência
-
-PERGUNTA:
+Pergunta:
 $question
 
-RESPOSTA DE REFERÊNCIA:
+Resposta de Referência:
 $gold_answer
 
-RESPOSTA DO SISTEMA:
+Resposta do Sistema:
 $system_answer
 
-Responda em JSON com os campos: score (float entre 0 e 1) e rationale (string com 1-2 frases).
+Rubrica de Avaliação: Correção da Resposta
+
+Avalie se a resposta do sistema transmite a mesma informação que a resposta de referência, sem omissões importantes nem contradições.
+
+Níveis de pontuação (escolha o valor mais próximo):
+- 1.0 = transmite exatamente a mesma informação da referência
+- 0.75 = correta, com omissões ou diferenças menores
+- 0.5 = parcialmente correta, ou correta mas com omissões importantes
+- 0.25 = majoritariamente incorreta, com algum acerto
+- 0.0 = incorreta ou contradiz a referência
+
+Instruções:
+1. Compare a resposta do sistema com a resposta de referência, ponto a ponto.
+2. Verifique se a informação essencial da referência está presente e correta, e se há contradições.
+3. Precedência: se a resposta contradiz a referência em algum ponto essencial, limite a nota a no máximo 0.25, independentemente de quanta informação correta também contenha.
+4. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão com cobertura completa.
+5. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

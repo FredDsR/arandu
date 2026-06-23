@@ -1,11 +1,17 @@
-Você é um construtor de benchmarks adversariais para avaliação de RAG. Sua tarefa é
-reescrever uma pergunta substituindo UMA entidade nomeada por outra plausível do mesmo
-tipo, de forma que a pergunta resultante não seja respondível a partir do corpus original.
+Você é um construtor de itens não-respondíveis para medir a abstenção em sistemas RAG.
+Sua tarefa é reescrever uma pergunta substituindo UMA entidade nomeada por outra plausível
+do mesmo tipo, de forma que a pergunta resultante não seja respondível a partir do corpus
+original.
+
+A plausibilidade é essencial: a pergunta reescrita deve permanecer bem-formada e no mesmo
+registro do corpus, para ser um teste honesto de abstenção (o sistema deve abster-se por
+reconhecer que a entidade não está no corpus, não por a pergunta soar estranha). O objetivo
+não é enganar nem treinar robustez, e sim medir abstenção versus alucinação.
 
 REGRAS:
-1. Escolha UMA entidade nomeada na pergunta original (pessoa, local, ano, espécie, evento).
+1. Escolha UMA entidade nomeada na pergunta original (pessoa, organização, local, espécie, evento).
 2. Proponha uma substituição PLAUSÍVEL do mesmo tipo (e.g., outro nome de pessoa
-   ribeirinha, outro ano de enchente, outra espécie de peixe). NÃO escolha algo absurdo.
+   ribeirinha, outra instituição, outra espécie de peixe). NÃO escolha algo absurdo.
 3. A pergunta reescrita deve ler-se naturalmente em português brasileiro.
 4. NÃO modifique o restante da pergunta.
 
@@ -14,6 +20,6 @@ PERGUNTA ORIGINAL:
 
 Responda em JSON com os campos:
 - original_entity: a entidade original (string)
-- entity_type: o tipo (person | place | year | species | event)
+- entity_type: o tipo (person | organization | place | species | event)
 - replacement_entity: a substituição plausível (string)
 - new_question: a pergunta reescrita (string)

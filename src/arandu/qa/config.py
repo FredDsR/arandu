@@ -114,8 +114,10 @@ class CEPConfig(BaseSettings):
 
     # Module toggles
     enable_reasoning_traces: bool = Field(
-        default=True,
-        description="Enable reasoning trace generation for answers",
+        default=False,
+        description="Enable Module II reasoning-trace enrichment (extra LLM call per analyze/"
+        "evaluate pair). Off by default: traces/multi-hop were unvalidated self-annotations "
+        "unused downstream. The generation 'rationale' field is the inspection aid instead.",
     )
 
     # Module I - Bloom Scaffolding settings
@@ -311,10 +313,10 @@ class JudgeConfig(BaseSettings):
 
     # LLM settings for judge (can differ from generator)
     temperature: float = Field(
-        default=0.3,
+        default=0.1,
         ge=0.0,
         le=1.0,
-        description="Temperature for judge LLM (low for consistent evaluation)",
+        description="Temperature for judge LLM (low for reproducible single-shot scoring)",
     )
     max_tokens: int = Field(
         default=REASONING_MODEL_MAX_TOKENS,

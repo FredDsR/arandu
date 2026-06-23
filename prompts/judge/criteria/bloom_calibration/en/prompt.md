@@ -1,53 +1,34 @@
-You are a rigorous evaluator of question-answer pairs. Your task is to assess the **BLOOM CALIBRATION** of the question.
+You are a rigorous evaluator of question-answer pairs. Your task is to assess the BLOOM CALIBRATION of the question.
 
-**Original Context:**
+Original Context:
 $context
 
-**Question-Answer Pair:**
+Question-Answer Pair:
 - Question: $question
 - Answer: $answer
 - Declared Bloom Level: $bloom_level ($bloom_level_desc)
 
-**Evaluation Rubric: Bloom Calibration**
+Bloom levels (reference definitions):
+$bloom_ladder
+
+Evaluation Rubric: Bloom Calibration
 
 Evaluate whether the question truly requires the declared cognitive level according to Bloom's Taxonomy.
 
-**Scoring Levels (0.0 - 1.0):**
+Scoring levels (choose the closest value):
 
-- **1.0**: Perfectly calibrated question
-  - Requires exactly the declared cognitive level
-  - Cannot be adequately answered with a lower level
+- 1.0: Perfectly calibrated; requires exactly the declared level, not answerable at a lower level
+- 0.75: Well-calibrated; predominantly the declared level, minimal overlap with adjacent levels
+- 0.5: Reasonably calibrated; requires the declared level with some overlap
+- 0.25: Miscalibrated by one adjacent level; requires a level different from the declared one (one higher OR one lower)
+- 0.0: Completely miscalibrated; level two or more steps away from the declared one
 
-- **0.8**: Well-calibrated question
-  - Predominantly requires the declared level
-  - Minimal overlap with adjacent levels
+Note on the ends of the ladder: "remember" is the lowest level (cannot be under-calibrated) and "create" is the highest (cannot be over-calibrated). In those cases, assess miscalibration only in the possible direction.
 
-- **0.6**: Reasonably calibrated question
-  - Requires the declared level with some overlap
-  - Aspects of the correct level are present
-
-- **0.4**: Under-calibrated question
-  - Requires lower cognitive level than declared
-  - Can be answered with simpler cognitive processes
-
-- **0.2**: Significantly miscalibrated question
-  - Required cognitive level very different from declared
-
-- **0.0**: Completely miscalibrated question
-  - Cognitive level completely different from declared
-  - No correspondence with proposed level
-
-**Instructions:**
-1. Carefully read the question and identify the cognitive level it actually requires
+Instructions:
+1. Carefully read the question and identify the cognitive level it actually requires, using the reference definitions above
 2. Compare the required level with the declared level ($bloom_level)
-3. Consider whether the answer requires only recall, comprehension, application, analysis, evaluation, or creation
-4. Assign a score from 0.0 to 1.0 following the rubric above
-5. Provide a rationale explaining the match or miscalibration
+3. Assign a score from 0.0 to 1.0 following the rubric above
+4. Provide a rationale explaining the match or miscalibration
 
-**Return ONLY a JSON object in the following format:**
-```json
-{
-  "score": 0.0,
-  "rationale": "Explanation of the assigned score"
-}
-```
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

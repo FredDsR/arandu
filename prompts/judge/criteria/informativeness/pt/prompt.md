@@ -1,59 +1,34 @@
-Você é um avaliador rigoroso de pares pergunta-resposta. Sua tarefa é avaliar a **INFORMATIVIDADE** da resposta.
+Você é um avaliador rigoroso de pares pergunta-resposta. Sua tarefa é avaliar a INFORMATIVIDADE da resposta.
 
-**Contexto Original:**
+Contexto Original:
 $context
 
-**Par Pergunta-Resposta:**
+Par Pergunta-Resposta:
 - Pergunta: $question
 - Resposta: $answer
 
-**Rubrica de Avaliação: Informatividade**
+Rubrica de Avaliação: Informatividade
 
 Avalie se a resposta revela conhecimento que não seria encontrado em manuais técnicos genéricos ou documentação padrão.
 
-**Níveis de Pontuação (0.0 - 1.0):**
+Definições de referência:
+- Conhecimento tácito / saber-fazer: conhecimento prático ligado à experiência vivida e a situações, pessoas, locais ou eventos específicos; difícil de enunciar como regra geral (ex.: um artesão que sabe pelo tato o ponto exato de um material; um ajuste que só se aprende na prática).
+- Conhecimento genérico / de manual: informação geral e transferível, que valeria para qualquer contexto semelhante e seria encontrável em documentação padrão (ex.: "planejamento melhora resultados"; "boa comunicação evita conflitos").
+- O eixo da informatividade vai de específico / situado / experiencial (alto) a genérico / transferível / óbvio (baixo), e não mede correção nem fluência da resposta.
 
-- **1.0**: Revela conhecimento tácito significativo
-  - 'Saber-fazer' prático valioso
-  - Insights baseados em experiência real
-  - Informação difícil de encontrar em documentação padrão
+Níveis de pontuação (escolha o valor mais próximo):
 
-- **0.8**: Revela conhecimento útil e não-óbvio
-  - Informação prática relevante
-  - Contexto específico e aplicável
-  - Vai além do conhecimento básico
+- 1.0: Revela conhecimento tácito significativo: saber-fazer prático, insights de experiência real, difícil de achar em documentação padrão
+- 0.75: Revela conhecimento útil e não-óbvio; específico e aplicável, além do básico
+- 0.5: Conhecimento moderadamente útil; detalhe contextual que agrega compreensão
+- 0.25: Informação comum mas bem articulada; pouco valor de novidade, encontrável facilmente
+- 0.0: Trivial ou óbvia; senso comum, genérica ou redundante
 
-- **0.6**: Revela conhecimento moderadamente útil
-  - Informação contextual interessante
-  - Detalhes que agregam compreensão
-  - Conhecimento intermediário
-
-- **0.4**: Informação comum mas bem articulada
-  - Conhecimento básico bem explicado
-  - Informação encontrável mas organizada
-  - Pouco valor de novidade
-
-- **0.2**: Informação relativamente trivial
-  - Poderia ser encontrada facilmente
-  - Conhecimento superficial
-  - Baixo valor informativo
-
-- **0.0**: Informação trivial ou óbvia
-  - Não agrega valor significativo
-  - Conhecimento de senso comum
-  - Informação redundante ou genérica
-
-**Instruções:**
+Instruções:
 1. Leia atentamente a resposta e avalie o valor informativo do conhecimento revelado
-2. Considere se esta informação seria facilmente encontrada em manuais ou documentação genérica
-3. Identifique se há conhecimento tácito ('saber-fazer'), insights práticos ou experiência contextual
+2. Identifique conhecimento tácito / saber-fazer conforme as definições de referência acima (experiência vivida, situada e específica), distinguindo-o de informação genérica
+3. Não premie comprimento: uma resposta longa e genérica não é mais informativa que uma curta e específica; avalie a substância, não o tamanho
 4. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
 5. Forneça uma justificativa clara sobre o valor informativo
 
-**Retorne APENAS um objeto JSON no seguinte formato:**
-```json
-{
-  "score": 0.0,
-  "rationale": "Explicação da pontuação atribuída"
-}
-```
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

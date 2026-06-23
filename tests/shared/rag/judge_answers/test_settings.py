@@ -12,12 +12,12 @@ if TYPE_CHECKING:
 
 class TestJudgeAnswersSettings:
     def test_defaults(self) -> None:
-        # Defaults: ollama / qwen3:14b / pt / temp 0.3 (deliberately
-        # higher than the answerer's 0.2 — less-anchored judgment).
+        # Defaults: ollama / qwen3:14b / pt / temp 0.1 (low for reproducible
+        # single-shot pointwise scoring, matching the rest of the judges).
         s = JudgeAnswersSettings(_env_file=None)
         assert s.provider == "ollama"
         assert s.model_id == "qwen3:14b"
-        assert s.temperature == 0.3
+        assert s.temperature == 0.1
         assert s.max_tokens == 8192
         assert s.language == "pt"
         assert s.abstention_disagreement_audit is True

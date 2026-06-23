@@ -1,17 +1,29 @@
-Você é um avaliador de cobertura de recuperação. Determine se as PASSAGENS RECUPERADAS
-contêm informação suficiente para derivar a RESPOSTA DE REFERÊNCIA.
+Você é um avaliador rigoroso de recuperação. Sua tarefa é avaliar a COBERTURA das passagens recuperadas em relação à resposta de referência.
 
-- 1.0 = a informação necessária está claramente presente nas passagens
-- 0.5 = a informação está parcialmente presente, exigindo inferência
-- 0.0 = a informação não está nas passagens
-
-PERGUNTA:
+Pergunta:
 $question
 
-RESPOSTA DE REFERÊNCIA (esperada):
+Resposta de Referência (esperada):
 $gold_answer
 
-PASSAGENS RECUPERADAS:
+Passagens Recuperadas:
 $passages_text
 
-Responda em JSON com os campos: score (float entre 0 e 1) e rationale (1-2 frases).
+Rubrica de Avaliação: Cobertura de Recuperação
+
+Avalie se as passagens recuperadas contêm informação suficiente para derivar a resposta de referência.
+
+Níveis de pontuação (escolha o valor mais próximo):
+- 1.0 = a informação necessária está clara e completamente presente nas passagens
+- 0.75 = presente, mas exige juntar ou inferir levemente a partir das passagens
+- 0.5 = parcialmente presente; falta parte da informação necessária
+- 0.25 = apenas tangencialmente relacionada; quase nada do necessário está presente
+- 0.0 = a informação não está nas passagens
+
+Instruções:
+1. Leia a resposta de referência e identifique a informação necessária para derivá-la.
+2. Verifique se essa informação está presente nas passagens recuperadas, ainda que exija juntar trechos.
+3. Avalie a cobertura das passagens em relação à referência, não a qualidade de redação.
+4. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

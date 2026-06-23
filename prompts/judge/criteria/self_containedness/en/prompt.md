@@ -1,63 +1,26 @@
-You are a rigorous evaluator of question-answer pairs. Your task is to assess the **SELF-CONTAINEDNESS** of the question.
+You are a rigorous evaluator of question-answer pairs. Your task is to assess the SELF-CONTAINEDNESS of the question.
 
-**Original Context:**
-$context
+The original text and the answer are intentionally NOT provided: assess the question only by what it contains. Do not use the answer to resolve the question's references; the question must stand on its own.
 
-**Question-Answer Pair:**
-- Question: $question
-- Answer: $answer
-- Bloom Level: $bloom_level
+Question:
+$question
 
-**Evaluation Rubric: Self-Containedness**
+Evaluation Rubric: Self-Containedness
 
 Evaluate whether the question is understandable and answerable without access to the original text.
 
-**IMPORTANT:** For 'remember' level questions, automatically assign 1.0 (recalling facts from context is expected).
+Scoring levels (choose the closest value):
 
-**Scoring Levels (0.0 - 1.0):**
+- 1.0: Completely self-contained; names entities/places/techniques and provides all needed context in the question itself
+- 0.75: Nearly self-contained; minimal implicit references, generally understandable
+- 0.5: Partially self-contained; some elements require the context, indirect references present
+- 0.25: Dependent; frequent references to the text or pronouns without a clear antecedent
+- 0.0: Completely dependent; uses "in the text"/"as mentioned", impossible to answer without the context
 
-- **1.0**: Completely self-contained
-  - Explicitly names entities, places, and techniques
-  - Provides all necessary context in the question itself
-  - Understandable without the original text
+Instructions:
+1. Check whether the question names its own entities, places and techniques rather than depending on the text
+2. Identify references to the text ('in the text', 'as mentioned', pronouns without antecedent)
+3. Assign a score from 0.0 to 1.0 following the rubric above
+4. Provide a clear rationale
 
-- **0.8**: Nearly self-contained
-  - Minimal implicit references to context
-  - Sufficient information for general understanding
-  - Small details may require context
-
-- **0.6**: Partially self-contained
-  - Some elements require context
-  - Indirect references present
-  - Partially understandable without context
-
-- **0.4**: Dependent
-  - Frequent references to 'the text'
-  - Pronouns without clear antecedent
-  - Difficult to understand without original text
-
-- **0.2**: Very dependent
-  - Does not make sense without original text
-  - Multiple contextual references
-  - Insufficient information in the question
-
-- **0.0**: Completely dependent
-  - Uses 'in the text', 'as mentioned', etc.
-  - Impossible to answer without access to context
-  - Direct references to the original text
-
-**Instructions:**
-1. **ATTENTION**: If the Bloom level is 'remember', assign score=1.0 automatically (recalling facts is expected)
-2. For other levels, read the question WITHOUT looking at the original context
-3. Assess whether the question makes sense and is answerable without access to the original text
-4. Identify references to the text ('in the text', 'as mentioned', pronouns without antecedent)
-5. Assign a score from 0.0 to 1.0 following the rubric above
-6. Provide a clear rationale
-
-**Return ONLY a JSON object in the following format:**
-```json
-{
-  "score": 0.0,
-  "rationale": "Explanation of the assigned score"
-}
-```
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

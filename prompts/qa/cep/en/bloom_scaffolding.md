@@ -20,14 +20,10 @@ $output_rules
 
 Output format (JSON object):
 {
+  "rationale": "Your plan: what you will ask, what the grounded answer will be, and why it fits the level",
   "question": "The generated question",
   "answer": "The answer based on the information",
-  "bloom_level": "$bloom_level",
-  "confidence": 0.85,
-  "reasoning_trace": "Logical connections (for analyze/evaluate)",
-  "is_multi_hop": false,
-  "hop_count": null,
-  "tacit_inference": "Implicit knowledge (optional)"
+  "bloom_level": "$bloom_level"
 }
 
 Return ONLY the JSON object, no additional text.

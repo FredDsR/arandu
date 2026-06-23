@@ -114,12 +114,20 @@ _RATIONALE_ALIASES = AliasChoices(
 
 
 class RangeCriterionResponse(BaseModel):
-    """Expected structured response from an LLM criterion evaluation."""
+    """Expected structured response from an LLM criterion evaluation.
+
+    Field order is load-bearing. The schema is emitted to the structured
+    endpoint as a constrained grammar, so declaration order is decode order.
+    ``rationale`` is declared before ``score`` so the judge reasons before
+    committing to a number, rather than emitting the number and then
+    rationalizing it post hoc. See Tam et al. 2024 (arXiv:2408.02442) on the
+    JSON-mode reasoning collapse when the answer key precedes the reason key.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
-    score: float = Field(validation_alias=_SCORE_ALIASES)
     rationale: str = Field(validation_alias=_RATIONALE_ALIASES)
+    score: float = Field(validation_alias=_SCORE_ALIASES)
 
 
 class JudgeCriterion(ABC):
@@ -228,8 +236,11 @@ class OrdinalCriterionResponse(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    score: int = Field(ge=ORDINAL_MIN, le=ORDINAL_MAX, validation_alias=_SCORE_ALIASES)
+    # rationale before score: declaration order is decode order under the
+    # constrained-grammar structured endpoint, so the judge reasons before it
+    # commits to a label (see RangeCriterionResponse).
     rationale: str = Field(validation_alias=_RATIONALE_ALIASES)
+    score: int = Field(ge=ORDINAL_MIN, le=ORDINAL_MAX, validation_alias=_SCORE_ALIASES)
 
     @field_validator("score", mode="before")
     @classmethod
@@ -285,7 +296,11 @@ class BaseLLMCriterion(JudgeCriterion):
     SCALE: ClassVar[CriterionScale]
     RESPONSE_MODEL: ClassVar[type[BaseModel]]
     CONFIG_CLS: ClassVar[type[BaseCriterionConfig]]
-    DEFAULT_TEMPERATURE: ClassVar[float] = 0.3
+    # Low by default: single-shot pointwise judging gets no accuracy benefit
+    # from sampling (which only helps via K-sample aggregation, not done here)
+    # and pays in run-to-run reproducibility. 0.1 over 0.0 avoids the
+    # degenerate greedy edge case (Wei et al. 2024, arXiv:2408.13006).
+    DEFAULT_TEMPERATURE: ClassVar[float] = 0.1
 
     def __init__(
         self,
@@ -416,7 +431,7 @@ class BaseLLMCriterion(JudgeCriterion):
 class RangeLLMCriterion(BaseLLMCriterion):
     """Continuous ``[0, 1]`` LLM criterion (the default engine).
 
-    Inherits ``DEFAULT_TEMPERATURE = 0.3`` from the base.
+    Inherits ``DEFAULT_TEMPERATURE = 0.1`` from the base.
     """
 
     SCALE: ClassVar[CriterionScale] = "continuous"
