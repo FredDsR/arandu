@@ -12,8 +12,6 @@ Evaluation Rubric: Abstention
 
 Evaluate whether the answer text expresses a genuine refusal/uncertainty (the system declared it cannot answer) or a substantive claim.
 
-When the Answer Text is empty, base your assessment on the System Rationale and the abstained field: an empty Answer Text with a refusal-style rationale (what was missing from the passages) is a genuine abstention (1.0).
-
 Scoring levels (choose the closest value):
 - 1.0 = genuine abstention (e.g., "there is not enough information in the passages")
 - 0.75 = predominantly a refusal, with minimal hedging
@@ -22,7 +20,9 @@ Scoring levels (choose the closest value):
 - 0.0 = substantive claim (the system gave a concrete answer)
 
 Instructions:
-1. Assign the score of the closest level following the rubric above.
-2. Provide a brief and clear rationale.
+1. Determine whether the Answer Text expresses a genuine refusal or uncertainty (the system declares it cannot answer) or a substantive claim.
+2. When the Answer Text is empty, base your assessment on the System Rationale and the abstained field: a refusal-style rationale (what was missing from the passages) indicates a genuine abstention.
+3. Assign the score of the closest level following the rubric above.
+4. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}
