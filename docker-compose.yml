@@ -61,6 +61,7 @@ services:
       --credentials /app/credentials/credentials.json
       --token /app/credentials/token.json
       --output-dir /app/results
+      --id ${PIPELINE_ID:-}
       --workers ${ARANDU_WORKERS:-${WORKERS:-4}}
 
     # Resource limits (adjust based on partition)
