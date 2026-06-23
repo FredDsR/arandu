@@ -28,7 +28,7 @@ Note on the ends of the ladder: "remember" is the lowest level (cannot be under-
 Instructions:
 1. Carefully read the question and identify the cognitive level it actually requires, using the reference definitions above
 2. Compare the required level with the declared level ($bloom_level)
-3. Assign a score from 0.0 to 1.0 following the rubric above
-4. Provide a rationale explaining the match or miscalibration
+3. Assign the score of the closest level following the rubric above.
+4. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

@@ -22,6 +22,7 @@ Instructions:
 2. Identify any content that comes from external knowledge or is absent from the passages.
 3. Precedence: if the answer fabricates information absent from the passages or contradicts the passages, cap the score at 0.5, regardless of how much of the rest is covered.
 4. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers faithful to the passages.
-5. Assign a score following the rubric above and justify briefly.
+5. Assign the score of the closest level following the rubric above.
+6. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

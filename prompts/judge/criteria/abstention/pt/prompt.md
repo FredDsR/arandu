@@ -21,4 +21,8 @@ Níveis de pontuação (escolha o valor mais próximo):
 - 0.25 = predominantemente uma afirmação substantiva, com alguma ressalva
 - 0.0 = afirmação substantiva (o sistema deu uma resposta concreta)
 
+Instruções:
+1. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+2. Forneça uma justificativa breve e clara.
+
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

@@ -21,4 +21,8 @@ Scoring levels (choose the closest value):
 - 0.25 = predominantly a substantive claim, with some caveat
 - 0.0 = substantive claim (the system gave a concrete answer)
 
+Instructions:
+1. Assign the score of the closest level following the rubric above.
+2. Provide a brief and clear rationale.
+
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

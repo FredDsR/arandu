@@ -26,6 +26,7 @@ Instructions:
 2. Identify short repetitive loops that don't appear in natural conversation.
 3. Distinguish between natural repetition (e.g., "no, no, no" as emphatic negation, 1-2 occurrences) and hallucinated repetition (hundreds of identical occurrences).
 4. Language doesn't matter for this criterion: hallucinated content can be in any language, including the expected one.
-5. Empty or very short text should receive a score of 1.0 (not evaluable).
+5. Assign the score of the closest level following the rubric above.
+6. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

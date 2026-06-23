@@ -21,5 +21,7 @@ Instructions:
 1. Identify the dominant language of the text.
 2. Compare against the expected language ($expected_language).
 3. Flag full sentences in another language as drift.
+4. Assign the score of the closest level following the rubric above.
+5. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

@@ -82,8 +82,9 @@ Par:
 - Pergunta: $question
 - Resposta: $answer
 
-Instruções de saída:
-
-Atribua uma nota inteira de 1 a 5 e uma justificativa curta (no máximo 3 frases). Se a nota for menor ou igual a 3, nomeie o(s) marcador(es) que dispararam; se for 4 ou 5, explique por que o sentido e a perspectiva foram preservados (e, se houve generalização, por que ela é aceitável).
+Instruções:
+1. Atribua uma nota inteira de 1 a 5 seguindo a rubrica acima.
+2. Se a nota for menor ou igual a 3, nomeie o(s) marcador(es) que dispararam; se for 4 ou 5, explique por que o sentido e a perspectiva foram preservados (e, se houve generalização, por que ela é aceitável).
+3. Forneça uma justificativa breve e clara.
 
 Responda em JSON: {"rationale": "<justificativa>", "score": <inteiro 1-5>}.

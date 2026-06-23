@@ -26,6 +26,7 @@ Instruções:
 2. Identifique loops repetitivos curtos que não aparecem em conversa natural.
 3. Distinga entre repetição natural (ex.: "não, não, não" como negativa enfática em 1-2 ocorrências) e repetição alucinatória (centenas de ocorrências idênticas).
 4. O idioma não importa para este critério: conteúdo alucinado pode estar em qualquer idioma, inclusive o esperado.
-5. Texto vazio ou muito curto deve receber nota 1.0 (não avaliável).
+5. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+6. Forneça uma justificativa breve e clara.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}
