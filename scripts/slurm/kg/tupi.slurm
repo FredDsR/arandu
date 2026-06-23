@@ -3,7 +3,7 @@
 #SBATCH --partition=tupi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/kg_tupi_%x_%j.out
