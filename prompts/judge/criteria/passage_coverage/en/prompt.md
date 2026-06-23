@@ -24,6 +24,7 @@ Instructions:
 1. Read the reference answer and identify the information needed to derive it.
 2. Check whether that information is present in the retrieved passages, even if it requires combining excerpts.
 3. Judge the passages' coverage relative to the reference, not writing quality.
-4. Assign a score following the rubric above and justify briefly.
+4. Assign the score of the closest level following the rubric above.
+5. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

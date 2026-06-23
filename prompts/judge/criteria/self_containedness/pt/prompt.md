@@ -20,7 +20,7 @@ Níveis de pontuação (escolha o valor mais próximo):
 Instruções:
 1. Verifique se a pergunta nomeia suas próprias entidades, locais e técnicas em vez de depender do texto
 2. Identifique referências ao texto ('no texto', 'conforme mencionado', pronomes sem antecedente)
-3. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
-4. Forneça uma justificativa clara
+3. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+4. Forneça uma justificativa breve e clara.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

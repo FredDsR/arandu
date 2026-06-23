@@ -21,5 +21,7 @@ Instruções:
 1. Identifique qual é o idioma dominante do texto.
 2. Compare com o idioma esperado ($expected_language).
 3. Identifique sentenças completas em outro idioma como deriva.
+4. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+5. Forneça uma justificativa breve e clara.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

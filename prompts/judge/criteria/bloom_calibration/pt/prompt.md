@@ -28,7 +28,7 @@ Nota sobre os extremos da escada: "remember" é o nível mais baixo (não pode s
 Instruções:
 1. Leia atentamente a pergunta e identifique o nível cognitivo que ela realmente exige, usando as definições de referência acima
 2. Compare o nível exigido com o nível declarado ($bloom_level)
-3. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
-4. Forneça uma justificativa explicando a correspondência ou descalibração
+3. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+4. Forneça uma justificativa breve e clara.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

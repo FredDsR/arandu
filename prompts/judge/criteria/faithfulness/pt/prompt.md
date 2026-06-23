@@ -25,7 +25,7 @@ Instruções:
 3. Identifique qualquer alucinação, informação não verificável ou contradição
 4. Precedência: se a resposta inventa informação ausente do contexto ou contradiz o contexto, limite a nota a no máximo 0.5, independentemente de quanto do restante esteja fundamentado
 5. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão fiel ao contexto
-6. Atribua uma pontuação de 0.0 a 1.0 seguindo a rubrica acima
-7. Forneça uma justificativa breve e clara
+6. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+7. Forneça uma justificativa breve e clara.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

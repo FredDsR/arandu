@@ -28,7 +28,7 @@ Instructions:
 1. Carefully read the answer and assess the informative value of the knowledge revealed
 2. Identify tacit knowledge / know-how per the reference definitions above (lived, situated, specific experience), distinguishing it from generic information
 3. Do not reward length: a long, generic answer is not more informative than a short, specific one; assess substance, not size
-4. Assign a score from 0.0 to 1.0 following the rubric above
-5. Provide a clear rationale about the informative value
+4. Assign the score of the closest level following the rubric above.
+5. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

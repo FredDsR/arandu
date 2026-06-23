@@ -25,7 +25,7 @@ Instructions:
 3. Identify any hallucinations, unverifiable information, or contradictions
 4. Precedence: if the answer fabricates information absent from the context or contradicts the context, cap the score at 0.5, regardless of how much of the rest is grounded
 5. Do not reward length: elaboration or verbosity alone must not raise the score; prefer concise answers faithful to the context
-6. Assign a score from 0.0 to 1.0 following the rubric above
-7. Provide a brief and clear rationale
+6. Assign the score of the closest level following the rubric above.
+7. Provide a brief and clear rationale.
 
 Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

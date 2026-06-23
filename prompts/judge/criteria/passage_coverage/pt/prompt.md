@@ -24,6 +24,7 @@ Instruções:
 1. Leia a resposta de referência e identifique a informação necessária para derivá-la.
 2. Verifique se essa informação está presente nas passagens recuperadas, ainda que exija juntar trechos.
 3. Avalie a cobertura das passagens em relação à referência, não a qualidade de redação.
-4. Atribua uma nota seguindo a rubrica acima e justifique brevemente.
+4. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+5. Forneça uma justificativa breve e clara.
 
 Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}
