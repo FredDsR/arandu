@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=arandu-rag-kg-link
-#SBATCH --partition=tupi
+#SBATCH --partition=draco
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8

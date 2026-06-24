@@ -86,11 +86,12 @@ find "$OLLAMA_MODELS_DIR" -name "*-partial" -delete 2>/dev/null || true
 find "$OLLAMA_MODELS_DIR" -name "*.tmp" -delete 2>/dev/null || true
 
 MIN_DISK_GB=${MIN_DISK_GB:-15}
-DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "/var/lib/docker")
-AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ')
-AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
+DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+[ -d "$DOCKER_ROOT" ] || DOCKER_ROOT=/var/lib/docker
+AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || true)
+AVAIL_GB=$(( ${AVAIL_KB:-0} / 1024 / 1024 ))
 echo "Docker storage: $DOCKER_ROOT — ${AVAIL_GB} GB available (min ${MIN_DISK_GB})"
-if [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
+if [ "${AVAIL_KB:-0}" -gt 0 ] && [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
     echo "ERROR: not enough disk on $DOCKER_ROOT (${AVAIL_GB} GB < ${MIN_DISK_GB} GB)." >&2
     exit 1
 fi
