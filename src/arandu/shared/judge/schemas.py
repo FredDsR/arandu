@@ -105,3 +105,15 @@ class JudgeResultMixin(BaseModel):
         Returns ``None`` when the record has not been judged.
         """
         return self.validation.passed if self.validation is not None else None
+
+    @property
+    def is_judge_rejected(self) -> bool:
+        """Whether the record was judged and FAILED (``is_valid is False``).
+
+        The canonical "drop this record" predicate for downstream stages that
+        should consume only judge-valid records (chunk, kg). Unjudged records
+        (``is_valid is None``) are NOT rejected, so a stage can still run before
+        judging. Kept here as the single authoritative home for the rule that
+        otherwise gets re-inlined in every consumer's batch loader.
+        """
+        return self.is_valid is False
