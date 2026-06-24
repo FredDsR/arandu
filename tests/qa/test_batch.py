@@ -641,6 +641,56 @@ class TestRunBatchCEPGeneration:
 
         assert self.outputs_dir.exists()
 
+    def test_run_batch_cep_rebuild_clears_stale_outputs(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """rebuild=True drops stale CEP pair files before generating."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Pre-seed a stale pair file + checkpoint in the versioned outputs, as a
+        # prior (e.g. pre-dedup) run would have left behind.
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        stale = self.outputs_dir / "stale_id_cep_qa.json"
+        stale.write_text("{}")
+        self.versioned_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text("{}")
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        # Empty input -> early exit after the rebuild wipe runs.
+        run_batch_cep_generation(
+            input_dir, output_dir, qa_config, cep_config, num_workers=1, rebuild=True
+        )
+
+        assert not stale.exists()
+        assert self.outputs_dir.exists()
+
+    def test_run_batch_cep_no_rebuild_keeps_stale_outputs(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Without rebuild, a resumed run leaves prior pair files in place."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        stale = self.outputs_dir / "stale_id_cep_qa.json"
+        stale.write_text("{}")
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert stale.exists()
+
     def test_run_batch_cep_no_tasks_early_exit(
         self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
