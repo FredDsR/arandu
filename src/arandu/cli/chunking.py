@@ -48,6 +48,17 @@ def chunk(
             ),
         ),
     ] = None,
+    rebuild: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild",
+            help=(
+                "Clear existing chunk outputs for the selected views and reset "
+                "the checkpoint before chunking, for a clean re-run (e.g. to drop "
+                "chunks of transcriptions the judge rejected)."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Build ChunkSets across one or more chunker views.
 
@@ -67,6 +78,7 @@ def chunk(
             input_dir=input_dir,
             views=selected_views,
             pipeline_id=pipeline_id,
+            rebuild=rebuild,
         )
     except ValueError as exc:
         print_error(str(exc))
@@ -78,6 +90,11 @@ def chunk(
 
     if result.skipped:
         print_warning(f"Skipped {result.skipped} unreadable / non-EnrichedRecord file(s).")
+    if result.skipped_invalid:
+        print_warning(
+            f"Skipped {result.skipped_invalid} transcription(s) rejected by the judge "
+            "(is_valid=False)."
+        )
     if result.sources_resumed:
         print_info(f"Resumed: {result.sources_resumed} source(s) already completed in checkpoint.")
     print_info(f"Run ID: {result.pipeline_id}")
