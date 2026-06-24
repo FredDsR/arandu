@@ -84,7 +84,12 @@ def chunk(
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
 
-    if result.sources_processed == 0 and result.sources_resumed == 0 and result.skipped == 0:
+    if (
+        result.sources_processed == 0
+        and result.sources_resumed == 0
+        and result.skipped == 0
+        and result.skipped_invalid == 0
+    ):
         print_warning(f"No JSON files found in {input_dir}")
         return
 

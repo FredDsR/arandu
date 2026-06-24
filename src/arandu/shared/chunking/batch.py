@@ -95,6 +95,13 @@ def run_chunk_batch(
 
     Raises:
         ValueError: If ``views`` contains any unregistered chunker_id.
+
+    Note:
+        Without ``rebuild``, a re-run skips newly judge-rejected sources but
+        leaves their chunk files from an earlier run on disk; pass ``rebuild``
+        (or ``CHUNK_REBUILD=1`` via the SLURM script) to drop them. ``rebuild``
+        clears only the requested views while the checkpoint is run-wide, so
+        rebuild multiple views together in one call to keep them consistent.
     """
     _validate_views(views)
 
@@ -122,6 +129,13 @@ def run_chunk_batch(
     checkpoint = CheckpointManager(results_mgr.run_dir / CHECKPOINT_FILENAME)
     chunkers = {view_id: get_chunker(view_id) for view_id in views}
 
+    # Ensure each requested view dir exists even when every record is skipped
+    # (e.g. all transcriptions judge-rejected, or a rebuild that drops the last
+    # valid source), so downstream retrievers resolve an empty corpus dir instead
+    # of crashing on a missing path.
+    for view_id in views:
+        (results_mgr.outputs_dir / view_id).mkdir(parents=True, exist_ok=True)
+
     json_files = sorted(input_dir.glob("*.json"))
     checkpoint.set_total_files(len(json_files))
 
@@ -147,10 +161,11 @@ def run_chunk_batch(
             skipped += 1
             continue
 
-        # Skip transcriptions the transcription judge rejected (is_valid is
-        # False), so the retrieval corpus matches the QA/KG corpus. Mirrors
-        # qa/batch.py and kg/batch.py. Unjudged records (is_valid is None) pass.
-        if record.is_valid is False:
+        # Skip transcriptions the transcription judge rejected, so the retrieval
+        # corpus matches the QA/KG corpus. Unjudged records (is_valid is None)
+        # still pass so chunk can run before judging. Shared predicate lives on
+        # JudgeResultMixin (also used by kg/batch.py).
+        if record.is_judge_rejected:
             skipped_invalid += 1
             continue
 

@@ -76,7 +76,9 @@ def _load_transcription_records(
             data = json.loads(json_file.read_text())
             record = EnrichedRecord.model_validate(data)
 
-            if record.is_valid is False:
+            # Shared predicate (JudgeResultMixin.is_judge_rejected): drop
+            # judge-failed records, keep unjudged. Same rule used by chunk.
+            if record.is_judge_rejected:
                 skipped += 1
                 continue
 

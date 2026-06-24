@@ -78,6 +78,28 @@ class TestValidityFilter:
         assert written == {"valid", "unjudged"}
         assert "rejected" not in written
 
+    def test_all_rejected_leaves_empty_view_dir(
+        self, tmp_path: Path, monkeypatch: MonkeyPatch
+    ) -> None:
+        """When every source is judge-rejected, the view dir exists but empty.
+
+        A missing dir would crash downstream retrievers resolving the corpus
+        path; an empty dir lets them see an empty corpus.
+        """
+        monkeypatch.setenv("ARANDU_RESULTS_BASE_DIR", str(tmp_path / "results"))
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        _write_transcription(input_dir, "r1", is_valid=False)
+        _write_transcription(input_dir, "r2", is_valid=False)
+
+        result = run_chunk_batch(input_dir=input_dir, views=["cep_4k"], pipeline_id="run1")
+
+        assert result.skipped_invalid == 2
+        assert result.sources_processed == 0
+        view_dir = Path(result.run_dir) / "outputs" / "cep_4k"
+        assert view_dir.is_dir()
+        assert list(view_dir.glob("*.json")) == []
+
 
 class TestRebuild:
     """The --rebuild flag clears stale view outputs + checkpoint."""
