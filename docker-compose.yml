@@ -371,6 +371,7 @@ services:
       /app/results
       --id ${PIPELINE_ID:-}
       --workers ${ARANDU_QA_WORKERS:-2}
+      ${CEP_REBUILD_FLAG:-}
 
     volumes:
       - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw

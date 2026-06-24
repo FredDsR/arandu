@@ -95,6 +95,16 @@ mkdir -p logs
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 export PIPELINE_ID="${PIPELINE_ID:-}"
 
+# Set CEP_REBUILD=1 to clear stale CEP outputs + checkpoint first (e.g. to
+# regenerate after a corpus dedup so dropped sources do not linger from a prior
+# run). Only the exact value "1" enables it (so CEP_REBUILD=0 is a real off).
+# Forwarded to the compose command as ${CEP_REBUILD_FLAG:-}.
+if [ "${CEP_REBUILD:-}" = "1" ]; then
+    export CEP_REBUILD_FLAG="--rebuild"
+else
+    export CEP_REBUILD_FLAG=""
+fi
+
 # -----------------------------------------------------------------------------
 # Determine Docker profile based on GPU mode
 # -----------------------------------------------------------------------------

@@ -76,6 +76,14 @@ def generate_cep_qa(
         str | None,
         typer.Option("--id", help="Pipeline ID. Auto-resolves transcription outputs."),
     ] = None,
+    rebuild: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild",
+            help="Clear existing CEP outputs + checkpoint before generating, so a "
+            "re-run on a changed source set (e.g. after a corpus dedup) starts clean.",
+        ),
+    ] = False,
 ) -> None:
     """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
 
@@ -188,6 +196,7 @@ def generate_cep_qa(
             cep_config,
             qa_config.workers,
             pipeline_id=pipeline_id,
+            rebuild=rebuild,
         )
 
         # Export to JSONL if requested

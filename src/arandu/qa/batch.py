@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import multiprocessing as mp
+import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime
 
@@ -334,6 +335,7 @@ def run_batch_cep_generation(
     cep_config: CEPConfig,
     num_workers: int = 2,
     pipeline_id: str | None = None,
+    rebuild: bool = False,
 ) -> None:
     """Run batch CEP QA generation with parallel processing and checkpointing.
 
@@ -348,6 +350,17 @@ def run_batch_cep_generation(
         cep_config: CEP configuration.
         num_workers: Number of parallel workers.
         pipeline_id: Optional pipeline ID for the ID-first results layout.
+        rebuild: When ``True``, clear any existing CEP outputs and reset the
+            checkpoint before processing, so a re-run yields a clean dataset.
+
+    Note:
+        Without ``rebuild``, resuming an existing ``pipeline_id`` skips sources
+        the checkpoint already marks completed and leaves their ``*_cep_qa.json``
+        files on disk — even when the source set has since changed (e.g. a
+        corpus dedup that dropped transcriptions). That leaves stale pair files
+        from an earlier run, inflating the dataset past the current source
+        count. Pass ``rebuild`` (or ``CEP_REBUILD=1`` via the SLURM script) to
+        start clean. This mirrors the chunk stage's ``rebuild``.
     """
     # Load results configuration
     results_config = ResultsConfig()
@@ -379,6 +392,15 @@ def run_batch_cep_generation(
     else:
         effective_output_dir = output_dir
         effective_checkpoint_file = output_dir / "cep_checkpoint.json"
+
+    # Rebuild: drop stale pair files + checkpoint so a re-run on a changed
+    # source set (e.g. after a corpus dedup) starts clean instead of layering
+    # new outputs on top of a prior run's completed-set.
+    if rebuild:
+        if effective_output_dir.exists():
+            shutil.rmtree(effective_output_dir)
+        if effective_checkpoint_file.exists():
+            effective_checkpoint_file.unlink()
 
     # Create output directory
     effective_output_dir.mkdir(parents=True, exist_ok=True)
