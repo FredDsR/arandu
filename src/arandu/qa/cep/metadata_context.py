@@ -53,6 +53,32 @@ def format_metadata_section(metadata: SourceMetadata, language: str) -> str:
     return f"\n{header}\n" + "\n".join(lines)
 
 
+def render_metadata_context(
+    source_metadata: SourceMetadata | None,
+    *,
+    enable_metadata: bool,
+    language: str,
+) -> str:
+    """Render the metadata section iff it should be injected, else ``""``.
+
+    Single source of truth for the injection gate (flag on AND metadata
+    present) shared by generation and judging, so the two cannot drift on the
+    decision of whether to include metadata.
+
+    Args:
+        source_metadata: Source metadata to render, if any.
+        enable_metadata: Whether source-metadata context is enabled.
+        language: Prompt language (ISO 639-1).
+
+    Returns:
+        The formatted metadata section, or ``""`` when metadata must not be
+        injected or has no renderable fields.
+    """
+    if not enable_metadata or source_metadata is None:
+        return ""
+    return format_metadata_section(source_metadata, language)
+
+
 def build_judge_context(
     transcription_text: str,
     source_metadata: SourceMetadata | None,
@@ -80,10 +106,9 @@ def build_judge_context(
     Returns:
         The transcription text, optionally followed by the metadata block.
     """
-    if not enable_metadata or source_metadata is None:
-        return transcription_text
-
-    section = format_metadata_section(source_metadata, language)
+    section = render_metadata_context(
+        source_metadata, enable_metadata=enable_metadata, language=language
+    )
     if not section:
         return transcription_text
 

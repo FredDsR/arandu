@@ -345,6 +345,11 @@ def judge_qa(
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
 
+    valid_languages = {"en", "pt"}
+    if language not in valid_languages:
+        print_error(f"Invalid language: {language!r}. Must be one of {sorted(valid_languages)}")
+        raise typer.Exit(code=1)
+
     cep_config = CEPConfig(language=language)
     judge = QAJudge(validator_client=client, cep_config=cep_config)
 

@@ -7,7 +7,11 @@ grounding an answer in metadata the judge never saw.
 
 from __future__ import annotations
 
-from arandu.qa.cep.metadata_context import build_judge_context, format_metadata_section
+from arandu.qa.cep.metadata_context import (
+    build_judge_context,
+    format_metadata_section,
+    render_metadata_context,
+)
 from arandu.shared.schemas import SourceMetadata
 
 
@@ -69,6 +73,36 @@ class TestFormatMetadataSection:
 
         assert "Secret Folder" not in section
         assert "aida.mp4" not in section
+
+
+class TestRenderMetadataContext:
+    """Tests for render_metadata_context() — the shared injection gate."""
+
+    def test_renders_section_when_enabled_and_present(self) -> None:
+        """Returns the formatted block when the flag is on and metadata exists."""
+        section = render_metadata_context(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert "- Local: DOQUINHAS" in section
+
+    def test_empty_when_disabled(self) -> None:
+        """Returns '' when the flag is off, regardless of metadata."""
+        section = render_metadata_context(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert section == ""
+
+    def test_empty_when_metadata_none(self) -> None:
+        """Returns '' when there is no metadata."""
+        section = render_metadata_context(None, enable_metadata=True, language="pt")
+
+        assert section == ""
 
 
 class TestBuildJudgeContext:

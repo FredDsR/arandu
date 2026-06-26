@@ -21,7 +21,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from arandu.qa.cep.metadata_context import format_metadata_section
+from arandu.qa.cep.metadata_context import render_metadata_context
 from arandu.qa.schemas import QAPairCEP
 from arandu.utils.paths import get_project_root
 
@@ -370,10 +370,12 @@ class BloomScaffoldingGenerator:
                 header = self._prompts.get("scaffolding_header", "")
                 scaffolding_section = f"\n{header}\n{formatted}"
 
-        # Build metadata section (if enabled and available)
-        metadata_section = ""
-        if self.cep_config.enable_source_metadata_context and source_metadata is not None:
-            metadata_section = format_metadata_section(source_metadata, self.cep_config.language)
+        # Build metadata section (shared gate keeps generation/judge symmetric)
+        metadata_section = render_metadata_context(
+            source_metadata,
+            enable_metadata=self.cep_config.enable_source_metadata_context,
+            language=self.cep_config.language,
+        )
 
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
