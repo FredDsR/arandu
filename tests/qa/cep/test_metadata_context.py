@@ -74,8 +74,12 @@ class TestFormatMetadataSection:
 class TestBuildJudgeContext:
     """Tests for build_judge_context()."""
 
-    def test_prepends_metadata_when_enabled(self) -> None:
-        """The metadata block is prepended so the judge sees the same grounding."""
+    def test_appends_metadata_after_transcript_when_enabled(self) -> None:
+        """Metadata follows the transcript, matching the generation prompt order.
+
+        Generation renders ``$context`` (transcript) then ``$metadata_section``,
+        so the judge must place the block in the same position for parity.
+        """
         metadata = SourceMetadata(location="DOQUINHAS")
         transcript = "O pescador guardou o barco antes da enchente."
 
@@ -90,8 +94,8 @@ class TestBuildJudgeContext:
         assert "DOQUINHAS" not in transcript
         assert "- Local: DOQUINHAS" in context
         assert transcript in context
-        # Metadata precedes the transcript.
-        assert context.index("DOQUINHAS") < context.index(transcript)
+        # Transcript precedes the metadata block, as in generation.
+        assert context.index(transcript) < context.index("DOQUINHAS")
 
     def test_returns_plain_transcript_when_disabled(self) -> None:
         """With the flag off, generation injected nothing, so neither does the judge."""

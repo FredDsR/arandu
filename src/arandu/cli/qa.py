@@ -375,14 +375,16 @@ def judge_qa(
             print_error(f"Failed to read {qa_file.name}: {e}")
             continue
 
-        # Give the judge the SAME grounding generation saw: prepend the source
-        # metadata block (gated on the same flag) so answers/questions grounded
-        # in metadata are not scored as fabricated or context-dependent.
+        # Give the judge the SAME grounding generation saw: append the source
+        # metadata block so answers/questions grounded in metadata are not
+        # scored as fabricated or context-dependent. Drive symmetry off the
+        # values persisted on the record at generation time (not judge-time
+        # config), so the judge cannot drift from what generation injected.
         context = build_judge_context(
             record.transcription_text,
             record.source_metadata,
-            enable_metadata=cep_config.enable_source_metadata_context,
-            language=language,
+            enable_metadata=record.source_metadata_context_enabled,
+            language=record.language,
         )
         all_pairs = record.qa_pairs
 

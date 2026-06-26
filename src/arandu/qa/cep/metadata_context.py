@@ -62,20 +62,23 @@ def build_judge_context(
 ) -> str:
     """Build the grounding context the judge evaluates against.
 
-    Prepends the same metadata section generation used so faithfulness and
-    self-containedness are judged against identical grounding. Gated on
-    ``enable_metadata`` to stay symmetric with generation: when generation
-    injected no metadata, neither does the judge.
+    Appends the same metadata section generation used so faithfulness and
+    self-containedness are judged against identical grounding. The block is
+    placed *after* the transcript to match the generation prompt order
+    (``$context`` then ``$metadata_section``). Gated on ``enable_metadata`` to
+    stay symmetric with generation: when generation injected no metadata,
+    neither does the judge.
 
     Args:
         transcription_text: Full transcription text of the record.
         source_metadata: Source metadata carried on the record, if any.
-        enable_metadata: Whether source-metadata context was enabled for
-            generation (``CEPConfig.enable_source_metadata_context``).
-        language: Prompt language (ISO 639-1).
+        enable_metadata: Whether source-metadata context was injected at
+            generation time (``QARecordCEP.source_metadata_context_enabled``).
+        language: Prompt language (ISO 639-1); pass the record's generation
+            language so labels match what generation rendered.
 
     Returns:
-        The transcription text, optionally prefixed with the metadata block.
+        The transcription text, optionally followed by the metadata block.
     """
     if not enable_metadata or source_metadata is None:
         return transcription_text
@@ -84,4 +87,4 @@ def build_judge_context(
     if not section:
         return transcription_text
 
-    return f"{section.strip()}\n\n{transcription_text}"
+    return f"{transcription_text}\n\n{section.strip()}"
