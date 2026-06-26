@@ -137,6 +137,15 @@ class QARecordCEP(BaseModel):
     source_metadata: SourceMetadata | None = Field(
         default=None, description="Source interview metadata for provenance tracking"
     )
+    source_metadata_context_enabled: bool = Field(
+        default=True,
+        description=(
+            "Whether source-metadata context was injected into the generation "
+            "prompt for this record. The judge reads this to inject the same "
+            "metadata grounding, keeping generation and judging symmetric "
+            "regardless of judge-time config."
+        ),
+    )
     transcription_text: str = Field(..., description="Full transcription text")
     qa_pairs: list[QAPairCEP] = Field(..., description="List of CEP-enhanced QA pairs")
     chunker_id: str = Field(

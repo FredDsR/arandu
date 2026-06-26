@@ -122,6 +122,55 @@ class TestCEPQAGenerator:
         assert result.model_id == qa_config.model_id
         assert result.provider == qa_config.provider
 
+    def test_persists_source_metadata_context_flag(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        sample_transcription: EnrichedRecord,
+    ) -> None:
+        """The record captures whether metadata context was injected.
+
+        The judge re-derives its grounding from this persisted value, so it
+        must reflect the generation-time config rather than a judge-time
+        default. Here the config leaves the flag at its True default.
+        """
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        result = generator.generate_qa_pairs(sample_transcription)
+
+        assert result.source_metadata_context_enabled is True
+
+    def test_persists_source_metadata_context_flag_when_disabled(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        sample_transcription: EnrichedRecord,
+    ) -> None:
+        """A run generated with the flag off persists False on the record.
+
+        Regression: without this the judge would re-inject metadata the
+        generator never saw, re-creating the grounding asymmetry.
+        """
+        cep_config = CEPConfig(
+            enable_source_metadata_context=False,
+            bloom_distribution={"remember": 1},
+            language="pt",
+        )
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+
+        result = generator.generate_qa_pairs(sample_transcription)
+
+        assert result.source_metadata_context_enabled is False
+
     def test_generate_qa_pairs_includes_bloom_distribution(
         self,
         mock_llm_client: Any,

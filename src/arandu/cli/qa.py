@@ -321,6 +321,7 @@ def judge_qa(
         arandu judge-qa cep_dataset/ --rejudge
     """
     from arandu.qa.cep.judge import QAJudge
+    from arandu.qa.cep.metadata_context import build_judge_context
     from arandu.qa.config import CEPConfig, get_judge_config
     from arandu.qa.schemas import QAPairCEP, QARecordCEP
     from arandu.transcription.judge import build_validator_client
@@ -343,6 +344,11 @@ def judge_qa(
     except ValueError as exc:
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
+
+    valid_languages = {"en", "pt"}
+    if language not in valid_languages:
+        print_error(f"Invalid language: {language!r}. Must be one of {sorted(valid_languages)}")
+        raise typer.Exit(code=1)
 
     cep_config = CEPConfig(language=language)
     judge = QAJudge(validator_client=client, cep_config=cep_config)
@@ -374,7 +380,17 @@ def judge_qa(
             print_error(f"Failed to read {qa_file.name}: {e}")
             continue
 
-        context = record.transcription_text
+        # Give the judge the SAME grounding generation saw: append the source
+        # metadata block so answers/questions grounded in metadata are not
+        # scored as fabricated or context-dependent. Drive symmetry off the
+        # values persisted on the record at generation time (not judge-time
+        # config), so the judge cannot drift from what generation injected.
+        context = build_judge_context(
+            record.transcription_text,
+            record.source_metadata,
+            enable_metadata=record.source_metadata_context_enabled,
+            language=record.language,
+        )
         all_pairs = record.qa_pairs
 
         # Sample diverse pairs by Bloom level first, then fill remaining slots
