@@ -1,0 +1,87 @@
+"""Shared source-metadata context helpers for CEP generation and judging.
+
+QA *generation* may inject a source-metadata block (participant, researcher,
+location, date, event context) into the prompt. If the *judge* does not see the
+same block, answers and questions legitimately grounded in that metadata are
+scored as fabricated or context-dependent (false rejections). These helpers are
+the single, shared rendering path so generation and the judge cannot drift.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from arandu.shared.schemas import SourceMetadata
+
+
+def format_metadata_section(metadata: SourceMetadata, language: str) -> str:
+    """Format source metadata as a prompt section.
+
+    Only non-None fields are included, with language-aware labels. The
+    Drive path is deliberately never rendered: it carries PII-ish folder
+    names and must not reach the prompt.
+
+    Args:
+        metadata: Source metadata to format.
+        language: Prompt language (ISO 639-1); ``"pt"`` selects Portuguese
+            labels, anything else falls back to English.
+
+    Returns:
+        Formatted metadata section beginning with a leading newline, or an
+        empty string when no fields are populated.
+    """
+    is_pt = language == "pt"
+
+    fields: list[tuple[str, str]] = []
+    if metadata.participant_name:
+        fields.append(("Participante" if is_pt else "Participant", metadata.participant_name))
+    if metadata.researcher_name:
+        fields.append(("Pesquisador(a)" if is_pt else "Researcher", metadata.researcher_name))
+    if metadata.location:
+        fields.append(("Local" if is_pt else "Location", metadata.location))
+    if metadata.recording_date:
+        fields.append(("Data" if is_pt else "Date", metadata.recording_date))
+    if metadata.event_context:
+        fields.append(("Contexto" if is_pt else "Context", metadata.event_context))
+
+    if not fields:
+        return ""
+
+    header = "Metadados da Entrevista:" if is_pt else "Interview Metadata:"
+    lines = [f"- {label}: {value}" for label, value in fields]
+    return f"\n{header}\n" + "\n".join(lines)
+
+
+def build_judge_context(
+    transcription_text: str,
+    source_metadata: SourceMetadata | None,
+    *,
+    enable_metadata: bool,
+    language: str,
+) -> str:
+    """Build the grounding context the judge evaluates against.
+
+    Prepends the same metadata section generation used so faithfulness and
+    self-containedness are judged against identical grounding. Gated on
+    ``enable_metadata`` to stay symmetric with generation: when generation
+    injected no metadata, neither does the judge.
+
+    Args:
+        transcription_text: Full transcription text of the record.
+        source_metadata: Source metadata carried on the record, if any.
+        enable_metadata: Whether source-metadata context was enabled for
+            generation (``CEPConfig.enable_source_metadata_context``).
+        language: Prompt language (ISO 639-1).
+
+    Returns:
+        The transcription text, optionally prefixed with the metadata block.
+    """
+    if not enable_metadata or source_metadata is None:
+        return transcription_text
+
+    section = format_metadata_section(source_metadata, language)
+    if not section:
+        return transcription_text
+
+    return f"{section.strip()}\n\n{transcription_text}"

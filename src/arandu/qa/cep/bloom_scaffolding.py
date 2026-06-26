@@ -21,6 +21,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from arandu.qa.cep.metadata_context import format_metadata_section
 from arandu.qa.schemas import QAPairCEP
 from arandu.utils.paths import get_project_root
 
@@ -372,7 +373,7 @@ class BloomScaffoldingGenerator:
         # Build metadata section (if enabled and available)
         metadata_section = ""
         if self.cep_config.enable_source_metadata_context and source_metadata is not None:
-            metadata_section = self._format_metadata_section(source_metadata)
+            metadata_section = format_metadata_section(source_metadata, self.cep_config.language)
 
         template = Template(self._prompts["_template"])
         return template.safe_substitute(
@@ -453,44 +454,6 @@ class BloomScaffoldingGenerator:
             )
         except (ValidationError, TypeError) as e:
             raise LLMResponseError(f"Validation failed: {e}") from e
-
-    def _format_metadata_section(self, metadata: SourceMetadata) -> str:
-        """Format source metadata as a prompt section.
-
-        Only includes non-None fields. Language-aware labels based on
-        the configured CEP language.
-
-        Args:
-            metadata: Source metadata to format.
-
-        Returns:
-            Formatted metadata section string, or empty string if no fields.
-        """
-        is_pt = self.cep_config.language == "pt"
-
-        fields: list[tuple[str, str]] = []
-        if metadata.participant_name:
-            label = "Participante" if is_pt else "Participant"
-            fields.append((label, metadata.participant_name))
-        if metadata.researcher_name:
-            label = "Pesquisador(a)" if is_pt else "Researcher"
-            fields.append((label, metadata.researcher_name))
-        if metadata.location:
-            label = "Local" if is_pt else "Location"
-            fields.append((label, metadata.location))
-        if metadata.recording_date:
-            label = "Data" if is_pt else "Date"
-            fields.append((label, metadata.recording_date))
-        if metadata.event_context:
-            label = "Contexto" if is_pt else "Context"
-            fields.append((label, metadata.event_context))
-
-        if not fields:
-            return ""
-
-        header = "Metadados da Entrevista:" if is_pt else "Interview Metadata:"
-        lines = [f"- {label}: {value}" for label, value in fields]
-        return f"\n{header}\n" + "\n".join(lines)
 
     def _bloom_to_question_type(self, bloom_level: str) -> str:
         """Map Bloom level to legacy question_type for compatibility.
