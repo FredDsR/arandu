@@ -162,11 +162,25 @@ class KHopTripleRetriever:
         node_dist = subgraph_node_distances(self._kg, seeds, self._k_hop)
         if not node_dist:
             return []
-        induced = self._kg.subgraph(node_dist.keys())
+        # Induce the subgraph on triple-endpoint nodes ONLY, before iterating
+        # edges. Concept nodes are atlas-rag schema-induction hubs whose
+        # `has_concept` edges dominate the graph (this corpus: ~65k concept
+        # edges vs ~23k semantic triples), and every concept-touching edge is
+        # discarded by the `_TRIPLE_ENDPOINT_TYPES` filter below anyway.
+        # Dropping concept nodes from the induced subgraph excludes exactly
+        # those never-emitted edges from the O(edges) iteration; the emitted
+        # triple set is unchanged because scoring reads `node_dist`, which is
+        # computed over the full k-hop traversal above. Pure speedup for the
+        # triple arm on concept-heavy KGs.
+        endpoint_nodes = [
+            n for n in node_dist if self._kg.nodes[n].get("type") in _TRIPLE_ENDPOINT_TYPES
+        ]
+        induced = self._kg.subgraph(endpoint_nodes)
 
         # Collect entity-entity / event-entity / event-event triples — skip:
-        # - any edge touching a non-{entity,event} node (passages have 2 KB
-        #   text in `id`; concepts are atlas-rag schema-induction hubs);
+        # - any edge touching a non-{entity,event} node (defensive: the induced
+        #   subgraph above already excludes concept/passage endpoints, but the
+        #   guard keeps the invariant explicit and is now near-free);
         # - self-loops (`head == tail`): structurally weird, methodologically
         #   uninformative — a relation from an entity to itself doesn't
         #   carry the cross-entity semantic content §6.4 calls for.
