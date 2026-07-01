@@ -189,6 +189,39 @@ class TestKHopTripleRetrieve:
                 "the `has_concept` relation should never surface in scored triples"
             )
 
+    def test_concept_hub_does_not_drop_real_entity_triples(self, tmp_path: Path) -> None:
+        # Regression guard for the perf change that restricts the induced
+        # subgraph to triple-endpoint nodes BEFORE iterating edges. A concept
+        # hub with many entities attached (the atlas-rag `has_concept` star)
+        # is in the k-hop neighbourhood, but excluding it from the subgraph
+        # must NOT drop the genuine entity-entity edge — the emitted triple
+        # set stays identical, only the never-emitted concept edges leave the
+        # iteration.
+        kg = nx.DiGraph()
+        kg.add_node("e_a", type="entity", id="alpha rare")
+        kg.add_node("e_b", type="entity", id="beta")
+        kg.add_edge("e_a", "e_b", relation="knows")  # the ONLY entity-entity edge
+        # Concept hub: e_a, e_b and 10 fillers all attach to it via has_concept.
+        kg.add_node("c_hub", type="concept", id="hub concept")
+        kg.add_edge("e_a", "c_hub", relation="has_concept")
+        kg.add_edge("e_b", "c_hub", relation="has_concept")
+        for i in range(10):
+            kg.add_node(f"e_filler_{i}", type="entity", id=f"filler entity {i}")
+            kg.add_edge(f"e_filler_{i}", "c_hub", relation="has_concept")
+        path = _write_kg_layout(kg, tmp_path)
+
+        retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
+        results = retriever.retrieve("alpha", top_k=20)
+
+        # Exactly the one real entity-entity triple survives; the has_concept
+        # star (and the fillers reachable only through the concept hub) inject
+        # no triples.
+        assert len(results) == 1
+        assert results[0].payload == "[entity] alpha rare --[knows]--> [entity] beta"
+        for r in results:
+            assert "[concept]" not in r.payload
+            assert "has_concept" not in r.payload
+
     def test_rank_and_score_shape(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_triple_kg(), tmp_path)
         retriever = KHopTripleRetriever(kg_outputs_dir=path, k_hop=2)
