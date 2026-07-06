@@ -47,6 +47,56 @@ export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 OLLAMA_SERVICE="ollama-gpu"
 DOCKER_PROFILE="$RAG_PROFILE"
 
+# ---------------------------------------------------------------------------
+# Container teardown trap.
+#
+# The stage launches containers via `docker compose run`/`up`, but those are
+# owned by the docker daemon, NOT by this job step's process tree. So when
+# SLURM ends the job WITHOUT a clean script exit (a TIME LIMIT timeout or an
+# `scancel`), it kills the shell before a normal teardown runs, and the
+# containers keep running on the node as ORPHANS: still holding the GPU and
+# writing outputs outside any allocation, contending with whatever SLURM
+# schedules onto the node next. Observed: judge-answers 799024 TIMEOUT left
+# `ollama-gpu-<jobid>` + `<project>-arandu-rag-run-*` alive on tupi2, degrading
+# another user's job.
+#
+# Two things are needed for the trap to actually fire in time:
+#   1. The stage command runs in the BACKGROUND and is `wait`-ed on (see below).
+#      bash does NOT run a trap while a foreground external command executes; it
+#      defers it until that command returns. A foreground `docker compose run`
+#      would therefore defer teardown until the container exits, i.e. never on a
+#      real timeout. `wait` is interruptible, so backgrounding + wait lets the
+#      SIGTERM/SIGINT handler run immediately.
+#   2. `#SBATCH --signal=B:TERM@60` (per-stage scripts) makes SLURM send SIGTERM
+#      to the batch shell 60s before the limit, well inside KillWait.
+#
+# Traps are armed LATER (via _rag_arm_traps, just before the first container
+# starts), so an early validation `exit 1` does not run `docker compose down`
+# while this job has no containers up (which could disturb a co-located job that
+# shares the compose project).
+_rag_teardown() {
+    echo ""
+    echo "[cleanup] tearing down containers (profile ${DOCKER_PROFILE})..."
+    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" \
+        down --remove-orphans --timeout 10 2>/dev/null || true
+}
+_rag_on_signal() {
+    # Ignore further INT/TERM while tearing down (a scancel retry or a short
+    # KillWait must not kill the shell mid-`down`) and disarm EXIT so teardown
+    # runs exactly once. $1 = signal name (for the log), $2 = exit code.
+    trap '' INT TERM
+    trap - EXIT
+    echo ""
+    echo "[cleanup] caught ${1} (SLURM timeout/scancel); tearing down..."
+    _rag_teardown
+    exit "${2}"
+}
+_rag_arm_traps() {
+    trap _rag_teardown EXIT
+    trap '_rag_on_signal SIGINT 130' INT   # 128 + SIGINT(2)
+    trap '_rag_on_signal SIGTERM 143' TERM # 128 + SIGTERM(15)
+}
+
 echo "=============================================="
 echo "Arandu Phase C RAG stage"
 echo "=============================================="
@@ -100,6 +150,11 @@ echo ""
 echo "Building ${RAG_SERVICE} image (reuses the kg-extra image)..."
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build "$RAG_SERVICE"
 
+# From here on containers get started, so arm the teardown traps. (Kept out of
+# the early-validation/build path above so a pre-container `exit 1` cannot run
+# `docker compose down` when this job has nothing up.)
+_rag_arm_traps
+
 # ---------------------------------------------------------------------------
 # Ollama sidecar (LLM stages only)
 # ---------------------------------------------------------------------------
@@ -134,17 +189,24 @@ echo "=============================================="
 # set +e: under `set -e` a failing stage aborts the script HERE, skipping
 # the cleanup below and leaking the ollama sidecar on the shared node
 # (observed with judge-answers 795114). Capture the rc instead.
+#
+# Run in the BACKGROUND + `wait` (not foreground): bash defers signal traps
+# until a foreground external command returns, so a foreground run would keep
+# the SIGTERM teardown from firing until the container exits (never, on a real
+# timeout). `wait` is interruptible, so the trap runs immediately; if no signal
+# arrives, `wait` returns the container's real exit code.
 set +e
 # shellcheck disable=SC2086  # intentional word-splitting of the arg string
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm "$RAG_SERVICE" ${RAG_CLI_ARGS}
+docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm "$RAG_SERVICE" ${RAG_CLI_ARGS} &
+RUN_PID=$!
+wait "$RUN_PID"
 RUN_RC=$?
 set -e
-
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down 2>/dev/null || true
 
 echo "=============================================="
 echo "Stage finished (rc=${RUN_RC}) at $(date)"
 echo "=============================================="
+# Container teardown is handled by the _rag_teardown EXIT trap set above, so it
+# runs here on normal exit AND on a SLURM SIGTERM (timeout/scancel). Do not add
+# a manual `docker compose down`; it would just double-run the trap.
 exit $RUN_RC
