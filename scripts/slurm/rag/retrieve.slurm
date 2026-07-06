@@ -8,6 +8,10 @@
 #SBATCH --time=8:00:00
 #SBATCH --output=logs/rag_retrieve_%j.out
 #SBATCH --error=logs/rag_retrieve_%j.err
+# Send SIGTERM to the batch shell 60s before the time limit so rag_common.sh's
+# teardown trap can stop the docker containers before SLURM's SIGKILL (prevents
+# orphaned ollama-gpu / arandu-rag-run containers on the node; see rag_common).
+#SBATCH --signal=B:TERM@60
 
 # Phase C: run all 5 arms. atlas_rag needs the LLM (NER + edge-filter) via ollama
 # and the local embedder for query encoding; bm25/khop/null need neither.

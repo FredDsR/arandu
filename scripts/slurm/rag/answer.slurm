@@ -8,6 +8,10 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/rag_answer_%j.out
 #SBATCH --error=logs/rag_answer_%j.err
+# Send SIGTERM to the batch shell 60s before the time limit so rag_common.sh's
+# teardown trap can stop the docker containers before SLURM's SIGKILL (prevents
+# orphaned ollama-gpu / arandu-rag-run containers on the node; see rag_common).
+#SBATCH --signal=B:TERM@60
 
 # Phase C: answer every RetrievalRecord (LLM via ollama qwen3:14b), held constant
 # across arms. Reasoning-model headroom (max_tokens=8192) avoids the truncation

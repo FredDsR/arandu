@@ -47,6 +47,44 @@ export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 OLLAMA_SERVICE="ollama-gpu"
 DOCKER_PROFILE="$RAG_PROFILE"
 
+# ---------------------------------------------------------------------------
+# Container teardown trap.
+#
+# The stage launches containers via `docker compose run`/`up`, but those are
+# owned by the docker daemon, NOT by this job step's process tree. So when
+# SLURM ends the job WITHOUT a clean script exit (a TIME LIMIT timeout or an
+# `scancel`), it kills the shell before the teardown below can run, and the
+# containers keep running on the node as ORPHANS: still holding the GPU and
+# writing outputs outside any allocation, contending with whatever SLURM
+# schedules onto the node next. Observed: judge-answers 799024 TIMEOUT left
+# `ollama-gpu-<jobid>` + `<project>-arandu-rag-run-*` alive on tupi2, degrading
+# another user's job. (The old `set +e` around the run only handled a non-zero
+# EXIT, never a signal.)
+#
+# SLURM sends SIGTERM first and SIGKILL only after the KillWait grace period,
+# so trapping SIGTERM/SIGINT lets us tear the containers down in time. The
+# per-stage scripts also set `#SBATCH --signal=B:TERM@60` to widen that window.
+# `down --timeout 10 --remove-orphans` stops the run container + the ollama
+# sidecar well inside a default KillWait.
+_rag_teardown() {
+    echo ""
+    echo "[cleanup] tearing down containers (profile ${DOCKER_PROFILE})..."
+    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" \
+        down --remove-orphans --timeout 10 2>/dev/null || true
+}
+_rag_on_signal() {
+    # Disarm all traps first so teardown runs exactly once (the explicit exit
+    # below would otherwise re-enter via the EXIT trap).
+    trap - EXIT INT TERM
+    echo ""
+    echo "[cleanup] caught ${1:-signal} (SLURM timeout/scancel); tearing down..."
+    _rag_teardown
+    exit 143  # 128 + SIGTERM(15), conventional signal-exit code
+}
+trap _rag_teardown EXIT
+trap '_rag_on_signal SIGINT' INT
+trap '_rag_on_signal SIGTERM' TERM
+
 echo "=============================================="
 echo "Arandu Phase C RAG stage"
 echo "=============================================="
@@ -140,11 +178,10 @@ docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm "$RAG_SER
 RUN_RC=$?
 set -e
 
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down 2>/dev/null || true
-
 echo "=============================================="
 echo "Stage finished (rc=${RUN_RC}) at $(date)"
 echo "=============================================="
+# Container teardown is handled by the _rag_teardown EXIT trap set above, so it
+# runs here on normal exit AND on a SLURM SIGTERM (timeout/scancel). Do not add
+# a manual `docker compose down`; it would just double-run the trap.
 exit $RUN_RC
