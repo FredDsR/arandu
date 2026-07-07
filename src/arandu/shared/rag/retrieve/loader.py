@@ -132,13 +132,20 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
 
 
 def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
-    """Yield one :class:`QuestionRecord` per ``QAPairCEP`` in the dir.
+    """Yield one :class:`QuestionRecord` per judge-valid ``QAPairCEP`` in the dir.
 
     Each on-disk file is a :class:`QARecordCEP` holding many pairs. The
     composite ``qa_pair_id`` follows the schema's documented form:
     ``"<file_id>:<chunk_id or 'none'>:<idx>"``. ``idx`` is the pair's
     position within the record, so the id stays stable across reruns
     that produce the same file.
+
+    Pairs the judge-qa stage rejected (``is_judge_rejected``) are skipped so
+    the RAG benchmark evaluates only the approved question set, matching the
+    canonical drop-rule the chunk/kg consumers already use. ``idx`` is still
+    taken over ALL pairs (not the surviving subset), so a rejected pair in the
+    middle does not shift the ids of the pairs after it. Unjudged pairs
+    (``is_valid`` is None, e.g. a run where judge-qa has not run) are kept.
     """
     for path in sorted(cep_dir.glob("*.json")):
         try:
@@ -147,6 +154,8 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
             logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
             continue
         for idx, pair in enumerate(record.qa_pairs):
+            if pair.is_judge_rejected:
+                continue
             chunk_id_segment = pair.chunk_id or "none"
             yield QuestionRecord(
                 qa_pair_id=f"{record.source_file_id}:{chunk_id_segment}:{idx}",
