@@ -42,6 +42,17 @@ def _criterion_values(scores: dict[str, dict[str, float | None]], crit: str) -> 
     return [s[crit] for s in scores.values() if crit in s and s[crit] is not None]
 
 
+def _criterion_error_count(scores: dict[str, dict[str, float | None]], crit: str) -> int:
+    """Pairs where the criterion was evaluated but errored (score is None)."""
+    return sum(1 for s in scores.values() if crit in s and s[crit] is None)
+
+
+def _panel_title(crit: str, n: int, err: int, below: int, threshold: float) -> str:
+    """Subplot title: scored count, errored count, and count below threshold."""
+    pct = 100 * below / n if n else 0.0
+    return f"{crit}  (n={n}, err={err}, <{threshold} = {below} = {pct:.0f}%)"
+
+
 def _gaussian_kde(samples: list[float], grid: np.ndarray, bw: float) -> np.ndarray:
     """Simple Gaussian KDE (no scipy): mean of per-sample normal kernels."""
     s = np.asarray(samples, dtype=float)[:, None]
@@ -74,8 +85,9 @@ def _plot_bars(scores: dict, threshold: float, run_id: str) -> go.Figure:
             row=row + 1,
             col=col + 1,
         )
-        pct = 100 * below / n if n else 0.0
-        fig.layout.annotations[i].text = f"{crit}  (n={n}, <{threshold} = {below} = {pct:.0f}%)"
+        fig.layout.annotations[i].text = _panel_title(
+            crit, n, _criterion_error_count(scores, crit), below, threshold
+        )
     fig.update_layout(
         title_text=(
             f"judge-qa score distributions ({run_id}) - 5-point Likert; "
@@ -129,8 +141,9 @@ def _plot_hist(scores: dict, threshold: float, run_id: str) -> go.Figure:
         )
         n = len(vals)
         below = sum(1 for v in vals if v < threshold)
-        pct = 100 * below / n if n else 0.0
-        fig.layout.annotations[i].text = f"{crit}  (n={n}, <{threshold} = {below} = {pct:.0f}%)"
+        fig.layout.annotations[i].text = _panel_title(
+            crit, n, _criterion_error_count(scores, crit), below, threshold
+        )
     fig.update_layout(
         title_text=(
             f"judge-qa score histogram ({run_id}) - raw, bin=0.025 (no smoothing); "
@@ -187,8 +200,9 @@ def _plot_density(scores: dict, threshold: float, run_id: str) -> go.Figure:
             row=row + 1,
             col=col + 1,
         )
-        pct = 100 * below / n if n else 0.0
-        fig.layout.annotations[i].text = f"{crit}  (n={n}, <{threshold} = {below} = {pct:.0f}%)"
+        fig.layout.annotations[i].text = _panel_title(
+            crit, n, _criterion_error_count(scores, crit), below, threshold
+        )
     fig.update_layout(
         title_text=(
             f"judge-qa score density ({run_id}) - dashed = threshold {threshold}; "
