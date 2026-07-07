@@ -128,14 +128,28 @@ EVALUATION_STAGES = frozenset(
     {"judge_transcription", "judge_qa", "retrieve_ner", "answer", "judge_answers"}
 )
 
-# Representative public list prices in USD per 1,000,000 tokens (input, output).
-# AS OF 2026-06 AND APPROXIMATE -- VERIFY against the provider's pricing page before
-# citing, or override with --pricing-file (JSON: {"name": [in_per_1m, out_per_1m]}).
+# Public list prices in USD per 1,000,000 tokens (input, output), verified
+# against the providers' pricing pages on 2026-07-07 (ai.google.dev/gemini-api,
+# developers.openai.com/api/docs/pricing). Text tier, Standard inference; for the
+# two Pro models the <=200k-context tier applies (this pipeline's per-call
+# context is a single ~8k chunk, far below 200k). Prices drift -- re-verify
+# before citing, or override with --pricing-file (JSON: {"name": [in, out]}).
 PRICING: dict[str, tuple[float, float]] = {
-    "gemini-2.5-flash": (0.30, 2.50),
-    "gemini-2.5-pro": (1.25, 10.00),
+    # OpenAI: gpt-4o is legacy (grandfathered) but still callable; GPT-5.x is the
+    # current production family that replaced it.
     "gpt-4o": (2.50, 10.00),
     "gpt-4o-mini": (0.15, 0.60),
+    "gpt-5.5": (5.00, 30.00),
+    "gpt-5.4": (2.50, 15.00),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
+    # Google Gemini: 2.5 still current; 3.x is the newer generation.
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-pro": (1.25, 10.00),  # <=200k tier
+    "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.1-flash-lite": (0.25, 1.50),
+    "gemini-3.1-pro": (2.00, 12.00),  # <=200k tier
     "local-ollama": (0.0, 0.0),  # self-hosted: $0 in tokens, cost is GPU hours instead
 }
 
