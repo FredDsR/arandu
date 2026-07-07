@@ -91,6 +91,60 @@ def _plot_bars(scores: dict, threshold: float, run_id: str) -> go.Figure:
     return fig
 
 
+def _plot_hist(scores: dict, threshold: float, run_id: str) -> go.Figure:
+    """Fine-binned histogram (no smoothing): shows the raw quantized spikes."""
+    fig = make_subplots(
+        rows=2, cols=2, subplot_titles=list(CRITERIA), vertical_spacing=0.16, horizontal_spacing=0.1
+    )
+    for i, crit in enumerate(CRITERIA):
+        vals = _criterion_values(scores, crit)
+        row, col = divmod(i, 2)
+        if not vals:
+            continue
+        fig.add_trace(
+            go.Histogram(
+                x=vals,
+                xbins={"start": -0.0125, "end": 1.0125, "size": 0.025},
+                histnorm="probability density",
+                marker_color="#2c3e50",
+                showlegend=False,
+            ),
+            row=row + 1,
+            col=col + 1,
+        )
+        fig.add_vrect(
+            x0=-0.05,
+            x1=threshold,
+            fillcolor=_REJECT,
+            opacity=0.08,
+            line_width=0,
+            row=row + 1,
+            col=col + 1,
+        )
+        fig.add_vline(
+            x=threshold,
+            line={"color": _REJECT, "width": 1.5, "dash": "dash"},
+            row=row + 1,
+            col=col + 1,
+        )
+        n = len(vals)
+        below = sum(1 for v in vals if v < threshold)
+        pct = 100 * below / n if n else 0.0
+        fig.layout.annotations[i].text = f"{crit}  (n={n}, <{threshold} = {below} = {pct:.0f}%)"
+    fig.update_layout(
+        title_text=(
+            f"judge-qa score histogram ({run_id}) - raw, bin=0.025 (no smoothing); "
+            f"dashed = threshold {threshold}"
+        ),
+        template="plotly_white",
+        height=720,
+        width=1100,
+    )
+    fig.update_xaxes(title_text="score", range=[-0.05, 1.05])
+    fig.update_yaxes(title_text="density")
+    return fig
+
+
 def _plot_density(scores: dict, threshold: float, run_id: str) -> go.Figure:
     grid = np.linspace(-0.05, 1.05, 300)
     fig = make_subplots(
@@ -155,7 +209,7 @@ def main() -> None:
     parser.add_argument("--id", required=True, help="Pipeline run id (e.g. thesis-run-01).")
     parser.add_argument("--results-root", default="results", help="Results root dir.")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
-    parser.add_argument("--style", choices=["bars", "density"], default="bars")
+    parser.add_argument("--style", choices=["bars", "density", "hist"], default="bars")
     parser.add_argument(
         "--out",
         default=None,
@@ -165,14 +219,15 @@ def main() -> None:
 
     base = Path(args.results_root) / args.id
     scores = load_pair_scores(base / "cep" / "outputs")
-    if args.out:
-        out = Path(args.out)
-    else:
-        name = "judge_score_distributions" if args.style == "bars" else "judge_score_density"
-        out = base / "analysis" / f"{name}.png"
+    names = {
+        "bars": "judge_score_distributions",
+        "density": "judge_score_density",
+        "hist": "judge_score_hist",
+    }
+    out = Path(args.out) if args.out else base / "analysis" / f"{names[args.style]}.png"
 
-    builder = _plot_bars if args.style == "bars" else _plot_density
-    fig = builder(scores, args.threshold, args.id)
+    builders = {"bars": _plot_bars, "density": _plot_density, "hist": _plot_hist}
+    fig = builders[args.style](scores, args.threshold, args.id)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.write_image(str(out))
