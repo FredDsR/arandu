@@ -91,7 +91,10 @@ class QAJudge(BaseJudge):
         # Remember pairs are factual recall by design (the 3/1/1/1 factual base),
         # so informativeness (which scores down trivial/explicit content) is a
         # conceptual mismatch that rejected ~55% of remember pairs. Judge them on
-        # grounding + level only; self_containedness is auto-1.0 for remember.
+        # grounding + level only. self_containedness is dropped too (remember
+        # recall is not expected to be fully self-contained); it is simply NOT
+        # evaluated for remember pairs -- it is omitted from criterion_scores,
+        # not auto-scored 1.0.
         remember_criteria = [
             "faithfulness",
             "bloom_calibration",

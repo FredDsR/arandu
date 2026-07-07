@@ -45,8 +45,9 @@ def _qa_pair(
     answer: str = "Resposta.",
     chunk_id: str | None = None,
     bloom_level: str = "remember",
+    passed: bool | None = None,
 ) -> dict:
-    return {
+    pair = {
         "question": question,
         "answer": answer,
         "context": "Contexto.",
@@ -55,6 +56,11 @@ def _qa_pair(
         "bloom_level": bloom_level,
         "chunk_id": chunk_id,
     }
+    if passed is not None:
+        # Minimal JudgePipelineResult: is_valid derives from validation.passed,
+        # is_judge_rejected is (is_valid is False). Empty stage_results is valid.
+        pair["validation"] = {"stage_results": {}, "passed": passed}
+    return pair
 
 
 class TestLoadQuestionsCepOnly:
@@ -118,6 +124,38 @@ class TestLoadQuestionsCepOnly:
 
         questions = load_questions(cep_dir)
         assert [q.source_file_id for q in questions] == ["src_ok"]
+
+    def test_judge_rejected_pairs_excluded_idx_preserved(self, tmp_path: Path) -> None:
+        # The RAG benchmark must evaluate only judge-valid pairs. A rejected
+        # pair (validation.passed=False) is dropped, but idx is taken over ALL
+        # pairs so the ids of surviving pairs after it do not shift.
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(
+            cep_dir,
+            source_file_id="src_a",
+            qa_pairs=[
+                _qa_pair("Approved 0?", chunk_id="chk", passed=True),
+                _qa_pair("Rejected 1?", chunk_id="chk", passed=False),
+                _qa_pair("Approved 2?", chunk_id="chk", passed=True),
+            ],
+        )
+
+        questions = load_questions(cep_dir)
+
+        # Rejected pair dropped; the third pair keeps idx 2 (not renumbered to 1).
+        assert [q.qa_pair_id for q in questions] == ["src_a:chk:0", "src_a:chk:2"]
+        assert [q.question for q in questions] == ["Approved 0?", "Approved 2?"]
+
+    def test_unjudged_pairs_kept(self, tmp_path: Path) -> None:
+        # Unjudged pairs (validation absent, is_valid is None) are NOT rejected,
+        # so a run where judge-qa has not run still retrieves every pair.
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(cep_dir, "src_a", [_qa_pair("Unjudged?", chunk_id="chk")])
+
+        questions = load_questions(cep_dir)
+        assert [q.qa_pair_id for q in questions] == ["src_a:chk:0"]
 
 
 class TestLoadQuestionsNonAnswerable:
