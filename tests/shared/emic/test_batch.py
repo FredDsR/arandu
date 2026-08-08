@@ -80,9 +80,14 @@ class TestEmicJudgeBatch:
             ],
         )
 
-        result = run_emic_judge_batch("run1", settings=settings, base_dir=tmp_path)
+        result = run_emic_judge_batch(
+            "run1", settings=settings, base_dir=tmp_path, scope="approved"
+        )
 
-        assert result.approved_pairs == 2  # the rejected pair is skipped
+        assert result.approved_pairs == 2
+        assert result.rejected_pairs == 1
+        assert result.selected_pairs == 2  # the rejected pair is skipped
+        assert result.skipped_pairs == 1
         assert result.scored_pairs == 2
         assert result.failed_pairs == 0
         assert result.sources == 1
@@ -97,6 +102,65 @@ class TestEmicJudgeBatch:
         assert [s.pair_index for s in out.scores] == [0, 2]  # original indices preserved
         assert all(s.emic_score == 2 for s in out.scores)
         assert {s.bloom_level for s in out.scores} == {"analyze", "evaluate"}
+
+    def test_scope_all_scores_every_pair_and_records_the_verdict(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        # The default scope. Every pair is scored regardless of the judge-qa
+        # verdict, and the verdict rides along on each score so emic validity
+        # can be cross-tabulated against approval downstream.
+        cep_outputs = tmp_path / "run_all" / "cep" / "outputs"
+        _write_cep_record(
+            cep_outputs,
+            "src1",
+            [
+                _pair("Q approved", approved=True),
+                _pair("Q rejected", approved=False),
+                _pair("Q unjudged", approved=False, judged=False),
+            ],
+        )
+
+        result = run_emic_judge_batch("run_all", settings=settings, base_dir=tmp_path)
+
+        assert result.scope == "all"
+        assert result.selected_pairs == 3
+        assert result.scored_pairs == 3
+        assert result.skipped_pairs == 0
+        assert result.approved_pairs == 1
+        assert result.rejected_pairs == 1
+        assert result.unjudged_pairs == 1
+        assert mock_emic_client.generate_structured.call_count == 3
+
+        out = EmicSourceScores.load(
+            tmp_path / "run_all" / "emic_judge" / "outputs" / "src1_cep_qa.json"
+        )
+        assert [s.pair_index for s in out.scores] == [0, 1, 2]
+        assert [s.is_valid for s in out.scores] == [True, False, None]
+
+    def test_scope_counters_reconcile(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        # The invariants the result docstring promises, asserted under both
+        # scopes so a future counter change cannot drift from the docs.
+        pairs = [
+            _pair("A", approved=True),
+            _pair("B", approved=True),
+            _pair("C", approved=False),
+            _pair("D", approved=False, judged=False),
+        ]
+        for idx, scope in enumerate(("all", "approved")):
+            run_id = f"run_rec{idx}"
+            _write_cep_record(tmp_path / run_id / "cep" / "outputs", "src1", list(pairs))
+
+            result = run_emic_judge_batch(run_id, settings=settings, base_dir=tmp_path, scope=scope)
+
+            assert result.selected_pairs == result.scored_pairs + result.failed_pairs
+            assert result.selected_pairs + result.skipped_pairs == (
+                result.approved_pairs + result.rejected_pairs + result.unjudged_pairs
+            )
+            assert result.approved_pairs == 2
+            assert result.rejected_pairs == 1
+            assert result.unjudged_pairs == 1
 
     def test_missing_cep_stage_raises(
         self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
@@ -165,10 +229,14 @@ class TestEmicJudgeBatch:
             [_pair("Q1", approved=False, judged=False), _pair("Q2", approved=False, judged=False)],
         )
 
-        result = run_emic_judge_batch("run5", settings=settings, base_dir=tmp_path)
+        result = run_emic_judge_batch(
+            "run5", settings=settings, base_dir=tmp_path, scope="approved"
+        )
 
         assert result.unjudged_pairs == 2
         assert result.approved_pairs == 0
+        assert result.selected_pairs == 0
+        assert result.skipped_pairs == 2
         assert result.scored_pairs == 0
         assert mock_emic_client.generate_structured.call_count == 0  # nothing scored
         assert result.completed_sources == 1  # source still processed (empty scores)

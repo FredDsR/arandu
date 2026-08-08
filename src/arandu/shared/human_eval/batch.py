@@ -91,6 +91,7 @@ def run_build_sample_batch(
     pool: list[PoolEntry] = []
     seen_pair_ids: set[str] = set()
     excluded_none = 0
+    excluded_not_approved = 0
     excluded_bloom: dict[str, int] = {}
     for emic_path in sorted(emic_outputs.glob("*_cep_qa.json")):
         scores = EmicSourceScores.load(emic_path)
@@ -102,6 +103,13 @@ def run_build_sample_batch(
             )
         record = QARecordCEP.load(cep_path)
         for score in scores.scores:
+            # An `emic-judge --scope all` run scores rejected and never-judged
+            # pairs too, so the emic outputs are NOT a pool of approved pairs.
+            # The agreement study's frame is the approved corpus (spec §5), so
+            # drop anything the judge did not approve before banding.
+            if score.is_valid is not True:
+                excluded_not_approved += 1
+                continue
             if score.emic_score is None:
                 excluded_none += 1
                 continue
@@ -138,9 +146,10 @@ def run_build_sample_batch(
     if not pool:
         raise ValueError(
             f"No in-frame approved pairs found for {pipeline_id!r} "
-            f"({excluded_none} null-score, {sum(excluded_bloom.values())} out-of-frame-Bloom "
-            f"excluded). Check that `arandu judge-qa` + `arandu emic-judge` ran and produced "
-            f"scored, in-frame ({', '.join(FRAME_BLOOM_LEVELS)}) pairs."
+            f"({excluded_not_approved} not judge-approved, {excluded_none} null-score, "
+            f"{sum(excluded_bloom.values())} out-of-frame-Bloom excluded). Check that "
+            f"`arandu judge-qa` + `arandu emic-judge` ran and produced approved, scored, "
+            f"in-frame ({', '.join(FRAME_BLOOM_LEVELS)}) pairs."
         )
 
     population = population_by_cell(pool)
@@ -169,6 +178,7 @@ def run_build_sample_batch(
         cell_counts=dict.fromkeys(all_cell_ids(), per_cell),
         population_by_cell=population,
         excluded_none_score=excluded_none,
+        excluded_not_approved=excluded_not_approved,
         excluded_bloom=excluded_bloom,
         pool_sha256=pool_hash,
     )

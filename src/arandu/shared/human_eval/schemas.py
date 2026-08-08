@@ -66,6 +66,10 @@ class SampleManifest(BaseModel):
         population_by_cell: In-frame available count per ``cell_id`` (the pool
             each cell was sampled from).
         excluded_none_score: Approved pairs dropped for a null emic score.
+        excluded_not_approved: Scored pairs dropped because ``judge-qa`` did
+            not approve them (rejected or never judged). Non-zero whenever the
+            emic judge ran with ``--scope all``; the study's frame is the
+            approved corpus.
         excluded_bloom: Approved pairs dropped per out-of-frame Bloom level
             (``apply`` / ``create``), keyed by level.
         pool_sha256: Hash of the in-frame pool keys + scores (provenance).
@@ -78,6 +82,7 @@ class SampleManifest(BaseModel):
     cell_counts: dict[str, int]
     population_by_cell: dict[str, int]
     excluded_none_score: int = 0
+    excluded_not_approved: int = 0
     excluded_bloom: dict[str, int] = Field(default_factory=dict)
     pool_sha256: str
 

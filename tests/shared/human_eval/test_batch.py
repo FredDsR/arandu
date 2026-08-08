@@ -57,7 +57,7 @@ def _write_source(
     ).save(cep_outputs / f"{source_id}_cep_qa.json")
 
     scores = [
-        EmicScore(pair_index=i, bloom_level=bloom, emic_score=score, rationale="r")
+        EmicScore(pair_index=i, bloom_level=bloom, emic_score=score, rationale="r", is_valid=True)
         for i, (bloom, score) in enumerate(specs)
     ]
     EmicSourceScores(
@@ -99,6 +99,35 @@ class TestRunBuildSampleBatch:
         assert manifest.total_items == 16  # exclusions don't change the sample size
         assert manifest.excluded_none_score == 1
         assert manifest.excluded_bloom == {"apply": 1, "create": 1}
+
+    def test_excludes_pairs_the_judge_did_not_approve(self, tmp_path: Path) -> None:
+        # An `emic-judge --scope all` run writes rejected and never-judged
+        # pairs into the emic outputs too. The agreement study's frame is the
+        # approved corpus, so those must never reach the pool -- otherwise the
+        # bands would be built over material the pipeline already discarded.
+        specs = _frame_specs(2)
+        _write_source(tmp_path, "run_scope", "s1", specs)
+
+        emic_path = tmp_path / "run_scope" / "emic_judge" / "outputs" / "s1_cep_qa.json"
+        scores = EmicSourceScores.load(emic_path)
+        scores.scores[0].is_valid = False  # judged and rejected
+        scores.scores[1].is_valid = None  # never judged
+        scores.save(emic_path)
+
+        with pytest.raises(ValueError, match="has only"):
+            run_build_sample_batch("run_scope", seed=1, base_dir=tmp_path, per_cell=2)
+
+        # And with enough approved material left, they are counted, not silent.
+        specs2 = _frame_specs(3)
+        _write_source(tmp_path, "run_scope2", "s1", specs2)
+        emic_path2 = tmp_path / "run_scope2" / "emic_judge" / "outputs" / "s1_cep_qa.json"
+        scores2 = EmicSourceScores.load(emic_path2)
+        scores2.scores[0].is_valid = False
+        scores2.save(emic_path2)
+
+        manifest = run_build_sample_batch("run_scope2", seed=1, base_dir=tmp_path, per_cell=2)
+        assert manifest.excluded_not_approved == 1
+        assert manifest.total_items == 16
 
     def test_payload_is_blinded(self, tmp_path: Path) -> None:
         _write_source(tmp_path, "run3", "s1", _frame_specs(2))
@@ -144,7 +173,11 @@ class TestRunBuildSampleBatch:
         EmicSourceScores(
             source_file_id="s1",
             source_filename="s1.mp4",
-            scores=[EmicScore(pair_index=0, bloom_level="remember", emic_score=2, rationale="r")],
+            scores=[
+                EmicScore(
+                    pair_index=0, bloom_level="remember", emic_score=2, rationale="r", is_valid=True
+                )
+            ],
         ).save(emic_outputs / "s1_cep_qa.json")
 
         with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
@@ -186,7 +219,13 @@ class TestRunBuildSampleBatch:
                 source_file_id="dup",
                 source_filename="dup.mp4",
                 scores=[
-                    EmicScore(pair_index=0, bloom_level="remember", emic_score=2, rationale="r")
+                    EmicScore(
+                        pair_index=0,
+                        bloom_level="remember",
+                        emic_score=2,
+                        rationale="r",
+                        is_valid=True,
+                    )
                 ],
             ).save(emic_outputs / f"{name}_cep_qa.json")
 

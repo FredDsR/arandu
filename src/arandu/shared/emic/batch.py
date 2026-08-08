@@ -1,8 +1,10 @@
 """Batch orchestrator for ``arandu emic-judge`` (spec §5).
 
-Runs the ``emic_validity`` ordinal criterion over the canonical-approved CEP
-pairs of a populated run and writes per-source ordinal scores under
-``results/<id>/emic_judge/outputs/<source>.json``.
+Runs the ``emic_validity`` ordinal criterion over the CEP pairs of a populated
+run and writes per-source ordinal scores under
+``results/<id>/emic_judge/outputs/<source>.json``. The ``scope`` argument picks
+the pairs: ``all`` (default) scores every pair and records its ``judge-qa``
+verdict on the score, ``approved`` scores only canonically-approved ones.
 
 These scores are the study's **measurement** of emic validity, not a
 preliminary aid. The human annotation round (spec §6) rates a stratified
@@ -26,7 +28,12 @@ from pydantic import ValidationError
 from arandu.qa.schemas import QARecordCEP
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.emic.schemas import EmicJudgeResult, EmicScore, EmicSourceScores
+from arandu.shared.emic.schemas import (
+    EmicJudgeResult,
+    EmicScope,
+    EmicScore,
+    EmicSourceScores,
+)
 from arandu.shared.emic.settings import EmicJudgeSettings
 from arandu.shared.judge.criterion import OrdinalLLMCriterion
 from arandu.shared.llm_client import build_llm_client_from_settings
@@ -49,16 +56,23 @@ def run_emic_judge_batch(
     settings: EmicJudgeSettings | None = None,
     base_dir: Path | None = None,
     rerun: bool = False,
+    scope: EmicScope = "all",
 ) -> EmicJudgeResult:
-    """Score the canonical-approved CEP pairs of ``pipeline_id`` for emic validity.
+    """Score the CEP pairs of ``pipeline_id`` for emic validity.
 
     Args:
-        pipeline_id: Run identifier. The ``cep`` stage must be populated and
-            judged (only pairs with ``is_valid`` are scored).
+        pipeline_id: Run identifier. The ``cep`` stage must be populated, and
+            judged if ``scope`` is ``"approved"``.
         settings: Emic-judge LLM configuration. Defaults to
             :class:`EmicJudgeSettings` (reads ``ARANDU_EMIC_JUDGE_*``).
         base_dir: Override the project ``results/`` root.
         rerun: If True, clear the checkpoint so every source is re-scored.
+        scope: Which pairs to score. ``"all"`` (default) scores every pair and
+            records its ``judge-qa`` verdict, so emic validity can be
+            cross-tabulated against approval; ``"approved"`` scores only
+            canonically-approved pairs. Defaults to ``"all"`` because the emic
+            score is the study's corpus-wide measurement, not a filter applied
+            after ``judge-qa`` — at the cost of scoring the rejected pairs too.
 
     Returns:
         :class:`EmicJudgeResult` summary.
@@ -109,7 +123,8 @@ def run_emic_judge_batch(
     checkpoint.set_total_files(len(cep_paths))
 
     completed_sources = resumed_sources = failed_sources = 0
-    approved = scored = failed = unjudged = 0
+    selected = scored = failed = skipped = 0
+    approved = rejected = unjudged = 0
     for path in cep_paths:
         ckpt_key = path.stem
         if checkpoint.is_completed(ckpt_key):
@@ -126,11 +141,22 @@ def run_emic_judge_batch(
         scores: list[EmicScore] = []
         for idx, pair in enumerate(record.qa_pairs):
             if pair.is_valid is None:
-                unjudged += 1  # never judged; can't be canonically approved
+                unjudged += 1  # never judged; cannot be canonically approved
+            elif pair.is_valid:
+                approved += 1
+            else:
+                rejected += 1
+
+            # Under "approved" only canonically-approved pairs are scored; a
+            # never-judged pair is not approved, so it is skipped too. Under
+            # "all" every pair is scored and its verdict (including None) is
+            # recorded on the score, which is what makes the emic-validity x
+            # judge-approval cross-tabulation possible downstream.
+            if scope == "approved" and pair.is_valid is not True:
+                skipped += 1
                 continue
-            if not pair.is_valid:
-                continue  # judged and rejected — only approved pairs are scored
-            approved += 1
+
+            selected += 1
             result = criterion.evaluate(
                 context=pair.context,
                 question=pair.question,
@@ -147,6 +173,7 @@ def run_emic_judge_batch(
                     emic_score=result.ordinal_score,
                     rationale=result.rationale,
                     error=result.error,
+                    is_valid=pair.is_valid,
                 )
             )
 
@@ -160,9 +187,10 @@ def run_emic_judge_batch(
 
     if unjudged:
         logger.warning(
-            "%d pair(s) had no judge verdict (is_valid is None) and were skipped; "
-            "the run may not have been fully judged via `arandu judge-qa`.",
+            "%d pair(s) had no judge verdict (is_valid is None); they were %s. "
+            "The run may not have been fully judged via `arandu judge-qa`.",
             unjudged,
+            "scored with a null verdict" if scope == "all" else "skipped",
         )
 
     # Mirror the judge-answers convention: record progress and finalize the run
@@ -173,25 +201,34 @@ def run_emic_judge_batch(
     results_mgr.complete_run(success=(failed_sources == 0))
 
     logger.info(
-        "Emic judge complete: %d/%d sources scored (%d resumed, %d failed), "
-        "%d approved pairs, %d scored, %d failed, %d unjudged.",
+        "Emic judge complete (scope=%s): %d/%d sources scored (%d resumed, %d failed), "
+        "%d pairs selected, %d scored, %d failed, %d skipped; "
+        "corpus split %d approved / %d rejected / %d unjudged.",
+        scope,
         completed_sources,
         len(cep_paths),
         resumed_sources,
         failed_sources,
-        approved,
+        selected,
         scored,
         failed,
+        skipped,
+        approved,
+        rejected,
         unjudged,
     )
     return EmicJudgeResult(
         pipeline_id=pipeline_id,
+        scope=scope,
         sources=len(cep_paths),
         completed_sources=completed_sources,
         resumed_sources=resumed_sources,
         failed_sources=failed_sources,
-        approved_pairs=approved,
+        selected_pairs=selected,
         scored_pairs=scored,
         failed_pairs=failed,
+        skipped_pairs=skipped,
+        approved_pairs=approved,
+        rejected_pairs=rejected,
         unjudged_pairs=unjudged,
     )

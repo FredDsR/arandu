@@ -60,9 +60,10 @@ def build_human_eval_sample(
         raise typer.Exit(code=1) from exc
 
     excluded_bloom_total = sum(manifest.excluded_bloom.values())
-    if manifest.excluded_none_score or excluded_bloom_total:
+    if manifest.excluded_none_score or excluded_bloom_total or manifest.excluded_not_approved:
         print_warning(
-            f"Excluded from frame: {manifest.excluded_none_score} null-score pair(s), "
+            f"Excluded from frame: {manifest.excluded_not_approved} not judge-approved "
+            f"pair(s), {manifest.excluded_none_score} null-score pair(s), "
             f"{excluded_bloom_total} out-of-frame-Bloom pair(s) "
             f"({manifest.excluded_bloom or 'none'})."
         )
