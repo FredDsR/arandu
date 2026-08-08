@@ -12,7 +12,7 @@ from arandu.shared.emic.batch import run_emic_judge_batch
 from arandu.shared.emic.schemas import EmicSourceScores
 from arandu.shared.emic.settings import EmicJudgeSettings
 from arandu.shared.judge.criterion import OrdinalCriterionResponse
-from arandu.shared.judge.schemas import JudgePipelineResult
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -161,6 +161,85 @@ class TestEmicJudgeBatch:
             assert result.approved_pairs == 2
             assert result.rejected_pairs == 1
             assert result.unjudged_pairs == 1
+
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_output_order_is_stable_across_worker_counts(
+        self, tmp_path: Path, mocker: MockerFixture, workers: int
+    ) -> None:
+        # map_concurrent yields in completion order once workers > 1, so the
+        # batch must restore pair order before persisting. A per-pair score
+        # keyed off the question proves the score rides with the right pair and
+        # not merely that the indices are sorted.
+        client = mocker.MagicMock()
+        client.generate_structured.side_effect = lambda prompt, **_: OrdinalCriterionResponse(
+            score=int(prompt.split("MARK")[1][0]), rationale="r"
+        )
+        mocker.patch("arandu.shared.emic.batch.build_llm_client_from_settings", return_value=client)
+
+        run_id = f"run_order{workers}"
+        _write_cep_record(
+            tmp_path / run_id / "cep" / "outputs",
+            "src1",
+            [_pair(f"MARK{n} pergunta", approved=True) for n in (1, 2, 3, 4, 5)],
+        )
+
+        result = run_emic_judge_batch(
+            run_id,
+            settings=EmicJudgeSettings(provider="ollama", model_id="m", workers=workers),
+            base_dir=tmp_path,
+        )
+
+        assert result.scored_pairs == 5
+        out = EmicSourceScores.load(
+            tmp_path / run_id / "emic_judge" / "outputs" / "src1_cep_qa.json"
+        )
+        assert [s.pair_index for s in out.scores] == [0, 1, 2, 3, 4]
+        assert [s.emic_score for s in out.scores] == [1, 2, 3, 4, 5]
+
+    def test_worker_exception_isolates_the_pair(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        # JudgeCriterion.evaluate normally swallows failures into an error
+        # score, so this covers the defensive branch: anything escaping the
+        # criterion must fail one pair, not the whole source.
+        mocker.patch(
+            "arandu.shared.emic.batch.build_llm_client_from_settings",
+            return_value=mocker.MagicMock(),
+        )
+        calls = {"n": 0}
+
+        def _flaky(**_: Any) -> CriterionScore:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("boom outside the criterion")
+            return CriterionScore(ordinal_score=4, scale="ordinal", threshold=0.0, rationale="r")
+
+        mocker.patch(
+            "arandu.shared.judge.criterion.OrdinalLLMCriterion.evaluate", side_effect=_flaky
+        )
+
+        _write_cep_record(
+            tmp_path / "run_iso" / "cep" / "outputs",
+            "src1",
+            [_pair(f"Q{n}", approved=True) for n in range(3)],
+        )
+
+        result = run_emic_judge_batch(
+            "run_iso",
+            settings=EmicJudgeSettings(provider="ollama", model_id="m", workers=1),
+            base_dir=tmp_path,
+        )
+
+        assert result.selected_pairs == 3
+        assert result.failed_pairs == 1
+        assert result.completed_sources == 1  # the source still got persisted
+        out = EmicSourceScores.load(
+            tmp_path / "run_iso" / "emic_judge" / "outputs" / "src1_cep_qa.json"
+        )
+        assert len(out.scores) == 3
+        failed = [s for s in out.scores if s.emic_score is None]
+        assert len(failed) == 1
+        assert "boom outside the criterion" in (failed[0].error or "")
 
     def test_missing_cep_stage_raises(
         self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings

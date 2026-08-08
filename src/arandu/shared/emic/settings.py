@@ -25,6 +25,10 @@ class EmicJudgeSettings(LLMSettings):
     used for the agreement study must pin the same model as the one the thesis
     describes.
 
+    Concurrency comes from the inherited ``workers`` field
+    (``ARANDU_EMIC_JUDGE_WORKERS``), which this stage honours via
+    :func:`arandu.utils.concurrency.map_concurrent`.
+
     Attributes:
         temperature: Sampling temperature. Default 0.1: the emic judgment is
             structural, not creative (spec §4.2 principle 8). Still

@@ -39,10 +39,14 @@ from arandu.shared.judge.criterion import OrdinalLLMCriterion
 from arandu.shared.llm_client import build_llm_client_from_settings
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
+from arandu.utils.concurrency import map_concurrent
 from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from arandu.qa.schemas import QAPairCEP
+    from arandu.shared.judge.schemas import CriterionScore
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +123,15 @@ def run_emic_judge_batch(
             stale.unlink()
     checkpoint = CheckpointManager(checkpoint_path)
 
+    def _score_pair(item: tuple[int, QAPairCEP]) -> CriterionScore:
+        """Evaluate one pair. Runs on a worker thread; must not touch state."""
+        _, pair = item
+        return criterion.evaluate(
+            context=pair.context,
+            question=pair.question,
+            answer=pair.answer,
+        )
+
     cep_paths = sorted(cep_outputs.glob("*_cep_qa.json"))
     checkpoint.set_total_files(len(cep_paths))
 
@@ -138,7 +151,7 @@ def run_emic_judge_batch(
             failed_sources += 1
             continue
 
-        scores: list[EmicScore] = []
+        in_scope: list[tuple[int, QAPairCEP]] = []
         for idx, pair in enumerate(record.qa_pairs):
             if pair.is_valid is None:
                 unjudged += 1  # never judged; cannot be canonically approved
@@ -155,27 +168,64 @@ def run_emic_judge_batch(
             if scope == "approved" and pair.is_valid is not True:
                 skipped += 1
                 continue
+            in_scope.append((idx, pair))
 
-            selected += 1
-            result = criterion.evaluate(
-                context=pair.context,
-                question=pair.question,
-                answer=pair.answer,
-            )
-            if result.ordinal_score is None:
+        selected += len(in_scope)
+        # Workers only run `_score_pair`; the checkpoint write and the source
+        # file save stay on this thread, so no locking is needed (same split as
+        # judge-answers). Concurrency is per source rather than across the whole
+        # corpus because a source's scores are persisted as one file: the loop
+        # drains before writing, which costs a short tail per source but keeps
+        # the per-source checkpoint honest.
+        by_index: dict[int, EmicScore] = {}
+        #
+        # No `rate_limit_of`: it would be dead code here. The adaptive throttle
+        # only sees exceptions that escape `fn`, but `JudgeCriterion.evaluate`
+        # catches every exception and returns an error score
+        # (judge/criterion.py), so an exhausted 429 budget never reaches this
+        # layer. Passing the predicate would build a throttle that can only ever
+        # record successes. The consequence is real and worth knowing before
+        # raising workers against a metered provider: a rate-limited pair
+        # becomes `emic_score=None` with the error recorded, counted in
+        # `failed_pairs` and warned about, rather than being backed off and
+        # retried.
+        for (idx, pair), evaluation, error in map_concurrent(
+            _score_pair,
+            in_scope,
+            workers=resolved.workers,
+        ):
+            if error is not None:
+                # Defensive: JudgeCriterion.evaluate already converts failures
+                # into an error score, so this branch means something outside
+                # the criterion broke. Isolate the pair instead of losing the
+                # whole source.
+                logger.warning("Scoring pair %d of %s failed: %s", idx, path.name, error)
+                failed += 1
+                by_index[idx] = EmicScore(
+                    pair_index=idx,
+                    bloom_level=pair.bloom_level,
+                    emic_score=None,
+                    rationale="",
+                    error=str(error),
+                    is_valid=pair.is_valid,
+                )
+                continue
+            if evaluation.ordinal_score is None:
                 failed += 1
             else:
                 scored += 1
-            scores.append(
-                EmicScore(
-                    pair_index=idx,
-                    bloom_level=pair.bloom_level,
-                    emic_score=result.ordinal_score,
-                    rationale=result.rationale,
-                    error=result.error,
-                    is_valid=pair.is_valid,
-                )
+            by_index[idx] = EmicScore(
+                pair_index=idx,
+                bloom_level=pair.bloom_level,
+                emic_score=evaluation.ordinal_score,
+                rationale=evaluation.rationale,
+                error=evaluation.error,
+                is_valid=pair.is_valid,
             )
+
+        # map_concurrent yields in completion order once workers > 1; restore
+        # pair order so the output file is stable across worker counts.
+        scores = [by_index[i] for i in sorted(by_index)]
 
         EmicSourceScores(
             source_file_id=record.source_file_id,

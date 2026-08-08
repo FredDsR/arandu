@@ -78,8 +78,15 @@ def emic_judge(
     print_info(f"Run: {pipeline_id} | scope: {scope}")
     print_info(
         f"Emic LLM: provider={settings.provider}, model={settings.model_id}, "
-        f"language={settings.language}, temperature={settings.temperature}"
+        f"language={settings.language}, temperature={settings.temperature}, "
+        f"workers={settings.workers}"
     )
+    if settings.workers > 1:
+        print_info(
+            f"Scoring {settings.workers} pairs concurrently "
+            "(ARANDU_EMIC_JUDGE_WORKERS). Match this with server-side slots "
+            "(OLLAMA_NUM_PARALLEL) and the per-slot VRAM budget."
+        )
     if rerun:
         print_warning("--rerun: clearing checkpoint; every source will be re-scored.")
 
