@@ -25,7 +25,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
 - **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
 - **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
-- **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `emic-prepass`, `build-human-eval-sample`, `rag-analysis`
+- **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `emic-judge`, `build-human-eval-sample`, `rag-analysis`
 - **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
@@ -375,7 +375,7 @@ These commands implement the Phase C retrieval-augmented-generation evaluation c
 | `kg-build-retriever-index` | Build the atlas-rag retriever's precomputed index for a run |
 | `retrieve` | Run Phase C retrievers over a populated run |
 | `answer` | Run the Answerer LLM over every `RetrievalRecord` in a populated run |
-| `emic-prepass` | Score canonical-approved CEP pairs for emic validity (ordinal 1-5) |
+| `emic-judge` | Score canonical-approved CEP pairs for emic validity (ordinal 1-5) |
 | `build-human-eval-sample` | Build the stratified human-comparison sample (80 pairs) for a run |
 | `rag-analysis` | Aggregate judged answers and emit `report.json` + `tables.md` |
 

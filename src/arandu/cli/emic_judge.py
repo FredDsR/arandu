@@ -1,10 +1,11 @@
-"""CLI command: ``arandu emic-prepass`` — ordinal emic-validity scoring of approved CEP pairs.
+"""CLI command: ``arandu emic-judge`` — ordinal emic-validity scoring of approved CEP pairs.
 
 Runs the ``emic_validity`` ordinal criterion over the canonical-approved pairs
 of a populated run and writes per-source ordinal scores under
-``results/<id>/emic_prepass/outputs/<source>.json``. The scores bound the
-sampling bands for the stratified human-comparison sample (the annotators are
-the ground truth; this is a sampling aid).
+``results/<id>/emic_judge/outputs/<source>.json``. These scores are the study's
+measurement of emic validity; the human annotation round validates them by
+agreement (spec §6). They also band the stratified human-comparison sample, but
+that is a downstream use rather than their purpose.
 """
 
 from __future__ import annotations
@@ -14,14 +15,14 @@ from typing import Annotated
 
 import typer
 
-from arandu.shared.emic.batch import run_emic_prepass_batch
-from arandu.shared.emic.settings import EmicPrepassSettings
+from arandu.shared.emic.batch import run_emic_judge_batch
+from arandu.shared.emic.settings import EmicJudgeSettings
 from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 logger = logging.getLogger(__name__)
 
 
-def emic_prepass(
+def emic_judge(
     pipeline_id: Annotated[
         str,
         typer.Option(
@@ -47,14 +48,18 @@ def emic_prepass(
 
     Builds the ``emic_validity`` ordinal criterion standalone (not a judge-qa
     pipeline stage) and runs it over each approved pair's segment + question +
-    answer, persisting per-source ``EmicSourceScores`` for the stratified
-    sample builder.
+    answer, persisting per-source ``EmicSourceScores``.
 
-    LLM configuration is read from ``ARANDU_EMIC_PREPASS_*`` env vars; see
-    :class:`EmicPrepassSettings`. The score is a sampling aid, not ground
-    truth — the human annotators are the reference.
+    The resulting scores are the study's measurement of emic validity. The
+    human annotation round (spec §6) rates a stratified subsample and reports
+    agreement with them; it validates the measurement rather than replacing it.
+
+    LLM configuration is read from ``ARANDU_EMIC_JUDGE_*`` env vars; see
+    :class:`EmicJudgeSettings`. Because the model defines the instrument under
+    test, a run feeding the agreement study must pin the model the thesis
+    reports.
     """
-    settings = EmicPrepassSettings()
+    settings = EmicJudgeSettings()
     print_info(f"Run: {pipeline_id}")
     print_info(
         f"Emic LLM: provider={settings.provider}, model={settings.model_id}, "
@@ -64,15 +69,15 @@ def emic_prepass(
         print_warning("--rerun: clearing checkpoint; every source will be re-scored.")
 
     try:
-        result = run_emic_prepass_batch(pipeline_id=pipeline_id, settings=settings, rerun=rerun)
+        result = run_emic_judge_batch(pipeline_id=pipeline_id, settings=settings, rerun=rerun)
     except FileNotFoundError as exc:
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
     except (RuntimeError, ValueError) as exc:
-        print_error(f"Invalid emic-prepass configuration: {exc}")
+        print_error(f"Invalid emic-judge configuration: {exc}")
         raise typer.Exit(code=1) from exc
     except OSError as exc:
-        print_error(f"I/O error during emic pre-pass: {exc}")
+        print_error(f"I/O error during the emic judge run: {exc}")
         raise typer.Exit(code=1) from exc
 
     if result.failed_sources:

@@ -11,7 +11,7 @@ orchestrator, and report via Rich. They are fire-and-forget: side effects land i
 | File | Role |
 | ---- | ---- |
 | `app.py` | Typer app + the single registration list (`app.command()(fn)` per command) |
-| `transcribe.py`, `qa.py`, `kg.py`, `chunking.py`, `retrieve.py`, `answer.py`, `judge_answers.py`, `emic_prepass.py`, `human_eval.py`, `rag_analysis.py`, `non_answerable.py`, `manage.py`, `report.py` | One command (or a few related commands) each |
+| `transcribe.py`, `qa.py`, `kg.py`, `chunking.py`, `retrieve.py`, `answer.py`, `judge_answers.py`, `emic_judge.py`, `human_eval.py`, `rag_analysis.py`, `non_answerable.py`, `manage.py`, `report.py` | One command (or a few related commands) each |
 | `_helpers.py` | Shared output/sanitization helpers |
 
 ## Patterns to follow

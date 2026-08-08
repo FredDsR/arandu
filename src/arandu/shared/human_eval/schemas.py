@@ -25,7 +25,7 @@ class SampleItem(BaseModel):
     Carries the blinded annotation payload (segment + question + answer) plus
     the stratification bookkeeping. Deliberately excludes ``tacit_inference``
     and the canonical judge scores; further blinding (hiding ``bloom_level`` /
-    ``emic_prepass_score`` from the annotator) is the annotation instrument's
+    ``emic_score`` from the annotator) is the annotation instrument's
     responsibility, not this artifact's.
 
     Attributes:
@@ -36,7 +36,8 @@ class SampleItem(BaseModel):
         question: The generated question.
         answer: The generated answer.
         bloom_level: Bloom level (stratification dimension).
-        emic_prepass_score: Ordinal emic band hint {1..5} from the pre-pass.
+        emic_score: Ordinal emic-validity score {1..5} from the emic judge
+            (the measurement the annotators' ratings are compared against).
         cell_id: ``"{bloom_level}:{band}"`` stratification cell.
         slot_id: 0-based slot within the cell (0..9).
     """
@@ -48,7 +49,7 @@ class SampleItem(BaseModel):
     question: str
     answer: str
     bloom_level: str
-    emic_prepass_score: int = Field(..., ge=1, le=5)
+    emic_score: int = Field(..., ge=1, le=5)
     cell_id: str
     slot_id: int = Field(..., ge=0)
 

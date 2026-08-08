@@ -31,7 +31,7 @@ def _write_source(
     base: Path, pipeline_id: str, source_id: str, specs: list[tuple[str, int | None]]
 ) -> None:
     cep_outputs = base / pipeline_id / "cep" / "outputs"
-    emic_outputs = base / pipeline_id / "emic_prepass" / "outputs"
+    emic_outputs = base / pipeline_id / "emic_judge" / "outputs"
     cep_outputs.mkdir(parents=True, exist_ok=True)
     emic_outputs.mkdir(parents=True, exist_ok=True)
 
@@ -134,12 +134,12 @@ class TestRunBuildSampleBatch:
         assert first == second
 
     def test_missing_emic_stage_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="Emic pre-pass outputs not found"):
+        with pytest.raises(FileNotFoundError, match="Emic-judge outputs not found"):
             run_build_sample_batch("absent", seed=1, base_dir=tmp_path, per_cell=2)
 
     def test_missing_cep_stage_raises(self, tmp_path: Path) -> None:
         # emic outputs present, cep dir absent.
-        emic_outputs = tmp_path / "run6" / "emic_prepass" / "outputs"
+        emic_outputs = tmp_path / "run6" / "emic_judge" / "outputs"
         emic_outputs.mkdir(parents=True)
         EmicSourceScores(
             source_file_id="s1",
@@ -159,7 +159,7 @@ class TestRunBuildSampleBatch:
     def test_duplicate_pair_id_raises(self, tmp_path: Path) -> None:
         # Two emic files whose EmicSourceScores share the same source_file_id +
         # pair_index collide on pair_id (e.g. a stale duplicate emic output).
-        emic_outputs = tmp_path / "run9" / "emic_prepass" / "outputs"
+        emic_outputs = tmp_path / "run9" / "emic_judge" / "outputs"
         cep_outputs = tmp_path / "run9" / "cep" / "outputs"
         emic_outputs.mkdir(parents=True)
         cep_outputs.mkdir(parents=True)

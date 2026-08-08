@@ -1,6 +1,6 @@
 """Batch orchestrator for ``arandu build-human-eval-sample`` (spec §5).
 
-Builds the in-frame pool from the emic pre-pass outputs (dropping null-score
+Builds the in-frame pool from the emic-judge outputs (dropping null-score
 and out-of-frame-Bloom pairs), joins each pair's CEP payload (segment +
 question + answer), runs the deterministic stratified sampler, and persists the
 80-pair sample + a provenance manifest under
@@ -59,7 +59,7 @@ def run_build_sample_batch(
     """Build the stratified human-comparison sample for ``pipeline_id``.
 
     Args:
-        pipeline_id: Run identifier. Both the ``emic_prepass`` and ``cep``
+        pipeline_id: Run identifier. Both the ``emic_judge`` and ``cep``
             stages must be populated.
         seed: RNG seed for the deterministic selection (recorded in the run
             metadata and the manifest).
@@ -70,17 +70,17 @@ def run_build_sample_batch(
         The :class:`SampleManifest` describing the build.
 
     Raises:
-        FileNotFoundError: If the emic_prepass or cep stage outputs are absent.
+        FileNotFoundError: If the emic_judge or cep stage outputs are absent.
         ValueError: If a stratification cell has fewer than ``per_cell`` pairs,
             or a referenced CEP pair cannot be resolved.
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
-    emic_outputs = base / pipeline_id / PipelineType.EMIC_PREPASS.value / "outputs"
+    emic_outputs = base / pipeline_id / PipelineType.EMIC_JUDGE.value / "outputs"
     cep_outputs = base / pipeline_id / PipelineType.CEP.value / "outputs"
     if not emic_outputs.exists():
         raise FileNotFoundError(
-            f"Emic pre-pass outputs not found for pipeline_id {pipeline_id!r}: {emic_outputs}. "
-            f"Run `arandu emic-prepass --id {pipeline_id}` first."
+            f"Emic-judge outputs not found for pipeline_id {pipeline_id!r}: {emic_outputs}. "
+            f"Run `arandu emic-judge --id {pipeline_id}` first."
         )
     if not cep_outputs.exists():
         raise FileNotFoundError(
@@ -117,8 +117,8 @@ def run_build_sample_batch(
             if pair_id in seen_pair_ids:
                 raise ValueError(
                     f"Duplicate pair_id {pair_id!r} while pooling {emic_path.name}; the "
-                    f"emic_prepass outputs likely contain a stale or duplicate file for this "
-                    f"source. Clean results/{pipeline_id}/emic_prepass/outputs/ and re-run."
+                    f"emic_judge outputs likely contain a stale or duplicate file for this "
+                    f"source. Clean results/{pipeline_id}/emic_judge/outputs/ and re-run."
                 )
             seen_pair_ids.add(pair_id)
             pair = record.qa_pairs[score.pair_index]
@@ -139,7 +139,7 @@ def run_build_sample_batch(
         raise ValueError(
             f"No in-frame approved pairs found for {pipeline_id!r} "
             f"({excluded_none} null-score, {sum(excluded_bloom.values())} out-of-frame-Bloom "
-            f"excluded). Check that `arandu judge-qa` + `arandu emic-prepass` ran and produced "
+            f"excluded). Check that `arandu judge-qa` + `arandu emic-judge` ran and produced "
             f"scored, in-frame ({', '.join(FRAME_BLOOM_LEVELS)}) pairs."
         )
 

@@ -1,10 +1,15 @@
-"""Batch orchestrator for ``arandu emic-prepass`` (spec §5).
+"""Batch orchestrator for ``arandu emic-judge`` (spec §5).
 
 Runs the ``emic_validity`` ordinal criterion over the canonical-approved CEP
 pairs of a populated run and writes per-source ordinal scores under
-``results/<id>/emic_prepass/outputs/<source>.json``. These scores feed the
-stratified sample builder (they bound the sampling bands; the human annotators
-remain the ground truth).
+``results/<id>/emic_judge/outputs/<source>.json``.
+
+These scores are the study's **measurement** of emic validity, not a
+preliminary aid. The human annotation round (spec §6) rates a stratified
+subsample and reports agreement with them (Krippendorff alpha over the raters,
+weighted Cohen kappa of this judge against each annotator); it validates the
+measurement rather than replacing it. The same scores also band the stratified
+sample builder, but that is a downstream use, not their purpose.
 
 The criterion is built standalone via ``OrdinalLLMCriterion.from_config`` — it
 is not wired into the ``judge-qa`` pipeline (that, with a filter threshold, is
@@ -21,8 +26,8 @@ from pydantic import ValidationError
 from arandu.qa.schemas import QARecordCEP
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.emic.schemas import EmicPrepassResult, EmicScore, EmicSourceScores
-from arandu.shared.emic.settings import EmicPrepassSettings
+from arandu.shared.emic.schemas import EmicJudgeResult, EmicScore, EmicSourceScores
+from arandu.shared.emic.settings import EmicJudgeSettings
 from arandu.shared.judge.criterion import OrdinalLLMCriterion
 from arandu.shared.llm_client import build_llm_client_from_settings
 from arandu.shared.results_manager import ResultsManager
@@ -34,35 +39,35 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-CHECKPOINT_FILENAME = "emic_prepass_checkpoint.json"
+CHECKPOINT_FILENAME = "emic_judge_checkpoint.json"
 EMIC_CRITERION_NAME = "emic_validity"
 
 
-def run_emic_prepass_batch(
+def run_emic_judge_batch(
     pipeline_id: str,
     *,
-    settings: EmicPrepassSettings | None = None,
+    settings: EmicJudgeSettings | None = None,
     base_dir: Path | None = None,
     rerun: bool = False,
-) -> EmicPrepassResult:
+) -> EmicJudgeResult:
     """Score the canonical-approved CEP pairs of ``pipeline_id`` for emic validity.
 
     Args:
         pipeline_id: Run identifier. The ``cep`` stage must be populated and
             judged (only pairs with ``is_valid`` are scored).
-        settings: Emic-prepass LLM configuration. Defaults to
-            :class:`EmicPrepassSettings` (reads ``ARANDU_EMIC_PREPASS_*``).
+        settings: Emic-judge LLM configuration. Defaults to
+            :class:`EmicJudgeSettings` (reads ``ARANDU_EMIC_JUDGE_*``).
         base_dir: Override the project ``results/`` root.
         rerun: If True, clear the checkpoint so every source is re-scored.
 
     Returns:
-        :class:`EmicPrepassResult` summary.
+        :class:`EmicJudgeResult` summary.
 
     Raises:
         FileNotFoundError: If the cep stage outputs aren't present.
         RuntimeError: If a cloud-provider API key env var is unset.
     """
-    resolved = settings if settings is not None else EmicPrepassSettings()
+    resolved = settings if settings is not None else EmicJudgeSettings()
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
 
     cep_outputs = base / pipeline_id / "cep" / "outputs"
@@ -82,7 +87,7 @@ def run_emic_prepass_batch(
         max_tokens=resolved.max_tokens,
     )
 
-    results_mgr = ResultsManager(base, PipelineType.EMIC_PREPASS, pipeline_id=pipeline_id)
+    results_mgr = ResultsManager(base, PipelineType.EMIC_JUDGE, pipeline_id=pipeline_id)
     results_mgr.create_run(
         resolved,
         input_source=str(cep_outputs),
@@ -168,7 +173,7 @@ def run_emic_prepass_batch(
     results_mgr.complete_run(success=(failed_sources == 0))
 
     logger.info(
-        "Emic pre-pass complete: %d/%d sources scored (%d resumed, %d failed), "
+        "Emic judge complete: %d/%d sources scored (%d resumed, %d failed), "
         "%d approved pairs, %d scored, %d failed, %d unjudged.",
         completed_sources,
         len(cep_paths),
@@ -179,7 +184,7 @@ def run_emic_prepass_batch(
         failed,
         unjudged,
     )
-    return EmicPrepassResult(
+    return EmicJudgeResult(
         pipeline_id=pipeline_id,
         sources=len(cep_paths),
         completed_sources=completed_sources,

@@ -1,4 +1,4 @@
-"""Schemas for the emic-validity pre-pass artifacts (spec §5)."""
+"""Schemas for the emic-validity judge artifacts (spec §5)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class EmicScore(BaseModel):
 
 
 class EmicSourceScores(BaseModel):
-    """Emic pre-pass scores for one source interview's approved pairs."""
+    """Emic-validity scores for one source interview's approved pairs."""
 
     source_file_id: str
     source_filename: str
@@ -44,8 +44,8 @@ class EmicSourceScores(BaseModel):
         return cls.model_validate_json(Path(path).read_text(encoding="utf-8"))
 
 
-class EmicPrepassResult(BaseModel):
-    """Summary of an emic pre-pass run.
+class EmicJudgeResult(BaseModel):
+    """Summary of an emic-validity judge run.
 
     Source-level counters (``completed_sources``/``resumed_sources``/
     ``failed_sources``) account for *this* invocation; ``sources`` is the total

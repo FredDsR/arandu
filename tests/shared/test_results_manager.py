@@ -781,7 +781,7 @@ class TestPipelineType:
             "judge_answers",
             "analysis",
             "non_answerable",
-            "emic_prepass",
+            "emic_judge",
             "human_eval",
             "evaluation",
         }

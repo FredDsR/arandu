@@ -1,7 +1,7 @@
 """Deterministic stratified sampler for the human-comparison study (spec §5).
 
 Pure selection logic with no I/O: given an in-frame pool of approved pairs
-(each carrying its emic pre-pass ordinal score and annotation payload), build
+(each carrying its emic-judge ordinal score and annotation payload), build
 the 80-pair sample stratified as 4 Bloom levels x 2 emic bands x 10 pairs.
 Frame construction (dropping null-score and out-of-frame-Bloom pairs, joining
 the CEP payload) happens upstream in ``batch.py``.
@@ -143,7 +143,7 @@ def build_sample(pool: list[PoolEntry], seed: int, *, per_cell: int = PER_CELL) 
                     question=entry.question,
                     answer=entry.answer,
                     bloom_level=entry.bloom_level,
-                    emic_prepass_score=entry.emic_score,
+                    emic_score=entry.emic_score,
                     cell_id=cell_id,
                     slot_id=slot_id,
                 )
