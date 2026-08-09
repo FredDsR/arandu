@@ -5,6 +5,7 @@
 #   profile (CPU / -gpu)   service          command            image
 #   cep    / cep-gpu       arandu-cep       generate-cep-qa    arandu:latest
 #   judge  / judge-gpu     arandu-judge     judge-*            arandu:latest
+#   emic   / emic-gpu      arandu-emic      emic-judge         arandu:latest
 #   kg     / kg-gpu        arandu-kg        build-kg           arandu-kg:latest (Dockerfile.kg, +extra kg)
 #   rag/rag-gpu/rag-cpu   arandu-rag(-cpu) chunk/retrieve/...  arandu-kg:latest
 #   (transcription uses arandu / arandu-cpu / arandu-rocm, no ollama sidecar)
@@ -221,6 +222,7 @@ services:
       - kg
       - cep
       - judge
+      - emic
       - ollama
 
   # Ollama with GPU support (use --profile ollama-gpu)
@@ -272,6 +274,7 @@ services:
       - kg-gpu
       - cep-gpu
       - judge-gpu
+      - emic-gpu
       - ollama-gpu
       - rag-gpu
 
@@ -329,6 +332,70 @@ services:
     profiles:
       - judge
       - judge-gpu
+
+  # Emic Validity Judge Service (Phase D, spec §5)
+  #
+  # Separate from arandu-judge on purpose: that service forwards ARANDU_JUDGE_*
+  # only, so running emic-judge through it would leave every ARANDU_EMIC_JUDGE_*
+  # setting silently at its default (the *Config classes use extra="ignore").
+  arandu-emic:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arandu:latest
+    container_name: arandu-emic-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed on this container; the LLM lives in the ollama sidecar.
+    deploy: {}
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false
+
+    environment:
+      # Emic-judge settings — default to the local Ollama sidecar so Gemini
+      # values that may live in .env (OPENAI_API_KEY / ARANDU_LLM_BASE_URL)
+      # don't leak into SLURM runs.
+      #
+      # MODEL_ID is a methodological parameter, not a budget knob: these scores
+      # are the study's measurement of emic validity and the human annotation
+      # round reports agreement with them, so a run feeding the agreement study
+      # must pin the model the dissertation describes.
+      - ARANDU_EMIC_JUDGE_MODEL_ID=${ARANDU_EMIC_JUDGE_MODEL_ID:-qwen3:14b}
+      - ARANDU_EMIC_JUDGE_PROVIDER=${ARANDU_EMIC_JUDGE_PROVIDER:-ollama}
+      - ARANDU_EMIC_JUDGE_BASE_URL=${ARANDU_EMIC_JUDGE_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_EMIC_JUDGE_LANGUAGE=${ARANDU_EMIC_JUDGE_LANGUAGE:-pt}
+      - ARANDU_EMIC_JUDGE_TEMPERATURE=${ARANDU_EMIC_JUDGE_TEMPERATURE:-0.1}
+      - ARANDU_EMIC_JUDGE_MAX_TOKENS=${ARANDU_EMIC_JUDGE_MAX_TOKENS:-8192}
+      # Client-side concurrency. Pair with OLLAMA_NUM_PARALLEL and the per-slot
+      # context VRAM budget; scripts/slurm/emic/tupi.slurm derives the server
+      # slots from this value so they cannot drift.
+      - ARANDU_EMIC_JUDGE_WORKERS=${ARANDU_EMIC_JUDGE_WORKERS:-1}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # No `command:` block — rely on the image's `ENTRYPOINT ["arandu"]` and the
+    # CMD provided at invocation. The SLURM wrapper uses
+    # `docker compose run arandu-emic emic-judge --id ... --scope ...`.
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '8gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - emic
+      - emic-gpu
 
   # CEP QA Generation Service (Cognitive Elicitation Pipeline)
   arandu-cep:

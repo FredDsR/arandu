@@ -199,6 +199,7 @@ Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
 |---------|----------|----------|
 | `cep` (`cep-gpu`) | ollama, arandu-cep | CEP QA generation (`generate-cep-qa`) |
 | `judge` (`judge-gpu`) | ollama, arandu-judge | LLM-as-a-Judge (`judge-transcription` / `judge-qa`) |
+| `emic` (`emic-gpu`) | ollama, arandu-emic | Phase D emic-validity judge (`emic-judge`) |
 | `kg` (`kg-gpu`) | ollama, arandu-kg | KG construction (`build-kg`) |
 | `rag` (`rag-gpu` / `rag-cpu`) | ollama, arandu-rag | Phase C RAG evaluation chain |
 | `cpu` | arandu-cpu | Transcription (CPU) |
@@ -212,12 +213,13 @@ sourcing a shared `<step>_common.sh`. Submit with `PIPELINE_ID` set (see
 tupi/draco partition rules):
 
 ```bash
-# Transcription / CEP / Judge / KG / RAG — pick the partition script
+# Transcription / CEP / Judge / KG / RAG / Emic — pick the partition script
 PIPELINE_ID=run-01 sbatch scripts/slurm/transcription/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/judge/qa/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/kg/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/rag/retrieve.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/emic/tupi.slurm
 ```
 
 ## Configuration

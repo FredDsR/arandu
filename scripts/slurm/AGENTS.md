@@ -19,6 +19,7 @@ env and writes `results/<id>/<stage>/outputs/`.
 | Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | `arandu` / `arandu-cpu` / `arandu-rocm` | (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
 | CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | `arandu-cep` | `cep` / `cep-gpu` | `arandu:latest` · `Dockerfile` | `cep/` |
 | Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | `arandu-judge` | `judge` / `judge-gpu` | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
+| Emic judge (Phase D) | `emic-judge` | `EmicJudgeSettings` · `ARANDU_EMIC_JUDGE_` | `arandu-emic` | `emic` / `emic-gpu` | `arandu:latest` · `Dockerfile` | `emic/` |
 | KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | `arandu-kg` | `kg` / `kg-gpu` | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
 | RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | `arandu-rag` / `arandu-rag-cpu` | `rag` / `rag-gpu` / `rag-cpu` | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
 
@@ -50,6 +51,8 @@ config field, so it did nothing — CEP-pair validation lives in the separate
 | ---- | ---- |
 | `transcription/<partition>.slurm` + `job_common.sh` | Whisper transcription (GPU) |
 | `cep/`, `judge/` + `*_common.sh` | CEP QA generation and LLM judges |
+| `emic/<partition>.slurm` + `emic_common.sh` | Phase D ordinal emic-validity judge |
+| `container_teardown.sh` | Shared SIGTERM/EXIT trap that stops containers on TIMEOUT/scancel |
 | `kg/<partition>.slurm` + `kg_common.sh` | atlas-rag KG construction (extraction + concept gen) |
 | `rag/<stage>.slurm` + `rag_common.sh` | Phase C eval chain (chunk, link-passages, retriever-index, non-answerable, retrieve, answer, judge-answers, rag-analysis) |
 | `general/cleanup.slurm`, `kg/pipeline-cleanup.slurm` | Docker/disk cleanup jobs |
@@ -58,6 +61,16 @@ config field, so it did nothing — CEP-pair validation lives in the separate
 The `rag/` per-stage scripts set `RAG_CLI_ARGS` (the `arandu` subcommand) and
 `RAG_NEEDS_OLLAMA`, then source `rag_common.sh`. CPU-only stages override
 `RAG_SERVICE=arandu-rag-cpu` / `RAG_PROFILE=rag-cpu` to avoid GPU contention.
+
+**Orphan containers on TIMEOUT.** Containers are owned by the docker daemon,
+not by the job's process tree, so a TIME LIMIT or `scancel` kills the shell and
+leaves them running on the node (observed: judge-answers 799024 on tupi2, which
+needed admin intervention). `scripts/slurm/container_teardown.sh` holds the
+shared fix; it only works when BOTH pieces are present: the stage command runs
+in the background and is `wait`-ed on (bash defers traps during a foreground
+external command), and the partition script carries
+`#SBATCH --signal=B:TERM@60`. Adopted by `rag/` (its own inlined copy, PR #152)
+and `emic/`. **`judge/`, `cep/` and `kg/` still lack it** and can still orphan.
 
 ## Submitting
 
@@ -71,14 +84,17 @@ PIPELINE_ID=<run-id> [overrides] sbatch [--exclude=<nodes>] scripts/slurm/<step>
 | `ARANDU_KG_MODEL_ID` | `llama3.1:8b` | Override for non-default models (e.g. `qwen3:14b`) |
 | `RAG_OLLAMA_MODEL` | `qwen3:14b` | Model pulled by `rag_common.sh` LLM stages |
 | `JUDGE_REJUDGE` | unset | Force re-judge instead of resume |
+| `EMIC_SCOPE` | `all` | `all` scores every CEP pair and records its judge-qa verdict; `approved` scores only approved ones |
+| `EMIC_RERUN` | `0` | Discard the emic checkpoint and re-score every source |
+| `ARANDU_EMIC_JUDGE_WORKERS` | 4 (tupi script) | Client-side concurrency; `OLLAMA_NUM_PARALLEL` follows it unless overridden |
 | `MIN_DISK_GB` | 15 | Disk-floor preflight on the Docker root partition |
 | `USE_GPU_OLLAMA` | set by partition script | Selects `kg-gpu` vs `kg` compose profile |
 
 ## Partitions: access + GPU (confirmed 2026-06-15 — do NOT re-test)
 
 - **tupi** — the ONLY GPU partition we can use. Every GPU/ollama stage
-  (build-kg, cep, judge-qa, answer, judge-answers, atlas_rag retrieve) runs
-  here. Frequently saturated by other users; when it is, **wait** — there is
+  (build-kg, cep, judge-qa, emic-judge, answer, judge-answers, atlas_rag
+  retrieve) runs here. Frequently saturated by other users; when it is, **wait** — there is
   no faster GPU alternative for this account.
 - **draco** — **CPU-only, no GPU.** Idle and fast to schedule; use it for
   CPU-only work (root-container result prep, the khop retrieve, rag-analysis,

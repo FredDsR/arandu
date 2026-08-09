@@ -9,11 +9,12 @@ Complete reference for all configuration settings in the Arandu pipeline.
 3. [QAConfig](#qaconfig)
 4. [CEPConfig](#cepconfig)
 5. [JudgeConfig](#judgeconfig)
-6. [KGConfig](#kgconfig)
-7. [LLMConfig](#llmconfig)
-8. [ResultsConfig](#resultsconfig)
-9. [Environment Variables](#environment-variables)
-10. [Configuration Examples](#configuration-examples)
+6. [EmicJudgeSettings](#emicjudgesettings)
+7. [KGConfig](#kgconfig)
+8. [LLMConfig](#llmconfig)
+9. [ResultsConfig](#resultsconfig)
+10. [Environment Variables](#environment-variables)
+11. [Configuration Examples](#configuration-examples)
 
 ---
 
@@ -34,6 +35,7 @@ The Arandu project uses **Pydantic Settings** for configuration management with 
 | `QAConfig` | `arandu.qa.config` | `ARANDU_QA_` |
 | `CEPConfig` | `arandu.qa.config` | `ARANDU_CEP_` |
 | `JudgeConfig` | `arandu.qa.config` | `ARANDU_JUDGE_` |
+| `EmicJudgeSettings` | `arandu.shared.emic.settings` | `ARANDU_EMIC_JUDGE_` |
 | `KGConfig` | `arandu.kg.config` | `ARANDU_KG_` |
 | `LLMConfig` | `arandu.shared.config` | (no prefix; uses aliases like `OPENAI_API_KEY`) |
 | `ResultsConfig` | `arandu.shared.config` | `ARANDU_RESULTS_` |
@@ -263,6 +265,55 @@ config = JudgeConfig()
 # Loaded from ARANDU_JUDGE_* env vars; e.g.
 # ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
 # ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
+```
+
+---
+
+## EmicJudgeSettings
+
+Configuration for `arandu emic-judge`, the Phase D ordinal emic-validity judge
+(spec §5). A thin subclass of the shared `LLMSettings`, so it inherits the
+canonical connection + sampling fields and overrides only the two defaults the
+emic judgment deliberately changes.
+
+**Module**: `arandu.shared.emic.settings` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_EMIC_JUDGE_`
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `provider` | `str` | `"ollama"` | LLM provider: "ollama", "openai", or "custom" |
+| `model_id` | `str` | `"qwen3:14b"` | Model identifier. **Methodological parameter** — see the note below |
+| `base_url` | `str \| None` | `None` | Base URL override; required when `provider == "custom"` |
+| `temperature` | `float` | `0.1` | Lower than the other judges: the emic judgment is structural, not creative (spec §4.2 principle 8) |
+| `max_tokens` | `int` | `8192` | Response budget. qwen3 burns thinking tokens against it |
+| `language` | `"pt"` | `"pt"` | Narrowed to `pt` — the only `emic_validity` prompt template that ships today |
+| `workers` | `int` | `1` | Client-side concurrent LLM requests, honoured via `map_concurrent` |
+
+**The model is not a budget knob.** The scores this stage produces are the
+study's measurement of emic validity; the human annotation round (spec §6)
+reports agreement with them rather than replacing them. Changing
+`ARANDU_EMIC_JUDGE_MODEL_ID` changes the instrument under test, so a run feeding
+the agreement study must pin the model the dissertation describes.
+
+**Scope.** `--scope all` (default) scores every CEP pair and records its
+`judge-qa` verdict on each score, which is what allows emic validity to be
+cross-tabulated against approval. `--scope approved` scores only
+canonically-approved pairs. The stratified human-comparison sample keeps its
+frame on the approved corpus either way.
+
+**Concurrency.** `workers` must be paired with server-side slots
+(`OLLAMA_NUM_PARALLEL`) and the per-slot context VRAM budget;
+`scripts/slurm/emic/tupi.slurm` derives the slots from the worker count so the
+two cannot drift. Note that a rate-limited call becomes a null score rather than
+being backed off and retried (`JudgeCriterion.evaluate` converts failures into
+error scores before the batch-level throttle can see them), so raise `workers`
+carefully against a metered provider.
+
+**Example Configuration**:
+```bash
+# Loaded from ARANDU_EMIC_JUDGE_* env vars; e.g.
+ARANDU_EMIC_JUDGE_MODEL_ID=qwen3:14b
+ARANDU_EMIC_JUDGE_PROVIDER=ollama
+ARANDU_EMIC_JUDGE_WORKERS=4
 ```
 
 ---
