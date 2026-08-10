@@ -200,7 +200,7 @@ class PipelineType(StrEnum):
     JUDGE_ANSWERS = "judge_answers"
     ANALYSIS = "analysis"
     NON_ANSWERABLE = "non_answerable"
-    EMIC_PREPASS = "emic_prepass"
+    EMIC_JUDGE = "emic_judge"
     HUMAN_EVAL = "human_eval"
     EVALUATION = "evaluation"
 

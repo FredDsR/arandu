@@ -48,9 +48,10 @@ class LLMSettings(BaseSettings):
         language: Prompt language; selects the per-stage prompt template.
         workers: Client-side concurrent LLM requests for batch runners
             wired through :func:`arandu.utils.concurrency.map_concurrent`
-            (answer, judge-answers); other stages ignore it. Pair with
-            matching server slots (``OLLAMA_NUM_PARALLEL``) and the
-            per-slot context VRAM budget (``scripts/slurm/rag/*.slurm``).
+            (answer, judge-answers, emic-judge); stages not on that list
+            ignore it. Pair with matching server slots
+            (``OLLAMA_NUM_PARALLEL``) and the per-slot context VRAM budget
+            (``scripts/slurm/rag/*.slurm``).
     """
 
     provider: str = Field(default="ollama")

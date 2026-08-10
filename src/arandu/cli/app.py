@@ -50,7 +50,7 @@ def main(
 # Register commands from submodules
 from arandu.cli.answer import answer  # noqa: E402
 from arandu.cli.chunking import chunk  # noqa: E402
-from arandu.cli.emic_prepass import emic_prepass  # noqa: E402
+from arandu.cli.emic_judge import emic_judge  # noqa: E402
 from arandu.cli.human_eval import build_human_eval_sample  # noqa: E402
 from arandu.cli.judge_answers import judge_answers  # noqa: E402
 from arandu.cli.kg import build_kg, kg_build_retriever_index, kg_link_passages  # noqa: E402
@@ -89,7 +89,7 @@ app.command()(kg_build_retriever_index)
 app.command()(retrieve)
 app.command()(answer)
 app.command()(judge_answers)
-app.command()(emic_prepass)
+app.command()(emic_judge)
 app.command()(build_human_eval_sample)
 app.command()(rag_analysis)
 app.command()(generate_non_answerable)

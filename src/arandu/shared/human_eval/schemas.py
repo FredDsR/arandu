@@ -25,7 +25,7 @@ class SampleItem(BaseModel):
     Carries the blinded annotation payload (segment + question + answer) plus
     the stratification bookkeeping. Deliberately excludes ``tacit_inference``
     and the canonical judge scores; further blinding (hiding ``bloom_level`` /
-    ``emic_prepass_score`` from the annotator) is the annotation instrument's
+    ``emic_score`` from the annotator) is the annotation instrument's
     responsibility, not this artifact's.
 
     Attributes:
@@ -36,7 +36,8 @@ class SampleItem(BaseModel):
         question: The generated question.
         answer: The generated answer.
         bloom_level: Bloom level (stratification dimension).
-        emic_prepass_score: Ordinal emic band hint {1..5} from the pre-pass.
+        emic_score: Ordinal emic-validity score {1..5} from the emic judge
+            (the measurement the annotators' ratings are compared against).
         cell_id: ``"{bloom_level}:{band}"`` stratification cell.
         slot_id: 0-based slot within the cell (0..9).
     """
@@ -48,7 +49,7 @@ class SampleItem(BaseModel):
     question: str
     answer: str
     bloom_level: str
-    emic_prepass_score: int = Field(..., ge=1, le=5)
+    emic_score: int = Field(..., ge=1, le=5)
     cell_id: str
     slot_id: int = Field(..., ge=0)
 
@@ -65,6 +66,10 @@ class SampleManifest(BaseModel):
         population_by_cell: In-frame available count per ``cell_id`` (the pool
             each cell was sampled from).
         excluded_none_score: Approved pairs dropped for a null emic score.
+        excluded_not_approved: Scored pairs dropped because ``judge-qa`` did
+            not approve them (rejected or never judged). Non-zero whenever the
+            emic judge ran with ``--scope all``; the study's frame is the
+            approved corpus.
         excluded_bloom: Approved pairs dropped per out-of-frame Bloom level
             (``apply`` / ``create``), keyed by level.
         pool_sha256: Hash of the in-frame pool keys + scores (provenance).
@@ -77,6 +82,7 @@ class SampleManifest(BaseModel):
     cell_counts: dict[str, int]
     population_by_cell: dict[str, int]
     excluded_none_score: int = 0
+    excluded_not_approved: int = 0
     excluded_bloom: dict[str, int] = Field(default_factory=dict)
     pool_sha256: str
 

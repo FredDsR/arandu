@@ -11,6 +11,7 @@ from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.emic.schemas import EmicScore, EmicSourceScores
 from arandu.shared.human_eval.batch import run_build_sample_batch
 from arandu.shared.human_eval.schemas import SampleItem, SampleManifest
+from arandu.shared.judge.schemas import JudgePipelineResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,10 +32,12 @@ def _write_source(
     base: Path, pipeline_id: str, source_id: str, specs: list[tuple[str, int | None]]
 ) -> None:
     cep_outputs = base / pipeline_id / "cep" / "outputs"
-    emic_outputs = base / pipeline_id / "emic_prepass" / "outputs"
+    emic_outputs = base / pipeline_id / "emic_judge" / "outputs"
     cep_outputs.mkdir(parents=True, exist_ok=True)
     emic_outputs.mkdir(parents=True, exist_ok=True)
 
+    # The CEP record carries the authoritative judge-qa verdict; the frame is
+    # filtered on it, not on the snapshot in the emic outputs.
     pairs = [
         QAPairCEP(
             question=f"q{i}",
@@ -43,6 +46,7 @@ def _write_source(
             question_type="conceptual",
             confidence=0.9,
             bloom_level=bloom,
+            validation=JudgePipelineResult(stage_results={}, passed=True),
         )
         for i, (bloom, _score) in enumerate(specs)
     ]
@@ -57,7 +61,7 @@ def _write_source(
     ).save(cep_outputs / f"{source_id}_cep_qa.json")
 
     scores = [
-        EmicScore(pair_index=i, bloom_level=bloom, emic_score=score, rationale="r")
+        EmicScore(pair_index=i, bloom_level=bloom, emic_score=score, rationale="r", is_valid=True)
         for i, (bloom, score) in enumerate(specs)
     ]
     EmicSourceScores(
@@ -100,6 +104,48 @@ class TestRunBuildSampleBatch:
         assert manifest.excluded_none_score == 1
         assert manifest.excluded_bloom == {"apply": 1, "create": 1}
 
+    def test_frame_follows_the_live_cep_verdict_not_the_emic_snapshot(self, tmp_path: Path) -> None:
+        # An `emic-judge --scope all` run scores rejected pairs too, so the emic
+        # outputs are not a pool of approved pairs. The frame must come from the
+        # CEP record (the authoritative verdict), NOT from the is_valid snapshot
+        # frozen into the emic outputs -- otherwise a judge-qa re-run silently
+        # leaves the sample pinned to stale verdicts.
+        _write_source(tmp_path, "run_live", "s1", _frame_specs(3))
+        cep_path = next((tmp_path / "run_live" / "cep" / "outputs").glob("*_cep_qa.json"))
+        emic_path = next((tmp_path / "run_live" / "emic_judge" / "outputs").glob("*.json"))
+
+        # The corpus rejects pair 0 while the emic snapshot still says approved.
+        record = QARecordCEP.load(cep_path)
+        record.qa_pairs[0].validation = JudgePipelineResult(stage_results={}, passed=False)
+        record.save(cep_path)
+
+        manifest = run_build_sample_batch("run_live", seed=1, base_dir=tmp_path, per_cell=2)
+        assert manifest.excluded_not_approved == 1  # live verdict wins
+        assert manifest.total_items == 16
+
+        # And the converse: mutating only the emic snapshot must change nothing,
+        # because it is provenance, not the frame.
+        scores = EmicSourceScores.load(emic_path)
+        for score in scores.scores:
+            score.is_valid = False
+        scores.save(emic_path)
+
+        again = run_build_sample_batch("run_live", seed=1, base_dir=tmp_path, per_cell=2)
+        assert again.excluded_not_approved == 1
+        assert again.pool_sha256 == manifest.pool_sha256
+
+    def test_insufficient_approved_pairs_raises(self, tmp_path: Path) -> None:
+        # With too few approved pairs left in a cell the build fails loudly
+        # rather than silently shrinking the sample.
+        _write_source(tmp_path, "run_scope", "s1", _frame_specs(2))
+        cep_path = next((tmp_path / "run_scope" / "cep" / "outputs").glob("*_cep_qa.json"))
+        record = QARecordCEP.load(cep_path)
+        record.qa_pairs[0].validation = JudgePipelineResult(stage_results={}, passed=False)
+        record.save(cep_path)
+
+        with pytest.raises(ValueError, match="has only"):
+            run_build_sample_batch("run_scope", seed=1, base_dir=tmp_path, per_cell=2)
+
     def test_payload_is_blinded(self, tmp_path: Path) -> None:
         _write_source(tmp_path, "run3", "s1", _frame_specs(2))
         run_build_sample_batch("run3", seed=1, base_dir=tmp_path, per_cell=2)
@@ -134,17 +180,21 @@ class TestRunBuildSampleBatch:
         assert first == second
 
     def test_missing_emic_stage_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="Emic pre-pass outputs not found"):
+        with pytest.raises(FileNotFoundError, match="Emic-judge outputs not found"):
             run_build_sample_batch("absent", seed=1, base_dir=tmp_path, per_cell=2)
 
     def test_missing_cep_stage_raises(self, tmp_path: Path) -> None:
         # emic outputs present, cep dir absent.
-        emic_outputs = tmp_path / "run6" / "emic_prepass" / "outputs"
+        emic_outputs = tmp_path / "run6" / "emic_judge" / "outputs"
         emic_outputs.mkdir(parents=True)
         EmicSourceScores(
             source_file_id="s1",
             source_filename="s1.mp4",
-            scores=[EmicScore(pair_index=0, bloom_level="remember", emic_score=2, rationale="r")],
+            scores=[
+                EmicScore(
+                    pair_index=0, bloom_level="remember", emic_score=2, rationale="r", is_valid=True
+                )
+            ],
         ).save(emic_outputs / "s1_cep_qa.json")
 
         with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
@@ -159,7 +209,7 @@ class TestRunBuildSampleBatch:
     def test_duplicate_pair_id_raises(self, tmp_path: Path) -> None:
         # Two emic files whose EmicSourceScores share the same source_file_id +
         # pair_index collide on pair_id (e.g. a stale duplicate emic output).
-        emic_outputs = tmp_path / "run9" / "emic_prepass" / "outputs"
+        emic_outputs = tmp_path / "run9" / "emic_judge" / "outputs"
         cep_outputs = tmp_path / "run9" / "cep" / "outputs"
         emic_outputs.mkdir(parents=True)
         cep_outputs.mkdir(parents=True)
@@ -176,6 +226,7 @@ class TestRunBuildSampleBatch:
                         question_type="conceptual",
                         confidence=0.9,
                         bloom_level="remember",
+                        validation=JudgePipelineResult(stage_results={}, passed=True),
                     )
                 ],
                 model_id="m",
@@ -186,7 +237,13 @@ class TestRunBuildSampleBatch:
                 source_file_id="dup",
                 source_filename="dup.mp4",
                 scores=[
-                    EmicScore(pair_index=0, bloom_level="remember", emic_score=2, rationale="r")
+                    EmicScore(
+                        pair_index=0,
+                        bloom_level="remember",
+                        emic_score=2,
+                        rationale="r",
+                        is_valid=True,
+                    )
                 ],
             ).save(emic_outputs / f"{name}_cep_qa.json")
 

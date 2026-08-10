@@ -9,9 +9,10 @@ Complete reference for all command-line interface commands in Arandu.
 3. [QA Generation Commands](#qa-generation-commands)
 4. [Judging Commands](#judging-commands)
 5. [Knowledge Graph & RAG Commands (Phase C)](#knowledge-graph--rag-commands-phase-c)
-6. [Utilities Commands](#utilities-commands)
-7. [Usage Examples](#usage-examples)
-8. [Common Patterns](#common-patterns)
+6. [Emic Validity Commands (Phase D)](#emic-validity-commands-phase-d)
+7. [Utilities Commands](#utilities-commands)
+8. [Usage Examples](#usage-examples)
+9. [Common Patterns](#common-patterns)
 
 ---
 
@@ -25,7 +26,8 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 - **Transcription**: `transcribe`, `drive-transcribe`, `batch-transcribe`
 - **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
 - **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
-- **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `emic-prepass`, `build-human-eval-sample`, `rag-analysis`
+- **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `rag-analysis`
+- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`
 - **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
@@ -375,8 +377,6 @@ These commands implement the Phase C retrieval-augmented-generation evaluation c
 | `kg-build-retriever-index` | Build the atlas-rag retriever's precomputed index for a run |
 | `retrieve` | Run Phase C retrievers over a populated run |
 | `answer` | Run the Answerer LLM over every `RetrievalRecord` in a populated run |
-| `emic-prepass` | Score canonical-approved CEP pairs for emic validity (ordinal 1-5) |
-| `build-human-eval-sample` | Build the stratified human-comparison sample (80 pairs) for a run |
 | `rag-analysis` | Aggregate judged answers and emit `report.json` + `tables.md` |
 
 **Typical Phase C chain**:
@@ -392,6 +392,48 @@ arandu answer project-001
 arandu judge-answers project-001
 arandu rag-analysis project-001
 ```
+
+---
+
+## Emic Validity Commands (Phase D)
+
+These commands implement the emic-validity study (spec §5-§6): score the run's
+QA pairs with the ordinal `emic_validity` criterion, then draw the stratified
+sample the human annotators rate so inter-rater agreement with the judge can be
+reported.
+
+| Command | Description |
+|---------|-------------|
+| `emic-judge` | Score a run's CEP pairs for emic validity (ordinal 1-5) |
+| `build-human-eval-sample` | Build the stratified human-comparison sample for a run |
+
+**The emic score is a measurement, not a filter.** It is what the study
+reports; the human annotation round validates it by agreement rather than
+replacing it. That makes `ARANDU_EMIC_JUDGE_MODEL_ID` a methodological
+parameter (it defines the instrument under test), so a run feeding the
+agreement study must pin the model the dissertation describes. See
+[EmicJudgeSettings](configuration.md#emicjudgesettings).
+
+**`emic-judge` options**:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--id` | required | Pipeline ID. The `cep` stage must be populated, and judged when `--scope approved` |
+| `--scope` | `all` | `all` scores every pair and records its `judge-qa` verdict, enabling the emic-validity x approval cross-tabulation. `approved` scores only canonically-approved pairs |
+| `--rerun` / `--resume` | `--resume` | `--rerun` discards the checkpoint and re-scores every source |
+
+**Typical Phase D chain**:
+```bash
+# Score the corpus (long-running; on the cluster use scripts/slurm/emic/tupi.slurm)
+arandu emic-judge --id project-001 --scope all
+
+# Draw the stratified sample the annotators rate
+arandu build-human-eval-sample --id project-001 --seed 42
+```
+
+The sample builder keeps its frame on the judge-approved corpus even when
+`emic-judge` scored everything: pairs the judge rejected (or never judged) are
+dropped and counted in the manifest's `excluded_not_approved`.
 
 ---
 

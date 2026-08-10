@@ -1,6 +1,6 @@
 """Batch orchestrator for ``arandu build-human-eval-sample`` (spec §5).
 
-Builds the in-frame pool from the emic pre-pass outputs (dropping null-score
+Builds the in-frame pool from the emic-judge outputs (dropping null-score
 and out-of-frame-Bloom pairs), joins each pair's CEP payload (segment +
 question + answer), runs the deterministic stratified sampler, and persists the
 80-pair sample + a provenance manifest under
@@ -59,7 +59,7 @@ def run_build_sample_batch(
     """Build the stratified human-comparison sample for ``pipeline_id``.
 
     Args:
-        pipeline_id: Run identifier. Both the ``emic_prepass`` and ``cep``
+        pipeline_id: Run identifier. Both the ``emic_judge`` and ``cep``
             stages must be populated.
         seed: RNG seed for the deterministic selection (recorded in the run
             metadata and the manifest).
@@ -70,17 +70,17 @@ def run_build_sample_batch(
         The :class:`SampleManifest` describing the build.
 
     Raises:
-        FileNotFoundError: If the emic_prepass or cep stage outputs are absent.
+        FileNotFoundError: If the emic_judge or cep stage outputs are absent.
         ValueError: If a stratification cell has fewer than ``per_cell`` pairs,
             or a referenced CEP pair cannot be resolved.
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
-    emic_outputs = base / pipeline_id / PipelineType.EMIC_PREPASS.value / "outputs"
+    emic_outputs = base / pipeline_id / PipelineType.EMIC_JUDGE.value / "outputs"
     cep_outputs = base / pipeline_id / PipelineType.CEP.value / "outputs"
     if not emic_outputs.exists():
         raise FileNotFoundError(
-            f"Emic pre-pass outputs not found for pipeline_id {pipeline_id!r}: {emic_outputs}. "
-            f"Run `arandu emic-prepass --id {pipeline_id}` first."
+            f"Emic-judge outputs not found for pipeline_id {pipeline_id!r}: {emic_outputs}. "
+            f"Run `arandu emic-judge --id {pipeline_id}` first."
         )
     if not cep_outputs.exists():
         raise FileNotFoundError(
@@ -91,6 +91,7 @@ def run_build_sample_batch(
     pool: list[PoolEntry] = []
     seen_pair_ids: set[str] = set()
     excluded_none = 0
+    excluded_not_approved = 0
     excluded_bloom: dict[str, int] = {}
     for emic_path in sorted(emic_outputs.glob("*_cep_qa.json")):
         scores = EmicSourceScores.load(emic_path)
@@ -102,26 +103,42 @@ def run_build_sample_batch(
             )
         record = QARecordCEP.load(cep_path)
         for score in scores.scores:
+            if score.pair_index >= len(record.qa_pairs):
+                raise ValueError(
+                    f"pair_index {score.pair_index} out of range for {cep_path.name} "
+                    f"({len(record.qa_pairs)} pairs); emic/cep stages are out of sync."
+                )
+            pair = record.qa_pairs[score.pair_index]
+
+            # An `emic-judge --scope all` run scores rejected and never-judged
+            # pairs too, so the emic outputs are NOT a pool of approved pairs.
+            # The agreement study's frame is the approved corpus (spec §5), so
+            # drop anything the judge did not approve before banding.
+            #
+            # Read the verdict off the CEP record, not off `score.is_valid`:
+            # that field is a snapshot taken when the emic judge ran, so a
+            # `judge-qa` re-run (e.g. a threshold change) would leave the frame
+            # pinned to the old verdicts, sampling pairs the corpus now rejects
+            # and excluding ones it now approves. The record loaded above is the
+            # authoritative copy. `score.is_valid` remains the provenance record
+            # of what the emic run saw.
+            if pair.is_valid is not True:
+                excluded_not_approved += 1
+                continue
             if score.emic_score is None:
                 excluded_none += 1
                 continue
             if score.bloom_level not in FRAME_BLOOM_LEVELS:
                 excluded_bloom[score.bloom_level] = excluded_bloom.get(score.bloom_level, 0) + 1
                 continue
-            if score.pair_index >= len(record.qa_pairs):
-                raise ValueError(
-                    f"pair_index {score.pair_index} out of range for {cep_path.name} "
-                    f"({len(record.qa_pairs)} pairs); emic/cep stages are out of sync."
-                )
             pair_id = f"{scores.source_file_id}:{score.pair_index}"
             if pair_id in seen_pair_ids:
                 raise ValueError(
                     f"Duplicate pair_id {pair_id!r} while pooling {emic_path.name}; the "
-                    f"emic_prepass outputs likely contain a stale or duplicate file for this "
-                    f"source. Clean results/{pipeline_id}/emic_prepass/outputs/ and re-run."
+                    f"emic_judge outputs likely contain a stale or duplicate file for this "
+                    f"source. Clean results/{pipeline_id}/emic_judge/outputs/ and re-run."
                 )
             seen_pair_ids.add(pair_id)
-            pair = record.qa_pairs[score.pair_index]
             pool.append(
                 PoolEntry(
                     pair_id=pair_id,
@@ -138,9 +155,10 @@ def run_build_sample_batch(
     if not pool:
         raise ValueError(
             f"No in-frame approved pairs found for {pipeline_id!r} "
-            f"({excluded_none} null-score, {sum(excluded_bloom.values())} out-of-frame-Bloom "
-            f"excluded). Check that `arandu judge-qa` + `arandu emic-prepass` ran and produced "
-            f"scored, in-frame ({', '.join(FRAME_BLOOM_LEVELS)}) pairs."
+            f"({excluded_not_approved} not judge-approved, {excluded_none} null-score, "
+            f"{sum(excluded_bloom.values())} out-of-frame-Bloom excluded). Check that "
+            f"`arandu judge-qa` + `arandu emic-judge` ran and produced approved, scored, "
+            f"in-frame ({', '.join(FRAME_BLOOM_LEVELS)}) pairs."
         )
 
     population = population_by_cell(pool)
@@ -169,6 +187,7 @@ def run_build_sample_batch(
         cell_counts=dict.fromkeys(all_cell_ids(), per_cell),
         population_by_cell=population,
         excluded_none_score=excluded_none,
+        excluded_not_approved=excluded_not_approved,
         excluded_bloom=excluded_bloom,
         pool_sha256=pool_hash,
     )
@@ -178,10 +197,12 @@ def run_build_sample_batch(
     results_mgr.complete_run(success=True)
 
     logger.info(
-        "Built human-eval sample: %d items across %d cells (pool=%d, excluded none=%d, bloom=%d).",
+        "Built human-eval sample: %d items across %d cells (pool=%d, excluded "
+        "not-approved=%d, none=%d, bloom=%d).",
         len(items),
         len(manifest.cell_counts),
         len(pool),
+        excluded_not_approved,
         excluded_none,
         sum(excluded_bloom.values()),
     )

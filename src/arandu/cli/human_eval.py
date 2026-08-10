@@ -1,7 +1,7 @@
 """CLI command: ``arandu build-human-eval-sample`` — stratified 80-pair sample (spec §5).
 
 Builds the human-comparison study sample (4 Bloom x 2 emic bands x 10) from the
-emic pre-pass scores of a run, joining each pair's CEP payload, and writes
+emic-judge scores of a run, joining each pair's CEP payload, and writes
 ``sample.jsonl`` + ``sample_manifest.json`` under
 ``results/<id>/human_eval/outputs/``.
 """
@@ -24,9 +24,7 @@ def build_human_eval_sample(
         str,
         typer.Option(
             "--id",
-            help=(
-                "Pipeline ID for the run. The emic_prepass and cep stages must both be populated."
-            ),
+            help=("Pipeline ID for the run. The emic_judge and cep stages must both be populated."),
         ),
     ],
     seed: Annotated[
@@ -39,11 +37,12 @@ def build_human_eval_sample(
 ) -> None:
     """Build the stratified human-comparison sample (80 pairs) for a run.
 
-    Pools the canonical-approved pairs scored by ``arandu emic-prepass``, bands
+    Pools the canonical-approved pairs scored by ``arandu emic-judge``, bands
     them by emic validity (duvidosa <=3 / limpa >=4), and draws 10 pairs from
     each of the 8 cells (4 Bloom levels x 2 bands) with a fixed seed. The
-    emic score is a sampling aid to cover the bands, not ground truth; the
-    human annotators remain the reference. Writes the sample + manifest under
+    emic score is the study's measurement of emic validity; this sample is
+    what the human annotators rate so agreement with it can be reported (spec
+    §6). Writes the sample + manifest under
     ``results/<id>/human_eval/outputs/``.
     """
     print_info(f"Run: {pipeline_id} | seed: {seed}")
@@ -61,9 +60,10 @@ def build_human_eval_sample(
         raise typer.Exit(code=1) from exc
 
     excluded_bloom_total = sum(manifest.excluded_bloom.values())
-    if manifest.excluded_none_score or excluded_bloom_total:
+    if manifest.excluded_none_score or excluded_bloom_total or manifest.excluded_not_approved:
         print_warning(
-            f"Excluded from frame: {manifest.excluded_none_score} null-score pair(s), "
+            f"Excluded from frame: {manifest.excluded_not_approved} not judge-approved "
+            f"pair(s), {manifest.excluded_none_score} null-score pair(s), "
             f"{excluded_bloom_total} out-of-frame-Bloom pair(s) "
             f"({manifest.excluded_bloom or 'none'})."
         )
