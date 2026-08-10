@@ -69,8 +69,17 @@ needed admin intervention). `scripts/slurm/container_teardown.sh` holds the
 shared fix; it only works when BOTH pieces are present: the stage command runs
 in the background and is `wait`-ed on (bash defers traps during a foreground
 external command), and the partition script carries
-`#SBATCH --signal=B:TERM@60`. Adopted by `rag/` (its own inlined copy, PR #152)
-and `emic/`. **`judge/`, `cep/` and `kg/` still lack it** and can still orphan.
+`#SBATCH --signal=B:TERM@60`. Sourced by `rag/` and `emic/`. **`judge/`, `cep/`
+and `kg/` still lack it** and can still orphan. A deploy that ships a
+`<step>_common.sh` without `container_teardown.sh` now aborts the job rather
+than running untrapped.
+
+**Compose project isolation.** Jobs share one compose project (named after the
+deploy directory) unless `COMPOSE_PROJECT_NAME` is set, and the ollama sidecars
+are listed under several profiles. So a `down --profile <x>` can stop a
+co-located job's sidecar, whose calls then fail into null results that its own
+checkpoint records as done. `emic/` scopes the project to the job id; the other
+steps do not yet.
 
 ## Submitting
 
@@ -94,7 +103,7 @@ PIPELINE_ID=<run-id> [overrides] sbatch [--exclude=<nodes>] scripts/slurm/<step>
 
 - **tupi** — the ONLY GPU partition we can use. Every GPU/ollama stage
   (build-kg, cep, judge-qa, emic-judge, answer, judge-answers, atlas_rag
-  retrieve) runs here. Frequently saturated by other users; when it is, **wait** — there is
+  retrieve) runs here. Frequently saturated by other users; when it is, **wait**: there is
   no faster GPU alternative for this account.
 - **draco** — **CPU-only, no GPU.** Idle and fast to schedule; use it for
   CPU-only work (root-container result prep, the khop retrieve, rag-analysis,

@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from arandu.shared.emic.settings import EmicJudgeSettings  # noqa: TC001 (Pydantic field type)
+
 EmicScope = Literal["all", "approved"]
 """Which CEP pairs the emic judge scores.
 
@@ -27,7 +29,7 @@ class EmicScore(BaseModel):
             errored for this pair.
         rationale: The judge's short justification.
         error: Error message when ``emic_score`` is ``None``.
-        is_valid: The pair's ``judge-qa`` verdict at scoring time — ``True``
+        is_valid: The pair's ``judge-qa`` verdict at scoring time: ``True``
             approved, ``False`` rejected, ``None`` never judged. Carried so
             emic validity can be cross-tabulated against approval without
             re-joining the CEP records, and so the sample builder can restrict
@@ -43,10 +45,24 @@ class EmicScore(BaseModel):
 
 
 class EmicSourceScores(BaseModel):
-    """Emic-validity scores for the in-scope pairs of one source interview."""
+    """Emic-validity scores for the in-scope pairs of one source interview.
+
+    Attributes:
+        source_file_id: Source interview id.
+        source_filename: Original media filename.
+        scope: The scope this file was produced under. Persisted because an
+            ``approved``-scope file is otherwise byte-indistinguishable from an
+            ``all``-scope one in which the judge approved everything, which
+            would make a downstream emic-validity x approval cross-tabulation
+            silently report 0 rejected pairs instead of "rejected pairs were
+            never scored". Defaults to ``None`` for files written before the
+            field existed.
+        scores: Per-pair ordinal scores.
+    """
 
     source_file_id: str
     source_filename: str
+    scope: EmicScope | None = None
     scores: list[EmicScore]
 
     def save(self, path: str | Path) -> None:
@@ -57,6 +73,21 @@ class EmicSourceScores(BaseModel):
     def load(cls, path: str | Path) -> EmicSourceScores:
         """Load per-source scores from JSON."""
         return cls.model_validate_json(Path(path).read_text(encoding="utf-8"))
+
+
+class EmicJudgeRunConfig(BaseModel):
+    """Config snapshotted into ``run_metadata.json`` for an emic-judge run.
+
+    Wraps the LLM settings together with the ``scope``, which is a CLI argument
+    rather than a settings field and would otherwise never reach any artifact.
+
+    Attributes:
+        scope: Which pairs the run scored (see :data:`EmicScope`).
+        llm: The resolved LLM settings for the run.
+    """
+
+    scope: EmicScope
+    llm: EmicJudgeSettings
 
 
 class EmicJudgeResult(BaseModel):
@@ -81,7 +112,11 @@ class EmicJudgeResult(BaseModel):
         sources: Total CEP source files discovered.
         completed_sources: Sources scored and persisted this invocation.
         resumed_sources: Sources skipped because already checkpointed.
-        failed_sources: Sources that failed to load (skipped, no output).
+        failed_sources: Sources that failed to load, or whose every selected
+            pair errored. The second case matters: a dead LLM sidecar produces
+            a full set of null scores rather than an exception, so without it a
+            total outage would be checkpointed as a successful run that
+            ``--resume`` never retries.
         selected_pairs: Pairs the scope selected for scoring this run.
         scored_pairs: Selected pairs that received an ordinal score.
         failed_pairs: Selected pairs whose LLM call errored.

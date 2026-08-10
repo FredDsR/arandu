@@ -1,4 +1,4 @@
-"""CLI command: ``arandu emic-judge`` — ordinal emic-validity scoring of approved CEP pairs.
+"""CLI command ``arandu emic-judge``: ordinal emic-validity scoring of CEP pairs.
 
 Runs the ``emic_validity`` ordinal criterion over the canonical-approved pairs
 of a populated run and writes per-source ordinal scores under
@@ -74,23 +74,26 @@ def emic_judge(
     test, a run feeding the agreement study must pin the model the thesis
     reports.
     """
-    settings = EmicJudgeSettings()
+    # Built inside the try: an out-of-range ARANDU_EMIC_JUDGE_* value raises
+    # pydantic.ValidationError (a ValueError), which the handler below turns
+    # into a readable message instead of a raw traceback in the SLURM log.
     print_info(f"Run: {pipeline_id} | scope: {scope}")
-    print_info(
-        f"Emic LLM: provider={settings.provider}, model={settings.model_id}, "
-        f"language={settings.language}, temperature={settings.temperature}, "
-        f"workers={settings.workers}"
-    )
-    if settings.workers > 1:
-        print_info(
-            f"Scoring {settings.workers} pairs concurrently "
-            "(ARANDU_EMIC_JUDGE_WORKERS). Match this with server-side slots "
-            "(OLLAMA_NUM_PARALLEL) and the per-slot VRAM budget."
-        )
     if rerun:
         print_warning("--rerun: clearing checkpoint; every source will be re-scored.")
 
     try:
+        settings = EmicJudgeSettings()
+        print_info(
+            f"Emic LLM: provider={settings.provider}, model={settings.model_id}, "
+            f"language={settings.language}, temperature={settings.temperature}, "
+            f"workers={settings.workers}"
+        )
+        if settings.workers > 1:
+            print_info(
+                f"Scoring {settings.workers} pairs concurrently "
+                "(ARANDU_EMIC_JUDGE_WORKERS). Match this with server-side slots "
+                "(OLLAMA_NUM_PARALLEL) and the per-slot VRAM budget."
+            )
         result = run_emic_judge_batch(
             pipeline_id=pipeline_id, settings=settings, rerun=rerun, scope=scope
         )
@@ -98,7 +101,9 @@ def emic_judge(
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
     except (RuntimeError, ValueError) as exc:
-        print_error(f"Invalid emic-judge configuration: {exc}")
+        # Covers both invalid ARANDU_EMIC_JUDGE_* values (pydantic
+        # ValidationError is a ValueError) and the unjudged-corpus preflight.
+        print_error(f"Cannot run the emic judge: {exc}")
         raise typer.Exit(code=1) from exc
     except OSError as exc:
         print_error(f"I/O error during the emic judge run: {exc}")

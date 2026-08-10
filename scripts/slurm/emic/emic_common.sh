@@ -26,7 +26,7 @@ set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
-# LLM settings — default to the local Ollama sidecar. Setting these explicitly
+# LLM settings default to the local Ollama sidecar. Setting these explicitly
 # shields the job from whatever lives in the repo's .env (which may point
 # OPENAI_API_KEY / ARANDU_LLM_BASE_URL at a cloud provider).
 #
@@ -72,6 +72,20 @@ export OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$PROJECT_DIR/cache/ollama}"
 
 : "${PIPELINE_ID:?PIPELINE_ID env var is required (e.g. 'PIPELINE_ID=thesis-run-01 sbatch ...')}"
 export PIPELINE_ID
+# Isolate this job's compose project.
+#
+# Without this every arandu job on the node shares one project (named after the
+# deploy directory), so `docker compose --profile emic-gpu down` reaches any
+# service in that project matching the profile. The ollama sidecars are listed
+# under the emic profiles, so an emic job starting or finishing next to a live
+# judge-qa job on the same tupi node would stop that job's sidecar: its
+# remaining LLM calls turn into null scores, and its checkpoint records them as
+# done, so its own --resume never retries them.
+#
+# Scoping the project to the job id makes teardown affect only our containers.
+# The stage container and its sidecar share this value, so `depends_on` and the
+# internal network still resolve.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-arandu-emic-${SLURM_JOB_ID:-local}}"
 
 INPUT_DIR_HOST="$ARANDU_RESULTS_DIR/$PIPELINE_ID/cep/outputs"
 OUTPUT_DIR_HOST="$ARANDU_RESULTS_DIR/$PIPELINE_ID/emic_judge/outputs"
@@ -103,6 +117,7 @@ echo "Workers:        ${ARANDU_EMIC_JUDGE_WORKERS:-<default>}"
 echo "Ollama slots:   ${OLLAMA_NUM_PARALLEL:-<compose default>}"
 echo "Ollama ctx:     ${OLLAMA_CONTEXT_LENGTH:-<compose default>}"
 echo "Ollama GPU:     $USE_GPU_OLLAMA"
+echo "Compose proj:   $COMPOSE_PROJECT_NAME"
 echo "Input Dir:      $INPUT_DIR_HOST"
 echo "Output Dir:     $OUTPUT_DIR_HOST"
 echo "=============================================="
@@ -129,8 +144,18 @@ fi
 
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
+
+# Deploy note: rsyncing this file without container_teardown.sh leaves the job
+# unable to start, which is the intended failure. Silently losing the trap would
+# mean orphaned GPU containers on the node.
+TEARDOWN_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_teardown.sh"
+if [ ! -f "$TEARDOWN_LIB" ]; then
+    echo "ERROR: $TEARDOWN_LIB not found; refusing to run without the teardown trap." >&2
+    echo "       Deploy scripts/slurm/container_teardown.sh alongside this script." >&2
+    exit 1
+fi
 # shellcheck source=scripts/slurm/container_teardown.sh
-source "${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_teardown.sh"
+source "$TEARDOWN_LIB"
 
 # ---------------------------------------------------------------------------
 # Disk preflight + cleanup (mirrors rag_common.sh; cluster nodes fill up)
@@ -148,7 +173,7 @@ DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
 [ -d "$DOCKER_ROOT" ] || DOCKER_ROOT=/var/lib/docker
 AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || true)
 AVAIL_GB=$(( ${AVAIL_KB:-0} / 1024 / 1024 ))
-echo "Docker storage: $DOCKER_ROOT — ${AVAIL_GB} GB available (min ${MIN_DISK_GB})"
+echo "Docker storage: $DOCKER_ROOT: ${AVAIL_GB} GB available (min ${MIN_DISK_GB})"
 if [ "${AVAIL_KB:-0}" -gt 0 ] && [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
     echo "ERROR: not enough disk on $DOCKER_ROOT (${AVAIL_GB} GB < ${MIN_DISK_GB} GB)." >&2
     exit 1

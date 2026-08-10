@@ -281,11 +281,11 @@ emic judgment deliberately changes.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `provider` | `str` | `"ollama"` | LLM provider: "ollama", "openai", or "custom" |
-| `model_id` | `str` | `"qwen3:14b"` | Model identifier. **Methodological parameter** — see the note below |
+| `model_id` | `str` | `"qwen3:14b"` | Model identifier. **Methodological parameter**: see the note below |
 | `base_url` | `str \| None` | `None` | Base URL override; required when `provider == "custom"` |
 | `temperature` | `float` | `0.1` | Lower than the other judges: the emic judgment is structural, not creative (spec §4.2 principle 8) |
 | `max_tokens` | `int` | `8192` | Response budget. qwen3 burns thinking tokens against it |
-| `language` | `"pt"` | `"pt"` | Narrowed to `pt` — the only `emic_validity` prompt template that ships today |
+| `language` | `"pt"` | `"pt"` | Narrowed to `pt`, the only `emic_validity` prompt template that ships today |
 | `workers` | `int` | `1` | Client-side concurrent LLM requests, honoured via `map_concurrent` |
 
 **The model is not a budget knob.** The scores this stage produces are the

@@ -103,11 +103,26 @@ def run_build_sample_batch(
             )
         record = QARecordCEP.load(cep_path)
         for score in scores.scores:
+            if score.pair_index >= len(record.qa_pairs):
+                raise ValueError(
+                    f"pair_index {score.pair_index} out of range for {cep_path.name} "
+                    f"({len(record.qa_pairs)} pairs); emic/cep stages are out of sync."
+                )
+            pair = record.qa_pairs[score.pair_index]
+
             # An `emic-judge --scope all` run scores rejected and never-judged
             # pairs too, so the emic outputs are NOT a pool of approved pairs.
             # The agreement study's frame is the approved corpus (spec §5), so
             # drop anything the judge did not approve before banding.
-            if score.is_valid is not True:
+            #
+            # Read the verdict off the CEP record, not off `score.is_valid`:
+            # that field is a snapshot taken when the emic judge ran, so a
+            # `judge-qa` re-run (e.g. a threshold change) would leave the frame
+            # pinned to the old verdicts, sampling pairs the corpus now rejects
+            # and excluding ones it now approves. The record loaded above is the
+            # authoritative copy. `score.is_valid` remains the provenance record
+            # of what the emic run saw.
+            if pair.is_valid is not True:
                 excluded_not_approved += 1
                 continue
             if score.emic_score is None:
@@ -116,11 +131,6 @@ def run_build_sample_batch(
             if score.bloom_level not in FRAME_BLOOM_LEVELS:
                 excluded_bloom[score.bloom_level] = excluded_bloom.get(score.bloom_level, 0) + 1
                 continue
-            if score.pair_index >= len(record.qa_pairs):
-                raise ValueError(
-                    f"pair_index {score.pair_index} out of range for {cep_path.name} "
-                    f"({len(record.qa_pairs)} pairs); emic/cep stages are out of sync."
-                )
             pair_id = f"{scores.source_file_id}:{score.pair_index}"
             if pair_id in seen_pair_ids:
                 raise ValueError(
@@ -129,7 +139,6 @@ def run_build_sample_batch(
                     f"source. Clean results/{pipeline_id}/emic_judge/outputs/ and re-run."
                 )
             seen_pair_ids.add(pair_id)
-            pair = record.qa_pairs[score.pair_index]
             pool.append(
                 PoolEntry(
                     pair_id=pair_id,
@@ -188,10 +197,12 @@ def run_build_sample_batch(
     results_mgr.complete_run(success=True)
 
     logger.info(
-        "Built human-eval sample: %d items across %d cells (pool=%d, excluded none=%d, bloom=%d).",
+        "Built human-eval sample: %d items across %d cells (pool=%d, excluded "
+        "not-approved=%d, none=%d, bloom=%d).",
         len(items),
         len(manifest.cell_counts),
         len(pool),
+        excluded_not_approved,
         excluded_none,
         sum(excluded_bloom.values()),
     )

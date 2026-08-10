@@ -213,7 +213,7 @@ sourcing a shared `<step>_common.sh`. Submit with `PIPELINE_ID` set (see
 tupi/draco partition rules):
 
 ```bash
-# Transcription / CEP / Judge / KG / RAG / Emic — pick the partition script
+# Transcription / CEP / Judge / KG / RAG / Emic: pick the partition script
 PIPELINE_ID=run-01 sbatch scripts/slurm/transcription/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/judge/qa/tupi.slurm

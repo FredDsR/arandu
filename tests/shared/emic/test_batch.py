@@ -295,12 +295,14 @@ class TestEmicJudgeBatch:
         assert out.scores[0].emic_score is None
         assert out.scores[0].error is not None
 
-    def test_unjudged_pairs_are_skipped_and_flagged(
+    def test_wholly_unjudged_corpus_aborts_before_any_llm_call(
         self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
     ) -> None:
-        # A run that was CEP-populated but never judge-qa'd: is_valid is None
-        # for every pair, so nothing is scored and the result flags the gap
-        # instead of reporting a clean 0/0 success.
+        # A CEP-populated but never judge-qa'd run. Under the default scope
+        # every pair is in scope, so without a preflight this would spend a full
+        # GPU allocation producing scores whose verdicts are all null -- and the
+        # sample builder discards every one of them, since its frame is the
+        # approved corpus. Abort before the client is even built.
         cep_outputs = tmp_path / "run5" / "cep" / "outputs"
         _write_cep_record(
             cep_outputs,
@@ -308,21 +310,109 @@ class TestEmicJudgeBatch:
             [_pair("Q1", approved=False, judged=False), _pair("Q2", approved=False, judged=False)],
         )
 
-        result = run_emic_judge_batch(
-            "run5", settings=settings, base_dir=tmp_path, scope="approved"
+        with pytest.raises(ValueError, match="carries a judge-qa verdict"):
+            run_emic_judge_batch("run5", settings=settings, base_dir=tmp_path)
+
+        assert mock_emic_client.generate_structured.call_count == 0
+        # No run dir left behind in IN_PROGRESS.
+        assert not (tmp_path / "run5" / "emic_judge").exists()
+
+    def test_partially_unjudged_corpus_still_runs(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        # The preflight only guards the wholly-unjudged case; a run with some
+        # judged pairs proceeds and records the null verdicts.
+        _write_cep_record(
+            tmp_path / "run5b" / "cep" / "outputs",
+            "src1",
+            [_pair("Q1", approved=True), _pair("Q2", approved=False, judged=False)],
         )
 
-        assert result.unjudged_pairs == 2
-        assert result.approved_pairs == 0
-        assert result.selected_pairs == 0
-        assert result.skipped_pairs == 2
-        assert result.scored_pairs == 0
-        assert mock_emic_client.generate_structured.call_count == 0  # nothing scored
-        assert result.completed_sources == 1  # source still processed (empty scores)
+        result = run_emic_judge_batch("run5b", settings=settings, base_dir=tmp_path)
+
+        assert result.selected_pairs == 2
+        assert result.unjudged_pairs == 1
         out = EmicSourceScores.load(
-            tmp_path / "run5" / "emic_judge" / "outputs" / "src1_cep_qa.json"
+            tmp_path / "run5b" / "emic_judge" / "outputs" / "src1_cep_qa.json"
         )
-        assert out.scores == []
+        assert [s.is_valid for s in out.scores] == [True, None]
+
+    def test_source_with_every_pair_failing_is_marked_failed_not_completed(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        # A dead LLM endpoint does not raise: JudgeCriterion.evaluate turns it
+        # into an error score. Without this guard the source would be
+        # checkpointed as done, the run reported successful, and `--resume`
+        # would never retry it.
+        mocker.patch(
+            "arandu.shared.emic.batch.build_llm_client_from_settings",
+            return_value=mocker.MagicMock(),
+        )
+        mocker.patch(
+            "arandu.shared.judge.criterion.OrdinalLLMCriterion.evaluate",
+            return_value=CriterionScore(
+                ordinal_score=None,
+                scale="ordinal",
+                threshold=0.0,
+                rationale="",
+                error="connection refused",
+            ),
+        )
+        _write_cep_record(
+            tmp_path / "run_dead" / "cep" / "outputs",
+            "src1",
+            [_pair(f"Q{n}", approved=True) for n in range(3)],
+        )
+
+        result = run_emic_judge_batch(
+            "run_dead",
+            settings=EmicJudgeSettings(provider="ollama", model_id="m"),
+            base_dir=tmp_path,
+        )
+
+        assert result.failed_pairs == 3
+        assert result.scored_pairs == 0
+        assert result.failed_sources == 1
+        assert result.completed_sources == 0
+
+        meta = json.loads(
+            (tmp_path / "run_dead" / "emic_judge" / "run_metadata.json").read_text(encoding="utf-8")
+        )
+        assert meta["status"] != "completed"
+
+        # And a resume must retry it rather than skip it.
+        again = run_emic_judge_batch(
+            "run_dead",
+            settings=EmicJudgeSettings(provider="ollama", model_id="m"),
+            base_dir=tmp_path,
+        )
+        assert again.resumed_sources == 0
+        assert again.selected_pairs == 3
+
+    def test_scope_is_part_of_the_resume_identity(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        # Switching scope must re-score, not silently reuse the narrower corpus.
+        _write_cep_record(
+            tmp_path / "run_sc" / "cep" / "outputs",
+            "src1",
+            [_pair("A", approved=True), _pair("B", approved=False)],
+        )
+
+        first = run_emic_judge_batch(
+            "run_sc", settings=settings, base_dir=tmp_path, scope="approved"
+        )
+        assert first.selected_pairs == 1
+
+        second = run_emic_judge_batch("run_sc", settings=settings, base_dir=tmp_path, scope="all")
+        assert second.resumed_sources == 0  # not skipped
+        assert second.selected_pairs == 2
+
+        out = EmicSourceScores.load(
+            tmp_path / "run_sc" / "emic_judge" / "outputs" / "src1_cep_qa.json"
+        )
+        assert out.scope == "all"
+        assert [s.is_valid for s in out.scores] == [True, False]
 
     def test_load_failure_counts_failed_source_and_marks_run_failed(
         self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings

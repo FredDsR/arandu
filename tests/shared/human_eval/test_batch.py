@@ -11,6 +11,7 @@ from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.emic.schemas import EmicScore, EmicSourceScores
 from arandu.shared.human_eval.batch import run_build_sample_batch
 from arandu.shared.human_eval.schemas import SampleItem, SampleManifest
+from arandu.shared.judge.schemas import JudgePipelineResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,6 +36,8 @@ def _write_source(
     cep_outputs.mkdir(parents=True, exist_ok=True)
     emic_outputs.mkdir(parents=True, exist_ok=True)
 
+    # The CEP record carries the authoritative judge-qa verdict; the frame is
+    # filtered on it, not on the snapshot in the emic outputs.
     pairs = [
         QAPairCEP(
             question=f"q{i}",
@@ -43,6 +46,7 @@ def _write_source(
             question_type="conceptual",
             confidence=0.9,
             bloom_level=bloom,
+            validation=JudgePipelineResult(stage_results={}, passed=True),
         )
         for i, (bloom, _score) in enumerate(specs)
     ]
@@ -100,34 +104,47 @@ class TestRunBuildSampleBatch:
         assert manifest.excluded_none_score == 1
         assert manifest.excluded_bloom == {"apply": 1, "create": 1}
 
-    def test_excludes_pairs_the_judge_did_not_approve(self, tmp_path: Path) -> None:
-        # An `emic-judge --scope all` run writes rejected and never-judged
-        # pairs into the emic outputs too. The agreement study's frame is the
-        # approved corpus, so those must never reach the pool -- otherwise the
-        # bands would be built over material the pipeline already discarded.
-        specs = _frame_specs(2)
-        _write_source(tmp_path, "run_scope", "s1", specs)
+    def test_frame_follows_the_live_cep_verdict_not_the_emic_snapshot(self, tmp_path: Path) -> None:
+        # An `emic-judge --scope all` run scores rejected pairs too, so the emic
+        # outputs are not a pool of approved pairs. The frame must come from the
+        # CEP record (the authoritative verdict), NOT from the is_valid snapshot
+        # frozen into the emic outputs -- otherwise a judge-qa re-run silently
+        # leaves the sample pinned to stale verdicts.
+        _write_source(tmp_path, "run_live", "s1", _frame_specs(3))
+        cep_path = next((tmp_path / "run_live" / "cep" / "outputs").glob("*_cep_qa.json"))
+        emic_path = next((tmp_path / "run_live" / "emic_judge" / "outputs").glob("*.json"))
 
-        emic_path = tmp_path / "run_scope" / "emic_judge" / "outputs" / "s1_cep_qa.json"
+        # The corpus rejects pair 0 while the emic snapshot still says approved.
+        record = QARecordCEP.load(cep_path)
+        record.qa_pairs[0].validation = JudgePipelineResult(stage_results={}, passed=False)
+        record.save(cep_path)
+
+        manifest = run_build_sample_batch("run_live", seed=1, base_dir=tmp_path, per_cell=2)
+        assert manifest.excluded_not_approved == 1  # live verdict wins
+        assert manifest.total_items == 16
+
+        # And the converse: mutating only the emic snapshot must change nothing,
+        # because it is provenance, not the frame.
         scores = EmicSourceScores.load(emic_path)
-        scores.scores[0].is_valid = False  # judged and rejected
-        scores.scores[1].is_valid = None  # never judged
+        for score in scores.scores:
+            score.is_valid = False
         scores.save(emic_path)
+
+        again = run_build_sample_batch("run_live", seed=1, base_dir=tmp_path, per_cell=2)
+        assert again.excluded_not_approved == 1
+        assert again.pool_sha256 == manifest.pool_sha256
+
+    def test_insufficient_approved_pairs_raises(self, tmp_path: Path) -> None:
+        # With too few approved pairs left in a cell the build fails loudly
+        # rather than silently shrinking the sample.
+        _write_source(tmp_path, "run_scope", "s1", _frame_specs(2))
+        cep_path = next((tmp_path / "run_scope" / "cep" / "outputs").glob("*_cep_qa.json"))
+        record = QARecordCEP.load(cep_path)
+        record.qa_pairs[0].validation = JudgePipelineResult(stage_results={}, passed=False)
+        record.save(cep_path)
 
         with pytest.raises(ValueError, match="has only"):
             run_build_sample_batch("run_scope", seed=1, base_dir=tmp_path, per_cell=2)
-
-        # And with enough approved material left, they are counted, not silent.
-        specs2 = _frame_specs(3)
-        _write_source(tmp_path, "run_scope2", "s1", specs2)
-        emic_path2 = tmp_path / "run_scope2" / "emic_judge" / "outputs" / "s1_cep_qa.json"
-        scores2 = EmicSourceScores.load(emic_path2)
-        scores2.scores[0].is_valid = False
-        scores2.save(emic_path2)
-
-        manifest = run_build_sample_batch("run_scope2", seed=1, base_dir=tmp_path, per_cell=2)
-        assert manifest.excluded_not_approved == 1
-        assert manifest.total_items == 16
 
     def test_payload_is_blinded(self, tmp_path: Path) -> None:
         _write_source(tmp_path, "run3", "s1", _frame_specs(2))
@@ -209,6 +226,7 @@ class TestRunBuildSampleBatch:
                         question_type="conceptual",
                         confidence=0.9,
                         bloom_level="remember",
+                        validation=JudgePipelineResult(stage_results={}, passed=True),
                     )
                 ],
                 model_id="m",

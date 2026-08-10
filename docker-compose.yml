@@ -355,7 +355,7 @@ services:
         required: false
 
     environment:
-      # Emic-judge settings — default to the local Ollama sidecar so Gemini
+      # Emic-judge settings default to the local Ollama sidecar so Gemini
       # values that may live in .env (OPENAI_API_KEY / ARANDU_LLM_BASE_URL)
       # don't leak into SLURM runs.
       #
@@ -369,6 +369,12 @@ services:
       - ARANDU_EMIC_JUDGE_LANGUAGE=${ARANDU_EMIC_JUDGE_LANGUAGE:-pt}
       - ARANDU_EMIC_JUDGE_TEMPERATURE=${ARANDU_EMIC_JUDGE_TEMPERATURE:-0.1}
       - ARANDU_EMIC_JUDGE_MAX_TOKENS=${ARANDU_EMIC_JUDGE_MAX_TOKENS:-8192}
+      # Cloud-provider credentials. emic_common.sh skips the ollama sidecar
+      # when PROVIDER is not ollama, so without these a documented
+      # provider=openai/custom run reaches build_llm_client_from_settings with
+      # no key and dies after the image build and disk preflight.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ARANDU_EMIC_JUDGE_API_KEY_ENV=${ARANDU_EMIC_JUDGE_API_KEY_ENV:-OPENAI_API_KEY}
       # Client-side concurrency. Pair with OLLAMA_NUM_PARALLEL and the per-slot
       # context VRAM budget; scripts/slurm/emic/tupi.slurm derives the server
       # slots from this value so they cannot drift.
@@ -376,7 +382,7 @@ services:
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
-    # No `command:` block — rely on the image's `ENTRYPOINT ["arandu"]` and the
+    # No `command:` block. Relies on the image's `ENTRYPOINT ["arandu"]` and the
     # CMD provided at invocation. The SLURM wrapper uses
     # `docker compose run arandu-emic emic-judge --id ... --scope ...`.
 

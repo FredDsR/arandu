@@ -43,8 +43,9 @@
 #
 # Required variables at teardown time: COMPOSE_FILE, DOCKER_PROFILE.
 #
-# Extracted from scripts/slurm/rag/rag_common.sh (PR #152), which still carries
-# its own copy; see the tracking task on unifying the remaining common scripts.
+# Extracted from scripts/slurm/rag/rag_common.sh (PR #152), which now sources
+# this file. judge/, cep/ and kg/ still have no teardown at all and can still
+# orphan containers on TIMEOUT; adopting it there is tracked separately.
 # =============================================================================
 
 arandu_teardown_containers() {

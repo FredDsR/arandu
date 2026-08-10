@@ -14,7 +14,7 @@
 #SBATCH --signal=B:TERM@60
 
 # =============================================================================
-# Arandu Emic Judge — TUPI Partition
+# Arandu Emic Judge on the TUPI Partition
 #
 # Scores the CEP pairs of a run with the ordinal `emic_validity` criterion
 # (qwen3:14b on the GPU-accelerated Ollama sidecar) and writes per-source
@@ -46,7 +46,7 @@ export USE_GPU_OLLAMA=true
 # the template is ~7.5 KB (~2k tokens pt), the segment is one `cep_4k` chunk
 # (RecursiveChunker chunk_size=4000, so <=4k tokens), Q+A add a few hundred.
 # Input ceiling ~6.5k tokens; the response budget is max_tokens=8192
-# (REASONING_MODEL_MAX_TOKENS — qwen3 burns thinking tokens against it). So
+# (REASONING_MODEL_MAX_TOKENS; qwen3 burns thinking tokens against it). So
 # ~15k is the working ceiling and 16384 leaves headroom.
 #
 # 4 x 16384 ~ 9.8 GB KV + ~9.3 GB weights ~ 19 GB, inside the envelope
