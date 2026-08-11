@@ -1,0 +1,341 @@
+# Régua da validade êmica: fonte única do texto que vai para o juiz LLM e para os
+# anotadores humanos.
+#
+# Por que este arquivo existe: o kappa ponderado entre o LLM e cada anotador (spec
+# §6) só mede concordância se os dois pontuarem na MESMA régua. Se o prompt e a
+# folha de instruções divergirem, o coeficiente passa a medir divergência de
+# tradução, e isso não é recuperável depois da anotação.
+#
+# Consumidores:
+#   - prompts/judge/criteria/emic_validity/pt/prompt.md  (juiz LLM)
+#   - docs/emic/annotator-instructions.pt.md             (anotadores humanos)
+#   - labeling_config.xml do Label Studio                (a construir)
+#
+# tests/shared/judge/test_emic_ruler.py falha se qualquer consumidor divergir
+# deste arquivo.
+
+signed_off: true
+signed_off_by: Fred (antropologia)
+signed_off_on: "2026-08-11"
+gate: anthropologist-validation-of-readings
+
+# --- Construto -------------------------------------------------------------
+
+construct:
+  emic: >-
+    Êmico é descrever nos termos de quem vive a situação: as categorias, as
+    medidas e as razões que a própria pessoa usa para explicar o mundo dela.
+  non_emic: >-
+    Não-êmico é descrever nos termos de quem observa: as categorias do
+    pesquisador, do técnico ou da teoria, aplicadas de fora sobre o que a pessoa
+    disse.
+  gradient: >-
+    Os dois não são opostos absolutos, e nenhum é errado em geral. Um par se
+    afasta do registro êmico por graus, e é esse afastamento que a escala de 1 a
+    5 mede. O que se quer registrar é o conhecimento da pessoa, não a tradução
+    dele para o vocabulário de quem a estuda.
+  question: >-
+    O par é gerado a partir de um trecho de entrevista. A pergunta a responder: a
+    própria pessoa reconheceria este par como fiel ao que quis dizer e a como ela
+    entende o mundo?
+  not_faithfulness: >-
+    Isto não é fidelidade ao texto. Um par pode citar corretamente o que foi dito
+    e ainda deslocar o sentido ao reenquadrá-lo.
+
+# --- Escala (rótulos curtos; são o texto do widget no Label Studio) ---------
+
+scale:
+  - score: 5
+    label: Preserva o sentido, a perspectiva e quem sabe ou decide.
+  - score: 4
+    label: Preserva o sentido, mas apaga um elemento situado ou a postura da pessoa.
+  - score: 3
+    label: >-
+      Acrescenta algo que a pessoa não disse, e o núcleo do que ela disse continua
+      reconhecível.
+  - score: 2
+    label: Acrescenta algo que a pessoa não disse e troca o motivo que ela deu.
+  - score: 1
+    label: Contradiz o que a pessoa disse, ou substitui a perspectiva dela por clichê.
+
+# --- Tipos de perda êmica --------------------------------------------------
+
+loss_types:
+  - name: Sentido alterado
+    what: A reformulação muda o que está sendo dito.
+    score: "1"
+  - name: Clichê sobre populações tradicionais
+    what: >-
+      Uma fórmula pronta ocupa o lugar do conhecimento da pessoa: sabedoria
+      ancestral, harmonia com a natureza, vínculo imemorial com o território.
+    score: "1"
+  - name: Informação de fora adicionada
+    what: >-
+      O par afirma algo que a pessoa não disse: uma explicação, um diagnóstico ou
+      uma categoria de análise.
+    score: 2 ou 3, ver o guia
+  - name: Lacuna preenchida
+    what: >-
+      O que a pessoa não disse é completado com aquilo que normalmente seria o
+      caso.
+    score: 2 ou 3, ver o guia
+  - name: Elemento situado apagado
+    what: >-
+      O sentido se preserva, mas desaparece quem sabe, decide ou age, ou o sinal
+      concreto que a pessoa usa.
+    score: "4"
+  - name: Postura apagada
+    what: >-
+      O conteúdo se preserva, mas desaparece como a pessoa se posiciona: a dúvida
+      vira certeza, ou a avaliação dela vira descrição neutra.
+    score: "4"
+
+# --- Disposições gerais ----------------------------------------------------
+
+provisions:
+  unit_of_judgment: >-
+    O objeto de avaliação é o par. Avalia-se a pergunta e a resposta juntas, e a
+    perda pode estar em qualquer uma das duas. Uma pergunta que pressupõe o que a
+    pessoa não disse, ou que arranca a fala do contexto em que ela foi dita, basta
+    para derrubar o par, ainda que a resposta seja sóbria.
+  question_calibrates: >-
+    A pergunta define o que conta como perda. Um detalhe que a pergunta não punha
+    em jogo pode desaparecer sem custo. O que carrega o conhecimento que a
+    pergunta pede, não. Se a pergunta trata de como algo é feito, perder o nome de
+    quem emprestou o dinheiro não é perda, desde que a lógica que a pessoa deu
+    continue inteira; se a pergunta trata de como se sabe algo, perder quem sabe é
+    perda. A pergunta calibra a expectativa de detalhe e nada além disso.
+  not_a_loss:
+    - Generalizar ou abstrair preservando o sentido. Alguma generalização é esperada.
+    - >-
+      Trocar uma palavra por outra sem apagar nada: dizer embarcação onde a pessoa
+      disse barco não custa ponto.
+    - >-
+      Perder um nome próprio ou um objeto específico quando a pergunta não pedia
+      aquele detalhe e a lógica que a pessoa enunciou continua inteira.
+    - Responder de forma curta, ou menos detalhada que o trecho.
+  out_of_scope: >-
+    Fora deste escopo: se o par está bem escrito, se a resposta está correta,
+    completa ou bem fundamentada no trecho. Aqui se julga apenas se a perspectiva
+    da pessoa foi preservada.
+
+# --- Guia de avaliação -----------------------------------------------------
+#
+# Cascata: primeira condição que casa decide. Ordem deliberada, a falha mais grave
+# vence (um par com informação adicionada E elemento situado apagado recebe 3, não
+# 4).
+
+guide:
+  locate: >-
+    Localize no trecho as passagens de que o par trata. Julgue o par contra essas
+    passagens, não contra o trecho inteiro.
+  extract: >-
+    Nessas passagens, identifique quatro coisas: o que a pessoa afirma; as
+    palavras e medidas que ela usa; quem sabe, decide ou age; e o que a pergunta
+    põe em jogo.
+  cascade_intro: >-
+    Percorra as condições em ordem e pare na primeira que se aplicar. A nota é a
+    dessa condição.
+  cascade:
+    - score: 1
+      condition: >-
+        O par contradiz o que a pessoa afirma, ou substitui a perspectiva dela por
+        clichê sobre populações tradicionais.
+    - score: 2
+      condition: >-
+        O par afirma algo que ela não disse, e essa adição troca o motivo que ela
+        deu por outro, fazendo a fala servir de exemplo de uma ideia que não é
+        dela.
+    - score: 3
+      condition: >-
+        O par afirma algo que ela não disse, mas o núcleo do que ela disse
+        continua reconhecível.
+    - score: 4
+      condition: >-
+        O par preserva o sentido, mas apaga um elemento situado que carrega o
+        conhecimento em jogo (quem sabe, decide ou age; o sinal concreto), ou
+        apaga a postura com que ela disse (a dúvida virou certeza, a avaliação
+        virou descrição neutra).
+    - score: 5
+      condition: Nenhuma das anteriores.
+  no_penalty: >-
+    Não reduzem a nota, por si sós: generalizar ou abstrair; usar vocabulário mais
+    formal; responder de forma curta; omitir um detalhe que a pergunta não pedia.
+    Só reduzem quando uma das condições acima se aplica.
+  name_the_condition: Na justificativa, nomeie a condição que decidiu a nota.
+
+# --- Exemplos --------------------------------------------------------------
+#
+# TODOS SINTÉTICOS. Nenhum vem de entrevista real, e isso não é acidental: um par
+# real usado como exemplo teria de sair do frame de análise (a nota do LLM sobre
+# um par presente no próprio prompt não é independente) e, na folha, primaria os
+# anotadores com conteúdo do corpus.
+
+examples_preamble: Casos construídos para ilustrar a escala. Nenhum vem de entrevista real.
+
+examples:
+  - score: 5
+    title: Nota 5
+    segment: >-
+      a gente não sai antes de ver a marca d'água no galpão do seu Ari; a rádio às
+      vezes fala, mas é a marca que decide.
+    question: Que critérios orientam a decisão de sair de casa durante uma cheia?
+    answer: >-
+      Os moradores só saem depois de conferir a marca d'água no galpão de um
+      vizinho; quando o aviso da rádio diverge desse sinal, eles seguem a marca.
+    why: >-
+      Nenhuma condição se aplica. O par abstrai ("um vizinho", "esse sinal") e
+      organiza os critérios em hierarquia, mas a hierarquia é a que a pessoa
+      formulou e quem decide continua na frase. Se estivesse escrito "a decisão se
+      apoia em um sinal local verificável", cairia para 4, porque o sujeito que
+      decide desapareceria.
+  - score: 4
+    title: Nota 4, elemento situado apagado
+    segment: quando o vento vira pra baixo a gente já sabe que não dá pra atravessar.
+    question: O que indica que a travessia não deve ser feita?
+    answer: A mudança na direção do vento indica que a travessia se torna inviável.
+    why: >-
+      O sentido está intacto e o vocabulário é aceitável. O que se perde é o "a
+      gente já sabe": um saber coletivo passa a ser apresentado como propriedade do
+      mundo, e não como algo que aquelas pessoas sabem ler.
+  - score: 4
+    title: Nota 4, postura apagada
+    segment: >-
+      eu acho que dessa vez a água subiu mais rápido que na outra cheia, mas não
+      sei dizer, foi de noite. Foi terrível, a gente perdeu tudo o que tinha
+      embaixo.
+    question: Como ela compara essa cheia com a anterior?
+    answer: >-
+      A elevação do nível da água foi mais rápida do que na cheia anterior,
+      resultando em perdas materiais nos pertences armazenados na parte inferior da
+      casa.
+    why: >-
+      O conteúdo está todo lá e nada de fora foi acrescentado. O que desaparece é a
+      postura: "eu acho que, não sei dizer" vira afirmação segura, e "foi terrível"
+      vira "perdas materiais". Ela não afirmou com essa certeza nem descreveu aquilo
+      com essa neutralidade.
+  - score: 3
+    title: Nota 3, informação de fora adicionada
+    segment: >-
+      faz dois anos que eu peço o cadastro e até hoje nada; cada vez que eu vou lá
+      falta um papel.
+    question: Qual a experiência dela com o cadastro?
+    answer: >-
+      As exigências documentais repetidas configuram uma barreira burocrática de
+      acesso ao cadastro.
+    why: >-
+      O núcleo continua reconhecível (pediu, não saiu, sempre falta papel), mas
+      "barreira burocrática de acesso" é uma explicação que ela não deu. Nada do que
+      ela disse é contradito.
+  - score: 3
+    title: Nota 3, lacuna preenchida
+    segment: esse ano eu plantei mais pra baixo, perto da sanga.
+    question: O que ela fez em relação ao plantio deste ano?
+    answer: Neste ano plantou em área mais baixa, próxima à sanga, buscando solo mais úmido.
+    why: >-
+      A parte factual está correta, mas "buscando solo mais úmido" é um motivo que
+      ela não deu, completado com o que normalmente seria o caso. O núcleo continua
+      reconhecível e nada é contradito, então é 3. Não é 2 porque ela não deu motivo
+      nenhum: não há motivo trocado, há motivo inventado onde não havia.
+  - score: 2
+    title: Nota 2
+    segment: >-
+      depois da enchente muita gente foi embora, foi pra cidade, pra casa de
+      parente. Meu genro foi. Eu fiquei. Não é que eu não pudesse ir, o meu cunhado
+      tinha lugar lá. É que aqui eu sei viver: eu sei a hora que o rio sobe, sei
+      onde botar as coisas, sei com quem contar.
+    question: Por que parte dos moradores permaneceu na área afetada após a enchente?
+    answer: >-
+      A permanência evidencia um processo de desterritorialização seletiva, em que
+      os moradores sem alternativa habitacional permaneceram expostos ao risco.
+    why: >-
+      O motivo que ela deu foi saber viver ali, e o par o substitui por falta de
+      alternativa, contradizendo o "não é que eu não pudesse ir". Ela reconheceria
+      os fatos e não a explicação. Não é 3 porque a adição não convive com o que foi
+      dito: troca o motivo. Não é 1 porque os fatos continuam corretos e não há
+      clichê.
+  - score: 1
+    title: Nota 1, sentido alterado
+    segment: >-
+      eu não vendo pra atravessador, prefiro vender na porta mesmo, ganho menos mas
+      recebo na hora.
+    question: Como ela comercializa o pescado?
+    answer: Vende para atravessadores porque precisa receber o pagamento imediatamente.
+    why: >-
+      A resposta afirma o contrário do que foi dito. Ela disse que não vende para
+      atravessador. Não há clichê nem informação de fora acrescentada: o que ela
+      disse foi invertido, e isso basta para a nota 1.
+  - score: 1
+    title: Nota 1, pelo clichê
+    segment: >-
+      eu pesco desde os nove anos, aprendi vendo meu pai; hoje tem dia que não paga
+      nem o diesel.
+    question: Como ele descreve sua relação com a pesca?
+    answer: >-
+      O pescador mantém uma relação ancestral de harmonia com o rio, guiada por uma
+      sabedoria tradicional transmitida entre gerações.
+    why: >-
+      Entra o clichê ("ancestral", "harmonia", "sabedoria tradicional") e desaparece
+      o que ele colocou, que é a pesca não pagar o próprio custo. Ele não
+      reconheceria nem os fatos nem a explicação.
+  - score: 1
+    title: Nota 1, pela pergunta
+    segment: >-
+      eu pesco desde os nove anos, aprendi vendo meu pai; hoje tem dia que não paga
+      nem o diesel.
+    question: Como a sabedoria ancestral dos pescadores é transmitida entre gerações?
+    answer: >-
+      O aprendizado ocorre pela observação do trabalho dos mais velhos, desde os
+      nove anos de idade.
+    why: >-
+      A resposta é sóbria e fiel ao trecho. A perda está na pergunta, que insere
+      "sabedoria ancestral", um clichê que a pessoa não usou, e faz o par inteiro
+      afirmar isso. A condição dispara pela pergunta, não pela resposta.
+
+# --- Só na folha dos anotadores --------------------------------------------
+#
+# Calibração de leitor humano. Fora do prompt de propósito: instrução negativa
+# ("não é 1 quando...") gasta atenção de um modelo pequeno, e a cascata já resolve
+# por condição positiva.
+
+annotator_only:
+  fine_boundaries: >-
+    As fronteiras são finas de propósito. 5 e 4 se separam por uma única coisa: se
+    o elemento situado (quem sabe, decide ou age, o sinal usado) continua no par. 3
+    e 2 se separam por saber se o que foi acrescentado convive com o que a pessoa
+    disse ou troca o motivo que ela deu. Hesitar entre notas vizinhas é esperado e
+    não é erro seu. Quando hesitar, volte ao guia e percorra as condições na ordem:
+    a primeira que se aplicar decide. Se a dúvida persistir, registre na
+    justificativa qual foi.
+  narrow_door_to_one: >-
+    Use 1 apenas se você puder apontar uma das duas coisas: uma afirmação que
+    contraria o que a pessoa disse, ou um clichê sobre populações tradicionais
+    ocupando o lugar da perspectiva dela. Não é 1: achar a resposta vaga, achar o
+    vocabulário formal demais, ou discordar da leitura sem conseguir apontar uma
+    dessas duas. Esses casos são 3 ou 4.
+
+# --- Só no prompt ----------------------------------------------------------
+#
+# O domínio (comunidades ribeirinhas, eventos climáticos) NÃO entra: nomeá-lo ativa
+# no modelo os esquemas sobre populações tradicionais que este critério existe para
+# detectar. O trecho da entrevista já entrega o campo.
+
+judge_only:
+  role: >-
+    Você é um avaliador rigoroso de pares pergunta-resposta gerados a partir de
+    entrevistas. Sua tarefa é avaliar a VALIDADE ÊMICA do par, com o rigor de um
+    antropólogo.
+  rationale_rules:
+    - Descreva o que a pessoa disse usando as palavras dela.
+    - >-
+      Não nomeie como diagnóstico institucional aquilo que ela colocou como queixa
+      ou como descrição concreta.
+    - Não introduza categoria de análise que ela não usou.
+  rationale_rules_closing: >-
+    Estas três regras valem para a sua justificativa. Quando a mesma coisa aparece
+    no par avaliado, é perda êmica e reduz a nota.
+  # A escala é ordinal: score é int com ge=1, le=5 (shared/judge/criterion.py).
+  # O validador arredonda fracionários half-up, então o placeholder <0-1> usado
+  # pelos critérios contínuos faria um 0.8 virar nota 1 (distorção) sem erro
+  # visível. Ver tests/shared/judge/test_emic_ruler.py.
+  output: 'Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <inteiro 1-5>}'

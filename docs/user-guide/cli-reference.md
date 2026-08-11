@@ -414,6 +414,16 @@ parameter (it defines the instrument under test), so a run feeding the
 agreement study must pin the model the dissertation describes. See
 [EmicJudgeSettings](configuration.md#emicjudgesettings).
 
+**The ruler is a signed-off single source.** The construct, the 1-5 scale, the
+loss types and the decision guide live in
+`prompts/judge/criteria/emic_validity/ruler.pt.yaml`, and both the judge prompt
+and the annotator sheet ([docs/emic/annotator-instructions.pt.md](../emic/annotator-instructions.pt.md))
+render it. The weighted kappa between the judge and each annotator only measures
+agreement if both score on the same ruler, so `tests/shared/judge/test_emic_ruler.py`
+fails if either artifact drifts. The `signed_off` field records the
+anthropologist gate; the annotation instrument refuses to build while it is
+false.
+
 **`emic-judge` options**:
 
 | Option | Default | Description |
