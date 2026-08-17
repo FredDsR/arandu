@@ -27,7 +27,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 - **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
 - **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
 - **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `rag-analysis`
-- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`, `emic-annotation-build`
+- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`, `emic-annotation-build`, `emic-annotation-push`
 - **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
@@ -407,6 +407,7 @@ reported.
 | `emic-judge` | Score a run's CEP pairs for emic validity (ordinal 1-5) |
 | `build-human-eval-sample` | Build the stratified human-comparison sample for a run |
 | `emic-annotation-build` | Build the Label Studio artifacts (labeling config, blinded tasks, manifest) for a run's sample |
+| `emic-annotation-push` | Create the Label Studio project from the built artifacts and import the tasks |
 
 **The emic score is a measurement, not a filter.** It is what the study
 reports; the human annotation round validates it by agreement rather than
@@ -471,6 +472,21 @@ repaired after annotation.
 
 **Rebuilding after a push is refused.** It would rewrite the join while
 annotators work against the old one, silently mislabelling every pull.
+
+### `arandu emic-annotation-push`
+
+Creates the Label Studio project from the built artifacts and imports the tasks.
+
+```bash
+export ARANDU_LABEL_STUDIO_URL=https://label.emcorrespondencia.cloud
+export ARANDU_LABEL_STUDIO_TOKEN=...   # Account & Settings -> Access Token
+arandu emic-annotation-push --id thesis-run-01
+```
+
+Uploads only what `emic-annotation-build` wrote, so the annotators see exactly
+what was audited. The project id is recorded in `manifest.json`; a second push
+is refused rather than silently creating a duplicate project that would split
+the annotators across two. `--force` overrides and records both ids.
 
 ---
 

@@ -51,3 +51,31 @@ class TestBuildCommand:
         result = runner.invoke(app, ["emic-annotation-build", "--id", "run-a", "--seed", "9"])
         assert result.exit_code == 0
         assert "annotation/outputs" in result.stdout
+
+
+class TestPushCommand:
+    def test_is_registered(self) -> None:
+        result = runner.invoke(app, ["--help"])
+        assert "emic-annotation-push" in result.stdout
+
+    def test_missing_credentials_exit_one(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "arandu.cli.annotation.LabelStudioSettings",
+            side_effect=ValueError("token is required"),
+        )
+        result = runner.invoke(app, ["emic-annotation-push", "--id", "run-a"])
+        assert result.exit_code == 1
+        # print_error writes to stderr_console; CliRunner keeps stdout/stderr
+        # separate on this click version, so the merged `.output` is what
+        # carries the message (see TestBuildCommand above).
+        assert "ARANDU_LABEL_STUDIO_TOKEN" in result.output
+
+    def test_duplicate_push_exits_one(self, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        mocker.patch("arandu.cli.annotation.build_client_from_settings")
+        mocker.patch(
+            "arandu.cli.annotation.run_push_annotation",
+            side_effect=ValueError("already pushed as project 42"),
+        )
+        result = runner.invoke(app, ["emic-annotation-push", "--id", "run-a"])
+        assert result.exit_code == 1
