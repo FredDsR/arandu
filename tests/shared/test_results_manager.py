@@ -12,6 +12,7 @@ import pytest
 
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import (
+    REDACTED_PLACEHOLDER,
     ConfigSnapshot,
     ExecutionEnvironment,
     HardwareInfo,
@@ -19,6 +20,7 @@ from arandu.shared.schemas import (
     PipelineType,
     RunMetadata,
     RunStatus,
+    is_secret_env_name,
 )
 
 if TYPE_CHECKING:
@@ -139,6 +141,88 @@ class TestConfigSnapshot:
         assert snapshot.config_values["workers"] == 4
         assert "ARANDU_MODEL_ID" in snapshot.environment_variables
         assert "OTHER_VAR" not in snapshot.environment_variables
+        assert snapshot.environment_variables["ARANDU_MODEL_ID"] == "env-model"
+
+
+class TestConfigSnapshotRedaction:
+    """A captured env var lands in run_metadata.json, so secrets never do."""
+
+    @pytest.fixture
+    def _config(self) -> type:
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test-model"
+
+        return TestConfig
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "ARANDU_LABEL_STUDIO_TOKEN",
+            "ARANDU_SOME_SECRET",
+            "ARANDU_DB_PASSWORD",
+            "ARANDU_OPENAI_API_KEY",
+            "ARANDU_GOOGLE_CREDENTIALS",
+            "ARANDU_lowercase_token",
+        ],
+    )
+    def test_credential_named_vars_are_redacted(
+        self, name: str, _config: type, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.dict(os.environ, {name: "s3cr3t-value"}, clear=True)
+
+        snapshot = ConfigSnapshot.from_config(_config(), env_prefix="ARANDU_")
+
+        assert snapshot.environment_variables[name] == REDACTED_PLACEHOLDER
+        assert "s3cr3t-value" not in json.dumps(snapshot.model_dump(mode="json"))
+
+    def test_the_key_survives_redaction(self, _config: type, mocker: MockerFixture) -> None:
+        """The snapshot must still record that the variable was set."""
+        mocker.patch.dict(os.environ, {"ARANDU_LABEL_STUDIO_TOKEN": "abc"}, clear=True)
+
+        snapshot = ConfigSnapshot.from_config(_config(), env_prefix="ARANDU_")
+
+        assert "ARANDU_LABEL_STUDIO_TOKEN" in snapshot.environment_variables
+
+    def test_non_secret_vars_are_captured_verbatim(
+        self, _config: type, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.dict(
+            os.environ,
+            {"ARANDU_LABEL_STUDIO_URL": "https://label.example.test", "ARANDU_WORKERS": "4"},
+            clear=True,
+        )
+
+        snapshot = ConfigSnapshot.from_config(_config(), env_prefix="ARANDU_")
+
+        assert snapshot.environment_variables["ARANDU_LABEL_STUDIO_URL"] == (
+            "https://label.example.test"
+        )
+        assert snapshot.environment_variables["ARANDU_WORKERS"] == "4"
+
+    def test_the_token_never_reaches_run_metadata_json(
+        self, tmp_path: Path, mocker: MockerFixture, mock_torch_cpu: MagicMock
+    ) -> None:
+        """The end-to-end path: an exported token must not land under results/."""
+        from pydantic import BaseModel
+
+        class TestConfig(BaseModel):
+            model_id: str = "test"
+
+        mocker.patch.dict(os.environ, {"ARANDU_LABEL_STUDIO_TOKEN": "s3cr3t-value"}, clear=True)
+
+        manager = ResultsManager(tmp_path, PipelineType.ANNOTATION, pipeline_id="run-a")
+        manager.create_run(TestConfig())
+
+        raw = (tmp_path / "run-a" / "annotation" / "run_metadata.json").read_text(encoding="utf-8")
+        assert "s3cr3t-value" not in raw
+        assert REDACTED_PLACEHOLDER in raw
+
+    def test_is_secret_env_name_is_case_insensitive(self) -> None:
+        assert is_secret_env_name("ARANDU_LABEL_STUDIO_TOKEN") is True
+        assert is_secret_env_name("arandu_label_studio_token") is True
+        assert is_secret_env_name("ARANDU_LABEL_STUDIO_URL") is False
 
 
 class TestRunMetadata:

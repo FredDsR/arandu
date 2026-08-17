@@ -1148,9 +1148,17 @@ Captures configuration at the time of run execution.
 |-------|------|----------|-------------|
 | `config_type` | `str` | Yes | Configuration class name |
 | `config_values` | `dict` | Yes | Configuration values as dictionary |
-| `environment_variables` | `dict[str, str]` | Yes | Relevant environment variables (default: empty dict) |
+| `environment_variables` | `dict[str, str]` | Yes | Relevant environment variables, with credential values redacted (default: empty dict) |
 
 **Class Method**: `from_config(config, env_prefix="ARANDU_")` - Creates snapshot from a Pydantic config object
+
+**Credential redaction**: the captured environment is written verbatim into
+every run's `run_metadata.json` under `results/`, which is a durable artifact.
+Any captured variable whose name contains `TOKEN`, `SECRET`, `PASSWORD`, `KEY`
+or `CREDENTIAL` (case-insensitive) has its value replaced by `***REDACTED***`.
+The key is kept, so the snapshot still records that the variable was set.
+There is no allowlist: `ARANDU_*_API_KEY_ENV` holds a variable *name* rather
+than a secret and is redacted too, which is harmless.
 
 **Example**:
 ```json
@@ -1163,7 +1171,8 @@ Captures configuration at the time of run execution.
   },
   "environment_variables": {
     "ARANDU_MODEL_ID": "openai/whisper-large-v3",
-    "ARANDU_DEVICE": "cuda"
+    "ARANDU_DEVICE": "cuda",
+    "ARANDU_LABEL_STUDIO_TOKEN": "***REDACTED***"
   }
 }
 ```
