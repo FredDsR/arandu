@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,15 @@ class LabelStudioSettings(BaseSettings):
     from the environment and never written to any artifact under ``results/``,
     because the labels directory is the study's most sensitive output.
 
+    ``token`` is a :class:`~pydantic.SecretStr`, not a plain ``str``: this is
+    the first settings class in this codebase to hold a live secret value
+    (``LLMSettings`` only stores an env-var *name*, ``api_key_env``, never the
+    key itself). ``SecretStr`` keeps the token out of Pydantic's default repr
+    and out of ``model_dump()``, so a future stray ``logger.info(settings)`` or
+    an unhandled exception that renders the object cannot print it. Callers
+    that need the raw value call ``token.get_secret_value()`` at the point of
+    use (see :func:`arandu.shared.annotation.client.build_client_from_settings`).
+
     Attributes:
         url: Base URL of the instance, without a trailing slash.
         token: Label Studio API token (Account and Settings, Access Token).
@@ -22,7 +31,7 @@ class LabelStudioSettings(BaseSettings):
     """
 
     url: str = Field(..., description="Base URL of the Label Studio instance")
-    token: str = Field(..., description="Label Studio API token")
+    token: SecretStr = Field(..., description="Label Studio API token")
     timeout: float = Field(default=60.0, gt=0, description="Per-request timeout in seconds")
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_LABEL_STUDIO_", extra="ignore")

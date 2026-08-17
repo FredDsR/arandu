@@ -30,7 +30,16 @@ class TestSettings:
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "abc")
         settings = LabelStudioSettings()
         assert settings.url == "https://label.example.test"
-        assert settings.token == "abc"
+        assert settings.token.get_secret_value() == "abc"
+
+    def test_token_never_appears_in_repr_or_model_dump(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://label.example.test")
+        monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "super-secret-value")
+        settings = LabelStudioSettings()
+        assert "super-secret-value" not in repr(settings)
+        assert "super-secret-value" not in str(settings.model_dump())
 
     def test_missing_token_is_a_validation_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("ARANDU_LABEL_STUDIO_TOKEN", raising=False)
@@ -71,6 +80,15 @@ class TestCreateProject:
         with pytest.raises(LabelStudioError) as excinfo:
             _client(handler).create_project("t", "<View/>")
         assert "403" in str(excinfo.value)
+        assert "secret-token" not in str(excinfo.value)
+
+    def test_transport_error_is_wrapped_without_the_token(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused")
+
+        with pytest.raises(LabelStudioError) as excinfo:
+            _client(handler).create_project("t", "<View/>")
+        assert "connection refused" in str(excinfo.value)
         assert "secret-token" not in str(excinfo.value)
 
     def test_response_without_an_id_is_an_error(self) -> None:

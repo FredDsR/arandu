@@ -136,7 +136,13 @@ def build_client_from_settings(settings: LabelStudioSettings) -> HttpLabelStudio
     Kept as a free function (the same shape as
     ``build_llm_client_from_settings``) so the CLI never constructs transport
     details by hand.
+
+    The ``SecretStr`` token is unwrapped here, at the settings-to-client
+    boundary: the client is transport only and should not know about
+    Pydantic's secret-wrapper type.
     """
     return HttpLabelStudioClient(
-        base_url=settings.url, token=settings.token, timeout=settings.timeout
+        base_url=settings.url,
+        token=settings.token.get_secret_value(),
+        timeout=settings.timeout,
     )
