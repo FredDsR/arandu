@@ -498,6 +498,23 @@ Both variables can equally live in `.env` at the project root; the settings
 class reads it like every other config in the project. `ARANDU_LABEL_STUDIO_TIMEOUT`
 (seconds, default `60`) is the third.
 
+**Either token type works, and you do not have to say which one you have.**
+Both come from the same screen (Account & Settings, Access Token), and the
+token's own shape selects the scheme:
+
+| What you copied | Looks like | What happens |
+| --------------- | ---------- | ------------ |
+| Personal access token (JWT) | three dot-separated segments, `eyJ...`-ish | It is a *refresh* token, which the API endpoints reject on their own. The client exchanges it at `POST /api/token/refresh` for a short-lived access token and sends `Authorization: Bearer <access>`. |
+| Legacy API token | one hex-ish string, no dots | Sent as `Authorization: Token <token>`. |
+
+Access tokens are short-lived, so the exchange is lazy, cached for the process,
+and redone once automatically if a request comes back 401 mid-run (a long
+import followed by an export can outlive one). A second 401 in a row is
+reported instead of retried: at that point the personal access token is expired
+or revoked, or `ARANDU_LABEL_STUDIO_URL` points at a different instance than
+the one that issued it. Neither the token you pasted nor the access token
+derived from it ever appears in an error message or a log line.
+
 **The token never lands under `results/`.** Two things keep it out. The settings
 field is a `SecretStr`, so it is masked in every repr and `model_dump()`. And
 every stage's `run_metadata.json` records the `ARANDU_*` environment as it was

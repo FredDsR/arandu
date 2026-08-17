@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -19,13 +20,26 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _client(handler: Any) -> HttpLabelStudioClient:
+def _client(handler: Any, token: str = "secret-token") -> HttpLabelStudioClient:
     transport = httpx.MockTransport(handler)
     return HttpLabelStudioClient(
         base_url="https://label.example.test",
-        token="secret-token",
+        token=token,
         transport=transport,
     )
+
+
+def _b64url(payload: dict[str, Any]) -> str:
+    """Encode a JWT segment the way a real token does, without the padding."""
+    raw = json.dumps(payload).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _jwt(token_type: str = "refresh") -> str:
+    """Build a JWT-shaped fixture token. No real credential is involved."""
+    header = _b64url({"alg": "HS256", "typ": "JWT"})
+    payload = _b64url({"token_type": token_type, "exp": 1, "jti": "fixture", "user_id": 1})
+    return f"{header}.{payload}.c2lnbmF0dXJl"
 
 
 class TestSettings:
@@ -93,6 +107,137 @@ class TestSettings:
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://label.example.test")
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "abc")
         assert isinstance(build_client_from_settings(LabelStudioSettings()), HttpLabelStudioClient)
+
+
+class TestAuthentication:
+    """Both token schemes, pinned by behaviour rather than by our assumption.
+
+    The live instance issues JWT personal access tokens and rejects the legacy
+    ``Token`` header outright. Asserting only the header our own code produces
+    could never have caught that, so these tests assert what the server is
+    asked for: which endpoints are called, in which order, with which body.
+    """
+
+    def test_a_legacy_token_is_sent_as_token_and_never_refreshes(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.url.path, request.headers.get("Authorization", "")))
+            return httpx.Response(201, json={"id": 42})
+
+        assert _client(handler, token="secret-token").create_project("t", "<View/>") == 42
+        assert calls == [("/api/projects/", "Token secret-token")]
+
+    def test_a_token_with_dots_but_no_json_payload_is_legacy(self) -> None:
+        """Decode failures fall back to the legacy scheme instead of raising."""
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.url.path, request.headers.get("Authorization", "")))
+            return httpx.Response(201, json={"id": 42})
+
+        _client(handler, token="not.a.jwt").create_project("t", "<View/>")
+        assert calls == [("/api/projects/", "Token not.a.jwt")]
+
+    def test_a_jwt_refresh_token_is_exchanged_for_a_bearer_access_token(self) -> None:
+        refresh = _jwt()
+        calls: list[tuple[str, str]] = []
+        bodies: list[Any] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.url.path, request.headers.get("Authorization", "")))
+            if request.url.path == "/api/token/refresh":
+                bodies.append(json.loads(request.read().decode()))
+                return httpx.Response(200, json={"access": "access-1"})
+            return httpx.Response(201, json={"id": 42})
+
+        assert _client(handler, token=refresh).create_project("t", "<View/>") == 42
+        assert [path for path, _ in calls] == ["/api/token/refresh", "/api/projects/"]
+        assert bodies == [{"refresh": refresh}]
+        assert calls[1][1] == "Bearer access-1"
+
+    def test_the_exchange_happens_once_and_is_cached(self) -> None:
+        refreshes = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal refreshes
+            if request.url.path == "/api/token/refresh":
+                refreshes += 1
+                return httpx.Response(200, json={"access": "access-1"})
+            if request.url.path.endswith("/import"):
+                return httpx.Response(201, json={"task_count": 1})
+            return httpx.Response(200, json=[])
+
+        client = _client(handler, token=_jwt())
+        client.import_tasks(42, [{"data": {}}])
+        client.export_annotations(42)
+
+        assert refreshes == 1
+
+    def test_a_401_triggers_exactly_one_re_exchange_and_one_retry(self) -> None:
+        issued = ["access-1", "access-2"]
+        seen: list[str] = []
+        refreshes = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal refreshes
+            if request.url.path == "/api/token/refresh":
+                access = issued[refreshes]
+                refreshes += 1
+                return httpx.Response(200, json={"access": access})
+            seen.append(request.headers.get("Authorization", ""))
+            if len(seen) == 1:
+                return httpx.Response(401, json={"detail": "token not valid"})
+            return httpx.Response(200, json=[{"id": 1}])
+
+        assert _client(handler, token=_jwt()).export_annotations(42) == [{"id": 1}]
+        assert refreshes == 2
+        assert seen == ["Bearer access-1", "Bearer access-2"]
+
+    def test_a_second_consecutive_401_raises_without_looping(self) -> None:
+        refresh = _jwt()
+        refreshes = 0
+        attempts = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal refreshes, attempts
+            if request.url.path == "/api/token/refresh":
+                refreshes += 1
+                return httpx.Response(200, json={"access": "access-token-value"})
+            attempts += 1
+            return httpx.Response(401, json={"detail": "token not valid"})
+
+        with pytest.raises(LabelStudioError) as excinfo:
+            _client(handler, token=refresh).export_annotations(42)
+
+        assert refreshes == 2
+        assert attempts == 2
+        message = str(excinfo.value)
+        assert "401" in message
+        assert refresh not in message
+        assert "access-token-value" not in message
+
+    def test_a_failed_refresh_is_an_actionable_error_without_the_tokens(self) -> None:
+        refresh = _jwt()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/api/token/refresh"
+            return httpx.Response(401, json={"detail": refresh, "code": "token_not_valid"})
+
+        with pytest.raises(LabelStudioError) as excinfo:
+            _client(handler, token=refresh).create_project("t", "<View/>")
+
+        message = str(excinfo.value)
+        assert "Access Token" in message
+        assert "ARANDU_LABEL_STUDIO_URL" in message
+        assert refresh not in message
+
+    def test_a_refresh_response_without_an_access_token_is_an_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"refresh": "rotated"})
+
+        with pytest.raises(LabelStudioError, match="access"):
+            _client(handler, token=_jwt()).create_project("t", "<View/>")
 
 
 class TestCreateProject:
