@@ -27,7 +27,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 - **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
 - **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
 - **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `rag-analysis`
-- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`
+- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`, `emic-annotation-build`
 - **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
@@ -406,6 +406,7 @@ reported.
 |---------|-------------|
 | `emic-judge` | Score a run's CEP pairs for emic validity (ordinal 1-5) |
 | `build-human-eval-sample` | Build the stratified human-comparison sample for a run |
+| `emic-annotation-build` | Build the Label Studio artifacts (labeling config, blinded tasks, manifest) for a run's sample |
 
 **The emic score is a measurement, not a filter.** It is what the study
 reports; the human annotation round validates it by agreement rather than
@@ -444,6 +445,32 @@ arandu build-human-eval-sample --id project-001 --seed 42
 The sample builder keeps its frame on the judge-approved corpus even when
 `emic-judge` scored everything: pairs the judge rejected (or never judged) are
 dropped and counted in the manifest's `excluded_not_approved`.
+
+### `arandu emic-annotation-build`
+
+Turns a run's human-eval sample into Label Studio artifacts. Offline and
+deterministic: no network, no credential.
+
+```bash
+arandu emic-annotation-build --id thesis-run-01 --seed 20260817
+```
+
+Writes to `results/<id>/annotation/outputs/`:
+
+| File | Contents |
+| --- | --- |
+| `labeling_config.xml` | The annotation interface, with the 1-5 anchors rendered verbatim from `prompts/judge/criteria/emic_validity/ruler.pt.yaml`. |
+| `tasks.json` | The blinded tasks. Each carries only `task_id`, `segment`, `question`, `answer`. |
+| `manifest.json` | Seed, provenance hashes, and the `task_id -> pair_id` join. Never uploaded. |
+
+**The sign-off gate is mechanical.** While the ruler carries `signed_off: false`
+the command refuses to run and names the gate. The anchors the annotators read
+have to be the reviewed ones: a divergence from the judge prompt makes the
+weighted kappa measure translation drift instead of agreement, and it cannot be
+repaired after annotation.
+
+**Rebuilding after a push is refused.** It would rewrite the join while
+annotators work against the old one, silently mislabelling every pull.
 
 ---
 
