@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
@@ -14,6 +14,9 @@ from arandu.shared.annotation.client import (
     build_client_from_settings,
 )
 from arandu.shared.annotation.settings import LabelStudioSettings
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _client(handler: Any) -> HttpLabelStudioClient:
@@ -52,6 +55,39 @@ class TestSettings:
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://label.example.test/")
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "abc")
         assert LabelStudioSettings().url == "https://label.example.test"
+
+    def test_reads_a_dot_env_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """`.env.example` documents these vars, so `.env` has to be read."""
+        monkeypatch.delenv("ARANDU_LABEL_STUDIO_URL", raising=False)
+        monkeypatch.delenv("ARANDU_LABEL_STUDIO_TOKEN", raising=False)
+        (tmp_path / ".env").write_text(
+            "ARANDU_LABEL_STUDIO_URL=https://from-dotenv.example.test\n"
+            "ARANDU_LABEL_STUDIO_TOKEN=dotenv-token\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        settings = LabelStudioSettings()
+
+        assert settings.url == "https://from-dotenv.example.test"
+        assert settings.token.get_secret_value() == "dotenv-token"
+
+    def test_the_environment_wins_over_dot_env(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".env").write_text(
+            "ARANDU_LABEL_STUDIO_URL=https://from-dotenv.example.test\n"
+            "ARANDU_LABEL_STUDIO_TOKEN=dotenv-token\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://from-env.example.test")
+        monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "env-token")
+
+        settings = LabelStudioSettings()
+
+        assert settings.url == "https://from-env.example.test"
+        assert settings.token.get_secret_value() == "env-token"
 
     def test_builder_returns_a_configured_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://label.example.test")

@@ -11,8 +11,17 @@ class LabelStudioSettings(BaseSettings):
 
     The token is required and has no default: a missing credential must fail
     loudly at startup rather than produce a confusing 401 mid-push. It is read
-    from the environment and never written to any artifact under ``results/``,
-    because the labels directory is the study's most sensitive output.
+    from the environment or from ``.env``, matching every other settings class
+    in this codebase (``ResultsConfig``, ``KGConfig``, the QA and transcription
+    configs), so a documented ``.env`` entry is not silently ignored.
+
+    The token value never reaches an artifact under ``results/``. Two mechanisms
+    keep it out, because this stage writes the study's most sensitive output:
+    ``SecretStr`` masks it in every repr and ``model_dump()`` (so it cannot
+    reach a ``ConfigSnapshot``'s ``config_values``), and
+    :func:`~arandu.shared.schemas.is_secret_env_name` redacts the raw
+    ``ARANDU_LABEL_STUDIO_TOKEN`` environment variable out of the environment
+    snapshot every stage writes into its ``run_metadata.json``.
 
     ``token`` is a :class:`~pydantic.SecretStr`, not a plain ``str``: this is
     the first settings class in this codebase to hold a live secret value
@@ -34,7 +43,13 @@ class LabelStudioSettings(BaseSettings):
     token: SecretStr = Field(..., description="Label Studio API token")
     timeout: float = Field(default=60.0, gt=0, description="Per-request timeout in seconds")
 
-    model_config = SettingsConfigDict(env_prefix="ARANDU_LABEL_STUDIO_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="ARANDU_LABEL_STUDIO_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     @field_validator("url")
     @classmethod
