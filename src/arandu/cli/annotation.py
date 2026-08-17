@@ -20,7 +20,7 @@ from arandu.shared.annotation.build import run_build_annotation
 from arandu.shared.annotation.client import LabelStudioError, build_client_from_settings
 from arandu.shared.annotation.pull import run_pull_annotation
 from arandu.shared.annotation.push import run_push_annotation
-from arandu.shared.annotation.ruler import RulerNotSignedOffError
+from arandu.shared.annotation.ruler import RULER_PATH, RulerNotSignedOffError
 from arandu.shared.annotation.settings import LabelStudioSettings
 from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
@@ -54,6 +54,15 @@ def emic_annotation_build(
         raise typer.Exit(code=1) from exc
     except FileNotFoundError as exc:
         print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    except KeyError as exc:
+        # render_labeling_config indexes the ruler directly, so a ruler missing
+        # a section surfaces here. A raw traceback would say nothing about which
+        # file to fix.
+        print_error(
+            f"The emic ruler is missing a required key ({exc}). The labeling config cannot be "
+            f"rendered without it. Ruler: {RULER_PATH}"
+        )
         raise typer.Exit(code=1) from exc
     except ValueError as exc:
         print_error(f"Could not build the annotation instrument: {exc}")
@@ -142,7 +151,10 @@ def emic_annotation_pull(
         int | None,
         typer.Option(
             "--project-id",
-            help="Project to pull from. Required when a --force re-push recorded several.",
+            help=(
+                "Project to pull from. Required when a --force re-push recorded several. "
+                "Not usable together with -f."
+            ),
         ),
     ] = None,
 ) -> None:
@@ -152,6 +164,10 @@ def emic_annotation_pull(
     anonymous ids (``A1``, ``A2``, ``A3``). No email is ever requested from the
     API or written to any artifact. With ``-f`` the export is read from disk and
     no credential is needed.
+
+    ``labels/`` is left holding exactly what this pull wrote: files from an
+    earlier, wider pull that this export does not cover are removed and
+    reported, so the agreement analysis never reads a mix of two pulls.
     """
     client = None
     settings = None
@@ -192,6 +208,11 @@ def emic_annotation_pull(
         if client is not None:
             client.close()
 
+    if summary.stale_removed:
+        print_warning(
+            f"{summary.stale_removed} label file(s) from an earlier pull were removed: this "
+            f"export did not cover them. labels/ now holds only what this pull wrote."
+        )
     if summary.skipped:
         print_warning(
             f"{summary.skipped} annotation(s) were skipped in Label Studio and carry no "

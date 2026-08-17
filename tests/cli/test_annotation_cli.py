@@ -11,6 +11,7 @@ from arandu.cli.app import app
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
     from pytest_mock import MockerFixture
 
 runner = CliRunner()
@@ -51,6 +52,21 @@ class TestBuildCommand:
         result = runner.invoke(app, ["emic-annotation-build", "--id", "run-a", "--seed", "9"])
         assert result.exit_code == 0
         assert "annotation/outputs" in result.stdout
+
+    def test_a_malformed_ruler_exits_one_instead_of_traceback(self, mocker: MockerFixture) -> None:
+        """render_labeling_config indexes the ruler, so a missing key is a KeyError."""
+        mocker.patch(
+            "arandu.cli.annotation.run_build_annotation", side_effect=KeyError("loss_types")
+        )
+        result = runner.invoke(app, ["emic-annotation-build", "--id", "x", "--seed", "1"])
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        # print_error writes to stderr_console; the merged `.output` carries it
+        # (see test_unsigned_ruler_exits_one_and_names_the_gate above).
+        # Rich folds the long ruler path across lines; rejoin before matching.
+        unwrapped = "".join(result.output.split())
+        assert "loss_types" in unwrapped
+        assert "ruler.pt.yaml" in unwrapped
 
 
 class TestPushCommand:
@@ -124,7 +140,9 @@ class TestPullCommand:
         assert pull.call_args.kwargs["project_id"] is None
 
     def test_skips_are_reported(self, mocker: MockerFixture) -> None:
-        summary = mocker.Mock(project_id=42, annotators={"A1": 2}, total_items=3, skipped=1)
+        summary = mocker.Mock(
+            project_id=42, annotators={"A1": 2}, total_items=3, skipped=1, stale_removed=0
+        )
         mocker.patch("arandu.cli.annotation.LabelStudioSettings")
         mocker.patch("arandu.cli.annotation.build_client_from_settings")
         mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
@@ -133,3 +151,50 @@ class TestPullCommand:
         # print_warning writes to stderr_console; the merged `.output` carries it
         # (see TestBuildCommand above).
         assert "skipped" in result.output
+
+    def test_removed_stale_label_files_are_reported(self, mocker: MockerFixture) -> None:
+        """A label file that vanishes must be visible, not silent."""
+        summary = mocker.Mock(
+            project_id=42, annotators={"A1": 2}, total_items=3, skipped=0, stale_removed=2
+        )
+        mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        mocker.patch("arandu.cli.annotation.build_client_from_settings")
+        mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
+        result = runner.invoke(app, ["emic-annotation-pull", "--id", "run-a"])
+        assert result.exit_code == 0
+        unwrapped = "".join(result.output.split())
+        assert "2labelfile(s)fromanearlierpullwereremoved" in unwrapped
+
+    def test_a_file_and_a_project_id_together_exit_one(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The core refuses the pair; the CLI must surface it as exit 1, not ignore it."""
+        from arandu.shared.annotation.build import MANIFEST_FILENAME
+        from arandu.shared.annotation.schemas import AnnotationManifest
+
+        outputs = tmp_path / "results" / "run-a" / "annotation" / "outputs"
+        outputs.mkdir(parents=True)
+        AnnotationManifest(
+            pipeline_id="run-a",
+            seed=5,
+            total_items=1,
+            per_cell=15,
+            pool_sha256="c" * 64,
+            ruler_sha256="d" * 64,
+            task_map={"0": "src-a:0"},
+            project_id=42,
+            project_ids=[42],
+        ).save(outputs / MANIFEST_FILENAME)
+        monkeypatch.setenv("ARANDU_RESULTS_BASE_DIR", str(tmp_path / "results"))
+
+        export = tmp_path / "export.json"
+        export.write_text("[]", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            ["emic-annotation-pull", "--id", "run-a", "-f", str(export), "--project-id", "99"],
+        )
+
+        assert result.exit_code == 1
+        unwrapped = "".join(result.output.split())
+        assert "--project-id99" in unwrapped
+        assert not (outputs / "labels").exists()
