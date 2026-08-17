@@ -10,6 +10,7 @@ import yaml
 
 from arandu.shared.annotation.build import (
     CONFIG_FILENAME,
+    INSTRUCTION_FILENAME,
     LABELS_DIRNAME,
     MANIFEST_FILENAME,
     TASKS_FILENAME,
@@ -118,12 +119,24 @@ class TestSignOffGate:
 
 
 class TestArtifacts:
-    def test_writes_the_three_artifacts(self, sample_run: Path) -> None:
+    def test_writes_the_four_artifacts(self, sample_run: Path) -> None:
         run_build_annotation("run-a", seed=5, base_dir=sample_run)
         outputs = sample_run / "run-a" / "annotation" / "outputs"
         assert (outputs / CONFIG_FILENAME).exists()
+        assert (outputs / INSTRUCTION_FILENAME).exists()
         assert (outputs / TASKS_FILENAME).exists()
         assert (outputs / MANIFEST_FILENAME).exists()
+
+    def test_the_instruction_holds_the_full_ruler(self, sample_run: Path) -> None:
+        """Push transports it verbatim, so the build is where it has to be correct."""
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        outputs = sample_run / "run-a" / "annotation" / "outputs"
+        html = (outputs / INSTRUCTION_FILENAME).read_text(encoding="utf-8")
+        ruler = yaml.safe_load(RULER_PATH.read_text(encoding="utf-8"))
+        assert ruler["construct"]["emic"] in html
+        for entry in ruler["guide"]["cascade"]:
+            assert entry["condition"] in html
+        assert ruler["judge_only"]["role"] not in html
 
     def test_task_count_matches_the_sample(self, sample_run: Path) -> None:
         manifest = run_build_annotation("run-a", seed=5, base_dir=sample_run)

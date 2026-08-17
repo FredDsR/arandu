@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from arandu.shared.annotation.build import CONFIG_FILENAME, MANIFEST_FILENAME, TASKS_FILENAME
+from arandu.shared.annotation.build import (
+    CONFIG_FILENAME,
+    INSTRUCTION_FILENAME,
+    MANIFEST_FILENAME,
+    TASKS_FILENAME,
+)
 from arandu.shared.annotation.client import LabelStudioError
 from arandu.shared.annotation.push import run_push_annotation
 from arandu.shared.annotation.schemas import AnnotationManifest
@@ -48,6 +53,7 @@ def built(tmp_path: Path) -> Path:
     outputs = tmp_path / "run-a" / "annotation" / "outputs"
     outputs.mkdir(parents=True)
     (outputs / CONFIG_FILENAME).write_text("<View/>", encoding="utf-8")
+    (outputs / INSTRUCTION_FILENAME).write_text("<h1>A régua</h1>", encoding="utf-8")
     (outputs / TASKS_FILENAME).write_text(
         json.dumps([{"data": {"task_id": 0, "segment": "s", "question": "q", "answer": "a"}}]),
         encoding="utf-8",
@@ -124,7 +130,38 @@ class TestSkipButton:
     def test_create_disables_the_skip_button(self, built: Path) -> None:
         client = FakeClient()
         run_push_annotation("run-a", client=client, base_dir=built)
-        assert client.settings[0] == {"show_skip_button": False}
+        assert client.settings[0] is not None
+        assert client.settings[0]["show_skip_button"] is False
+
+
+class TestInstruction:
+    """The full ruler travels as the project's instructions, not on the canvas."""
+
+    def test_create_sends_the_instruction_html_from_disk(self, built: Path) -> None:
+        client = FakeClient()
+        run_push_annotation("run-a", client=client, base_dir=built)
+        assert client.settings[0] is not None
+        assert client.settings[0]["expert_instruction"] == "<h1>A régua</h1>"
+
+    def test_create_turns_the_instruction_button_on(self, built: Path) -> None:
+        client = FakeClient()
+        run_push_annotation("run-a", client=client, base_dir=built)
+        assert client.settings[0] is not None
+        assert client.settings[0]["show_instruction"] is True
+
+    def test_push_renders_nothing_itself(self, built: Path) -> None:
+        """Push transports only what the build wrote; the artifact is the authority."""
+        outputs = built / "run-a" / "annotation" / "outputs"
+        (outputs / INSTRUCTION_FILENAME).write_text("<p>substituído</p>", encoding="utf-8")
+        client = FakeClient()
+        run_push_annotation("run-a", client=client, base_dir=built)
+        assert client.settings[0] is not None
+        assert client.settings[0]["expert_instruction"] == "<p>substituído</p>"
+
+    def test_a_missing_instruction_names_the_build_command(self, built: Path) -> None:
+        (built / "run-a" / "annotation" / "outputs" / INSTRUCTION_FILENAME).unlink()
+        with pytest.raises(FileNotFoundError, match="emic-annotation-build"):
+            run_push_annotation("run-a", client=FakeClient(), base_dir=built)
 
 
 class TestAtomicity:

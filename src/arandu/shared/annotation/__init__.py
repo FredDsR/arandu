@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from arandu.shared.annotation.labeling_config import render_labeling_config
+from arandu.shared.annotation.labeling_config import (
+    render_expert_instruction,
+    render_labeling_config,
+)
 from arandu.shared.annotation.ruler import (
     RULER_PATH,
     RulerNotSignedOffError,
@@ -25,6 +28,7 @@ __all__ = [
     "AnnotationTask",
     "RulerNotSignedOffError",
     "load_ruler",
+    "render_expert_instruction",
     "render_labeling_config",
     "require_signed_off",
     "ruler_sha256",

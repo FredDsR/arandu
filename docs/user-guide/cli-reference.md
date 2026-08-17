@@ -461,9 +461,32 @@ Writes to `results/<id>/annotation/outputs/`:
 
 | File | Contents |
 | --- | --- |
-| `labeling_config.xml` | The annotation interface, with the 1-5 anchors rendered verbatim from `prompts/judge/criteria/emic_validity/ruler.pt.yaml`. |
+| `labeling_config.xml` | The annotation canvas, with the 1-5 anchors rendered verbatim from `prompts/judge/criteria/emic_validity/ruler.pt.yaml`. |
+| `expert_instruction.html` | The full ruler, for the project's instructions modal. Plain semantic HTML, no external resource. |
 | `tasks.json` | The blinded tasks. Each carries only `task_id`, `segment`, `question`, `answer`. |
 | `manifest.json` | Seed, provenance hashes, and the `task_id -> pair_id` join. Never uploaded. |
+
+**The ruler reaches the annotator through two surfaces.** Rendering all of it on
+the canvas put roughly two screens of prose between the pair and the rating
+widget, so a 4000-character segment had scrolled out of view by the time the
+annotator reached the radio buttons, once per task and 120 times per annotator.
+The split:
+
+| Surface | Holds | Where it shows |
+| --- | --- | --- |
+| `expert_instruction.html` | The whole annotator-facing ruler: construct, scale, loss types, provisions, the full scoring guide, the calibration. | Behind the Label Studio help button, in a modal (`show_instruction` is turned on by the push). |
+| `labeling_config.xml` | A collapsed summary, **closed by default**: the scoring cascade, the "does not reduce the score" list, and the calibration about the fine boundaries and the narrow door to 1. | On the canvas, above the pair. |
+
+The canvas order is header, collapsed summary, the pair, then the rating widget
+and the rationale box. The pair sits immediately above the widget and the
+segment renders in a height-capped box with its own scrollbar, so a long chunk
+scrolls inside itself instead of pushing the rating off screen.
+
+The 1-5 anchor sentences stay on the options themselves in
+`labeling_config.xml`; that placement is the instrument. Judge-only material
+(the role framing, the JSON output contract, the rationale rules) appears in
+neither surface: it would prime the annotator with the machine's framing. Both
+are checked verbatim against the ruler by the test suite.
 
 **The sign-off gate is mechanical.** While the ruler carries `signed_off: false`
 the command refuses to run and names the gate. The anchors the annotators read
@@ -536,6 +559,12 @@ The project is created with the Label Studio Skip button turned off
 (`show_skip_button: false`). A skip writes an annotation with no rating in it,
 which occupies the slot of a real one; `required="true"` on the rating widget
 blocks Submit, not Skip.
+
+The create call also carries the project's instructions: `expert_instruction`
+is the contents of `expert_instruction.html` as the build wrote it, and
+`show_instruction: true` puts the help button that opens it in front of the
+annotator. Push renders nothing of its own here either, so the ruler the
+annotators read is still exactly the file an auditor reviewed.
 
 If Label Studio accepts fewer tasks than were sent, the push fails naming both
 counts. Silently importing 118 of 120 would leave two pairs indistinguishable

@@ -40,10 +40,11 @@ def emic_annotation_build(
     """Build the Label Studio artifacts for a run's human-eval sample.
 
     Offline and deterministic: reads ``sample.jsonl`` and the signed-off emic
-    ruler, and writes ``labeling_config.xml``, ``tasks.json`` and
-    ``manifest.json`` under ``results/<id>/annotation/outputs/``. No network and
-    no credential is involved, so the artifacts can be audited for blinding and
-    anchor fidelity before anything reaches an annotator.
+    ruler, and writes ``labeling_config.xml``, ``expert_instruction.html``,
+    ``tasks.json`` and ``manifest.json`` under
+    ``results/<id>/annotation/outputs/``. No network and no credential is
+    involved, so the artifacts can be audited for blinding and anchor fidelity
+    before anything reaches an annotator.
     """
     print_info(f"Run: {pipeline_id} | seed: {seed}")
 

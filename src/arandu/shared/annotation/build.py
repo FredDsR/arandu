@@ -2,8 +2,8 @@
 
 This is the auditable half: no network, no secret, fully deterministic. Given a
 run's ``human_eval`` sample and the signed-off ruler, it writes the Label Studio
-labeling config, the blinded tasks, and the manifest that holds the
-``task_id -> pair_id`` join.
+labeling config, the project instructions HTML, the blinded tasks, and the
+manifest that holds the ``task_id -> pair_id`` join.
 
 The join stays here because ``pair_id`` is ``"{source_file_id}:{pair_index}"``:
 shipping it would let an attentive annotator group pairs from the same interview
@@ -17,7 +17,10 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from arandu.shared.annotation.labeling_config import render_labeling_config
+from arandu.shared.annotation.labeling_config import (
+    render_expert_instruction,
+    render_labeling_config,
+)
 from arandu.shared.annotation.ruler import load_ruler, require_signed_off, ruler_sha256
 from arandu.shared.annotation.schemas import (
     AnnotationBuildConfig,
@@ -37,6 +40,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "labeling_config.xml"
+#: The full ruler, rendered for Label Studio's project instructions modal.
+#:
+#: A second artifact rather than a second thing for `push` to render: the build
+#: is the auditable half, and both annotator-facing surfaces have to be readable
+#: from disk before anything is created server-side.
+INSTRUCTION_FILENAME = "expert_instruction.html"
 TASKS_FILENAME = "tasks.json"
 MANIFEST_FILENAME = "manifest.json"
 LABELS_DIRNAME = "labels"
@@ -181,6 +190,7 @@ def run_build_annotation(
 
     outputs = results_mgr.outputs_dir
     (outputs / CONFIG_FILENAME).write_text(render_labeling_config(ruler), encoding="utf-8")
+    (outputs / INSTRUCTION_FILENAME).write_text(render_expert_instruction(ruler), encoding="utf-8")
     (outputs / TASKS_FILENAME).write_text(
         json.dumps(
             [task.to_label_studio() for task in tasks],

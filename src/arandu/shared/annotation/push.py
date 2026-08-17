@@ -11,7 +11,12 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from arandu.shared.annotation.build import CONFIG_FILENAME, MANIFEST_FILENAME, TASKS_FILENAME
+from arandu.shared.annotation.build import (
+    CONFIG_FILENAME,
+    INSTRUCTION_FILENAME,
+    MANIFEST_FILENAME,
+    TASKS_FILENAME,
+)
 from arandu.shared.annotation.schemas import AnnotationManifest
 from arandu.shared.config import ResultsConfig
 from arandu.shared.schemas import PipelineType
@@ -33,7 +38,14 @@ logger = logging.getLogger(__name__)
 #: but occupies the slot of one. ``required="true"`` on the Choices widget blocks
 #: Submit, not Skip. ``pull`` still tolerates cancelled annotations, since a
 #: project created by hand in the UI does not go through this call.
-PROJECT_SETTINGS: dict[str, Any] = {"show_skip_button": False}
+#:
+#: ``show_instruction`` turns on the help button that opens the project's
+#: ``expert_instruction`` modal. The full ruler lives there rather than on the
+#: labeling canvas: rendered inline it put two screens of prose between the pair
+#: and the rating widget. The HTML itself is not in this mapping, because push
+#: transports only what the build wrote; it is read from
+#: ``expert_instruction.html`` and merged in at call time.
+PROJECT_SETTINGS: dict[str, Any] = {"show_skip_button": False, "show_instruction": True}
 
 
 def _outputs_dir(base: Path, pipeline_id: str) -> Path:
@@ -73,8 +85,14 @@ def run_push_annotation(
     outputs = _outputs_dir(base, pipeline_id)
     manifest_path = outputs / MANIFEST_FILENAME
     config_path = outputs / CONFIG_FILENAME
+    instruction_path = outputs / INSTRUCTION_FILENAME
     tasks_path = outputs / TASKS_FILENAME
-    if not (manifest_path.exists() and config_path.exists() and tasks_path.exists()):
+    if not (
+        manifest_path.exists()
+        and config_path.exists()
+        and instruction_path.exists()
+        and tasks_path.exists()
+    ):
         raise FileNotFoundError(
             f"Annotation artifacts not found for pipeline_id {pipeline_id!r}: {outputs}. "
             f"Run `arandu emic-annotation-build --id {pipeline_id} --seed <n>` first."
@@ -96,8 +114,12 @@ def run_push_annotation(
         )
 
     project_title = title or f"Validade êmica ({pipeline_id})"
+    settings: dict[str, Any] = {
+        **PROJECT_SETTINGS,
+        "expert_instruction": instruction_path.read_text(encoding="utf-8"),
+    }
     project_id = client.create_project(
-        project_title, config_path.read_text(encoding="utf-8"), settings=PROJECT_SETTINGS
+        project_title, config_path.read_text(encoding="utf-8"), settings=settings
     )
 
     # Record the project before importing, not after. If the import times out
