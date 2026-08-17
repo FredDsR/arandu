@@ -19,6 +19,14 @@ signed_off_by: Fred (antropologia)
 signed_off_on: "2026-08-11"
 gate: anthropologist-validation-of-readings
 
+# Revisão de forma, não de método. A assinatura de 2026-08-11 continua valendo, e
+# por isso signed_off_on não muda; o campo abaixo registra a única alteração
+# posterior ao texto, para que um auditor veja o que mudou e por quê.
+presentation_revision: >-
+  2026-08-17: a cascata passou a ser lida como frases ("Se <condição>, atribua
+  nota N.") em vez de lista numerada. As condições, a ordem delas e a escala
+  continuam as mesmas.
+
 # --- Construto -------------------------------------------------------------
 
 construct:
@@ -134,30 +142,33 @@ guide:
     palavras e medidas que ela usa; quem sabe, decide ou age; e o que a pergunta
     põe em jogo.
   cascade_intro: >-
-    Percorra as condições em ordem e pare na primeira que se aplicar. A nota é a
-    dessa condição.
+    Percorra as frases abaixo em ordem e pare na primeira cuja condição se
+    aplicar ao par. Ela diz a nota a atribuir.
+  # Cada condição é uma oração subordinada em minúscula, sem ponto final: os
+  # consumidores a montam como "Se <condição>, atribua nota N.". A moldura fica
+  # no renderizador de cada consumidor, não aqui.
   cascade:
     - score: 1
       condition: >-
-        O par contradiz o que a pessoa afirma, ou substitui a perspectiva dela por
-        clichê sobre populações tradicionais.
+        o par contradiz o que a pessoa afirma, ou substitui a perspectiva dela por
+        clichê sobre populações tradicionais
     - score: 2
       condition: >-
-        O par afirma algo que ela não disse, e essa adição troca o motivo que ela
+        o par afirma algo que ela não disse, e essa adição troca o motivo que ela
         deu por outro, fazendo a fala servir de exemplo de uma ideia que não é
-        dela.
+        dela
     - score: 3
       condition: >-
-        O par afirma algo que ela não disse, mas o núcleo do que ela disse
-        continua reconhecível.
+        o par afirma algo que ela não disse, mas o núcleo do que ela disse
+        continua reconhecível
     - score: 4
       condition: >-
-        O par preserva o sentido, mas apaga um elemento situado que carrega o
+        o par preserva o sentido, mas apaga um elemento situado que carrega o
         conhecimento em jogo (quem sabe, decide ou age; o sinal concreto), ou
         apaga a postura com que ela disse (a dúvida virou certeza, a avaliação
-        virou descrição neutra).
+        virou descrição neutra)
     - score: 5
-      condition: Nenhuma das anteriores.
+      condition: nenhuma das condições acima se aplica
   no_penalty: >-
     Não reduzem a nota, por si sós: generalizar ou abstrair; usar vocabulário mais
     formal; responder de forma curta; omitir um detalhe que a pergunta não pedia.

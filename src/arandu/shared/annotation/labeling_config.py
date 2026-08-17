@@ -165,6 +165,23 @@ def _header(text: str, indent: str, size: str = "4") -> str:
     return f"{indent}<Header value={_attr(text)} size={_attr(size)} />"
 
 
+def _cascade_sentence(entry: dict[str, Any]) -> str:
+    """Assemble one cascade step as a sentence.
+
+    The ruler stores each step as a lowercase subordinate clause with no final
+    period, so the ``Se ..., atribua nota N.`` frame lives here instead of being
+    baked into the data. Both surfaces call this, so the canvas summary and the
+    instructions modal cannot phrase the same step differently.
+
+    Args:
+        entry: One ``guide.cascade`` entry, carrying ``condition`` and ``score``.
+
+    Returns:
+        The step as a single Portuguese sentence.
+    """
+    return f"Se {entry['condition']}, atribua nota {entry['score']}."
+
+
 def _summary_lines(ruler: dict[str, Any]) -> list[str]:
     """Render the collapsed canvas summary.
 
@@ -194,9 +211,7 @@ def _summary_lines(ruler: dict[str, Any]) -> list[str]:
         '        <View className="emic-summary">',
         _paragraph(guide["cascade_intro"], indent),
     ]
-    lines += [
-        _paragraph(f"{entry['score']}: {entry['condition']}", indent) for entry in guide["cascade"]
-    ]
+    lines += [_paragraph(_cascade_sentence(entry), indent) for entry in guide["cascade"]]
     lines += [
         _header("Não reduzem a nota", indent),
         _paragraph(guide["no_penalty"], indent),
@@ -349,7 +364,7 @@ def render_expert_instruction(ruler: dict[str, Any]) -> str:
 
     lines.append("<h2>Como pontuar</h2>")
     lines += _html_paragraphs([guide["locate"], guide["extract"], guide["cascade_intro"]])
-    lines += _html_list([f"{entry['score']}: {entry['condition']}" for entry in guide["cascade"]])
+    lines += _html_list([_cascade_sentence(entry) for entry in guide["cascade"]])
     lines.append("<h3>Não reduzem a nota</h3>")
     lines += _html_paragraphs([guide["no_penalty"], guide["name_the_condition"]])
 
