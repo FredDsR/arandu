@@ -92,6 +92,18 @@ class TestRulerFidelity:
         for text in ruler["annotator_only"].values():
             assert text in config
 
+    def test_provisions_appear_verbatim(self, config: str, ruler: dict[str, Any]) -> None:
+        provisions = ruler["provisions"]
+        for key in ("unit_of_judgment", "question_calibrates", "out_of_scope"):
+            assert provisions[key] in config
+        for text in provisions["not_a_loss"]:
+            assert text in config
+
+    def test_guide_name_the_condition_appears_verbatim(
+        self, config: str, ruler: dict[str, Any]
+    ) -> None:
+        assert ruler["guide"]["name_the_condition"] in config
+
 
 class TestBlinding:
     def test_judge_only_text_never_reaches_the_annotator(
