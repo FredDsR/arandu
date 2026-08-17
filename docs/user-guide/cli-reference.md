@@ -474,6 +474,13 @@ repaired after annotation.
 **Rebuilding after a push is refused.** It would rewrite the join while
 annotators work against the old one, silently mislabelling every pull.
 
+**Rebuilding after a pull is refused too.** A non-empty `labels/` directory
+blocks the build even when no `project_id` was ever recorded (the file-mode
+`-f` path, where the project was created by hand in the UI). The pulled labels
+carry `pair_id`s resolved through the old `task_map`; a rebuild would replace
+that map and invalidate every one of them with nothing marking the divergence.
+Create a new run id instead.
+
 ### `arandu emic-annotation-push`
 
 Creates the Label Studio project from the built artifacts and imports the tasks.
@@ -485,9 +492,21 @@ arandu emic-annotation-push --id thesis-run-01
 ```
 
 Uploads only what `emic-annotation-build` wrote, so the annotators see exactly
-what was audited. The project id is recorded in `manifest.json`; a second push
-is refused rather than silently creating a duplicate project that would split
-the annotators across two. `--force` overrides and records both ids.
+what was audited. The project id is recorded in `manifest.json` **before** the
+task import runs, so an import that fails or times out still leaves the project
+recorded and the duplicate guard armed. A second push is refused rather than
+silently creating a duplicate project that would split the annotators across
+two. `--force` overrides and records both ids (and see `--project-id` on the
+pull side).
+
+The project is created with the Label Studio Skip button turned off
+(`show_skip_button: false`). A skip writes an annotation with no rating in it,
+which occupies the slot of a real one; `required="true"` on the rating widget
+blocks Submit, not Skip.
+
+If Label Studio accepts fewer tasks than were sent, the push fails naming both
+counts. Silently importing 118 of 120 would leave two pairs indistinguishable
+from ones nobody has rated yet, in every pull thereafter.
 
 ### `arandu emic-annotation-pull`
 
@@ -496,7 +515,16 @@ Fetches the annotations back and writes one JSONL per annotator.
 ```bash
 arandu emic-annotation-pull --id thesis-run-01
 arandu emic-annotation-pull --id thesis-run-01 -f export.json   # no network, no token
+arandu emic-annotation-pull --id thesis-run-01 --project-id 42  # after a --force re-push
 ```
+
+**Options**:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--id` | required | Pipeline ID with a built (and usually pushed) annotation stage |
+| `--file` / `-f` | none | Read a JSON export downloaded from the UI; no network and no token |
+| `--project-id` | from the manifest | Project to pull from. Required when a `--force` re-push recorded more than one |
 
 Writes `results/<id>/annotation/outputs/labels/<annotator_id>.jsonl`, one object
 per line with `pair_id`, `annotator_id`, `score`, `rationale`, `timestamp`.
@@ -506,9 +534,25 @@ user id; no email is requested from the API or written anywhere. The
 id-to-alias map lands in `annotator_map.json` **beside** `labels/`, never inside
 it, so the directory feeding the agreement analysis holds nothing identifying.
 
-Partial annotation is fine and is reported as a per-annotator count. An export
-referencing an unknown `task_id` aborts the pull: the manifest and the project
-are out of sync, and no label from that project can be trusted.
+**Aliases are stable across pulls.** An existing `annotator_map.json` is read
+back and every binding in it kept, so pulling weekly for progress never
+reassigns `A1` to a different person when somebody submits their first rating.
+Only newly seen user ids get a new alias, appended in sorted order.
+
+Partial annotation is fine and is reported as a per-annotator count. Ratings the
+annotator skipped in Label Studio carry no score, so they are counted and
+reported separately rather than counted as done or aborting the pull.
+
+**Several recorded projects abort the pull.** If `--force` created more than one
+project, the command refuses and lists every recorded id: pulling one silently
+would lose the others' labels, and merging them would double-count anyone who
+annotated in more than one. Re-run with `--project-id <n>`.
+
+An export referencing an unknown `task_id` aborts the pull: the manifest and the
+project are out of sync, and no label from that project can be trusted. The same
+applies when one annotator rated the same pair twice, and when the downloaded
+file is a `JSON_MIN` export (only `exportType=JSON` carries the `task_id` the
+join needs).
 
 The individual labels are not a published artifact. Only the aggregate
 coefficients (Krippendorff alpha, weighted Cohen kappa, Gwet AC2, with the Bloom
