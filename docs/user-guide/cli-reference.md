@@ -471,6 +471,9 @@ have to be the reviewed ones: a divergence from the judge prompt makes the
 weighted kappa measure translation drift instead of agreement, and it cannot be
 repaired after annotation.
 
+A ruler that parses but is missing a section the labeling config needs fails
+with a message naming the missing key and the ruler path, not a traceback.
+
 **Rebuilding after a push is refused.** It would rewrite the join while
 annotators work against the old one, silently mislabelling every pull.
 
@@ -491,6 +494,19 @@ export ARANDU_LABEL_STUDIO_TOKEN=...   # Account & Settings -> Access Token
 arandu emic-annotation-push --id thesis-run-01
 ```
 
+Both variables can equally live in `.env` at the project root; the settings
+class reads it like every other config in the project. `ARANDU_LABEL_STUDIO_TIMEOUT`
+(seconds, default `60`) is the third.
+
+**The token never lands under `results/`.** Two things keep it out. The settings
+field is a `SecretStr`, so it is masked in every repr and `model_dump()`. And
+every stage's `run_metadata.json` records the `ARANDU_*` environment as it was
+at run time, so any captured variable whose name contains `TOKEN`, `SECRET`,
+`PASSWORD`, `KEY` or `CREDENTIAL` is written as `***REDACTED***` instead of its
+value (the key is kept, so the snapshot still shows the variable was set). That
+redaction is repo-wide, not specific to this stage: the environment snapshot is
+captured by every pipeline step run from the same shell.
+
 Uploads only what `emic-annotation-build` wrote, so the annotators see exactly
 what was audited. The project id is recorded in `manifest.json` **before** the
 task import runs, so an import that fails or times out still leaves the project
@@ -506,7 +522,12 @@ blocks Submit, not Skip.
 
 If Label Studio accepts fewer tasks than were sent, the push fails naming both
 counts. Silently importing 118 of 120 would leave two pairs indistinguishable
-from ones nobody has rated yet, in every pull thereafter.
+from ones nobody has rated yet, in every pull thereafter. The project id is
+already recorded at that point, so the error also names the way out: import the
+remaining tasks into the same project from the UI and leave the manifest alone
+(cheapest, keeps one recorded project), or delete the project server-side and
+re-push with `--force`, which records a second id and makes every later network
+pull require `--project-id <n>`. Building under a fresh run id avoids both.
 
 ### `arandu emic-annotation-pull`
 
@@ -524,7 +545,10 @@ arandu emic-annotation-pull --id thesis-run-01 --project-id 42  # after a --forc
 |--------|---------|-------------|
 | `--id` | required | Pipeline ID with a built (and usually pushed) annotation stage |
 | `--file` / `-f` | none | Read a JSON export downloaded from the UI; no network and no token |
-| `--project-id` | from the manifest | Project to pull from. Required when a `--force` re-push recorded more than one |
+| `--project-id` | from the manifest | Project to pull from. Required when a `--force` re-push recorded more than one. Cannot be combined with `-f` |
+
+`-f` and `--project-id` name different sources, so passing both is refused
+rather than silently ignoring the project selection.
 
 Writes `results/<id>/annotation/outputs/labels/<annotator_id>.jsonl`, one object
 per line with `pair_id`, `annotator_id`, `score`, `rationale`, `timestamp`.
@@ -541,7 +565,20 @@ Only newly seen user ids get a new alias, appended in sorted order.
 
 Partial annotation is fine and is reported as a per-annotator count. Ratings the
 annotator skipped in Label Studio carry no score, so they are counted and
-reported separately rather than counted as done or aborting the pull.
+reported separately rather than counted as done or aborting the pull. An
+annotation that carries a rationale but no rating counts the same way: the
+`required` flag on the rating widget is enforced in the browser only, and
+annotations can also arrive through the API, so one of those must not abort
+everyone else's pull. A rating region that IS present but empty still aborts:
+that is the measurement going missing, not a task nobody rated.
+
+**`labels/` reflects exactly one pull.** A `*.jsonl` written by an earlier,
+wider pull that the current export does not cover is removed, and the count is
+reported. Otherwise a later `-f partial-export.json` (or a different
+`--project-id`) would leave the agreement analysis reading a mix of two pulls
+while the printed summary named only one. Nothing but `*.jsonl` inside
+`labels/` is touched, and `annotator_map.json` lives one level up, so the alias
+bindings survive.
 
 **Several recorded projects abort the pull.** If `--force` created more than one
 project, the command refuses and lists every recorded id: pulling one silently
