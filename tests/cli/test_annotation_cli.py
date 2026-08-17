@@ -79,3 +79,29 @@ class TestPushCommand:
         )
         result = runner.invoke(app, ["emic-annotation-push", "--id", "run-a"])
         assert result.exit_code == 1
+
+
+class TestPullCommand:
+    def test_is_registered(self) -> None:
+        result = runner.invoke(app, ["--help"])
+        assert "emic-annotation-pull" in result.stdout
+
+    def test_file_mode_needs_no_credentials(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        summary = mocker.Mock(project_id=0, annotators={"A1": 3}, total_items=3)
+        pull = mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
+        settings = mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        export = tmp_path / "export.json"
+        export.write_text("[]", encoding="utf-8")
+        result = runner.invoke(app, ["emic-annotation-pull", "--id", "run-a", "-f", str(export)])
+        assert result.exit_code == 0
+        settings.assert_not_called()
+        assert pull.call_args.kwargs["export_file"] == export
+
+    def test_desync_exits_one(self, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        mocker.patch("arandu.cli.annotation.build_client_from_settings")
+        mocker.patch(
+            "arandu.cli.annotation.run_pull_annotation", side_effect=KeyError("task_id 99")
+        )
+        result = runner.invoke(app, ["emic-annotation-pull", "--id", "run-a"])
+        assert result.exit_code == 1

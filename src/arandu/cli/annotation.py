@@ -11,12 +11,14 @@ Three flat commands, matching the project convention (the CLI has no
 from __future__ import annotations
 
 import logging
+from pathlib import Path  # noqa: TC003
 from typing import Annotated
 
 import typer
 
 from arandu.shared.annotation.build import run_build_annotation
 from arandu.shared.annotation.client import LabelStudioError, build_client_from_settings
+from arandu.shared.annotation.pull import run_pull_annotation
 from arandu.shared.annotation.push import run_push_annotation
 from arandu.shared.annotation.ruler import RulerNotSignedOffError
 from arandu.shared.annotation.settings import LabelStudioSettings
@@ -119,3 +121,71 @@ def emic_annotation_push(
         f"Created project {project_id} at {settings.url}/projects/{project_id}. "
         f"Invite the annotators and they can start."
     )
+
+
+def emic_annotation_pull(
+    pipeline_id: Annotated[
+        str,
+        typer.Option("--id", help="Pipeline ID with a pushed annotation stage."),
+    ],
+    export_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--file",
+            "-f",
+            help="Read a JSON export downloaded from the UI instead of using the network.",
+            exists=True,
+            dir_okay=False,
+        ),
+    ] = None,
+) -> None:
+    """Pull the annotations into per-annotator label files.
+
+    Writes ``results/<id>/annotation/outputs/labels/<annotator_id>.jsonl`` with
+    anonymous ids (``A1``, ``A2``, ``A3``). No email is ever requested from the
+    API or written to any artifact. With ``-f`` the export is read from disk and
+    no credential is needed.
+    """
+    client = None
+    settings = None
+    if export_file is None:
+        try:
+            settings = LabelStudioSettings()
+        except ValueError as exc:
+            print_error(
+                "Label Studio is not configured. Set ARANDU_LABEL_STUDIO_URL and "
+                f"ARANDU_LABEL_STUDIO_TOKEN, or pass -f with a downloaded export. ({exc})"
+            )
+            raise typer.Exit(code=1) from exc
+        client = build_client_from_settings(settings)
+
+    source = str(export_file) if export_file is not None else (settings.url if settings else "")
+    print_info(f"Run: {pipeline_id} | source: {source}")
+
+    try:
+        summary = run_pull_annotation(
+            pipeline_id=pipeline_id, client=client, export_file=export_file
+        )
+    except FileNotFoundError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    except KeyError as exc:
+        print_error(f"Manifest and Label Studio project are out of sync: {exc}")
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        print_error(f"Could not pull the annotations: {exc}")
+        raise typer.Exit(code=1) from exc
+    except LabelStudioError as exc:
+        print_error(f"Label Studio rejected the export request: {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        if client is not None:
+            client.close()
+
+    if not summary.annotators:
+        print_info(f"No annotations yet ({summary.total_items} task(s) waiting).")
+        return
+    progress = ", ".join(
+        f"{alias}: {done}/{summary.total_items}" for alias, done in summary.annotators.items()
+    )
+    print_success(f"Pulled annotations. {progress}")

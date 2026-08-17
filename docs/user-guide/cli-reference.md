@@ -27,7 +27,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 - **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
 - **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
 - **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `rag-analysis`
-- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`, `emic-annotation-build`, `emic-annotation-push`
+- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`, `emic-annotation-build`, `emic-annotation-push`, `emic-annotation-pull`
 - **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
@@ -408,6 +408,7 @@ reported.
 | `build-human-eval-sample` | Build the stratified human-comparison sample for a run |
 | `emic-annotation-build` | Build the Label Studio artifacts (labeling config, blinded tasks, manifest) for a run's sample |
 | `emic-annotation-push` | Create the Label Studio project from the built artifacts and import the tasks |
+| `emic-annotation-pull` | Fetch the annotations back and write one JSONL per anonymized annotator |
 
 **The emic score is a measurement, not a filter.** It is what the study
 reports; the human annotation round validates it by agreement rather than
@@ -487,6 +488,31 @@ Uploads only what `emic-annotation-build` wrote, so the annotators see exactly
 what was audited. The project id is recorded in `manifest.json`; a second push
 is refused rather than silently creating a duplicate project that would split
 the annotators across two. `--force` overrides and records both ids.
+
+### `arandu emic-annotation-pull`
+
+Fetches the annotations back and writes one JSONL per annotator.
+
+```bash
+arandu emic-annotation-pull --id thesis-run-01
+arandu emic-annotation-pull --id thesis-run-01 -f export.json   # no network, no token
+```
+
+Writes `results/<id>/annotation/outputs/labels/<annotator_id>.jsonl`, one object
+per line with `pair_id`, `annotator_id`, `score`, `rationale`, `timestamp`.
+
+Annotators are anonymized to `A1` / `A2` / `A3` from the numeric Label Studio
+user id; no email is requested from the API or written anywhere. The
+id-to-alias map lands in `annotator_map.json` **beside** `labels/`, never inside
+it, so the directory feeding the agreement analysis holds nothing identifying.
+
+Partial annotation is fine and is reported as a per-annotator count. An export
+referencing an unknown `task_id` aborts the pull: the manifest and the project
+are out of sync, and no label from that project can be trusted.
+
+The individual labels are not a published artifact. Only the aggregate
+coefficients (Krippendorff alpha, weighted Cohen kappa, Gwet AC2, with the Bloom
+breakdown) go into the text.
 
 ---
 
