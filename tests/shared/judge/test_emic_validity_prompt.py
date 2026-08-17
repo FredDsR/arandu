@@ -32,11 +32,6 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
     return client
 
 
-@pytest.fixture
-def emic_prompt() -> str:
-    return (CRITERIA_DIR / EMIC / "pt" / "prompt.md").read_text(encoding="utf-8")
-
-
 class TestEmicValidityWiring:
     def test_loads_as_ordinal_criterion(self, mock_llm_client: Any) -> None:
         criterion = OrdinalLLMCriterion.from_config(
@@ -75,46 +70,6 @@ class TestEmicValidityWiring:
         )
 
 
-class TestEmicPromptContent:
-    """The prompt must encode the spec's construct, markers, anchors, blinding."""
-
-    def test_names_construct_and_emic_etic(self, emic_prompt: str) -> None:
-        low = emic_prompt.lower()
-        assert "validade êmica" in low
-        assert "êmic" in low and "étic" in low  # names the distinction verbatim
-
-    def test_warns_of_model_own_reframing_bias(self, emic_prompt: str) -> None:
-        # Principle 2: meta-awareness of the model's own tendency to elevate
-        # situated speech into institutional/analytical diagnoses.
-        low = emic_prompt.lower()
-        assert "negligência sistêmica" in low  # the canonical bias example
-        assert "institucion" in low or "diagnóstico" in low
-
-    def test_generalization_is_acceptable(self, emic_prompt: str) -> None:
-        # Refined construct: meaning-preserving generalization is desirable,
-        # not a deviation; only meaning-change / added claims / register-swap
-        # lower the score.
-        low = emic_prompt.lower()
-        assert "generaliz" in low
-        assert "não é violação" in low or "desejável" in low
-
-    def test_has_five_point_anchors(self, emic_prompt: str) -> None:
-        # Assert the actual anchor format (- N:), not bare digits which appear
-        # elsewhere ("3 frases", "1-5", "§3.5") and would pass even if the
-        # anchor list were removed.
-        for level in ("1", "2", "3", "4", "5"):
-            assert f"- {level}:" in emic_prompt
-
-    def test_only_blinded_inputs_referenced(self, emic_prompt: str) -> None:
-        # Parity/blinding (§4.2 principle 7): sees only segment + Q + A.
-        assert "$context" in emic_prompt
-        assert "$question" in emic_prompt
-        assert "$answer" in emic_prompt
-        low = emic_prompt.lower()
-        assert "bloom" not in low
-        assert "tacit_inference" not in low and "inferência tácita" not in low
-
-    def test_requests_structured_integer_output(self, emic_prompt: str) -> None:
-        low = emic_prompt.lower()
-        assert "json" in low
-        assert "rationale" in low or "justificativa" in low
+# Prompt *content* is asserted in test_emic_ruler.py, against ruler.pt.yaml (the
+# single source shared with the annotator sheet). Duplicating content assertions
+# here would let the two drift: the ruler is the thing to hold the prompt to.
