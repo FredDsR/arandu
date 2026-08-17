@@ -10,9 +10,19 @@ from arandu.shared.annotation.ruler import (
     require_signed_off,
     ruler_sha256,
 )
+from arandu.shared.annotation.schemas import (
+    AnnotationBuildConfig,
+    AnnotationLabel,
+    AnnotationManifest,
+    AnnotationTask,
+)
 
 __all__ = [
     "RULER_PATH",
+    "AnnotationBuildConfig",
+    "AnnotationLabel",
+    "AnnotationManifest",
+    "AnnotationTask",
     "RulerNotSignedOffError",
     "load_ruler",
     "render_labeling_config",
