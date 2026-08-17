@@ -87,7 +87,7 @@ class TestPullCommand:
         assert "emic-annotation-pull" in result.stdout
 
     def test_file_mode_needs_no_credentials(self, mocker: MockerFixture, tmp_path: Path) -> None:
-        summary = mocker.Mock(project_id=0, annotators={"A1": 3}, total_items=3)
+        summary = mocker.Mock(project_id=0, annotators={"A1": 3}, total_items=3, skipped=0)
         pull = mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
         settings = mocker.patch("arandu.cli.annotation.LabelStudioSettings")
         export = tmp_path / "export.json"
@@ -105,3 +105,31 @@ class TestPullCommand:
         )
         result = runner.invoke(app, ["emic-annotation-pull", "--id", "run-a"])
         assert result.exit_code == 1
+
+    def test_project_id_is_threaded_through(self, mocker: MockerFixture) -> None:
+        summary = mocker.Mock(project_id=42, annotators={"A1": 3}, total_items=3, skipped=0)
+        mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        mocker.patch("arandu.cli.annotation.build_client_from_settings")
+        pull = mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
+        result = runner.invoke(app, ["emic-annotation-pull", "--id", "run-a", "--project-id", "42"])
+        assert result.exit_code == 0
+        assert pull.call_args.kwargs["project_id"] == 42
+
+    def test_project_id_defaults_to_none(self, mocker: MockerFixture) -> None:
+        summary = mocker.Mock(project_id=42, annotators={"A1": 3}, total_items=3, skipped=0)
+        mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        mocker.patch("arandu.cli.annotation.build_client_from_settings")
+        pull = mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
+        runner.invoke(app, ["emic-annotation-pull", "--id", "run-a"])
+        assert pull.call_args.kwargs["project_id"] is None
+
+    def test_skips_are_reported(self, mocker: MockerFixture) -> None:
+        summary = mocker.Mock(project_id=42, annotators={"A1": 2}, total_items=3, skipped=1)
+        mocker.patch("arandu.cli.annotation.LabelStudioSettings")
+        mocker.patch("arandu.cli.annotation.build_client_from_settings")
+        mocker.patch("arandu.cli.annotation.run_pull_annotation", return_value=summary)
+        result = runner.invoke(app, ["emic-annotation-pull", "--id", "run-a"])
+        assert result.exit_code == 0
+        # print_warning writes to stderr_console; the merged `.output` carries it
+        # (see TestBuildCommand above).
+        assert "skipped" in result.output

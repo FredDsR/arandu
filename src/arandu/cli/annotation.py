@@ -22,7 +22,7 @@ from arandu.shared.annotation.pull import run_pull_annotation
 from arandu.shared.annotation.push import run_push_annotation
 from arandu.shared.annotation.ruler import RulerNotSignedOffError
 from arandu.shared.annotation.settings import LabelStudioSettings
-from arandu.utils.logger import print_error, print_info, print_success
+from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,13 @@ def emic_annotation_pull(
             dir_okay=False,
         ),
     ] = None,
+    project_id: Annotated[
+        int | None,
+        typer.Option(
+            "--project-id",
+            help="Project to pull from. Required when a --force re-push recorded several.",
+        ),
+    ] = None,
 ) -> None:
     """Pull the annotations into per-annotator label files.
 
@@ -164,7 +171,10 @@ def emic_annotation_pull(
 
     try:
         summary = run_pull_annotation(
-            pipeline_id=pipeline_id, client=client, export_file=export_file
+            pipeline_id=pipeline_id,
+            client=client,
+            export_file=export_file,
+            project_id=project_id,
         )
     except FileNotFoundError as exc:
         print_error(str(exc))
@@ -182,6 +192,11 @@ def emic_annotation_pull(
         if client is not None:
             client.close()
 
+    if summary.skipped:
+        print_warning(
+            f"{summary.skipped} annotation(s) were skipped in Label Studio and carry no "
+            f"rating. They are not counted below and those pairs still need rating."
+        )
     if not summary.annotators:
         print_info(f"No annotations yet ({summary.total_items} task(s) waiting).")
         return
