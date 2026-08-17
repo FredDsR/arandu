@@ -60,15 +60,19 @@ class PullSummary(BaseModel):
         annotators: Completed-annotation count per anonymous annotator id.
         total_items: Tasks in the project (the denominator for progress).
         skipped: Annotations the annotator cancelled (Label Studio's Skip
-            button) or left with no regions. They carry no rating, so they are
+            button) or left with no rating. They carry no score, so they are
             counted here instead of silently vanishing from the progress
             numbers.
+        stale_removed: Label files left by an earlier pull that this pull did
+            not rewrite, and deleted. Reported rather than done silently: a
+            file that vanishes is a fact the operator has to see.
     """
 
     project_id: int
     annotators: dict[str, int]
     total_items: int
     skipped: int = 0
+    stale_removed: int = 0
 
 
 def _alias_rank(alias: str) -> int:
@@ -166,13 +170,25 @@ def _is_unrated(annotation: dict[str, Any]) -> bool:
     irrecoverable without reconvening the annotators, and a permanent parse
     failure would block every other annotator's ratings too.
 
+    An annotation with regions but no ``score`` region at all is the same case.
+    ``required="true"`` on the Choices widget is enforced client-side only, and
+    annotations can also arrive through the API, so an annotation carrying just
+    the rationale is reachable. Aborting the whole pull over one of those is the
+    exact blast radius the skip handling exists to eliminate. A ``score`` region
+    that IS present but empty stays fatal: that is the measurement going
+    missing, not a task nobody rated.
+
     Args:
         annotation: One Label Studio annotation payload.
 
     Returns:
-        ``True`` if the annotation was cancelled or holds no regions.
+        ``True`` if the annotation was cancelled, holds no regions, or holds no
+        ``score`` region.
     """
-    return bool(annotation.get("was_cancelled")) or not annotation.get("result")
+    if annotation.get("was_cancelled"):
+        return True
+    regions = annotation.get("result") or []
+    return not any(region.get("from_name") == SCORE_FIELD for region in regions)
 
 
 def _extract_score(annotation: dict[str, Any]) -> int:
@@ -296,11 +312,23 @@ def _load_export(
         (``0`` for a file-based pull).
 
     Raises:
-        ValueError: If neither a client nor a file is given, if the file is not
-            a JSON list, if the run was never pushed, or if several projects
-            are recorded and none was named.
+        ValueError: If both a file and a project id are given, if neither a
+            client nor a file is given, if the file is not a JSON list, if the
+            run was never pushed, or if several projects are recorded and none
+            was named.
     """
     if export_file is not None:
+        # The two name different sources. Reading the file and discarding the
+        # operator's project choice would report project_id 0 for labels they
+        # believe came from project 99, and the feature already treats an
+        # ambiguous project selection as unsafe enough to hard-fail on.
+        if project_id is not None:
+            raise ValueError(
+                f"-f {export_file} and --project-id {project_id} select different sources: the "
+                f"file is read from disk and the project id is only used for a network export. "
+                f"Drop one of them: pass -f alone to read the downloaded file, or --project-id "
+                f"alone to export project {project_id} over the network."
+            )
         data = json.loads(export_file.read_text(encoding="utf-8"))
         if not isinstance(data, list):
             raise ValueError(f"{export_file} is not a Label Studio JSON export (expected a list).")
@@ -321,6 +349,11 @@ def run_pull_annotation(
 ) -> PullSummary:
     """Pull annotations into per-annotator label files.
 
+    ``labels/`` is left reflecting exactly this pull: any ``*.jsonl`` an earlier
+    pull wrote that this one did not rewrite is deleted and counted in
+    :attr:`PullSummary.stale_removed`. Keeping it would let the agreement
+    analysis read a mix of two pulls while the summary reports only one.
+
     Args:
         pipeline_id: Run identifier with a built (and usually pushed) stage.
         client: Label Studio transport. Ignored when ``export_file`` is given.
@@ -336,8 +369,9 @@ def run_pull_annotation(
     Raises:
         FileNotFoundError: If the annotation stage was never built.
         ValueError: If the run was never pushed, several projects are recorded
-            and none was named, no source was given, a score cannot be parsed,
-            or one annotator rated the same pair twice.
+            and none was named, both ``export_file`` and ``project_id`` were
+            given, no source was given, a score cannot be parsed, or one
+            annotator rated the same pair twice.
         KeyError: If the export references a task this build does not know. The
             manifest and the project are out of sync and no label from that
             project can be trusted.
@@ -404,6 +438,18 @@ def run_pull_annotation(
 
     labels_dir = outputs / LABELS_DIRNAME
     labels_dir.mkdir(parents=True, exist_ok=True)
+
+    # `labels/` reflects exactly one pull. A narrower export (a partial `-f`
+    # file, or another --project-id) would otherwise leave the previous pull's
+    # files in place, and the agreement analysis would read a mix of two pulls
+    # while the summary below reports only what this one wrote. Only `*.jsonl`
+    # is touched, and `annotator_map.json` lives one level up, outside this
+    # directory, so the alias bindings survive.
+    written = {f"{alias}.jsonl" for alias in by_annotator}
+    stale = [path for path in sorted(labels_dir.glob("*.jsonl")) if path.name not in written]
+    for path in stale:
+        path.unlink()
+
     for alias, labels in sorted(by_annotator.items()):
         with (labels_dir / f"{alias}.jsonl").open("w", encoding="utf-8") as fh:
             for label in sorted(labels, key=lambda item: item.pair_id):
@@ -422,12 +468,15 @@ def run_pull_annotation(
         annotators={alias: len(labels) for alias, labels in sorted(by_annotator.items())},
         total_items=manifest.total_items,
         skipped=skipped,
+        stale_removed=len(stale),
     )
     logger.info(
-        "Pulled annotations for %s: %s of %d task(s) per annotator, %d skipped.",
+        "Pulled annotations for %s: %s of %d task(s) per annotator, %d skipped, "
+        "%d stale label file(s) removed.",
         pipeline_id,
         summary.annotators,
         summary.total_items,
         summary.skipped,
+        summary.stale_removed,
     )
     return summary

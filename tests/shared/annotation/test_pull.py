@@ -209,6 +209,31 @@ class TestSkippedAnnotations:
         summary = run_pull_annotation("run-a", client=FakeClient(export), base_dir=pushed)
         assert summary.skipped == 1
 
+    def test_an_annotation_with_only_a_rationale_is_a_skip(self, pushed: Path) -> None:
+        """`required="true"` is client-side only, and the API bypasses it entirely."""
+        export = [
+            _task(
+                0,
+                [
+                    {
+                        "completed_by": 7,
+                        "created_at": "2026-09-01T10:00:00Z",
+                        "result": [
+                            {
+                                "from_name": "rationale",
+                                "type": "textarea",
+                                "value": {"text": ["sem nota"]},
+                            }
+                        ],
+                    }
+                ],
+            ),
+            _task(1, [_annotation(9, "4 - Apaga.")]),
+        ]
+        summary = run_pull_annotation("run-a", client=FakeClient(export), base_dir=pushed)
+        assert summary.skipped == 1
+        assert summary.annotators == {"A1": 1}
+
     def test_a_present_but_empty_score_region_still_raises(self, pushed: Path) -> None:
         """A malformed rating is the measurement going missing; it must not pass."""
         export = [
@@ -303,6 +328,64 @@ class TestAmbiguousProject:
         assert summary.annotators == {"A1": 1}
 
 
+class TestStaleLabelFiles:
+    """`labels/` must reflect exactly one pull, never a mix of two."""
+
+    def _labels_dir(self, base: Path) -> Path:
+        return base / "run-a" / "annotation" / "outputs" / LABELS_DIRNAME
+
+    def test_a_narrower_second_pull_removes_the_first_pulls_files(self, pushed: Path) -> None:
+        wide = [_task(0, [_annotation(7, "5 - Preserva."), _annotation(9, "4 - Apaga.")])]
+        run_pull_annotation("run-a", client=FakeClient(wide), base_dir=pushed)
+        assert (self._labels_dir(pushed) / "A2.jsonl").exists()
+
+        narrow = [_task(1, [_annotation(7, "3 - Acrescenta.")])]
+        run_pull_annotation("run-a", client=FakeClient(narrow), base_dir=pushed)
+
+        assert (self._labels_dir(pushed) / "A1.jsonl").exists()
+        assert not (self._labels_dir(pushed) / "A2.jsonl").exists()
+
+    def test_removed_files_are_counted_in_the_summary(self, pushed: Path) -> None:
+        wide = [_task(0, [_annotation(7, "5 - Preserva."), _annotation(9, "4 - Apaga.")])]
+        run_pull_annotation("run-a", client=FakeClient(wide), base_dir=pushed)
+
+        narrow = [_task(1, [_annotation(7, "3 - Acrescenta.")])]
+        summary = run_pull_annotation("run-a", client=FakeClient(narrow), base_dir=pushed)
+
+        assert summary.stale_removed == 1
+
+    def test_a_pull_that_writes_the_same_files_removes_nothing(self, pushed: Path) -> None:
+        export = [_task(0, [_annotation(7, "5 - Preserva.")])]
+        run_pull_annotation("run-a", client=FakeClient(export), base_dir=pushed)
+        summary = run_pull_annotation("run-a", client=FakeClient(export), base_dir=pushed)
+
+        assert summary.stale_removed == 0
+        assert (self._labels_dir(pushed) / "A1.jsonl").exists()
+
+    def test_the_annotator_map_survives(self, pushed: Path) -> None:
+        """It lives one level up and pins the aliases; deleting it would unpin them."""
+        wide = [_task(0, [_annotation(12, "5 - Preserva."), _annotation(30, "4 - Apaga.")])]
+        run_pull_annotation("run-a", client=FakeClient(wide), base_dir=pushed)
+
+        narrow = [_task(1, [_annotation(12, "3 - Acrescenta.")])]
+        run_pull_annotation("run-a", client=FakeClient(narrow), base_dir=pushed)
+
+        assert _annotator_map(pushed) == {"12": "A1", "30": "A2"}
+
+    def test_non_jsonl_files_in_the_labels_dir_are_left_alone(self, pushed: Path) -> None:
+        labels_dir = self._labels_dir(pushed)
+        labels_dir.mkdir(parents=True)
+        (labels_dir / "NOTES.md").write_text("nota do pesquisador", encoding="utf-8")
+
+        run_pull_annotation(
+            "run-a",
+            client=FakeClient([_task(0, [_annotation(7, "5 - Preserva.")])]),
+            base_dir=pushed,
+        )
+
+        assert (labels_dir / "NOTES.md").exists()
+
+
 class TestDuplicateRatings:
     def test_the_same_annotator_rating_a_pair_twice_raises(self, pushed: Path) -> None:
         export = [_task(0, [_annotation(7, "5 - Preserva."), _annotation(7, "2 - Troca.")])]
@@ -390,3 +473,25 @@ class TestFileExport:
     def test_requires_a_client_or_a_file(self, pushed: Path) -> None:
         with pytest.raises(ValueError, match="export_file"):
             run_pull_annotation("run-a", base_dir=pushed)
+
+    def test_a_file_and_a_project_id_together_are_refused(
+        self, pushed: Path, tmp_path: Path
+    ) -> None:
+        """Silently discarding the operator's project choice is not an option."""
+        export_path = tmp_path / "export.json"
+        export_path.write_text(
+            json.dumps([_task(0, [_annotation(7, "5 - Preserva.")])]), encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match="--project-id"):
+            run_pull_annotation("run-a", export_file=export_path, base_dir=pushed, project_id=99)
+
+    def test_the_refusal_happens_before_anything_is_written(
+        self, pushed: Path, tmp_path: Path
+    ) -> None:
+        export_path = tmp_path / "export.json"
+        export_path.write_text(
+            json.dumps([_task(0, [_annotation(7, "5 - Preserva.")])]), encoding="utf-8"
+        )
+        with pytest.raises(ValueError):
+            run_pull_annotation("run-a", export_file=export_path, base_dir=pushed, project_id=99)
+        assert not (pushed / "run-a" / "annotation" / "outputs" / LABELS_DIRNAME).exists()
