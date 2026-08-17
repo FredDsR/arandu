@@ -114,8 +114,14 @@ def run_push_annotation(
         raise ValueError(
             f"Label Studio accepted {imported} of the {len(tasks)} tasks sent to project "
             f"{project_id}. The missing tasks would be indistinguishable from unrated ones "
-            f"in every pull. Inspect the project and re-import the remainder, or delete it "
-            f"and push a fresh run."
+            f"in every pull. Project {project_id} is already recorded in the manifest (it is "
+            f"recorded before the import so a timeout cannot leave a live project unguarded), "
+            f"so recovering has two shapes. Either import the remaining tasks into project "
+            f"{project_id} from the Label Studio UI and leave the manifest alone, which is the "
+            f"cheaper path and keeps a single recorded project; or delete project {project_id} "
+            f"server-side and re-push with --force, which appends a second id to project_ids "
+            f"and makes every later pull need `--project-id <n>` even though only one project "
+            f"ever held tasks. Building under a fresh run id avoids both."
         )
 
     logger.info(

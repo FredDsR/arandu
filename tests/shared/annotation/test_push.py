@@ -163,6 +163,16 @@ class TestAcceptedCount:
         with pytest.raises(ValueError, match="42"):
             run_push_annotation("run-a", client=FakeClient(accepted=0), base_dir=built)
 
+    def test_the_message_names_the_recovery_and_its_cost(self, built: Path) -> None:
+        """The project id is already recorded, so the remedy is not obvious."""
+        with pytest.raises(ValueError) as excinfo:
+            run_push_annotation("run-a", client=FakeClient(accepted=0), base_dir=built)
+        message = str(excinfo.value)
+        assert "already recorded" in message
+        assert "--force" in message
+        assert "--project-id" in message
+        assert "fresh run id" in message
+
 
 class TestErrors:
     def test_missing_build_names_the_build_command(self, tmp_path: Path) -> None:
