@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -72,6 +73,20 @@ class TestCreateProject:
         assert seen["url"] == "https://label.example.test/api/projects/"
         assert seen["auth"] == "Token secret-token"
         assert "<View/>" in seen["body"]
+
+    def test_settings_are_posted_alongside_title_and_config(self) -> None:
+        seen: dict[str, Any] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.read().decode())
+            return httpx.Response(201, json={"id": 42})
+
+        _client(handler).create_project("t", "<View/>", settings={"show_skip_button": False})
+        assert seen["body"] == {
+            "title": "t",
+            "label_config": "<View/>",
+            "show_skip_button": False,
+        }
 
     def test_http_error_is_wrapped_without_the_token(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

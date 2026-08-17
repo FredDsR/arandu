@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from arandu.shared.annotation.build import CONFIG_FILENAME, MANIFEST_FILENAME, TASKS_FILENAME
+from arandu.shared.annotation.client import LabelStudioError
 from arandu.shared.annotation.push import run_push_annotation
 from arandu.shared.annotation.schemas import AnnotationManifest
 
@@ -18,20 +19,25 @@ if TYPE_CHECKING:
 class FakeClient:
     """In-memory :class:`LabelStudioClient`."""
 
-    def __init__(self, next_id: int = 42) -> None:
+    def __init__(self, next_id: int = 42, *, accepted: int | None = None) -> None:
         self.next_id = next_id
+        self.accepted = accepted
         self.created: list[tuple[str, str]] = []
+        self.settings: list[dict[str, Any] | None] = []
         self.imported: list[tuple[int, list[dict[str, Any]]]] = []
 
-    def create_project(self, title: str, label_config: str) -> int:
+    def create_project(
+        self, title: str, label_config: str, *, settings: dict[str, Any] | None = None
+    ) -> int:
         self.created.append((title, label_config))
+        self.settings.append(settings)
         project_id = self.next_id
         self.next_id += 1
         return project_id
 
     def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int:
         self.imported.append((project_id, tasks))
-        return len(tasks)
+        return len(tasks) if self.accepted is None else self.accepted
 
     def export_annotations(self, project_id: int) -> list[dict[str, Any]]:
         return []
@@ -110,6 +116,52 @@ class TestDuplicateProtection:
         assert second == 99
         assert manifest.project_id == 99
         assert manifest.project_ids == [42, 99]
+
+
+class TestSkipButton:
+    """A skip writes a rating-free annotation, so the button is turned off."""
+
+    def test_create_disables_the_skip_button(self, built: Path) -> None:
+        client = FakeClient()
+        run_push_annotation("run-a", client=client, base_dir=built)
+        assert client.settings[0] == {"show_skip_button": False}
+
+
+class TestAtomicity:
+    """The project id is recorded before the import, never after."""
+
+    def test_failed_import_still_records_the_project_id(self, built: Path) -> None:
+        class ImportFails(FakeClient):
+            def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int:
+                raise LabelStudioError("timed out after 60s")
+
+        with pytest.raises(LabelStudioError):
+            run_push_annotation("run-a", client=ImportFails(), base_dir=built)
+        assert _manifest(built).project_id == 42
+
+    def test_a_re_push_after_a_failed_import_is_refused(self, built: Path) -> None:
+        class ImportFails(FakeClient):
+            def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int:
+                raise LabelStudioError("timed out after 60s")
+
+        with pytest.raises(LabelStudioError):
+            run_push_annotation("run-a", client=ImportFails(), base_dir=built)
+        second = FakeClient(next_id=43)
+        with pytest.raises(ValueError, match="42"):
+            run_push_annotation("run-a", client=second, base_dir=built)
+        assert second.created == []
+
+
+class TestAcceptedCount:
+    """Silently importing fewer tasks is unrated pairs that nobody can tell apart."""
+
+    def test_short_import_raises_naming_both_counts(self, built: Path) -> None:
+        with pytest.raises(ValueError, match="accepted 0 of the 1"):
+            run_push_annotation("run-a", client=FakeClient(accepted=0), base_dir=built)
+
+    def test_short_import_names_the_project(self, built: Path) -> None:
+        with pytest.raises(ValueError, match="42"):
+            run_push_annotation("run-a", client=FakeClient(accepted=0), base_dir=built)
 
 
 class TestErrors:

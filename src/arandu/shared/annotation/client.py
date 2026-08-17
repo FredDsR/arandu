@@ -33,7 +33,9 @@ class LabelStudioError(RuntimeError):
 class LabelStudioClient(Protocol):
     """The three operations the annotation instrument needs."""
 
-    def create_project(self, title: str, label_config: str) -> int:
+    def create_project(
+        self, title: str, label_config: str, *, settings: dict[str, Any] | None = None
+    ) -> int:
         """Create a project and return its id."""
         ...
 
@@ -82,14 +84,29 @@ class HttpLabelStudioClient:
             raise LabelStudioError(f"{method} {path} returned {response.status_code}: {body}")
         return response
 
-    def create_project(self, title: str, label_config: str) -> int:
+    def create_project(
+        self, title: str, label_config: str, *, settings: dict[str, Any] | None = None
+    ) -> int:
         """Create a project and return its id.
+
+        Args:
+            title: Project title.
+            label_config: The labeling config XML.
+            settings: Extra project fields posted alongside ``title`` and
+                ``label_config``. The Label Studio project serializer accepts
+                the project's own settings in the create payload, so the caller
+                decides the policy and this transport stays generic.
+
+        Returns:
+            The created project id.
 
         Raises:
             LabelStudioError: On any API failure, or if the response carries no
                 integer id.
         """
-        payload = {"title": title, "label_config": label_config}
+        payload: dict[str, Any] = {"title": title, "label_config": label_config}
+        if settings:
+            payload.update(settings)
         data = self._request("POST", "/api/projects/", json=payload).json()
         project_id = data.get("id") if isinstance(data, dict) else None
         if not isinstance(project_id, int):

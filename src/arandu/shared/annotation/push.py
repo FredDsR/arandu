@@ -23,6 +23,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Project settings posted with the create call.
+#:
+#: ``show_skip_button`` is a Label Studio ``Project`` boolean field (default
+#: ``True``, "Show a skip button in interface and allow annotators to skip the
+#: task") and is listed in ``ProjectSerializer.Meta.fields``, so it can be set at
+#: creation time. It is turned off because a skip writes an annotation with
+#: ``was_cancelled: true`` and an empty ``result``: a rating that does not exist
+#: but occupies the slot of one. ``required="true"`` on the Choices widget blocks
+#: Submit, not Skip. ``pull`` still tolerates cancelled annotations, since a
+#: project created by hand in the UI does not go through this call.
+PROJECT_SETTINGS: dict[str, Any] = {"show_skip_button": False}
+
 
 def _outputs_dir(base: Path, pipeline_id: str) -> Path:
     """Return the annotation stage's outputs directory for ``pipeline_id``."""
@@ -52,8 +64,9 @@ def run_push_annotation(
 
     Raises:
         FileNotFoundError: If the build artifacts are absent.
-        ValueError: If a project already exists and ``force`` is false, or the
-            task count disagrees with the manifest.
+        ValueError: If a project already exists and ``force`` is false, if the
+            task count disagrees with the manifest, or if Label Studio accepted
+            fewer tasks than were sent.
         LabelStudioError: On any API failure.
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
@@ -83,12 +96,27 @@ def run_push_annotation(
         )
 
     project_title = title or f"Validade êmica ({pipeline_id})"
-    project_id = client.create_project(project_title, config_path.read_text(encoding="utf-8"))
-    imported = client.import_tasks(project_id, tasks)
+    project_id = client.create_project(
+        project_title, config_path.read_text(encoding="utf-8"), settings=PROJECT_SETTINGS
+    )
 
+    # Record the project before importing, not after. If the import times out
+    # while the server has already accepted the tasks, an unrecorded id would
+    # leave the duplicate guard silent and the next run would create a second
+    # live project: exactly the split the guard exists to prevent. A recorded id
+    # with a failed import is the safe direction, since it is recoverable.
     manifest.project_id = project_id
     manifest.project_ids = [*manifest.project_ids, project_id]
     manifest.save(manifest_path)
+
+    imported = client.import_tasks(project_id, tasks)
+    if imported != len(tasks):
+        raise ValueError(
+            f"Label Studio accepted {imported} of the {len(tasks)} tasks sent to project "
+            f"{project_id}. The missing tasks would be indistinguishable from unrated ones "
+            f"in every pull. Inspect the project and re-import the remainder, or delete it "
+            f"and push a fresh run."
+        )
 
     logger.info(
         "Pushed %d task(s) to Label Studio project %d (%s).", imported, project_id, project_title
