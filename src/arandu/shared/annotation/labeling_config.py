@@ -44,31 +44,65 @@ _SUMMARY_TITLE = "Cascata de pontuação (resumo)"
 #: judgment; and make the collapsed ruler summary secondary to it. Prose is
 #: capped at ~70 characters per line, which is where continuous reading stops
 #: costing extra eye travel.
+#:
+#: Theme-agnostic by construction. The first version hardcoded light-theme greys
+#: and went unreadable under Label Studio's dark theme, so no rule here may name
+#: a colour: text always inherits, emphasis is spent through ``opacity``, and
+#: every surface and rule is a translucent neutral that darkens a light
+#: background and lightens a dark one. A dark-mode override with hardcoded dark
+#: values would only move the same failure to the next palette change.
 _STYLE = """
     .emic-summary { margin: 0 0 14px; }
-    .emic-summary h4 { font-size: 0.95em; margin: 12px 0 4px; color: #3d3d3d; }
+    .emic-summary h4 { font-size: 0.95em; margin: 12px 0 4px; color: inherit; }
     .emic-summary h6 {
-      max-width: 70ch; font-size: 0.88em; font-weight: 400; color: #5c5c5c;
-      line-height: 1.5; margin: 0 0 6px;
+      max-width: 70ch; font-size: 0.88em; font-weight: 400; color: inherit;
+      line-height: 1.5; margin: 0 0 6px; opacity: 0.85;
     }
     .emic-pair {
-      border: 1px solid #d0d0d0; border-radius: 6px; background: #fafafa;
-      padding: 10px 14px; margin: 0 0 16px;
+      border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 6px;
+      background: rgba(128, 128, 128, 0.08); padding: 10px 14px; margin: 0 0 16px;
     }
     .emic-pair h4 {
       font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.05em;
-      color: #6b6b6b; margin: 10px 0 3px;
+      color: inherit; opacity: 0.75; margin: 10px 0 3px;
     }
     .emic-segment {
-      max-height: 260px; overflow-y: auto; background: #ffffff;
-      border: 1px solid #e4e4e4; border-radius: 4px; padding: 8px 10px;
-      line-height: 1.55;
+      max-height: 260px; overflow-y: auto;
+      border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 4px;
+      padding: 8px 10px; line-height: 1.55;
     }
-    .emic-score h4 { font-size: 0.95em; margin: 12px 0 6px; color: #3d3d3d; }
+    .emic-score h4 { font-size: 0.95em; margin: 12px 0 6px; color: inherit; }
     .emic-score h6 {
-      max-width: 70ch; font-size: 0.88em; font-weight: 400; color: #5c5c5c;
-      line-height: 1.5; margin: 0 0 6px;
+      max-width: 70ch; font-size: 0.88em; font-weight: 400; color: inherit;
+      line-height: 1.5; margin: 0 0 6px; opacity: 0.85;
     }
+"""
+
+#: Wrapper class for the instructions modal, and the scope of every rule below.
+_INSTRUCTION_CLASS = "emic-instructions"
+
+#: Instructions-modal typography.
+#:
+#: Label Studio renders ``expert_instruction`` with its own tight modal defaults,
+#: which put headings flush against the preceding paragraph and turn the ruler
+#: into one undifferentiated block. Every rule is scoped to
+#: ``.emic-instructions`` so nothing leaks into the platform's own UI, and the
+#: same theme-agnostic constraint as ``_STYLE`` applies: no colour is named.
+#:
+#: The heading margins are deliberately asymmetric (much more space above than
+#: below) so a title binds to the section it opens, and each ``h2`` carries a
+#: translucent rule so the five major sections are separable at a glance.
+_INSTRUCTION_STYLE = """
+      .emic-instructions { max-width: 72ch; line-height: 1.6; color: inherit; }
+      .emic-instructions h1 { font-size: 1.5em; line-height: 1.3; margin: 0 0 0.9em; }
+      .emic-instructions h2 {
+        font-size: 1.18em; line-height: 1.3; margin: 2.4em 0 0.7em;
+        padding-top: 1.1em; border-top: 1px solid rgba(128, 128, 128, 0.3);
+      }
+      .emic-instructions h3 { font-size: 1em; line-height: 1.3; margin: 1.8em 0 0.5em; }
+      .emic-instructions p { margin: 0 0 0.9em; line-height: 1.6; }
+      .emic-instructions ul { margin: 0 0 1.1em; padding-left: 1.5em; list-style: disc; }
+      .emic-instructions li { margin: 0 0 0.45em; line-height: 1.55; }
 """
 
 
@@ -197,7 +231,14 @@ def render_labeling_config(ruler: dict[str, Any]) -> str:
         # "5 - Preserva o sentido, ...": the number the study records, next to the
         # anchor sentence the judge prompt puts beside the same number.
         option = f"{entry['score']} - {entry['label']}"
-        lines.append(f"      <Choice value={_attr(option)} />")
+        # The hotkey is pinned to the score, never left to position. Label Studio
+        # assigns hotkeys by position when the attribute is absent, and these
+        # options are ordered 5..1, so the defaults bound key 1 to score 5 and key
+        # 5 to score 1: an annotator pressing 5 for "preserves the meaning" silently
+        # recorded the most severe distortion, and the recorded value is a valid
+        # score, so the corruption is not detectable after the round.
+        hotkey = str(entry["score"])
+        lines.append(f"      <Choice value={_attr(option)} hotkey={_attr(hotkey)} />")
     lines.append("    </Choices>")
 
     lines += [
@@ -229,10 +270,14 @@ def render_expert_instruction(ruler: dict[str, Any]) -> str:
     ruler so the canvas does not have to: construct, scale, loss types,
     provisions, the full scoring guide, and the annotator-only calibration.
 
-    Plain semantic HTML with no styling and no external reference: it is
-    injected into a page whose CSS is Label Studio's, and a research instrument
-    must not depend on a resource that can move or disappear between the audit
-    and the annotation round.
+    Semantic HTML, self-contained, with no external reference: it is injected
+    into a page whose CSS is Label Studio's, and a research instrument must not
+    depend on a resource that can move or disappear between the audit and the
+    annotation round. Typography comes from a ``<style>`` block scoped to
+    ``.emic-instructions``, inlined in the fragment. Whether Label Studio's
+    sanitiser keeps that block is not knowable from here, so the markup is
+    written to read acceptably without it: every enumeration is a real ``<ul>``,
+    every section a real heading, and no meaning is carried by styling alone.
 
     Judge-only material is excluded here for the same reason it is excluded from
     the canvas.
@@ -251,7 +296,12 @@ def render_expert_instruction(ruler: dict[str, Any]) -> str:
     provisions = ruler["provisions"]
     guide = ruler["guide"]
 
-    lines: list[str] = [f"<h1>{escape(_HEADER)}</h1>", "<h2>O construto</h2>"]
+    lines: list[str] = [
+        f'<div class="{_INSTRUCTION_CLASS}">',
+        f"<style>{_INSTRUCTION_STYLE}</style>",
+        f"<h1>{escape(_HEADER)}</h1>",
+        "<h2>O construto</h2>",
+    ]
     lines += _html_paragraphs(
         [construct[key] for key in ("emic", "non_emic", "gradient", "question", "not_faithfulness")]
     )
@@ -278,4 +328,5 @@ def render_expert_instruction(ruler: dict[str, Any]) -> str:
     lines.append("<h2>Quando hesitar</h2>")
     lines += _html_paragraphs(list(ruler["annotator_only"].values()))
 
+    lines.append("</div>")
     return "\n".join(lines) + "\n"

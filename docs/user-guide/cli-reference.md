@@ -462,7 +462,7 @@ Writes to `results/<id>/annotation/outputs/`:
 | File | Contents |
 | --- | --- |
 | `labeling_config.xml` | The annotation canvas, with the 1-5 anchors rendered verbatim from `prompts/judge/criteria/emic_validity/ruler.pt.yaml`. |
-| `expert_instruction.html` | The full ruler, for the project's instructions modal. Plain semantic HTML, no external resource. |
+| `expert_instruction.html` | The full ruler, for the project's instructions modal. Semantic HTML with a scoped `<style>` block, no external resource; still readable if Label Studio strips the block. |
 | `tasks.json` | The blinded tasks. Each carries only `task_id`, `segment`, `question`, `answer`. |
 | `manifest.json` | Seed, provenance hashes, and the `task_id -> pair_id` join. Never uploaded. |
 
@@ -483,7 +483,11 @@ segment renders in a height-capped box with its own scrollbar, so a long chunk
 scrolls inside itself instead of pushing the rating off screen.
 
 The 1-5 anchor sentences stay on the options themselves in
-`labeling_config.xml`; that placement is the instrument. Judge-only material
+`labeling_config.xml`; that placement is the instrument. Each option also
+carries an explicit `hotkey` equal to its own score, so pressing `5` records a
+5. Left to Label Studio, hotkeys are assigned by position, and the options run
+5 down to 1: key `1` would record a 5 and key `5` would record a 1, silently and
+with no way to detect it afterwards. Judge-only material
 (the role framing, the JSON output contract, the rationale rules) appears in
 neither surface: it would prime the annotator with the machine's framing. Both
 are checked verbatim against the ruler by the test suite.

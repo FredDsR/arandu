@@ -62,6 +62,39 @@ def surfaces(config: str, instruction: str) -> str:
     return _decoded_config(config) + "\n" + unescape(instruction)
 
 
+def _instruction_css(instruction: str) -> str:
+    """Return the CSS of the instruction fragment's scoped ``<style>`` block."""
+    style = ET.fromstring(f"<div>{instruction}</div>").find(".//style")
+    assert style is not None, "the instruction carries no style block"
+    return str(style.text)
+
+
+def _css_color_declarations(css: str) -> list[str]:
+    """Return the value of every ``color:`` declaration, excluding compounds.
+
+    ``background-color`` and ``border-color`` are not text colour, so the
+    lookbehind drops any property that ends in ``-color``.
+    """
+    return [value.strip() for value in re.findall(r"(?<![-\w])color\s*:\s*([^;}]+)", css)]
+
+
+def _assert_theme_agnostic(css: str) -> None:
+    """Fail if the CSS names a colour instead of inheriting or tinting.
+
+    The instrument is read under both Label Studio themes. Any literal colour
+    picks one of them and makes the other unreadable, which is what happened to
+    the first version of the canvas style, so this is asserted mechanically
+    rather than by eye: no hex literal anywhere, no opaque ``rgb()``, every
+    translucent neutral below full alpha, and ``color`` only ever ``inherit``.
+    """
+    assert re.search(r"#[0-9a-fA-F]{3,8}", css) is None, "hex colour literal in CSS"
+    assert "rgb(" not in css, "opaque rgb() in CSS"
+    alphas = [float(alpha) for alpha in re.findall(r"rgba\([^)]*,\s*([0-9.]+)\s*\)", css)]
+    assert alphas, "expected translucent neutrals to carry the surfaces"
+    assert all(alpha < 1.0 for alpha in alphas), "fully opaque rgba() in CSS"
+    assert set(_css_color_declarations(css)) <= {"inherit"}, "CSS sets an explicit text colour"
+
+
 def _ruler_passages(ruler: dict[str, Any]) -> list[tuple[str, str]]:
     """Return every annotator-facing ruler passage as ``(where, text)``.
 
@@ -134,6 +167,23 @@ class TestStructure:
         assert rendered == expected
         assert [str(v).split(" - ")[0] for v in rendered] == ["5", "4", "3", "2", "1"]
 
+    def test_every_option_hotkey_equals_its_own_score(self, config: str) -> None:
+        """The regression that must never come back.
+
+        With no explicit ``hotkey`` Label Studio numbers the options by position,
+        and these run 5..1, so key 1 recorded a 5 and key 5 recorded a 1. An
+        annotator pressing 5 for "preserves the meaning" stored the most severe
+        distortion label, and nothing in the UI said so.
+        """
+        choices = ET.fromstring(config).find(".//Choices")
+        assert choices is not None
+        options = list(choices.iter("Choice"))
+        assert options
+        for option in options:
+            score = re.match(r"\d+", str(option.get("value")))
+            assert score is not None, option.get("value")
+            assert option.get("hotkey") == score.group()
+
     def test_rationale_is_an_optional_textarea(self, config: str) -> None:
         area = ET.fromstring(config).find(".//TextArea")
         assert area is not None
@@ -182,6 +232,60 @@ class TestLayout:
         css = str(style.text)
         assert "max-height" in css
         assert "overflow-y: auto" in css
+
+
+class TestStyling:
+    """Both surfaces are read under a light and a dark theme, and neither picks one."""
+
+    def test_the_canvas_style_names_no_colour(self, config: str) -> None:
+        style = ET.fromstring(config).find("Style")
+        assert style is not None
+        _assert_theme_agnostic(str(style.text))
+
+    def test_the_canvas_style_keeps_its_layout_duties(self, config: str) -> None:
+        style = ET.fromstring(config).find("Style")
+        assert style is not None
+        css = str(style.text)
+        for declaration in ("max-height", "overflow-y: auto", "max-width: 70ch"):
+            assert declaration in css
+
+    def test_the_instruction_style_names_no_colour(self, instruction: str) -> None:
+        _assert_theme_agnostic(_instruction_css(instruction))
+
+    def test_the_instruction_style_is_scoped_to_its_wrapper(self, instruction: str) -> None:
+        """Nothing may leak into Label Studio's own UI, which shares the modal."""
+        root = ET.fromstring(f"<div>{instruction}</div>")
+        wrapper = root.find("./div")
+        assert wrapper is not None
+        assert wrapper.get("class") == "emic-instructions"
+        selectors = re.findall(r"([^{}]+)\{", _instruction_css(instruction))
+        assert selectors
+        for selector in selectors:
+            assert selector.strip().startswith(".emic-instructions"), selector
+
+    @pytest.mark.parametrize("level", ["h2", "h3"])
+    def test_a_heading_gets_more_space_above_than_below(self, instruction: str, level: str) -> None:
+        """A title must bind to the section it opens, not to the paragraph before it."""
+        rule = re.search(
+            rf"\.emic-instructions {level} \{{(.*?)\}}", _instruction_css(instruction), re.DOTALL
+        )
+        assert rule is not None
+        margin = re.search(r"margin:\s*([0-9.]+)em\s+\S+\s+([0-9.]+)em", rule.group(1))
+        assert margin is not None
+        assert float(margin.group(1)) > float(margin.group(2))
+
+    def test_it_still_reads_without_the_style_block(
+        self, instruction: str, ruler: dict[str, Any]
+    ) -> None:
+        """Label Studio may sanitise the block away, so meaning rides on the markup."""
+        root = ET.fromstring(f"<div>{instruction}</div>")
+        assert len(list(root.iter("h1"))) == 1
+        assert len(list(root.iter("h2"))) >= 5
+        items = {str(li.text) for ul in root.iter("ul") for li in ul}
+        for entry in ruler["scale"]:
+            assert f"{entry['score']} - {entry['label']}" in items
+        for element in root.iter():
+            assert element.get("style") is None, "no meaning may ride on an inline style"
 
 
 class TestRulerFidelity:
@@ -248,8 +352,9 @@ class TestInstructionHtml:
         assert ET.fromstring(f"<div>{instruction}</div>") is not None
 
     def test_uses_plain_semantic_elements(self, instruction: str) -> None:
+        """The wrapper and its scoped style block aside, the markup stays semantic."""
         root = ET.fromstring(f"<div>{instruction}</div>")
-        tags = {el.tag for el in root.iter()} - {"div"}
+        tags = {el.tag for el in root.iter()} - {"div", "style"}
         assert tags <= {"h1", "h2", "h3", "p", "ul", "li"}
 
     def test_carries_no_script(self, instruction: str) -> None:
