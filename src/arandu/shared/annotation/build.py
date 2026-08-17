@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 CONFIG_FILENAME = "labeling_config.xml"
 TASKS_FILENAME = "tasks.json"
 MANIFEST_FILENAME = "manifest.json"
+LABELS_DIRNAME = "labels"
 
 
 def _shuffle_key(seed: int, pair_id: str) -> str:
@@ -91,8 +92,9 @@ def run_build_annotation(
     Raises:
         RulerNotSignedOffError: If the ruler gate is still open.
         FileNotFoundError: If the sample or its manifest is absent.
-        ValueError: If the sample count disagrees with the sample manifest, or a
-            previous build of this run has already been pushed.
+        ValueError: If the sample count disagrees with the sample manifest, if
+            the sample repeats a ``pair_id``, or if a previous build of this run
+            has already been pushed or already has pulled labels.
     """
     # Gate first: nothing is written while the anchors are unreviewed.
     ruler = load_ruler(ruler_path)
@@ -108,9 +110,8 @@ def run_build_annotation(
             f"Run `arandu build-human-eval-sample --id {pipeline_id} --seed <n>` first."
         )
 
-    existing_manifest_path = (
-        base / pipeline_id / PipelineType.ANNOTATION.value / "outputs" / MANIFEST_FILENAME
-    )
+    annotation_outputs = base / pipeline_id / PipelineType.ANNOTATION.value / "outputs"
+    existing_manifest_path = annotation_outputs / MANIFEST_FILENAME
     if existing_manifest_path.exists():
         existing = AnnotationManifest.load(existing_manifest_path)
         if existing.project_id is not None:
@@ -121,6 +122,20 @@ def run_build_annotation(
                 f"pull. Create a new run id instead."
             )
 
+    # The push guard above keys on project_id, which stays None on the file-mode
+    # pull path (a project created by hand in the UI, then `emic-annotation-pull
+    # -f`). Pulled labels are the other half of the same join, so their presence
+    # forbids a rebuild just as a live project does.
+    existing_labels = sorted((annotation_outputs / LABELS_DIRNAME).glob("*.jsonl"))
+    if existing_labels:
+        raise ValueError(
+            f"Run {pipeline_id!r} already has pulled labels "
+            f"({', '.join(path.name for path in existing_labels)}). Rebuilding would rewrite "
+            f"the task_id -> pair_id join those labels were resolved through, silently "
+            f"invalidating every pair_id in them with nothing marking the divergence. "
+            f"Create a new run id instead."
+        )
+
     sample_manifest = SampleManifest.load(sample_manifest_path)
     items = _load_sample(sample_path)
     if len(items) != sample_manifest.total_items:
@@ -130,7 +145,18 @@ def run_build_annotation(
             f"rebuild it before annotating."
         )
 
+    # Keying by pair_id collapses duplicates, so the count has to be re-checked
+    # after the dict is built: without this, a repeated pair_id would silently
+    # drop a pair and the reduced count would be recorded as authoritative.
     by_pair_id = {item.pair_id: item for item in items}
+    if len(by_pair_id) != sample_manifest.total_items:
+        raise ValueError(
+            f"{SAMPLE_FILENAME} holds {len(items)} pairs but only {len(by_pair_id)} distinct "
+            f"pair_id(s); {SAMPLE_MANIFEST_FILENAME} declares "
+            f"{sample_manifest.total_items}. A duplicated pair_id would silently shrink the "
+            f"instrument; rebuild the sample before annotating."
+        )
+
     ordered_pair_ids = shuffle_order(list(by_pair_id), seed=seed)
 
     tasks: list[AnnotationTask] = []

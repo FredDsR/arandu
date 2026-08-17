@@ -10,6 +10,7 @@ import yaml
 
 from arandu.shared.annotation.build import (
     CONFIG_FILENAME,
+    LABELS_DIRNAME,
     MANIFEST_FILENAME,
     TASKS_FILENAME,
     run_build_annotation,
@@ -212,3 +213,61 @@ class TestErrors:
         pushed.save(path)
         with pytest.raises(ValueError, match="42"):
             run_build_annotation("run-a", seed=5, base_dir=sample_run)
+
+    def test_duplicate_pair_id_in_the_sample_fails(self, sample_run: Path) -> None:
+        """Keying by pair_id collapses duplicates; the count must catch that."""
+        sample_path = sample_run / "run-a" / "human_eval" / "outputs" / "sample.jsonl"
+        lines = sample_path.read_text(encoding="utf-8").splitlines()
+        lines[-1] = lines[0]
+        sample_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="distinct pair_id"):
+            run_build_annotation("run-a", seed=5, base_dir=sample_run)
+
+    def test_duplicate_pair_id_writes_no_tasks(self, sample_run: Path) -> None:
+        sample_path = sample_run / "run-a" / "human_eval" / "outputs" / "sample.jsonl"
+        lines = sample_path.read_text(encoding="utf-8").splitlines()
+        lines[-1] = lines[0]
+        sample_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with pytest.raises(ValueError):
+            run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        assert not (sample_run / "run-a" / "annotation" / "outputs" / TASKS_FILENAME).exists()
+
+
+class TestRebuildUnderPulledLabels:
+    """Labels are the other half of the join, so they forbid a rebuild too."""
+
+    def _write_labels(self, sample_run: Path) -> None:
+        labels = sample_run / "run-a" / "annotation" / "outputs" / LABELS_DIRNAME
+        labels.mkdir(parents=True, exist_ok=True)
+        (labels / "A1.jsonl").write_text(
+            '{"pair_id": "src-0:0", "annotator_id": "A1", "score": 5, '
+            '"rationale": null, "timestamp": "2026-09-01T10:00:00Z"}\n',
+            encoding="utf-8",
+        )
+
+    def test_rebuild_with_pulled_labels_refuses(self, sample_run: Path) -> None:
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        self._write_labels(sample_run)
+        with pytest.raises(ValueError, match=r"A1\.jsonl"):
+            run_build_annotation("run-a", seed=6, base_dir=sample_run)
+
+    def test_the_refusal_explains_the_join(self, sample_run: Path) -> None:
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        self._write_labels(sample_run)
+        with pytest.raises(ValueError, match="task_id -> pair_id"):
+            run_build_annotation("run-a", seed=6, base_dir=sample_run)
+
+    def test_the_refusal_leaves_the_old_tasks_untouched(self, sample_run: Path) -> None:
+        """It has to fire before create_run, or the outputs are already stirred."""
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        outputs = sample_run / "run-a" / "annotation" / "outputs"
+        before = (outputs / TASKS_FILENAME).read_bytes()
+        self._write_labels(sample_run)
+        with pytest.raises(ValueError):
+            run_build_annotation("run-a", seed=6, base_dir=sample_run)
+        assert (outputs / TASKS_FILENAME).read_bytes() == before
+
+    def test_an_empty_labels_dir_does_not_block_a_rebuild(self, sample_run: Path) -> None:
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        (sample_run / "run-a" / "annotation" / "outputs" / LABELS_DIRNAME).mkdir()
+        assert run_build_annotation("run-a", seed=6, base_dir=sample_run).seed == 6
