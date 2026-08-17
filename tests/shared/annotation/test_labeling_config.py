@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from arandu.shared.annotation.labeling_config import (
+    _SUMMARY_TITLE,
     render_expert_instruction,
     render_labeling_config,
 )
@@ -203,7 +204,9 @@ class TestLayout:
         assert collapse is not None
         panels = list(collapse.iter("Panel"))
         assert len(panels) == 1
-        assert "resumo" in str(panels[0].get("value"))
+        # Keyed on the constant, not a word from it: the panel's wording is the
+        # researcher's to change, and a title edit is not a layout regression.
+        assert panels[0].get("value") == _SUMMARY_TITLE
 
     def test_the_collapse_sits_inside_a_wrapper_we_can_style(self, config: str) -> None:
         """`Collapse`/`Panel` take no `className`, and their own chrome is light-theme.

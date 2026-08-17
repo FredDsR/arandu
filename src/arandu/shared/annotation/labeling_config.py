@@ -34,7 +34,7 @@ from typing import Any
 from xml.sax.saxutils import quoteattr
 
 _HEADER = "Validade êmica do par"
-_SUMMARY_TITLE = "Cascata de pontuação (resumo)"
+_SUMMARY_TITLE = "Guia de avaliação"
 
 #: Canvas typography.
 #:
