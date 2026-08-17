@@ -73,9 +73,13 @@ def _css_color_declarations(css: str) -> list[str]:
     """Return the value of every ``color:`` declaration, excluding compounds.
 
     ``background-color`` and ``border-color`` are not text colour, so the
-    lookbehind drops any property that ends in ``-color``.
+    lookbehind drops any property that ends in ``-color``. A trailing
+    ``!important`` is priority, not colour, so it is stripped before comparison:
+    ``inherit !important`` is still inheriting, and ``red !important`` still
+    fails.
     """
-    return [value.strip() for value in re.findall(r"(?<![-\w])color\s*:\s*([^;}]+)", css)]
+    values = re.findall(r"(?<![-\w])color\s*:\s*([^;}]+)", css)
+    return [re.sub(r"\s*!important$", "", value.strip()) for value in values]
 
 
 def _assert_theme_agnostic(css: str) -> None:
@@ -195,16 +199,28 @@ class TestLayout:
     """The pair sits immediately above the widget, and the ruler is out of the way."""
 
     def test_the_summary_is_a_panel_inside_a_collapse(self, config: str) -> None:
-        collapse = ET.fromstring(config).find("Collapse")
+        collapse = ET.fromstring(config).find(".//Collapse")
         assert collapse is not None
         panels = list(collapse.iter("Panel"))
         assert len(panels) == 1
         assert "resumo" in str(panels[0].get("value"))
 
+    def test_the_collapse_sits_inside_a_wrapper_we_can_style(self, config: str) -> None:
+        """`Collapse`/`Panel` take no `className`, and their own chrome is light-theme.
+
+        The only selector that can reach the component's DOM is a wrapper of
+        ours around it, so the wrapper is part of the contract, not decoration.
+        """
+        wrapper = ET.fromstring(config).find("./View[@className='emic-summary-wrap']")
+        assert wrapper is not None
+        assert wrapper.find("Collapse") is not None
+
     def test_the_pair_block_is_between_the_summary_and_the_score(self, config: str) -> None:
         root = ET.fromstring(config)
         order = [el.get("className") if el.tag == "View" else el.tag for el in root]
-        assert order.index("Collapse") < order.index("emic-pair") < order.index("emic-score")
+        assert (
+            order.index("emic-summary-wrap") < order.index("emic-pair") < order.index("emic-score")
+        )
 
     def test_the_score_widget_and_the_pair_are_adjacent(self, config: str) -> None:
         """Nothing may be inserted between them; that regression is the whole bug."""
@@ -247,6 +263,34 @@ class TestStyling:
         assert style is not None
         css = str(style.text)
         for declaration in ("max-height", "overflow-y: auto", "max-width: 70ch"):
+            assert declaration in css
+
+    def test_the_canvas_style_is_scoped_to_our_own_classes(self, config: str) -> None:
+        """The summary override is deliberately broad, so its scope is asserted.
+
+        Neutralising every descendant of the wrapper is the only way to reach
+        chrome whose class names we cannot read from here. That width is safe
+        only while every selector is anchored to a class this config emits, so
+        an unanchored rule (or one starting at a bare element or ``*``) fails.
+        """
+        style = ET.fromstring(config).find("Style")
+        assert style is not None
+        selectors = [
+            part.strip()
+            for group in re.findall(r"([^{}]+)\{", str(style.text))
+            for part in group.split(",")
+        ]
+        assert selectors
+        for selector in selectors:
+            assert selector.startswith(".emic-"), selector
+
+    def test_the_summary_override_neutralises_the_panel_chrome(self, config: str) -> None:
+        """Label Studio's `Panel` ships a light surface and text colour of its own."""
+        style = ET.fromstring(config).find("Style")
+        assert style is not None
+        css = str(style.text)
+        assert ".emic-summary-wrap * {" in css
+        for declaration in ("background: transparent !important", "color: inherit !important"):
             assert declaration in css
 
     def test_the_instruction_style_names_no_colour(self, instruction: str) -> None:

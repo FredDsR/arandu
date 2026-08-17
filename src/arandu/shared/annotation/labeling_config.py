@@ -51,7 +51,28 @@ _SUMMARY_TITLE = "Cascata de pontuação (resumo)"
 #: every surface and rule is a translucent neutral that darkens a light
 #: background and lightens a dark one. A dark-mode override with hardcoded dark
 #: values would only move the same failure to the next palette change.
+#:
+#: ``.emic-summary-wrap`` is the one place where the rules have to be blunt.
+#: ``<Collapse>``/``<Panel>`` are Label Studio components that render their own
+#: DOM with their own light-theme chrome (surface, border, shadow, text colour)
+#: inside our ``<View>``, so styling our wrapper alone leaves a white slab in a
+#: dark page. The class names of that inner DOM are not knowable from this
+#: repository and change between platform versions, so the override neutralises
+#: every descendant instead of naming one selector, and adds substring matches
+#: for the likely container classes to strip the box treatment as well. Being
+#: scoped to a class only this block carries is what makes that width safe:
+#: nothing outside our own wrapper can be reached by any of it.
 _STYLE = """
+    .emic-summary-wrap {
+      border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 6px;
+      background: rgba(128, 128, 128, 0.06); margin: 0 0 14px;
+    }
+    .emic-summary-wrap * { background: transparent !important; color: inherit !important; }
+    .emic-summary-wrap [class*="collapse"], .emic-summary-wrap [class*="Collapse"],
+    .emic-summary-wrap [class*="panel"], .emic-summary-wrap [class*="Panel"],
+    .emic-summary-wrap [class*="accordion"] {
+      border-color: rgba(128, 128, 128, 0.3) !important; box-shadow: none !important;
+    }
     .emic-summary { margin: 0 0 14px; }
     .emic-summary h4 { font-size: 0.95em; margin: 12px 0 4px; color: inherit; }
     .emic-summary h6 {
@@ -152,18 +173,25 @@ def _summary_lines(ruler: dict[str, Any]) -> list[str]:
     annotator-only calibration about the fine boundaries and the narrow door to
     1. Everything else lives in the instructions modal.
 
+    The ``<Collapse>`` is wrapped in a ``<View>`` of our own carrying
+    ``emic-summary-wrap``. ``Collapse`` and ``Panel`` take no ``className``, and
+    the inner ``emic-summary`` view sits *inside* the panel body, so without that
+    outer wrapper there is no selector from which the component's own chrome can
+    be reached. See ``_STYLE``.
+
     Args:
         ruler: The parsed ruler mapping.
 
     Returns:
-        The lines of the ``<Collapse>`` block.
+        The lines of the wrapped ``<Collapse>`` block.
     """
     guide = ruler["guide"]
-    indent = "        "
+    indent = "          "
     lines = [
-        "  <Collapse>",
-        f"    <Panel value={_attr(_SUMMARY_TITLE)}>",
-        '      <View className="emic-summary">',
+        '  <View className="emic-summary-wrap">',
+        "    <Collapse>",
+        f"      <Panel value={_attr(_SUMMARY_TITLE)}>",
+        '        <View className="emic-summary">',
         _paragraph(guide["cascade_intro"], indent),
     ]
     lines += [
@@ -175,7 +203,7 @@ def _summary_lines(ruler: dict[str, Any]) -> list[str]:
         _header("Quando hesitar", indent),
     ]
     lines += [_paragraph(text, indent) for text in ruler["annotator_only"].values()]
-    lines += ["      </View>", "    </Panel>", "  </Collapse>"]
+    lines += ["        </View>", "      </Panel>", "    </Collapse>", "  </View>"]
     return lines
 
 
