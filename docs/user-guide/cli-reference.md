@@ -455,9 +455,10 @@ arandu emic-judge --id project-001 --scope all
 (`remember`, `understand`, `analyze`, `evaluate`) x `--per-cell` (default 30) =
 120 pairs. The frame is the corpus `judge-qa` approved, read from the CEP
 record's own verdict, so a `judge-qa` re-run is picked up instead of leaving the
-frame pinned to a stale snapshot. Pairs the judge rejected are dropped and
-counted in the manifest's `excluded_not_approved`; `apply` / `create` pairs are
-dropped and counted per level in `excluded_bloom`.
+frame pinned to a stale snapshot. Pairs the judge did not approve are
+dropped and counted in the manifest's `excluded_not_approved`, which covers
+both the pairs it rejected and the pairs it never scored; `apply` / `create`
+pairs are dropped and counted per level in `excluded_bloom`.
 
 The builder does **not** read the `emic_judge` stage. It used to, because the old
 design stratified primarily by emic band (`duvidosa` <=3 / `limpa` >=4), which
