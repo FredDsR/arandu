@@ -44,8 +44,6 @@ def _item(index: int) -> SampleItem:
         question=f"pergunta {index}",
         answer=f"resposta {index}",
         bloom_level=("remember", "understand", "analyze", "evaluate")[index % 4],
-        emic_score=(index % 5) + 1,
-        cell_id=f"{('remember', 'understand', 'analyze', 'evaluate')[index % 4]}:limpa",
         slot_id=index,
     )
 
