@@ -65,6 +65,18 @@ class TestSettings:
         with pytest.raises(ValueError):
             LabelStudioSettings(_env_file=None)
 
+    def test_an_empty_token_is_a_validation_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`.env.example` ships the key with no value, so this is the copy-it flow.
+
+        Without the constraint it validates and the push sends
+        `Authorization: Token ` for a 401 mid-import, instead of the CLI's
+        "Label Studio is not configured" message.
+        """
+        monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://label.example.test")
+        monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "")
+        with pytest.raises(ValueError):
+            LabelStudioSettings(_env_file=None)
+
     def test_trailing_slash_is_normalized(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_URL", "https://label.example.test/")
         monkeypatch.setenv("ARANDU_LABEL_STUDIO_TOKEN", "abc")
@@ -302,6 +314,24 @@ class TestImportTasks:
             return httpx.Response(201, json={"task_count": 2})
 
         assert _client(handler).import_tasks(42, [{"data": {}}, {"data": {}}]) == 2
+
+    def test_a_response_without_a_count_returns_none(self) -> None:
+        """An unreported count must not be read as `len(tasks)`.
+
+        That fallback would report success for a partial import and leave the
+        missing pairs indistinguishable from unrated ones in every pull.
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(201, json={"import": 12, "status": "created"})
+
+        assert _client(handler).import_tasks(42, [{"data": {}}, {"data": {}}]) is None
+
+    def test_a_non_dict_response_returns_none(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(201, json=[{"id": 1}])
+
+        assert _client(handler).import_tasks(42, [{"data": {}}]) is None
 
     def test_error_is_wrapped(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

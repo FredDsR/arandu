@@ -40,12 +40,20 @@ class FakeClient:
         self.next_id += 1
         return project_id
 
-    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int:
+    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int | None:
         self.imported.append((project_id, tasks))
         return len(tasks) if self.accepted is None else self.accepted
 
     def export_annotations(self, project_id: int) -> list[dict[str, Any]]:
         return []
+
+
+class _NoCountClient(FakeClient):
+    """Answers the import with a job envelope carrying no ``task_count``."""
+
+    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int | None:
+        self.imported.append((project_id, tasks))
+        return None
 
 
 @pytest.fixture
@@ -209,6 +217,28 @@ class TestAcceptedCount:
         assert "--force" in message
         assert "--project-id" in message
         assert "fresh run id" in message
+
+
+class TestUnreportedCount:
+    """An import the instance did not count is not an import that succeeded."""
+
+    def test_an_unreported_count_is_refused(self, built: Path) -> None:
+        with pytest.raises(ValueError, match="reported no task count"):
+            run_push_annotation("run-a", client=_NoCountClient(), base_dir=built)
+
+    def test_the_message_names_the_check_and_the_cost_of_re_pushing(self, built: Path) -> None:
+        with pytest.raises(ValueError) as excinfo:
+            run_push_annotation("run-a", client=_NoCountClient(), base_dir=built)
+        message = str(excinfo.value)
+        assert "compare its task count" in message
+        assert "--force" in message
+        assert "--project-id" in message
+
+    def test_the_project_stays_recorded_so_the_ui_check_is_possible(self, built: Path) -> None:
+        """The tasks may well be there; the operator needs the id to go look."""
+        with pytest.raises(ValueError):
+            run_push_annotation("run-a", client=_NoCountClient(), base_dir=built)
+        assert _manifest(built).project_id == 42
 
 
 class TestErrors:

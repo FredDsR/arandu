@@ -94,8 +94,8 @@ class LabelStudioClient(Protocol):
         """Create a project and return its id."""
         ...
 
-    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int:
-        """Import tasks into a project and return how many were accepted."""
+    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int | None:
+        """Import tasks and return how many were accepted, or ``None`` if unreported."""
         ...
 
     def export_annotations(self, project_id: int) -> list[dict[str, Any]]:
@@ -248,15 +248,23 @@ class HttpLabelStudioClient:
         logger.info("Created Label Studio project %d.", project_id)
         return project_id
 
-    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int:
+    def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> int | None:
         """Import tasks and return the accepted count.
+
+        Returns:
+            The count the instance reports it accepted, or ``None`` when the
+            response carries no integer ``task_count``. An unreported count is
+            not an accepted one: falling back to ``len(tasks)`` here would make
+            the caller's partial-import guard unfireable in exactly the case it
+            exists for, so what "no count" means is the caller's policy to
+            decide and this transport stays generic.
 
         Raises:
             LabelStudioError: On any API failure.
         """
         data = self._request("POST", f"/api/projects/{project_id}/import", json=tasks).json()
         count = data.get("task_count") if isinstance(data, dict) else None
-        return count if isinstance(count, int) else len(tasks)
+        return count if isinstance(count, int) else None
 
     def export_annotations(self, project_id: int) -> list[dict[str, Any]]:
         """Return the project's tasks with their annotations.

@@ -78,7 +78,7 @@ def run_push_annotation(
         FileNotFoundError: If the build artifacts are absent.
         ValueError: If a project already exists and ``force`` is false, if the
             task count disagrees with the manifest, or if Label Studio accepted
-            fewer tasks than were sent.
+            fewer tasks than were sent or reported no count at all.
         LabelStudioError: On any API failure.
     """
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
@@ -132,6 +132,17 @@ def run_push_annotation(
     manifest.save(manifest_path)
 
     imported = client.import_tasks(project_id, tasks)
+    if imported is None:
+        raise ValueError(
+            f"Label Studio accepted the import into project {project_id} but reported no task "
+            f"count, so nothing here can tell whether all {len(tasks)} tasks landed. A missing "
+            f"task is indistinguishable from an unrated pair in every later pull, which is why "
+            f"this is not read as success. Open project {project_id} and compare its task count "
+            f"with {len(tasks)}: if it matches, the manifest already records the project, so "
+            f"leave it alone and invite the annotators; if it is short, import the remainder "
+            f"into the same project from the UI. Re-pushing with --force appends a second id "
+            f"and makes every later pull need `--project-id <n>`."
+        )
     if imported != len(tasks):
         raise ValueError(
             f"Label Studio accepted {imported} of the {len(tasks)} tasks sent to project "

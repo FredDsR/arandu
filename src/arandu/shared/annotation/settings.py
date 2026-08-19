@@ -15,6 +15,15 @@ class LabelStudioSettings(BaseSettings):
     in this codebase (``ResultsConfig``, ``KGConfig``, the QA and transcription
     configs), so a documented ``.env`` entry is not silently ignored.
 
+    ``min_length=1`` makes an empty value fail the same way an absent one does.
+    ``.env.example`` ships ``ARANDU_LABEL_STUDIO_TOKEN=`` with no value, since
+    the credential is only needed by the two commands that talk to the instance;
+    without the constraint, the ordinary copy-the-example flow validates and
+    sends ``Authorization: Token `` instead of printing the CLI's "Label Studio
+    is not configured" message. The class is only ever constructed inside those
+    two commands (and in ``pull`` only on the network path), so this constrains
+    nothing for a checkout that never annotates.
+
     The token value never reaches an artifact under ``results/``. Two mechanisms
     keep it out, because this stage writes the study's most sensitive output:
     ``SecretStr`` masks it in every repr and ``model_dump()`` (so it cannot
@@ -40,7 +49,7 @@ class LabelStudioSettings(BaseSettings):
     """
 
     url: str = Field(..., description="Base URL of the Label Studio instance")
-    token: SecretStr = Field(..., description="Label Studio API token")
+    token: SecretStr = Field(..., min_length=1, description="Label Studio API token")
     timeout: float = Field(default=60.0, gt=0, description="Per-request timeout in seconds")
 
     model_config = SettingsConfigDict(

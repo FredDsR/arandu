@@ -579,6 +579,13 @@ remaining tasks into the same project from the UI and leave the manifest alone
 re-push with `--force`, which records a second id and makes every later network
 pull require `--project-id <n>`. Building under a fresh run id avoids both.
 
+An import the instance accepts but does not *count* fails the same way, and for
+the same reason: the response carries no `task_count`, so nothing on this side
+can tell 120 from 118, and reading it as success is what would make the guard
+above unfireable in exactly the case it exists for. The message names the check
+(open the project, compare its task count with the number sent) and the same two
+recovery shapes.
+
 ### `arandu emic-annotation-pull`
 
 Fetches the annotations back and writes one JSONL per annotator.
