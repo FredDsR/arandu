@@ -18,6 +18,39 @@ from arandu.shared.judge.schemas import (
 # explicit ``None`` value during legacy-payload migration.
 _MISSING = object()
 
+#: Substrings that mark an environment variable name as carrying a credential.
+#: Matched case-insensitively against the whole variable name.
+#:
+#: The list is deliberately broad and has no allowlist. Some captured names hold
+#: a variable *name* rather than a secret (``ARANDU_*_API_KEY_ENV`` points at the
+#: variable holding the key), and redacting those is harmless; carving out an
+#: exception for them is what would eventually let a real secret through.
+SECRET_ENV_NAME_MARKERS: tuple[str, ...] = (
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "KEY",
+    "CREDENTIAL",
+)
+
+#: Written in place of a secret value in a captured environment snapshot. The
+#: key is kept so the snapshot still records that the variable was set.
+REDACTED_PLACEHOLDER = "***REDACTED***"
+
+
+def is_secret_env_name(name: str) -> bool:
+    """Return whether an environment variable name looks like a credential.
+
+    Args:
+        name: Environment variable name.
+
+    Returns:
+        ``True`` if the name contains any marker in
+        :data:`SECRET_ENV_NAME_MARKERS`, case-insensitively.
+    """
+    upper = name.upper()
+    return any(marker in upper for marker in SECRET_ENV_NAME_MARKERS)
+
 
 class InputRecord(BaseModel):
     """Schema for input records from file metadata.
@@ -202,6 +235,7 @@ class PipelineType(StrEnum):
     NON_ANSWERABLE = "non_answerable"
     EMIC_JUDGE = "emic_judge"
     HUMAN_EVAL = "human_eval"
+    ANNOTATION = "annotation"
     EVALUATION = "evaluation"
 
 
@@ -355,17 +389,32 @@ class HardwareInfo(BaseModel):
 
 
 class ConfigSnapshot(BaseModel):
-    """Captures configuration at the time of run execution."""
+    """Captures configuration at the time of run execution.
+
+    The captured environment is written verbatim into every run's
+    ``run_metadata.json`` under ``results/``, so credential-looking variables
+    are masked before they get there (see :func:`is_secret_env_name`).
+    """
 
     config_type: str = Field(..., description="Configuration class name")
     config_values: dict = Field(..., description="Configuration values as dictionary")
     environment_variables: dict[str, str] = Field(
-        default_factory=dict, description="Relevant environment variables"
+        default_factory=dict,
+        description="Relevant environment variables, with credential values redacted",
     )
 
     @classmethod
     def from_config(cls, config: BaseModel, env_prefix: str = "ARANDU_") -> ConfigSnapshot:
         """Create snapshot from a Pydantic BaseSettings/BaseModel.
+
+        Every captured variable whose name looks like a credential
+        (``TOKEN``, ``SECRET``, ``PASSWORD``, ``KEY``, ``CREDENTIAL``) has its
+        value replaced by :data:`REDACTED_PLACEHOLDER`. The snapshot lands in
+        ``results/<id>/<stage>/run_metadata.json``, which is a durable artifact
+        of the study: a plaintext token there would outlive the shell that
+        exported it and spread to every other stage run from the same shell.
+        The key is kept, so the snapshot still records that the variable was
+        set at run time.
 
         Args:
             config: The configuration object to snapshot.
@@ -376,8 +425,12 @@ class ConfigSnapshot(BaseModel):
         """
         import os
 
-        # Capture relevant environment variables
-        env_vars = {key: value for key, value in os.environ.items() if key.startswith(env_prefix)}
+        # Capture relevant environment variables, masking credential values.
+        env_vars = {
+            key: (REDACTED_PLACEHOLDER if is_secret_env_name(key) else value)
+            for key, value in os.environ.items()
+            if key.startswith(env_prefix)
+        }
 
         return cls(
             config_type=config.__class__.__name__,

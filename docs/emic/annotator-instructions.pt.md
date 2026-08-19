@@ -96,19 +96,21 @@ essas passagens, não contra o trecho inteiro.
 palavras e medidas que ela usa; quem sabe, decide ou age; e o que a pergunta põe em
 jogo.
 
-**3.** Percorra as condições em ordem e pare na primeira que se aplicar. A nota é a
-dessa condição.
+**3.** Percorra as frases abaixo em ordem e pare na primeira cuja condição se
+aplicar ao par. Ela diz a nota a atribuir.
 
-- O par contradiz o que a pessoa afirma, ou substitui a perspectiva dela por clichê
-  sobre populações tradicionais: **nota 1**
-- O par afirma algo que ela não disse, e essa adição troca o motivo que ela deu por
-  outro, fazendo a fala servir de exemplo de uma ideia que não é dela: **nota 2**
-- O par afirma algo que ela não disse, mas o núcleo do que ela disse continua
-  reconhecível: **nota 3**
-- O par preserva o sentido, mas apaga um elemento situado que carrega o conhecimento
-  em jogo (quem sabe, decide ou age; o sinal concreto), ou apaga a postura com que
-  ela disse (a dúvida virou certeza, a avaliação virou descrição neutra): **nota 4**
-- Nenhuma das anteriores: **nota 5**
+- Se o par contradiz o que a pessoa afirma, ou substitui a perspectiva dela por
+  clichê sobre populações tradicionais, atribua **nota 1**.
+- Se o par afirma algo que ela não disse, e essa adição troca o motivo que ela deu
+  por outro, fazendo a fala servir de exemplo de uma ideia que não é dela, atribua
+  **nota 2**.
+- Se o par afirma algo que ela não disse, mas o núcleo do que ela disse continua
+  reconhecível, atribua **nota 3**.
+- Se o par preserva o sentido, mas apaga um elemento situado que carrega o
+  conhecimento em jogo (quem sabe, decide ou age; o sinal concreto), ou apaga a
+  postura com que ela disse (a dúvida virou certeza, a avaliação virou descrição
+  neutra), atribua **nota 4**.
+- Se nenhuma das condições acima se aplica, atribua **nota 5**.
 
 **4.** Não reduzem a nota, por si sós: generalizar ou abstrair; usar vocabulário
 mais formal; responder de forma curta; omitir um detalhe que a pergunta não pedia.

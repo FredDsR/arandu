@@ -48,6 +48,11 @@ def main(
 
 
 # Register commands from submodules
+from arandu.cli.annotation import (  # noqa: E402
+    emic_annotation_build,
+    emic_annotation_pull,
+    emic_annotation_push,
+)
 from arandu.cli.answer import answer  # noqa: E402
 from arandu.cli.chunking import chunk  # noqa: E402
 from arandu.cli.emic_judge import emic_judge  # noqa: E402
@@ -91,6 +96,9 @@ app.command()(answer)
 app.command()(judge_answers)
 app.command()(emic_judge)
 app.command()(build_human_eval_sample)
+app.command()(emic_annotation_build)
+app.command()(emic_annotation_push)
+app.command()(emic_annotation_pull)
 app.command()(rag_analysis)
 app.command()(generate_non_answerable)
 app.command()(replicate)

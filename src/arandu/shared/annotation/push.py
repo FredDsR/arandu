@@ -1,0 +1,163 @@
+"""Create the Label Studio project from the built artifacts (spec §3.2).
+
+The build is the auditable artifact; this step only transports it. Nothing is
+computed here that the build did not already write to disk, so what the
+annotators see is exactly what an auditor reviewed.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import TYPE_CHECKING, Any
+
+from arandu.shared.annotation.build import (
+    CONFIG_FILENAME,
+    INSTRUCTION_FILENAME,
+    MANIFEST_FILENAME,
+    TASKS_FILENAME,
+)
+from arandu.shared.annotation.schemas import AnnotationManifest
+from arandu.shared.config import ResultsConfig
+from arandu.shared.schemas import PipelineType
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from arandu.shared.annotation.client import LabelStudioClient
+
+logger = logging.getLogger(__name__)
+
+#: Project settings posted with the create call.
+#:
+#: ``show_skip_button`` is a Label Studio ``Project`` boolean field (default
+#: ``True``, "Show a skip button in interface and allow annotators to skip the
+#: task") and is listed in ``ProjectSerializer.Meta.fields``, so it can be set at
+#: creation time. It is turned off because a skip writes an annotation with
+#: ``was_cancelled: true`` and an empty ``result``: a rating that does not exist
+#: but occupies the slot of one. ``required="true"`` on the Choices widget blocks
+#: Submit, not Skip. ``pull`` still tolerates cancelled annotations, since a
+#: project created by hand in the UI does not go through this call.
+#:
+#: ``show_instruction`` turns on the help button that opens the project's
+#: ``expert_instruction`` modal. The full ruler lives there rather than on the
+#: labeling canvas: rendered inline it put two screens of prose between the pair
+#: and the rating widget. The HTML itself is not in this mapping, because push
+#: transports only what the build wrote; it is read from
+#: ``expert_instruction.html`` and merged in at call time.
+PROJECT_SETTINGS: dict[str, Any] = {"show_skip_button": False, "show_instruction": True}
+
+
+def _outputs_dir(base: Path, pipeline_id: str) -> Path:
+    """Return the annotation stage's outputs directory for ``pipeline_id``."""
+    return base / pipeline_id / PipelineType.ANNOTATION.value / "outputs"
+
+
+def run_push_annotation(
+    pipeline_id: str,
+    *,
+    client: LabelStudioClient,
+    base_dir: Path | None = None,
+    title: str | None = None,
+    force: bool = False,
+) -> int:
+    """Create the annotation project and import its tasks.
+
+    Args:
+        pipeline_id: Run identifier. The ``annotation`` stage must be built.
+        client: Label Studio transport.
+        base_dir: Override the project ``results/`` root.
+        title: Project title. Defaults to one naming the run.
+        force: Create a second project even though one is recorded. Both ids are
+            kept in ``project_ids`` so a duplicate is a recorded fact.
+
+    Returns:
+        The created project id.
+
+    Raises:
+        FileNotFoundError: If the build artifacts are absent.
+        ValueError: If a project already exists and ``force`` is false, if the
+            task count disagrees with the manifest, or if Label Studio accepted
+            fewer tasks than were sent or reported no count at all.
+        LabelStudioError: On any API failure.
+    """
+    base = base_dir if base_dir is not None else ResultsConfig().base_dir
+    outputs = _outputs_dir(base, pipeline_id)
+    manifest_path = outputs / MANIFEST_FILENAME
+    config_path = outputs / CONFIG_FILENAME
+    instruction_path = outputs / INSTRUCTION_FILENAME
+    tasks_path = outputs / TASKS_FILENAME
+    if not (
+        manifest_path.exists()
+        and config_path.exists()
+        and instruction_path.exists()
+        and tasks_path.exists()
+    ):
+        raise FileNotFoundError(
+            f"Annotation artifacts not found for pipeline_id {pipeline_id!r}: {outputs}. "
+            f"Run `arandu emic-annotation-build --id {pipeline_id} --seed <n>` first."
+        )
+
+    manifest = AnnotationManifest.load(manifest_path)
+    if manifest.project_id is not None and not force:
+        raise ValueError(
+            f"Run {pipeline_id!r} is already pushed as Label Studio project "
+            f"{manifest.project_id}. Pushing again would create a duplicate project and "
+            f"split the annotators across two. Use --force only if that is intended."
+        )
+
+    tasks: list[dict[str, Any]] = json.loads(tasks_path.read_text(encoding="utf-8"))
+    if len(tasks) != manifest.total_items:
+        raise ValueError(
+            f"{TASKS_FILENAME} holds {len(tasks)} tasks but the manifest declares "
+            f"{manifest.total_items}. The build is inconsistent; rebuild before pushing."
+        )
+
+    project_title = title or f"Validade êmica ({pipeline_id})"
+    settings: dict[str, Any] = {
+        **PROJECT_SETTINGS,
+        "expert_instruction": instruction_path.read_text(encoding="utf-8"),
+    }
+    project_id = client.create_project(
+        project_title, config_path.read_text(encoding="utf-8"), settings=settings
+    )
+
+    # Record the project before importing, not after. If the import times out
+    # while the server has already accepted the tasks, an unrecorded id would
+    # leave the duplicate guard silent and the next run would create a second
+    # live project: exactly the split the guard exists to prevent. A recorded id
+    # with a failed import is the safe direction, since it is recoverable.
+    manifest.project_id = project_id
+    manifest.project_ids = [*manifest.project_ids, project_id]
+    manifest.save(manifest_path)
+
+    imported = client.import_tasks(project_id, tasks)
+    if imported is None:
+        raise ValueError(
+            f"Label Studio accepted the import into project {project_id} but reported no task "
+            f"count, so nothing here can tell whether all {len(tasks)} tasks landed. A missing "
+            f"task is indistinguishable from an unrated pair in every later pull, which is why "
+            f"this is not read as success. Open project {project_id} and compare its task count "
+            f"with {len(tasks)}: if it matches, the manifest already records the project, so "
+            f"leave it alone and invite the annotators; if it is short, import the remainder "
+            f"into the same project from the UI. Re-pushing with --force appends a second id "
+            f"and makes every later pull need `--project-id <n>`."
+        )
+    if imported != len(tasks):
+        raise ValueError(
+            f"Label Studio accepted {imported} of the {len(tasks)} tasks sent to project "
+            f"{project_id}. The missing tasks would be indistinguishable from unrated ones "
+            f"in every pull. Project {project_id} is already recorded in the manifest (it is "
+            f"recorded before the import so a timeout cannot leave a live project unguarded), "
+            f"so recovering has two shapes. Either import the remaining tasks into project "
+            f"{project_id} from the Label Studio UI and leave the manifest alone, which is the "
+            f"cheaper path and keeps a single recorded project; or delete project {project_id} "
+            f"server-side and re-push with --force, which appends a second id to project_ids "
+            f"and makes every later pull need `--project-id <n>` even though only one project "
+            f"ever held tasks. Building under a fresh run id avoids both."
+        )
+
+    logger.info(
+        "Pushed %d task(s) to Label Studio project %d (%s).", imported, project_id, project_title
+    )
+    return project_id

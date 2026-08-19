@@ -27,7 +27,7 @@ The Arandu CLI is built with [Typer](https://typer.tiangolo.com/) and provides r
 - **QA Generation**: `generate-cep-qa`, `generate-non-answerable`
 - **Judging**: `judge-transcription`, `judge-qa`, `judge-answers`
 - **Knowledge Graph & RAG (Phase C)**: `chunk`, `build-kg`, `kg-link-passages`, `kg-build-retriever-index`, `retrieve`, `answer`, `rag-analysis`
-- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`
+- **Emic validity (Phase D)**: `emic-judge`, `build-human-eval-sample`, `emic-annotation-build`, `emic-annotation-push`, `emic-annotation-pull`
 - **Utilities**: `refresh-auth`, `enrich-metadata`, `replicate`, `info`, `list-runs`, `run-info`, `rebuild-index`, `report`, `serve-report`
 
 **Global Options**:
@@ -406,6 +406,9 @@ reported.
 |---------|-------------|
 | `emic-judge` | Score a run's CEP pairs for emic validity (ordinal 1-5) |
 | `build-human-eval-sample` | Build the stratified human-comparison sample for a run |
+| `emic-annotation-build` | Build the Label Studio artifacts (labeling config, blinded tasks, manifest) for a run's sample |
+| `emic-annotation-push` | Create the Label Studio project from the built artifacts and import the tasks |
+| `emic-annotation-pull` | Fetch the annotations back and write one JSONL per anonymized annotator |
 
 **The emic score is a measurement, not a filter.** It is what the study
 reports; the human annotation round validates it by agreement rather than
@@ -444,6 +447,210 @@ arandu build-human-eval-sample --id project-001 --seed 42
 The sample builder keeps its frame on the judge-approved corpus even when
 `emic-judge` scored everything: pairs the judge rejected (or never judged) are
 dropped and counted in the manifest's `excluded_not_approved`.
+
+### `arandu emic-annotation-build`
+
+Turns a run's human-eval sample into Label Studio artifacts. Offline and
+deterministic: no network, no credential.
+
+```bash
+arandu emic-annotation-build --id thesis-run-01 --seed 20260817
+```
+
+Writes to `results/<id>/annotation/outputs/`:
+
+| File | Contents |
+| --- | --- |
+| `labeling_config.xml` | The annotation canvas, with the 1-5 anchors rendered verbatim from `prompts/judge/criteria/emic_validity/ruler.pt.yaml`. |
+| `expert_instruction.html` | The full ruler, for the project's instructions modal. Semantic HTML with a scoped `<style>` block, no external resource; still readable if Label Studio strips the block. |
+| `tasks.json` | The blinded tasks. Each carries only `task_id`, `segment`, `question`, `answer`. |
+| `manifest.json` | Seed, provenance hashes, and the `task_id -> pair_id` join. Never uploaded. |
+
+**The ruler reaches the annotator through two surfaces.** Rendering all of it on
+the canvas put roughly two screens of prose between the pair and the rating
+widget, so a 4000-character segment had scrolled out of view by the time the
+annotator reached the radio buttons, once per task and 120 times per annotator.
+The split:
+
+| Surface | Holds | Where it shows |
+| --- | --- | --- |
+| `expert_instruction.html` | The whole annotator-facing ruler: construct, scale, loss types, provisions, the full scoring guide, the calibration. | Behind the Label Studio help button, in a modal (`show_instruction` is turned on by the push). |
+| `labeling_config.xml` | A collapsed summary, **closed by default**: the scoring cascade, the "does not reduce the score" list, and the calibration about the fine boundaries and the narrow door to 1. | On the canvas, above the pair. |
+
+The canvas order is header, collapsed summary, the pair, then the rating widget
+and the rationale box. The pair sits immediately above the widget and the
+segment renders in a height-capped box with its own scrollbar, so a long chunk
+scrolls inside itself instead of pushing the rating off screen.
+
+The 1-5 anchor sentences stay on the options themselves in
+`labeling_config.xml`; that placement is the instrument. Each option also
+carries an explicit `hotkey` equal to its own score, so pressing `5` records a
+5. Left to Label Studio, hotkeys are assigned by position, and the options run
+5 down to 1: key `1` would record a 5 and key `5` would record a 1, silently and
+with no way to detect it afterwards. Judge-only material
+(the role framing, the JSON output contract, the rationale rules) appears in
+neither surface: it would prime the annotator with the machine's framing. Both
+are checked verbatim against the ruler by the test suite.
+
+**The sign-off gate is mechanical.** While the ruler carries `signed_off: false`
+the command refuses to run and names the gate. The anchors the annotators read
+have to be the reviewed ones: a divergence from the judge prompt makes the
+weighted kappa measure translation drift instead of agreement, and it cannot be
+repaired after annotation.
+
+A ruler that parses but is missing a section the labeling config needs fails
+with a message naming the missing key and the ruler path, not a traceback.
+
+**Rebuilding after a push is refused.** It would rewrite the join while
+annotators work against the old one, silently mislabelling every pull.
+
+**Rebuilding after a pull is refused too.** A non-empty `labels/` directory
+blocks the build even when no `project_id` was ever recorded (the file-mode
+`-f` path, where the project was created by hand in the UI). The pulled labels
+carry `pair_id`s resolved through the old `task_map`; a rebuild would replace
+that map and invalidate every one of them with nothing marking the divergence.
+Create a new run id instead.
+
+### `arandu emic-annotation-push`
+
+Creates the Label Studio project from the built artifacts and imports the tasks.
+
+```bash
+export ARANDU_LABEL_STUDIO_URL=https://label.emcorrespondencia.cloud
+export ARANDU_LABEL_STUDIO_TOKEN=...   # Account & Settings -> Access Token
+arandu emic-annotation-push --id thesis-run-01
+```
+
+Both variables can equally live in `.env` at the project root; the settings
+class reads it like every other config in the project. `ARANDU_LABEL_STUDIO_TIMEOUT`
+(seconds, default `60`) is the third.
+
+**Either token type works, and you do not have to say which one you have.**
+Both come from the same screen (Account & Settings, Access Token), and the
+token's own shape selects the scheme:
+
+| What you copied | Looks like | What happens |
+| --------------- | ---------- | ------------ |
+| Personal access token (JWT) | three dot-separated segments, `eyJ...`-ish | It is a *refresh* token, which the API endpoints reject on their own. The client exchanges it at `POST /api/token/refresh` for a short-lived access token and sends `Authorization: Bearer <access>`. |
+| Legacy API token | one hex-ish string, no dots | Sent as `Authorization: Token <token>`. |
+
+Access tokens are short-lived, so the exchange is lazy, cached for the process,
+and redone once automatically if a request comes back 401 mid-run (a long
+import followed by an export can outlive one). A second 401 in a row is
+reported instead of retried: at that point the personal access token is expired
+or revoked, or `ARANDU_LABEL_STUDIO_URL` points at a different instance than
+the one that issued it. Neither the token you pasted nor the access token
+derived from it ever appears in an error message or a log line.
+
+**The token never lands under `results/`.** Two things keep it out. The settings
+field is a `SecretStr`, so it is masked in every repr and `model_dump()`. And
+every stage's `run_metadata.json` records the `ARANDU_*` environment as it was
+at run time, so any captured variable whose name contains `TOKEN`, `SECRET`,
+`PASSWORD`, `KEY` or `CREDENTIAL` is written as `***REDACTED***` instead of its
+value (the key is kept, so the snapshot still shows the variable was set). That
+redaction is repo-wide, not specific to this stage: the environment snapshot is
+captured by every pipeline step run from the same shell.
+
+Uploads only what `emic-annotation-build` wrote, so the annotators see exactly
+what was audited. The project id is recorded in `manifest.json` **before** the
+task import runs, so an import that fails or times out still leaves the project
+recorded and the duplicate guard armed. A second push is refused rather than
+silently creating a duplicate project that would split the annotators across
+two. `--force` overrides and records both ids (and see `--project-id` on the
+pull side).
+
+The project is created with the Label Studio Skip button turned off
+(`show_skip_button: false`). A skip writes an annotation with no rating in it,
+which occupies the slot of a real one; `required="true"` on the rating widget
+blocks Submit, not Skip.
+
+The create call also carries the project's instructions: `expert_instruction`
+is the contents of `expert_instruction.html` as the build wrote it, and
+`show_instruction: true` puts the help button that opens it in front of the
+annotator. Push renders nothing of its own here either, so the ruler the
+annotators read is still exactly the file an auditor reviewed.
+
+If Label Studio accepts fewer tasks than were sent, the push fails naming both
+counts. Silently importing 118 of 120 would leave two pairs indistinguishable
+from ones nobody has rated yet, in every pull thereafter. The project id is
+already recorded at that point, so the error also names the way out: import the
+remaining tasks into the same project from the UI and leave the manifest alone
+(cheapest, keeps one recorded project), or delete the project server-side and
+re-push with `--force`, which records a second id and makes every later network
+pull require `--project-id <n>`. Building under a fresh run id avoids both.
+
+An import the instance accepts but does not *count* fails the same way, and for
+the same reason: the response carries no `task_count`, so nothing on this side
+can tell 120 from 118, and reading it as success is what would make the guard
+above unfireable in exactly the case it exists for. The message names the check
+(open the project, compare its task count with the number sent) and the same two
+recovery shapes.
+
+### `arandu emic-annotation-pull`
+
+Fetches the annotations back and writes one JSONL per annotator.
+
+```bash
+arandu emic-annotation-pull --id thesis-run-01
+arandu emic-annotation-pull --id thesis-run-01 -f export.json   # no network, no token
+arandu emic-annotation-pull --id thesis-run-01 --project-id 42  # after a --force re-push
+```
+
+**Options**:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--id` | required | Pipeline ID with a built (and usually pushed) annotation stage |
+| `--file` / `-f` | none | Read a JSON export downloaded from the UI; no network and no token |
+| `--project-id` | from the manifest | Project to pull from. Required when a `--force` re-push recorded more than one. Cannot be combined with `-f` |
+
+`-f` and `--project-id` name different sources, so passing both is refused
+rather than silently ignoring the project selection.
+
+Writes `results/<id>/annotation/outputs/labels/<annotator_id>.jsonl`, one object
+per line with `pair_id`, `annotator_id`, `score`, `rationale`, `timestamp`.
+
+Annotators are anonymized to `A1` / `A2` / `A3` from the numeric Label Studio
+user id; no email is requested from the API or written anywhere. The
+id-to-alias map lands in `annotator_map.json` **beside** `labels/`, never inside
+it, so the directory feeding the agreement analysis holds nothing identifying.
+
+**Aliases are stable across pulls.** An existing `annotator_map.json` is read
+back and every binding in it kept, so pulling weekly for progress never
+reassigns `A1` to a different person when somebody submits their first rating.
+Only newly seen user ids get a new alias, appended in sorted order.
+
+Partial annotation is fine and is reported as a per-annotator count. Ratings the
+annotator skipped in Label Studio carry no score, so they are counted and
+reported separately rather than counted as done or aborting the pull. An
+annotation that carries a rationale but no rating counts the same way: the
+`required` flag on the rating widget is enforced in the browser only, and
+annotations can also arrive through the API, so one of those must not abort
+everyone else's pull. A rating region that IS present but empty still aborts:
+that is the measurement going missing, not a task nobody rated.
+
+**`labels/` reflects exactly one pull.** A `*.jsonl` written by an earlier,
+wider pull that the current export does not cover is removed, and the count is
+reported. Otherwise a later `-f partial-export.json` (or a different
+`--project-id`) would leave the agreement analysis reading a mix of two pulls
+while the printed summary named only one. Nothing but `*.jsonl` inside
+`labels/` is touched, and `annotator_map.json` lives one level up, so the alias
+bindings survive.
+
+**Several recorded projects abort the pull.** If `--force` created more than one
+project, the command refuses and lists every recorded id: pulling one silently
+would lose the others' labels, and merging them would double-count anyone who
+annotated in more than one. Re-run with `--project-id <n>`.
+
+An export referencing an unknown `task_id` aborts the pull: the manifest and the
+project are out of sync, and no label from that project can be trusted. The same
+applies when one annotator rated the same pair twice, and when the downloaded
+file is a `JSON_MIN` export (only `exportType=JSON` carries the `task_id` the
+join needs).
+
+The individual labels are not a published artifact. Only the aggregate
+coefficients (Krippendorff alpha, weighted Cohen kappa, Gwet AC2, with the Bloom
+breakdown) go into the text.
 
 ---
 
