@@ -398,9 +398,10 @@ arandu rag-analysis project-001
 ## Emic Validity Commands (Phase D)
 
 These commands implement the emic-validity study (spec §5-§6): score the run's
-QA pairs with the ordinal `emic_validity` criterion, then draw the stratified
-sample the human annotators rate so inter-rater agreement with the judge can be
-reported.
+QA pairs with the ordinal `emic_validity` criterion, and draw the stratified
+sample the human annotators rate; the two run independently, and inter-rater
+agreement with the judge is reported by joining their outputs on `pair_id` at
+analysis time.
 
 | Command | Description |
 |---------|-------------|

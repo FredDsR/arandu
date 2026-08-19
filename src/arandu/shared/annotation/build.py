@@ -65,9 +65,9 @@ def _shuffle_key(seed: int, pair_id: str) -> str:
 def shuffle_order(pair_ids: list[str], seed: int) -> list[str]:
     """Return ``pair_ids`` in the deterministic presentation order.
 
-    The sample arrives grouped by stratification cell. Presenting it that way
-    would let the annotator calibrate within a block of same-band pairs, so the
-    order is broken here, at the source, with a recorded seed. Label Studio's own
+    The sample arrives grouped by Bloom cell. Presenting it that way would let
+    the annotator calibrate within a block of same-cell pairs, so the order is
+    broken here, at the source, with a recorded seed. Label Studio's own
     shuffle is per-annotator, random, and not recordable, which is why it is not
     used.
     """

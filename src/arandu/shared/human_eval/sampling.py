@@ -5,9 +5,11 @@ carrying the annotation payload, build the 120-pair sample stratified as 4 Bloom
 levels x 30 pairs. Frame construction (dropping non-approved and out-of-frame
 Bloom pairs, reading the CEP payload) happens upstream in ``batch.py``.
 
-Revised 2026-08-19: stratification was 4 Bloom x 2 emic bands x 15. The band came
-from the emic judge's score, which put that run on the annotation critical path;
-it was removed and the sample is now built from the CEP records alone. See
+Revised 2026-08-19: stratification was 4 Bloom levels x 2 emic bands,
+defaulting to 10 pairs per cell (the agreed protocol asked for 15 per cell,
+but the CLI had no ``--per-cell`` flag yet to set it). The band came from the
+emic judge's score, which put that run on the annotation critical path; it
+was removed and the sample is now built from the CEP records alone. See
 ``docs/superpowers/specs/2026-08-19-bloom-only-sampling-design.md``.
 """
 
@@ -124,6 +126,11 @@ def build_sample(pool: list[PoolEntry], seed: int, *, per_cell: int = PER_CELL) 
     Raises:
         InsufficientCellError: If any cell has fewer than ``per_cell`` entries;
             the message names the cell, its available count, and remediation.
+        KeyError: If a pool entry's ``bloom_level`` is not in
+            :data:`FRAME_BLOOM_LEVELS`. Frame filtering is the caller's
+            responsibility (see the ``pool`` argument); this function does not
+            defensively re-check it, so an out-of-frame level surfaces loudly
+            here instead of silently opening a fifth cell.
     """
     by_cell: dict[str, list[PoolEntry]] = {cid: [] for cid in all_cell_ids()}
     for entry in pool:
