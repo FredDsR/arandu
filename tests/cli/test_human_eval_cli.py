@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from arandu.cli.app import app
 from arandu.shared.human_eval.sampling import PER_CELL
+from arandu.shared.human_eval.schemas import SampleManifest
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -22,6 +23,7 @@ runner = CliRunner()
 def batch(mocker: MockerFixture) -> MagicMock:
     """Patch the batch so the CLI is tested without touching the filesystem."""
     manifest = mocker.Mock(
+        spec=SampleManifest,
         total_items=120,
         per_cell=30,
         cell_counts={"remember": 30, "understand": 30, "analyze": 30, "evaluate": 30},
@@ -59,8 +61,20 @@ class TestBuildHumanEvalSample:
         batch.assert_not_called()
 
     def test_echoes_the_resulting_size_before_building(self, batch: MagicMock) -> None:
-        result = runner.invoke(app, ["build-human-eval-sample", "--id", "run1", "--seed", "42"])
-        assert "120" in result.stdout
+        """The pre-build echo must be detectable even if post-build output changes.
+
+        This test invokes with --per-cell 7, which produces 7*4=28 pairs in the
+        pre-build echo. The mock's total_items stays 120, so print_success cannot
+        produce 28 -- only the pre-build echo can. This prevents a regression where
+        removing the print_info line would go undetected because the test would
+        still pass on the 120 from print_success.
+        """
+        result = runner.invoke(
+            app,
+            ["build-human-eval-sample", "--id", "run1", "--seed", "42", "--per-cell", "7"],
+        )
+        assert result.exit_code == 0
+        assert "28" in result.stdout
 
     def test_insufficient_cell_exits_one(self, batch: MagicMock) -> None:
         """Only the exit code is asserted: `print_error` writes to `stderr_console`.
