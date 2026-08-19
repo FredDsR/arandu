@@ -124,14 +124,36 @@ class TestBuildSample:
     def test_insufficient_cell_message_names_the_counts(self) -> None:
         pool = [e for e in _pool(10) if e.bloom_level != "evaluate"]
         pool += [_entry(900 + k, "evaluate") for k in range(4)]
-        with pytest.raises(InsufficientCellError) as excinfo:
+        with pytest.raises(InsufficientCellError, match=r"only 4 .*but 5 are required"):
             build_sample(pool, seed=1, per_cell=5)
-        message = str(excinfo.value)
-        assert "4" in message
-        assert "5" in message
 
     def test_the_sample_item_carries_no_emic_score(self) -> None:
         """The regression that keeps the emic judge off the critical path."""
         sample = build_sample(_pool(5), seed=1, per_cell=5)
         assert "emic_score" not in sample[0].model_dump()
         assert "cell_id" not in sample[0].model_dump()
+
+    def test_selection_is_pinned_to_the_published_mechanism(self) -> None:
+        """Golden vector over the exact draw, not just its shape.
+
+        The manifest records a seed and promises the sample is reproducible from
+        it. Same-seed-twice cannot detect a changed mechanism: a different digest
+        or a reordered sort key is still deterministic and still seed-dependent,
+        so every other test here survives swapping one in, while the study would
+        silently report on a different 120 pairs. This vector is the tripwire.
+
+        Regenerate these ids only as a deliberate decision, never to make a red
+        test green: a change here means the published sample changed.
+        """
+        pool = _pool(4)
+        sample = build_sample(pool, seed=2026, per_cell=2)
+        assert [(i.pair_id, i.bloom_level, i.slot_id) for i in sample] == [
+            ("src:0", "remember", 0),
+            ("src:1", "remember", 1),
+            ("src:7", "understand", 0),
+            ("src:5", "understand", 1),
+            ("src:10", "analyze", 0),
+            ("src:11", "analyze", 1),
+            ("src:14", "evaluate", 0),
+            ("src:15", "evaluate", 1),
+        ]
