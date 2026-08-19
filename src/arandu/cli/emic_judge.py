@@ -4,8 +4,9 @@ Runs the ``emic_validity`` ordinal criterion over the canonical-approved pairs
 of a populated run and writes per-source ordinal scores under
 ``results/<id>/emic_judge/outputs/<source>.json``. These scores are the study's
 measurement of emic validity; the human annotation round validates them by
-agreement (spec §6). They also band the stratified human-comparison sample, but
-that is a downstream use rather than their purpose.
+agreement (spec §6). The stratified human-comparison sample is drawn
+independently from the CEP records; these scores rejoin it at analysis time
+by joining on ``pair_id``, not by shaping which pairs are drawn.
 """
 
 from __future__ import annotations

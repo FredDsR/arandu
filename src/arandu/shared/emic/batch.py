@@ -10,8 +10,9 @@ These scores are the study's **measurement** of emic validity, not a
 preliminary aid. The human annotation round (spec §6) rates a stratified
 subsample and reports agreement with them (Krippendorff alpha over the raters,
 weighted Cohen kappa of this judge against each annotator); it validates the
-measurement rather than replacing it. The same scores also band the stratified
-sample builder, but that is a downstream use, not their purpose.
+measurement rather than replacing it. The stratified sample is built
+independently from the CEP records, not from this run's output; these scores
+rejoin the human annotations at analysis time by joining on ``pair_id``.
 
 The criterion is built standalone via ``OrdinalLLMCriterion.from_config``; it
 is not wired into the ``judge-qa`` pipeline (that, with a filter threshold, is
@@ -161,7 +162,8 @@ def run_emic_judge_batch(
         # Resetting only the checkpoint would leave per-source outputs from a
         # prior run in outputs_dir. If the CEP stage was regenerated with a
         # different (e.g. smaller) corpus since, those orphaned files would be
-        # globbed as live scores by the stratified sample builder. Clear them.
+        # read as live scores when the analysis joins this directory against
+        # the human annotations on `pair_id`. Clear them.
         for stale in results_mgr.outputs_dir.glob("*.json"):
             stale.unlink()
     checkpoint = CheckpointManager(checkpoint_path)
