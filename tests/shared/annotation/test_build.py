@@ -44,8 +44,6 @@ def _item(index: int) -> SampleItem:
         question=f"pergunta {index}",
         answer=f"resposta {index}",
         bloom_level=("remember", "understand", "analyze", "evaluate")[index % 4],
-        emic_score=(index % 5) + 1,
-        cell_id=f"{('remember', 'understand', 'analyze', 'evaluate')[index % 4]}:limpa",
         slot_id=index,
     )
 
@@ -101,6 +99,32 @@ class TestShuffleOrder:
         """The sample arrives grouped by cell; the point is to destroy that."""
         ids = [f"s:{i}" for i in range(20)]
         assert shuffle_order(ids, seed=3) != ids
+
+    def test_order_is_pinned_to_the_published_mechanism(self) -> None:
+        """Golden vector over the exact permutation, not just its shape.
+
+        The manifest records a seed and promises the presentation order is
+        reproducible from it. Same-seed-twice cannot detect a changed mechanism:
+        a different digest or a reordered sort key is still deterministic and
+        still seed-dependent, so every other test here survives swapping one in,
+        while annotators would silently see a different order. This vector is
+        the tripwire.
+
+        Regenerate these ids only as a deliberate decision, never to make a red
+        test green: a change here means the published presentation order
+        changed.
+        """
+        ids = [f"s:{i}" for i in range(8)]
+        assert shuffle_order(ids, seed=2026) == [
+            "s:5",
+            "s:6",
+            "s:0",
+            "s:2",
+            "s:1",
+            "s:3",
+            "s:7",
+            "s:4",
+        ]
 
 
 class TestSignOffGate:

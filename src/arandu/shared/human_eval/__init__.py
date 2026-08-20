@@ -1,4 +1,4 @@
-"""Human-comparison study: stratified 80-pair sample builder (spec §5)."""
+"""Human-comparison study: Bloom-stratified 120-pair sample builder (spec §5)."""
 
 from arandu.shared.human_eval.batch import run_build_sample_batch
 from arandu.shared.human_eval.sampling import InsufficientCellError, PoolEntry, build_sample

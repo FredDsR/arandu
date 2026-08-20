@@ -23,8 +23,11 @@ class EmicScore(BaseModel):
 
     Attributes:
         pair_index: Index of the pair within its source ``QARecordCEP``
-            (a stable per-source key for the sample builder).
-        bloom_level: The pair's Bloom level (carried for stratification).
+            (a stable per-source key that combines with ``source_file_id``
+            into the ``pair_id`` used to join this score against the human
+            annotations at analysis time).
+        bloom_level: The pair's Bloom level, carried so emic validity can be
+            broken down by Bloom level without re-joining the CEP records.
         emic_score: Ordinal label in ``{1..5}``, or ``None`` if the LLM call
             errored for this pair.
         rationale: The judge's short justification.
@@ -32,8 +35,9 @@ class EmicScore(BaseModel):
         is_valid: The pair's ``judge-qa`` verdict at scoring time: ``True``
             approved, ``False`` rejected, ``None`` never judged. Carried so
             emic validity can be cross-tabulated against approval without
-            re-joining the CEP records, and so the sample builder can restrict
-            its frame to approved pairs even when the run scored everything.
+            re-joining the CEP records. The human-comparison sample restricts
+            its own frame to approved pairs independently, from the CEP
+            records directly.
     """
 
     pair_index: int = Field(..., ge=0)

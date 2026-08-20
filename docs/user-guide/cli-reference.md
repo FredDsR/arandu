@@ -398,14 +398,15 @@ arandu rag-analysis project-001
 ## Emic Validity Commands (Phase D)
 
 These commands implement the emic-validity study (spec §5-§6): score the run's
-QA pairs with the ordinal `emic_validity` criterion, then draw the stratified
-sample the human annotators rate so inter-rater agreement with the judge can be
-reported.
+QA pairs with the ordinal `emic_validity` criterion, and draw the stratified
+sample the human annotators rate; the two run independently, and inter-rater
+agreement with the judge is reported by joining their outputs on `pair_id` at
+analysis time.
 
 | Command | Description |
 |---------|-------------|
 | `emic-judge` | Score a run's CEP pairs for emic validity (ordinal 1-5) |
-| `build-human-eval-sample` | Build the stratified human-comparison sample for a run |
+| `build-human-eval-sample` | Build the Bloom-stratified human-comparison sample (4 cells x 30 = 120) from a run's CEP records |
 | `emic-annotation-build` | Build the Label Studio artifacts (labeling config, blinded tasks, manifest) for a run's sample |
 | `emic-annotation-push` | Create the Label Studio project from the built artifacts and import the tasks |
 | `emic-annotation-pull` | Fetch the annotations back and write one JSONL per anonymized annotator |
@@ -437,16 +438,46 @@ false.
 
 **Typical Phase D chain**:
 ```bash
-# Score the corpus (long-running; on the cluster use scripts/slurm/emic/tupi.slurm)
-arandu emic-judge --id project-001 --scope all
-
-# Draw the stratified sample the annotators rate
+# Draw the stratified sample the annotators rate. Reads the CEP records only,
+# so it does not wait for the emic-judge run.
 arandu build-human-eval-sample --id project-001 --seed 42
+
+# Build and push the annotation instrument (see the three commands below)
+arandu emic-annotation-build --id project-001 --seed 20260819
+arandu emic-annotation-push --id project-001
+
+# Score the corpus (long-running; on the cluster use scripts/slurm/emic/tupi.slurm).
+# Runs in parallel with the annotation: its scores join back on pair_id at
+# analysis time.
+arandu emic-judge --id project-001 --scope all
 ```
 
-The sample builder keeps its frame on the judge-approved corpus even when
-`emic-judge` scored everything: pairs the judge rejected (or never judged) are
-dropped and counted in the manifest's `excluded_not_approved`.
+**Stratification is by Bloom level only** (revised 2026-08-19): 4 cells
+(`remember`, `understand`, `analyze`, `evaluate`) x `--per-cell` (default 30) =
+120 pairs. The frame is the corpus `judge-qa` approved, read from the CEP
+record's own verdict, so a `judge-qa` re-run is picked up instead of leaving the
+frame pinned to a stale snapshot. Pairs the judge did not approve are
+dropped and counted in the manifest's `excluded_not_approved`, which covers
+both the pairs it rejected and the pairs it never scored; `apply` / `create`
+pairs are dropped and counted per level in `excluded_bloom`.
+
+The builder does **not** read the `emic_judge` stage. It used to, because the old
+design stratified primarily by emic band (`duvidosa` <=3 / `limpa` >=4), which
+put the judge run on the annotation critical path. The cost of dropping it: the
+draw within a cell is uniform, so the sample mirrors the approved population and
+easy pairs dominate, leaving the low end of the scale with few observations.
+
+**Options**:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--id` | required | Pipeline ID. The `cep` stage must be populated and judged |
+| `--seed` | required | Seed for the deterministic selection; recorded in the manifest |
+| `--per-cell` | `30` | Pairs drawn per Bloom cell. 4 cells, so the total is 4x this |
+
+If a Bloom cell has fewer approved pairs than `--per-cell`, the build fails
+naming the cell and both counts. Cells are never back-filled from each other,
+because that would unbalance the design silently.
 
 ### `arandu emic-annotation-build`
 

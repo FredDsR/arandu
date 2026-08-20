@@ -1,4 +1,4 @@
-"""Tests for the human-eval sample batch (spec §5)."""
+"""Tests for the human-eval sample batch (spec §5, revised 2026-08-19)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from arandu.qa.schemas import QAPairCEP, QARecordCEP
-from arandu.shared.emic.schemas import EmicScore, EmicSourceScores
 from arandu.shared.human_eval.batch import run_build_sample_batch
 from arandu.shared.human_eval.schemas import SampleItem, SampleManifest
 from arandu.shared.judge.schemas import JudgePipelineResult
@@ -19,25 +18,25 @@ if TYPE_CHECKING:
 FRAME = ("remember", "understand", "analyze", "evaluate")
 
 
-def _frame_specs(per_cell: int) -> list[tuple[str, int | None]]:
-    """``per_cell`` duvidosa (score 2) + ``per_cell`` limpa (score 5) for each Bloom."""
-    specs: list[tuple[str, int | None]] = []
+def _frame_specs(per_cell: int) -> list[str]:
+    """``per_cell`` approved pairs for each Bloom level in the frame."""
+    specs: list[str] = []
     for bloom in FRAME:
-        specs += [(bloom, 2)] * per_cell
-        specs += [(bloom, 5)] * per_cell
+        specs += [bloom] * per_cell
     return specs
 
 
 def _write_source(
-    base: Path, pipeline_id: str, source_id: str, specs: list[tuple[str, int | None]]
+    base: Path,
+    pipeline_id: str,
+    source_id: str,
+    specs: list[str],
+    *,
+    approved: bool = True,
 ) -> None:
+    """Write one CEP record. No emic stage is written: the builder must not need it."""
     cep_outputs = base / pipeline_id / "cep" / "outputs"
-    emic_outputs = base / pipeline_id / "emic_judge" / "outputs"
     cep_outputs.mkdir(parents=True, exist_ok=True)
-    emic_outputs.mkdir(parents=True, exist_ok=True)
-
-    # The CEP record carries the authoritative judge-qa verdict; the frame is
-    # filtered on it, not on the snapshot in the emic outputs.
     pairs = [
         QAPairCEP(
             question=f"q{i}",
@@ -46,9 +45,9 @@ def _write_source(
             question_type="conceptual",
             confidence=0.9,
             bloom_level=bloom,
-            validation=JudgePipelineResult(stage_results={}, passed=True),
+            validation=JudgePipelineResult(stage_results={}, passed=approved),
         )
-        for i, (bloom, _score) in enumerate(specs)
+        for i, bloom in enumerate(specs)
     ]
     QARecordCEP(
         source_gdrive_id=source_id,
@@ -60,14 +59,6 @@ def _write_source(
         total_pairs=len(pairs),
     ).save(cep_outputs / f"{source_id}_cep_qa.json")
 
-    scores = [
-        EmicScore(pair_index=i, bloom_level=bloom, emic_score=score, rationale="r", is_valid=True)
-        for i, (bloom, score) in enumerate(specs)
-    ]
-    EmicSourceScores(
-        source_file_id=source_id, source_filename=f"{source_id}.mp4", scores=scores
-    ).save(emic_outputs / f"{source_id}_cep_qa.json")
-
 
 def _load_sample(base: Path, pipeline_id: str) -> list[SampleItem]:
     path = base / pipeline_id / "human_eval" / "outputs" / "sample.jsonl"
@@ -75,200 +66,122 @@ def _load_sample(base: Path, pipeline_id: str) -> list[SampleItem]:
 
 
 class TestRunBuildSampleBatch:
-    def test_happy_path_counts_and_manifest(self, tmp_path: Path) -> None:
+    def test_builds_with_no_emic_judge_stage_at_all(self, tmp_path: Path) -> None:
+        """The regression that keeps the emic judge off the critical path.
+
+        Nothing writes ``results/<id>/emic_judge/``, so a builder that still
+        reads it fails here rather than weeks later, in the queue.
+        """
         _write_source(tmp_path, "run1", "s1", _frame_specs(2))
+        assert not (tmp_path / "run1" / "emic_judge").exists()
 
         manifest = run_build_sample_batch("run1", seed=42, base_dir=tmp_path, per_cell=2)
 
-        assert manifest.total_items == 16  # 8 cells x 2
-        assert len(manifest.cell_counts) == 8
+        assert manifest.total_items == 8  # 4 cells x 2
+        assert set(manifest.cell_counts) == set(FRAME)
         assert all(c == 2 for c in manifest.cell_counts.values())
         assert manifest.seed == 42
-        assert manifest.pool_sha256  # provenance recorded
-
-        sample = _load_sample(tmp_path, "run1")
-        assert len(sample) == 16
-        # run finalized as COMPLETED
+        assert manifest.pool_sha256
+        assert len(_load_sample(tmp_path, "run1")) == 8
         meta = json.loads(
             (tmp_path / "run1" / "human_eval" / "run_metadata.json").read_text(encoding="utf-8")
         )
         assert meta["status"] == "completed"
 
-    def test_excludes_out_of_frame_bloom_and_null_score(self, tmp_path: Path) -> None:
-        specs = [*_frame_specs(2), ("apply", 5), ("create", 2), ("remember", None)]
+    def test_provenance_points_at_the_cep_stage(self, tmp_path: Path) -> None:
+        _write_source(tmp_path, "run_prov", "s1", _frame_specs(2))
+        run_build_sample_batch("run_prov", seed=1, base_dir=tmp_path, per_cell=2)
+        meta = json.loads(
+            (tmp_path / "run_prov" / "human_eval" / "run_metadata.json").read_text(encoding="utf-8")
+        )
+        assert meta["input_source"].endswith("cep/outputs")
+
+    def test_excludes_out_of_frame_bloom_and_counts_it(self, tmp_path: Path) -> None:
+        specs = [*_frame_specs(2), "apply", "create"]
         _write_source(tmp_path, "run2", "s1", specs)
 
         manifest = run_build_sample_batch("run2", seed=1, base_dir=tmp_path, per_cell=2)
 
-        assert manifest.total_items == 16  # exclusions don't change the sample size
-        assert manifest.excluded_none_score == 1
+        assert manifest.total_items == 8  # exclusions don't change the sample size
         assert manifest.excluded_bloom == {"apply": 1, "create": 1}
 
-    def test_frame_follows_the_live_cep_verdict_not_the_emic_snapshot(self, tmp_path: Path) -> None:
-        # An `emic-judge --scope all` run scores rejected pairs too, so the emic
-        # outputs are not a pool of approved pairs. The frame must come from the
-        # CEP record (the authoritative verdict), NOT from the is_valid snapshot
-        # frozen into the emic outputs -- otherwise a judge-qa re-run silently
-        # leaves the sample pinned to stale verdicts.
-        _write_source(tmp_path, "run_live", "s1", _frame_specs(3))
-        cep_path = next((tmp_path / "run_live" / "cep" / "outputs").glob("*_cep_qa.json"))
-        emic_path = next((tmp_path / "run_live" / "emic_judge" / "outputs").glob("*.json"))
+    def test_frame_is_the_judge_approved_corpus(self, tmp_path: Path) -> None:
+        _write_source(tmp_path, "run3", "s1", _frame_specs(2))
+        _write_source(tmp_path, "run3", "s2", _frame_specs(1), approved=False)
 
-        # The corpus rejects pair 0 while the emic snapshot still says approved.
-        record = QARecordCEP.load(cep_path)
-        record.qa_pairs[0].validation = JudgePipelineResult(stage_results={}, passed=False)
-        record.save(cep_path)
+        manifest = run_build_sample_batch("run3", seed=1, base_dir=tmp_path, per_cell=2)
 
-        manifest = run_build_sample_batch("run_live", seed=1, base_dir=tmp_path, per_cell=2)
-        assert manifest.excluded_not_approved == 1  # live verdict wins
-        assert manifest.total_items == 16
+        assert manifest.excluded_not_approved == 4  # s2's four rejected pairs
+        assert manifest.total_items == 8
+        assert all(i.source_file_id == "s1" for i in _load_sample(tmp_path, "run3"))
 
-        # And the converse: mutating only the emic snapshot must change nothing,
-        # because it is provenance, not the frame.
-        scores = EmicSourceScores.load(emic_path)
-        for score in scores.scores:
-            score.is_valid = False
-        scores.save(emic_path)
-
-        again = run_build_sample_batch("run_live", seed=1, base_dir=tmp_path, per_cell=2)
-        assert again.excluded_not_approved == 1
-        assert again.pool_sha256 == manifest.pool_sha256
-
-    def test_insufficient_approved_pairs_raises(self, tmp_path: Path) -> None:
-        # With too few approved pairs left in a cell the build fails loudly
-        # rather than silently shrinking the sample.
-        _write_source(tmp_path, "run_scope", "s1", _frame_specs(2))
-        cep_path = next((tmp_path / "run_scope" / "cep" / "outputs").glob("*_cep_qa.json"))
-        record = QARecordCEP.load(cep_path)
-        record.qa_pairs[0].validation = JudgePipelineResult(stage_results={}, passed=False)
-        record.save(cep_path)
-
-        with pytest.raises(ValueError, match="has only"):
-            run_build_sample_batch("run_scope", seed=1, base_dir=tmp_path, per_cell=2)
+    def test_population_by_cell_is_keyed_by_bloom_level(self, tmp_path: Path) -> None:
+        _write_source(tmp_path, "run_pop", "s1", _frame_specs(3))
+        manifest = run_build_sample_batch("run_pop", seed=1, base_dir=tmp_path, per_cell=2)
+        assert manifest.population_by_cell == dict.fromkeys(FRAME, 3)
 
     def test_payload_is_blinded(self, tmp_path: Path) -> None:
-        _write_source(tmp_path, "run3", "s1", _frame_specs(2))
-        run_build_sample_batch("run3", seed=1, base_dir=tmp_path, per_cell=2)
-        item = _load_sample(tmp_path, "run3")[0]
-        assert item.segment and item.question and item.answer  # payload present
-        assert item.pair_id == f"{item.source_file_id}:{item.pair_index}"
-        # SampleItem deliberately carries no tacit_inference / canonical scores
+        _write_source(tmp_path, "run4", "s1", _frame_specs(2))
+        run_build_sample_batch("run4", seed=1, base_dir=tmp_path, per_cell=2)
+        item = _load_sample(tmp_path, "run4")[0]
         dumped = item.model_dump()
+        assert "emic_score" not in dumped
+        assert "cell_id" not in dumped
         assert "tacit_inference" not in dumped
-        assert "weighted_score" not in dumped
+        assert dumped["segment"].startswith("segment ")
 
-    def test_insufficient_cell_raises_and_marks_failed(self, tmp_path: Path) -> None:
-        # remember:limpa gets only 1 limpa pair while per_cell=2.
-        specs = _frame_specs(2)
-        specs.remove(("remember", 5))  # drop one of the two remember-limpa pairs
-        _write_source(tmp_path, "run4", "s1", specs)
-
-        with pytest.raises(ValueError, match="remember:limpa"):
-            run_build_sample_batch("run4", seed=1, base_dir=tmp_path, per_cell=2)
-
+    def test_insufficient_cell_raises_and_marks_the_run_failed(self, tmp_path: Path) -> None:
+        _write_source(tmp_path, "run5", "s1", _frame_specs(1))
+        with pytest.raises(ValueError, match="required"):
+            run_build_sample_batch("run5", seed=1, base_dir=tmp_path, per_cell=2)
         meta = json.loads(
-            (tmp_path / "run4" / "human_eval" / "run_metadata.json").read_text(encoding="utf-8")
+            (tmp_path / "run5" / "human_eval" / "run_metadata.json").read_text(encoding="utf-8")
         )
         assert meta["status"] == "failed"
 
     def test_reproducible_across_runs(self, tmp_path: Path) -> None:
-        _write_source(tmp_path, "run5", "s1", _frame_specs(5))  # slack so selection is non-trivial
-        run_build_sample_batch("run5", seed=7, base_dir=tmp_path, per_cell=2)
-        first = [(i.pair_id, i.cell_id, i.slot_id) for i in _load_sample(tmp_path, "run5")]
-        run_build_sample_batch("run5", seed=7, base_dir=tmp_path, per_cell=2)
-        second = [(i.pair_id, i.cell_id, i.slot_id) for i in _load_sample(tmp_path, "run5")]
-        assert first == second
+        _write_source(tmp_path, "a", "s1", _frame_specs(5))
+        _write_source(tmp_path, "b", "s1", _frame_specs(5))
+        run_build_sample_batch("a", seed=77, base_dir=tmp_path, per_cell=2)
+        run_build_sample_batch("b", seed=77, base_dir=tmp_path, per_cell=2)
+        assert [i.pair_id for i in _load_sample(tmp_path, "a")] == [
+            i.pair_id for i in _load_sample(tmp_path, "b")
+        ]
 
-    def test_missing_emic_stage_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="Emic-judge outputs not found"):
+    def test_missing_cep_stage_names_the_generate_command(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match="generate-cep-qa"):
             run_build_sample_batch("absent", seed=1, base_dir=tmp_path, per_cell=2)
 
-    def test_missing_cep_stage_raises(self, tmp_path: Path) -> None:
-        # emic outputs present, cep dir absent.
-        emic_outputs = tmp_path / "run6" / "emic_judge" / "outputs"
-        emic_outputs.mkdir(parents=True)
-        EmicSourceScores(
-            source_file_id="s1",
-            source_filename="s1.mp4",
-            scores=[
-                EmicScore(
-                    pair_index=0, bloom_level="remember", emic_score=2, rationale="r", is_valid=True
-                )
-            ],
-        ).save(emic_outputs / "s1_cep_qa.json")
-
-        with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
+    def test_empty_pool_raises_cause_specific(self, tmp_path: Path) -> None:
+        _write_source(tmp_path, "run6", "s1", _frame_specs(2), approved=False)
+        with pytest.raises(ValueError, match="not judge-approved"):
             run_build_sample_batch("run6", seed=1, base_dir=tmp_path, per_cell=2)
 
-    def test_empty_pool_raises_cause_specific(self, tmp_path: Path) -> None:
-        # All approved pairs are out-of-frame Bloom or null-score -> empty frame.
-        _write_source(tmp_path, "run8", "s1", [("apply", 5), ("create", 2), ("remember", None)])
-        with pytest.raises(ValueError, match="No in-frame approved pairs"):
-            run_build_sample_batch("run8", seed=1, base_dir=tmp_path, per_cell=2)
-
     def test_duplicate_pair_id_raises(self, tmp_path: Path) -> None:
-        # Two emic files whose EmicSourceScores share the same source_file_id +
-        # pair_index collide on pair_id (e.g. a stale duplicate emic output).
-        emic_outputs = tmp_path / "run9" / "emic_judge" / "outputs"
-        cep_outputs = tmp_path / "run9" / "cep" / "outputs"
-        emic_outputs.mkdir(parents=True)
-        cep_outputs.mkdir(parents=True)
-        for name in ("a", "b"):
-            QARecordCEP(
-                source_gdrive_id="dup",
-                source_filename="dup.mp4",
-                transcription_text="t",
-                qa_pairs=[
-                    QAPairCEP(
-                        question="q",
-                        answer="a",
-                        context="seg",
-                        question_type="conceptual",
-                        confidence=0.9,
-                        bloom_level="remember",
-                        validation=JudgePipelineResult(stage_results={}, passed=True),
-                    )
-                ],
-                model_id="m",
-                provider="ollama",
-                total_pairs=1,
-            ).save(cep_outputs / f"{name}_cep_qa.json")
-            EmicSourceScores(
-                source_file_id="dup",
-                source_filename="dup.mp4",
-                scores=[
-                    EmicScore(
-                        pair_index=0,
-                        bloom_level="remember",
-                        emic_score=2,
-                        rationale="r",
-                        is_valid=True,
-                    )
-                ],
-            ).save(emic_outputs / f"{name}_cep_qa.json")
-
+        """Two CEP files sharing a source_file_id would collide the join key."""
+        _write_source(tmp_path, "run7", "s1", _frame_specs(2))
+        cep_outputs = tmp_path / "run7" / "cep" / "outputs"
+        record = QARecordCEP.load(cep_outputs / "s1_cep_qa.json")
+        record.save(cep_outputs / "s1_copy_cep_qa.json")
         with pytest.raises(ValueError, match="Duplicate pair_id"):
-            run_build_sample_batch("run9", seed=1, base_dir=tmp_path, per_cell=2)
+            run_build_sample_batch("run7", seed=1, base_dir=tmp_path, per_cell=2)
 
     def test_pool_hash_changes_when_payload_drifts(self, tmp_path: Path) -> None:
-        # Same pair ids/bloom/score but different CEP text -> different pool hash.
-        _write_source(tmp_path, "runA", "s1", _frame_specs(2))
-        h1 = run_build_sample_batch("runA", seed=1, base_dir=tmp_path, per_cell=2).pool_sha256
-        # Rewrite the CEP records with mutated payload text, same indices/blooms.
-        cep_outputs = tmp_path / "runA" / "cep" / "outputs"
-        for cep_file in cep_outputs.glob("*_cep_qa.json"):
-            rec = QARecordCEP.load(cep_file)
-            for p in rec.qa_pairs:
-                p.context = p.context + " (edited)"
-            rec.save(cep_file)
-        h2 = run_build_sample_batch("runA", seed=1, base_dir=tmp_path, per_cell=2).pool_sha256
-        assert h1 != h2
+        """The digest covers the payload, so a CEP regeneration is detectable."""
+        _write_source(tmp_path, "run8", "s1", _frame_specs(3))
+        first = run_build_sample_batch("run8", seed=1, base_dir=tmp_path, per_cell=2)
+
+        _write_source(tmp_path, "run9", "s1", _frame_specs(3))
+        cep_path = tmp_path / "run9" / "cep" / "outputs" / "s1_cep_qa.json"
+        record = QARecordCEP.load(cep_path)
+        record.qa_pairs[0].answer = "regenerated answer"
+        record.save(cep_path)
+        second = run_build_sample_batch("run9", seed=1, base_dir=tmp_path, per_cell=2)
+
+        assert first.pool_sha256 != second.pool_sha256
 
     def test_manifest_roundtrips(self, tmp_path: Path) -> None:
-        _write_source(tmp_path, "run7", "s1", _frame_specs(2))
-        run_build_sample_batch("run7", seed=3, base_dir=tmp_path, per_cell=2)
-        manifest = SampleManifest.load(
-            tmp_path / "run7" / "human_eval" / "outputs" / "sample_manifest.json"
-        )
-        assert manifest.seed == 3
-        assert sum(manifest.cell_counts.values()) == 16
+        _write_source(tmp_path, "run10", "s1", _frame_specs(2))
+        manifest = run_build_sample_batch("run10", seed=1, base_dir=tmp_path, per_cell=2)
+        path = tmp_path / "run10" / "human_eval" / "outputs" / "sample_manifest.json"
+        assert SampleManifest.load(path) == manifest
