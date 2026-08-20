@@ -2,10 +2,11 @@
 
 Aggregates ``results/<id>/emic_judge/outputs/*.json`` into the tables the
 results chapter needs: the ordinal distribution over the whole corpus, the same
-distribution split by Bloom level, by ``judge-qa`` verdict and by source
-interview, plus a run-health block. This is the automatic measurement only; the
-human-annotation agreement (Krippendorff alpha, weighted Cohen kappa, AC2) is
-the separate ``emic-analysis`` work and is deliberately absent here.
+distribution split by Bloom level, by ``judge-qa`` verdict, by the two of them
+jointly and by source interview, plus a run-health block. This is the automatic
+measurement only; the human-annotation agreement (Krippendorff alpha, weighted
+Cohen kappa, AC2) is the separate ``emic-analysis`` work and is deliberately
+absent here.
 
 Pairs whose LLM call errored carry ``emic_score=None``. They are counted under
 run health and excluded from every mean, median and percentage, so a dead
@@ -119,6 +120,9 @@ class EmicAnalysis:
         overall: Distribution over every scored pair.
         by_bloom: Distribution per Bloom level, in canonical ladder order.
         by_verdict: Distribution per ``judge-qa`` verdict bucket.
+        by_bloom_verdict: Distribution per (Bloom level, verdict) cell, in
+            canonical ladder order then verdict order. Only cells the corpus
+            actually populates are present.
         by_source: Per-source distributions, worst mean first.
     """
 
@@ -126,6 +130,7 @@ class EmicAnalysis:
     overall: Distribution
     by_bloom: dict[str, Distribution]
     by_verdict: dict[str, Distribution]
+    by_bloom_verdict: dict[tuple[str, str], Distribution]
     by_source: list[SourceRow]
 
 
@@ -175,6 +180,12 @@ def _bloom_sort_key(level: str) -> tuple[int, str]:
     return (len(CANONICAL_BLOOM_ORDER), level)
 
 
+def _cell_sort_key(cell: tuple[str, str]) -> tuple[tuple[int, str], int]:
+    """Order cross-tab cells by Bloom ladder, then by verdict bucket order."""
+    level, bucket = cell
+    return (_bloom_sort_key(level), list(VERDICT_LABELS).index(bucket))
+
+
 def build_analysis(sources: list[EmicSourceScores], unreadable: int, scope: str) -> EmicAnalysis:
     """Aggregate per-source scores into every table of the report.
 
@@ -191,6 +202,7 @@ def build_analysis(sources: list[EmicSourceScores], unreadable: int, scope: str)
     total = 0
     bloom_values: dict[str, list[int]] = {}
     verdict_values: dict[str, list[int]] = {bucket: [] for bucket in VERDICT_LABELS}
+    cell_values: dict[tuple[str, str], list[int]] = {}
     rows: list[SourceRow] = []
 
     for source in sources:
@@ -200,13 +212,16 @@ def build_analysis(sources: list[EmicSourceScores], unreadable: int, scope: str)
             # Register the level even for an errored pair: a Bloom level whose
             # every pair failed must show up as n=0, not vanish from the table.
             level_values = bloom_values.setdefault(score.bloom_level, [])
+            bucket = _verdict_bucket(score)
+            cell = cell_values.setdefault((score.bloom_level, bucket), [])
             if score.emic_score is None:
                 failed += 1
                 continue
             scored.append(score.emic_score)
             source_values.append(score.emic_score)
             level_values.append(score.emic_score)
-            verdict_values[_verdict_bucket(score)].append(score.emic_score)
+            verdict_values[bucket].append(score.emic_score)
+            cell.append(score.emic_score)
         rows.append(
             SourceRow(
                 file_id=source.source_file_id,
@@ -234,6 +249,9 @@ def build_analysis(sources: list[EmicSourceScores], unreadable: int, scope: str)
             for level in sorted(bloom_values, key=_bloom_sort_key)
         },
         by_verdict={bucket: distribution(values) for bucket, values in verdict_values.items()},
+        by_bloom_verdict={
+            key: distribution(cell_values[key]) for key in sorted(cell_values, key=_cell_sort_key)
+        },
         by_source=rows,
     )
 
@@ -375,6 +393,16 @@ def _verdict_rows(analysis: EmicAnalysis) -> list[tuple[str, Distribution]]:
     return [(label, analysis.by_verdict[bucket]) for bucket, label in VERDICT_LABELS.items()]
 
 
+def _bloom_verdict_rows(analysis: EmicAnalysis) -> list[tuple[str, Distribution]]:
+    """Flatten the (Bloom level, verdict) cells into renderable rows."""
+    approved_only = analysis.health.scope == "approved"
+    return [
+        (f"{level} / {VERDICT_LABELS[bucket]}", dist)
+        for (level, bucket), dist in analysis.by_bloom_verdict.items()
+        if not approved_only or bucket == "approved"
+    ]
+
+
 def _source_table(rows: list[SourceRow]) -> list[str]:
     lines = [
         "## By source",
@@ -413,6 +441,11 @@ def render_markdown(analysis: EmicAnalysis, pipeline_id: str) -> str:
     lines += _breakdown_table("## By Bloom level", "Bloom level", list(analysis.by_bloom.items()))
     lines += _breakdown_table(
         "## Emic score x judge-qa verdict", "Verdict", _verdict_rows(analysis)
+    )
+    lines += _breakdown_table(
+        "## Emic score x judge-qa verdict, by Bloom level",
+        "Bloom level / verdict",
+        _bloom_verdict_rows(analysis),
     )
     if analysis.health.scope == "approved":
         lines += [

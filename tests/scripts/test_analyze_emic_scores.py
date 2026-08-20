@@ -130,6 +130,29 @@ class TestBuildAnalysis:
         assert by_verdict["rejected"].counts == {1: 0, 2: 1, 3: 0, 4: 0, 5: 0}
         assert by_verdict["unjudged"].counts == {1: 0, 2: 0, 3: 1, 4: 0, 5: 0}
 
+    def test_bloom_verdict_crosstab_keys_only_populated_combinations(
+        self, sources: list[EmicSourceScores]
+    ) -> None:
+        cells = build_analysis(sources, unreadable=0, scope="all").by_bloom_verdict
+
+        assert list(cells) == [
+            ("remember", "approved"),
+            ("remember", "unjudged"),
+            ("understand", "approved"),
+            ("apply", "rejected"),
+            ("analyze", "approved"),
+        ]
+        assert cells[("remember", "approved")].counts == {1: 1, 2: 0, 3: 0, 4: 0, 5: 1}
+        assert cells[("remember", "approved")].mean == pytest.approx(3.0)
+
+    def test_bloom_verdict_cell_whose_only_pair_errored_is_kept_empty(
+        self, sources: list[EmicSourceScores]
+    ) -> None:
+        cells = build_analysis(sources, unreadable=0, scope="all").by_bloom_verdict
+
+        assert cells[("analyze", "approved")].n == 0
+        assert cells[("analyze", "approved")].mean is None
+
     def test_sources_are_ordered_worst_mean_first(self, sources: list[EmicSourceScores]) -> None:
         rows = build_analysis(sources, unreadable=0, scope="all").by_source
 
@@ -188,6 +211,8 @@ class TestRenderMarkdown:
         assert "## Score distribution" in rendered
         assert "## By Bloom level" in rendered
         assert "## Emic score x judge-qa verdict" in rendered
+        assert "## Emic score x judge-qa verdict, by Bloom level" in rendered
+        assert "| remember / approved |" in rendered
         assert "## By source" in rendered
         assert "entrevista-b.m4a" in rendered
 
@@ -209,3 +234,5 @@ class TestRenderMarkdown:
 
         assert "never scored" in rendered
         assert "| rejected |" not in rendered
+        assert "| remember / approved |" in rendered
+        assert "/ rejected |" not in rendered
