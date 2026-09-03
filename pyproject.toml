@@ -109,6 +109,12 @@ kg = [
 dashboard = [
     "textual>=3.0.0",
 ]
+analysis = [
+    "ipykernel>=7.3.0",
+    "jupyter>=1.1.1",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
+]
 
 [dependency-groups]
 dev = [
