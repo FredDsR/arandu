@@ -82,7 +82,6 @@ arandu generate-cep-qa results/ --id etno-project-001
 | `ARANDU_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
 | `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
 | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
-| `ARANDU_CEP_VALIDATION_THRESHOLD` | `0.6` | Min overall judge score for a pair to pass (used by `judge-qa`) |
 
 ### Judge Variables (used by `judge-qa`)
 
@@ -124,7 +123,6 @@ ARANDU_QA_OUTPUT_DIR=cep_dataset
 
 # CEP-Specific Settings
 ARANDU_CEP_LANGUAGE=pt
-ARANDU_CEP_VALIDATION_THRESHOLD=0.6
 
 # Judge Settings (used by judge-qa)
 ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
@@ -286,9 +284,9 @@ Each line contains one QA pair:
 
 ## Validation Criteria
 
-Validation runs via the separate [`judge-qa`](cli-reference.md#judge-qa) command. Each sampled QA pair is scored on four criteria, and the weighted overall score gates the pair against `validation_threshold`. The weights live in `CEPConfig` and must sum to 1.0.
+Validation runs via the separate [`judge-qa`](cli-reference.md#judge-qa) command. Each sampled QA pair is scored on four criteria, and each criterion is an independent gate: the pair passes only if **all four** clear their own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights.
 
-### Faithfulness (30% weight)
+### Faithfulness
 Is the answer grounded in the provided context?
 
 | Score | Description |
@@ -300,7 +298,7 @@ Is the answer grounded in the provided context?
 | 0.2 | Answer weakly grounded |
 | 0.0 | Answer not grounded, hallucinated, or contradictory |
 
-### Bloom Calibration (25% weight)
+### Bloom Calibration
 Does the question match the proposed cognitive level?
 
 | Score | Description |
@@ -311,7 +309,7 @@ Does the question match the proposed cognitive level?
 | 0.4 | Undercalibrated - requires lower cognitive level |
 | 0.0 | Completely miscalibrated |
 
-### Informativeness (25% weight)
+### Informativeness
 Does the answer reveal non-obvious or tacit knowledge?
 
 | Score | Description |
@@ -322,7 +320,7 @@ Does the answer reveal non-obvious or tacit knowledge?
 | 0.4 | Common but well-articulated information |
 | 0.0 | Trivial or obvious information |
 
-### Self-Containedness (20% weight)
+### Self-Containedness
 Can the question be understood and answered without external context beyond the provided text?
 
 | Score | Description |
@@ -331,7 +329,7 @@ Can the question be understood and answered without external context beyond the 
 | 0.6 | Mostly self-contained with minor ambiguity |
 | 0.0 | Depends on context not present in the question/answer |
 
-The overall score is the weighted average of these four criteria. QA pairs below `validation_threshold` (default 0.6) are marked invalid (`is_valid = false`).
+A QA pair is marked invalid (`is_valid = false`) as soon as **one** of the four criteria scores below its own gate. A high score on the other three does not compensate for it.
 
 ## Programmatic Usage
 
@@ -371,7 +369,6 @@ for qa in record.qa_pairs:
 cep_config = get_cep_config()
 print(f"Bloom distribution: {cep_config.bloom_distribution}")
 print(f"Pairs per chunk: {cep_config.pairs_per_chunk}")
-print(f"Validation threshold: {cep_config.validation_threshold}")
 ```
 
 ## Monitoring Progress
@@ -420,8 +417,8 @@ The checkpoint file (`cep_dataset/cep_checkpoint.json`) tracks:
 ### Validation Strategy
 1. Generate first, then validate with `judge-qa` as a separate step
 2. During development, sample with `judge-qa --files N --pairs M` for faster iteration
-3. Use `ARANDU_CEP_VALIDATION_THRESHOLD` of 0.6-0.7 to balance coverage and quality
-4. Re-run with `judge-qa --rejudge` after changing the validator model
+3. To move the bar, edit the per-criterion `threshold` in `prompts/judge/criteria/<criterion>/config.json`; there is no environment variable for it
+4. Re-run with `judge-qa --rejudge` after changing the validator model or a gate
 
 ### Bloom Distribution
 - Start with default distribution

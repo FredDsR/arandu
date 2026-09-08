@@ -5,14 +5,18 @@
   var DATA = { qa_pairs: [], transcriptions: [], runs: [] };
   var ALL_RUNS = [];
   var renderedTabs = {};
-  var ACTIVE_THRESHOLDS = { validation: null, quality: null };
+  // validation: per-criterion judge gates for the active run, keyed by
+  // criterion name. There is no aggregate CEP cut, so this is a map, not a
+  // number. quality: the single transcription quality gate.
+  var ACTIVE_THRESHOLDS = { validation: {}, quality: null };
   var _thresholdCache = {};
   var _funnelCache = {};
   var activeRunId = null;
-  var activeRunThreshold = 0.6;
   var qaDetailState = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
   var qaRequestId = 0;
-  var DEFAULT_SCORE_THRESHOLD = 0.6;
+  // Display-only band for columns the judge does not gate (generation
+  // confidence and the overall_score mean). Never a pass/fail cut.
+  var DISPLAY_SCORE_MIDPOINT = 0.6;
   var TRANS_TABLE_STATE = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
   var BLOOM_COLORS = {
     remember: "#0173B2",
@@ -140,14 +144,16 @@
     populateRunSelector(ALL_RUNS);
     if (ALL_RUNS.length) {
       activeRunId = ALL_RUNS[0].pipeline_id;
-      activeRunThreshold = DEFAULT_SCORE_THRESHOLD;
       var locs = unique(DATA.transcriptions.map(function (t) { return t.location || ""; }).filter(Boolean));
       var parts = unique(DATA.transcriptions.map(function (t) { return t.participant_name || ""; }).filter(Boolean));
       populateSelect("filter-location", locs);
       populateSelect("filter-participant", parts);
       updateSummaryCards(ALL_RUNS[0], DATA.qa_pairs, DATA.transcriptions);
       renderedTabs = {};
-      ACTIVE_THRESHOLDS = { validation: DEFAULT_SCORE_THRESHOLD, quality: DEFAULT_SCORE_THRESHOLD };
+      ACTIVE_THRESHOLDS = {
+        validation: ALL_RUNS[0].criterion_thresholds || {},
+        quality: ALL_RUNS[0].quality_threshold != null ? ALL_RUNS[0].quality_threshold : null,
+      };
       renderTab("overview", DATA);
     }
   }
@@ -171,18 +177,6 @@
     if (!pipelineId) return;
     activeRunId = pipelineId;
     TRANS_TABLE_STATE = { page: 1, sortBy: "source_filename", sortOrder: "asc", totalPages: 1 };
-    // Fetch and cache the run config threshold for score coloring
-    try {
-      var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      });
-      activeRunThreshold = (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null)
-        ? config.configs.cep.validation_threshold
-        : DEFAULT_SCORE_THRESHOLD;
-    } catch (e) {
-      activeRunThreshold = DEFAULT_SCORE_THRESHOLD;
-    }
     try {
       var results = await Promise.all([
         fetchAllPages("/api/qa?pipeline=" + encodeURIComponent(pipelineId)),
@@ -208,8 +202,13 @@
       var activeTab = document.querySelector("#tab-nav button.active");
       var tabId = activeTab ? activeTab.dataset.tab : "overview";
       renderedTabs[tabId] = true;
-      // Fetch thresholds in parallel with rendering
-      ACTIVE_THRESHOLDS = await getRunThresholds(pipelineId);
+      // The CEP gates travel with the run row (read back from the judged
+      // pairs); only the transcription gate comes from the run config.
+      var runThresholds = await getRunThresholds(pipelineId);
+      ACTIVE_THRESHOLDS = {
+        validation: runDetail.criterion_thresholds || {},
+        quality: runThresholds.quality,
+      };
       renderTab(tabId, DATA);
     } catch (e) {
       console.error("Failed to load run data for", pipelineId, ":", e);
@@ -720,12 +719,14 @@
     });
   }
 
-  function buildValidationViolins(qa, divId, threshold) {
+  function buildValidationViolins(qa, divId, gates) {
     var criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"];
     var traces = [];
+    var plotted = [];
     criteria.forEach(function (c) {
       var scores = qa.filter(function (q) { return q[c] !== null; }).map(function (q) { return q[c]; });
       if (scores.length) {
+        plotted.push(c);
         traces.push({
           type: "violin", y: scores,
           name: c.replace(/_/g, " ").replace(/\b\w/g, function (l) { return l.toUpperCase(); }),
@@ -738,9 +739,7 @@
       title: "LLM-as-a-Judge Validation Score Distributions",
       yaxis: { title: "Score (0-1)" }, height: 450, template: "plotly_white",
     };
-    if (threshold != null) {
-      addThresholdOverlay(layout, threshold);
-    }
+    addCriterionCutLines(layout, plotted, gates);
     plotReact(divId, traces, layout);
   }
 
@@ -960,7 +959,7 @@
     }], { title: "Source Hierarchy: Location > Participant > Document Count", height: 500, template: "plotly_white" });
   }
 
-  function buildBloomValidationHeatmap(qa, divId, threshold) {
+  function buildBloomValidationHeatmap(qa, divId, gates) {
     var levels = ["remember", "understand", "analyze", "evaluate"];
     var criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"];
     var cLabels = criteria.map(function (c) { return c.replace(/_/g, " ").replace(/\b\w/g, function (l) { return l.toUpperCase(); }); });
@@ -980,7 +979,8 @@
           var m = mean(s), sd = stddev(s);
           zRow.push(m);
           var cellText = m.toFixed(2) + "\n+/-" + sd.toFixed(2);
-          if (threshold != null && m < threshold) {
+          var gate = gates && gates[c] != null ? gates[c] : null;
+          if (gate != null && m < gate) {
             cellText = "⚠ " + cellText;
           }
           tRow.push(cellText);
@@ -1117,6 +1117,44 @@
     }]);
   }
 
+  // The CEP verdict is a conjunction of independent per-criterion gates, so a
+  // figure-wide line would draw a cut that does not exist. Each segment is
+  // confined to the slot of the violin it belongs to (category units).
+  function addCriterionCutLines(layout, criteria, gates) {
+    if (!gates) return;
+    var HALF_WIDTH = 0.4;
+    criteria.forEach(function (c, slot) {
+      var gate = gates[c];
+      if (gate == null) return;
+      layout.shapes = (layout.shapes || []).concat([{
+        type: "line",
+        x0: slot - HALF_WIDTH, x1: slot + HALF_WIDTH,
+        y0: gate, y1: gate,
+        xref: "x", yref: "y",
+        line: { color: "#CC3311", width: 2, dash: "dash" },
+      }]);
+      layout.annotations = (layout.annotations || []).concat([{
+        x: slot, xref: "x",
+        y: gate, yref: "y",
+        text: "Gate: " + gate,
+        showarrow: false,
+        yshift: 10,
+        font: { color: "#CC3311", size: 10 },
+      }]);
+    });
+  }
+
+  // Single number standing in for the CEP gates, for views that rank pairs by
+  // the overall_score mean rather than by a per-criterion verdict. Only defined
+  // when every criterion shares one gate; otherwise the display band is used.
+  function sharedCriterionGate(gates) {
+    var values = gates ? Object.keys(gates).map(function (c) { return gates[c]; }) : [];
+    if (!values.length) return DISPLAY_SCORE_MIDPOINT;
+    var first = values[0];
+    var agree = values.every(function (v) { return v === first; });
+    return agree ? first : DISPLAY_SCORE_MIDPOINT;
+  }
+
   async function getRunThresholds(pipelineId) {
     if (_thresholdCache[pipelineId]) return _thresholdCache[pipelineId];
     try {
@@ -1125,8 +1163,6 @@
         return r.json();
       });
       var result = {
-        validation: (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null)
-          ? config.configs.cep.validation_threshold : null,
         quality: (config.configs && config.configs.transcription && config.configs.transcription.quality_threshold != null)
           ? config.configs.transcription.quality_threshold : null,
       };
@@ -1134,7 +1170,7 @@
       return result;
     } catch (e) {
       console.warn("Could not fetch thresholds for", pipelineId, ":", e);
-      return { validation: null, quality: null };
+      return { quality: null };
     }
   }
 
@@ -1861,7 +1897,7 @@
       }
     });
     html += "</tr></thead><tbody>";
-    var threshold = activeRunThreshold;
+    var gates = ACTIVE_THRESHOLDS.validation || {};
     items.forEach(function (item) {
       html += '<tr class="expandable" data-pipeline="' + esc(item.pipeline_id)
         + '" data-filename="' + esc(item.source_filename)
@@ -1870,20 +1906,23 @@
       html += "<td>" + bloomBadge(item.bloom_level) + "</td>";
       html += '<td><em class="expand-hint">Click row to expand</em></td>';
       html += '<td><em class="expand-hint">Click row to expand</em></td>';
-      html += '<td class="' + scoreClass(item.confidence, threshold) + '">'
+      // Confidence is a generation score, not a judged criterion, so it gets
+      // the display band rather than a gate.
+      html += '<td class="' + scoreClass(item.confidence) + '">'
         + fmtScore(item.confidence, 2) + "</td>";
-      html += '<td class="' + scoreClass(item.faithfulness, threshold) + '">'
+      html += '<td class="' + scoreClass(item.faithfulness, gates.faithfulness) + '">'
         + fmtScore(item.faithfulness, 2) + "</td>";
-      html += '<td class="' + scoreClass(item.bloom_calibration, threshold) + '">'
+      html += '<td class="' + scoreClass(item.bloom_calibration, gates.bloom_calibration) + '">'
         + fmtScore(item.bloom_calibration, 2) + "</td>";
-      html += '<td class="' + scoreClass(item.informativeness, threshold) + '">'
+      html += '<td class="' + scoreClass(item.informativeness, gates.informativeness) + '">'
         + fmtScore(item.informativeness, 2) + "</td>";
-      html += '<td class="' + scoreClass(item.self_containedness, threshold) + '">'
+      html += '<td class="' + scoreClass(item.self_containedness, gates.self_containedness) + '">'
         + fmtScore(item.self_containedness, 2) + "</td>";
       var passBadge = item.is_valid
         ? '<span class="status-badge status-completed">Pass</span>'
         : '<span class="status-badge status-failed">Fail</span>';
-      html += '<td class="' + scoreClass(item.overall_score, threshold) + '">'
+      // overall_score is the mean of the four criteria, not a gated value.
+      html += '<td class="' + scoreClass(item.overall_score) + '">'
         + fmtScore(item.overall_score, 3) + " " + passBadge + "</td>";
       html += "<td>" + (item.is_valid
         ? '<span class="status-badge status-completed">Yes</span>'
@@ -2003,18 +2042,7 @@
     var container = document.getElementById("subtab-qa-alerts");
     if (!container || !pipelineId) return;
     container.innerHTML = '<p class="placeholder-text">Loading quality alerts\u2026</p>';
-    var threshold = 0.6;
-    try {
-      var config = await fetch("/api/runs/" + encodeURIComponent(pipelineId) + "/config").then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      });
-      if (config.configs && config.configs.cep && config.configs.cep.validation_threshold != null) {
-        threshold = config.configs.cep.validation_threshold;
-      }
-    } catch (e) {
-      console.warn("Could not load run config for threshold:", e);
-    }
+    var threshold = sharedCriterionGate(ACTIVE_THRESHOLDS.validation);
     try {
       var params = new URLSearchParams({
         pipeline: pipelineId,
@@ -2149,7 +2177,8 @@
   function scoreClass(score, threshold) {
     if (score === null || score === undefined) return "";
     if (score >= 0.8) return "score-high";
-    if (score >= (threshold !== undefined ? threshold : DEFAULT_SCORE_THRESHOLD)) return "score-medium";
+    var cut = threshold != null ? threshold : DISPLAY_SCORE_MIDPOINT;
+    if (score >= cut) return "score-medium";
     return "score-low";
   }
 

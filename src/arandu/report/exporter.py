@@ -13,7 +13,7 @@ from . import charts
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from .dataset import ReportDataset
+    from .dataset import ReportDataset, RunSummaryRow
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,7 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
     # Extract threshold values only when all runs agree (or there is a single run).
     # If runs disagree, the overlay would silently misrepresent some runs' data, so
     # we omit the threshold line rather than pick an arbitrary value.
-    validation_threshold: float | None = _consensus_threshold(
-        [r.validation_threshold for r in dataset.runs]
-    )
+    criterion_thresholds: dict[str, float] = _consensus_criterion_thresholds(dataset.runs)
     quality_threshold: float | None = _consensus_threshold(
         [r.quality_threshold for r in dataset.runs]
     )
@@ -50,7 +48,7 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         (
             "validation_scores",
             lambda: charts.create_validation_scores_chart(
-                dataset.qa_pairs, threshold=validation_threshold
+                dataset.qa_pairs, criterion_thresholds=criterion_thresholds
             ),
         ),
         (
@@ -92,7 +90,7 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
         (
             "bloom_validation_heatmap",
             lambda: charts.create_bloom_validation_heatmap(
-                dataset.qa_pairs, threshold=validation_threshold
+                dataset.qa_pairs, criterion_thresholds=criterion_thresholds
             ),
         ),
         (
@@ -134,3 +132,26 @@ def _consensus_threshold(values: list[float | None]) -> float | None:
     if not present:
         return None
     return present[0] if len(set(present)) == 1 else None
+
+
+def _consensus_criterion_thresholds(runs: list[RunSummaryRow]) -> dict[str, float]:
+    """Return the per-criterion judge gates every run agrees on.
+
+    The CEP verdict is a conjunction of independent per-criterion gates, so
+    there is no aggregate threshold to overlay. Each criterion is resolved on
+    its own via :func:`_consensus_threshold`; a criterion gated differently
+    across runs is dropped without affecting the others.
+
+    Args:
+        runs: Run summary rows carrying the gates read back from judged pairs.
+
+    Returns:
+        Mapping of criterion name to its shared gate, empty when nothing agrees.
+    """
+    names = {name for run in runs for name in run.criterion_thresholds}
+    resolved: dict[str, float] = {}
+    for name in names:
+        threshold = _consensus_threshold([run.criterion_thresholds.get(name) for run in runs])
+        if threshold is not None:
+            resolved[name] = threshold
+    return resolved

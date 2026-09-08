@@ -35,13 +35,9 @@ Main `ARANDU_CEP_*` knobs:
 - `ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT`
 - `ARANDU_CEP_LANGUAGE`
 
-Judge scoring fields live in `CEPConfig` and drive `judge-qa` (the four weights must sum to 1.0):
-
-- `ARANDU_CEP_VALIDATION_THRESHOLD`
-- `ARANDU_CEP_FAITHFULNESS_WEIGHT`
-- `ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT`
-- `ARANDU_CEP_INFORMATIVENESS_WEIGHT`
-- `ARANDU_CEP_SELF_CONTAINEDNESS_WEIGHT`
+`CEPConfig` holds no judge scoring field. A pair passes `judge-qa` only when all four
+criteria clear their own gate, set by `threshold` in
+`prompts/judge/criteria/<criterion>/config.json` (`0.625` for every criterion today).
 
 ## Judge configuration
 

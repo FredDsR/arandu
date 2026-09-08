@@ -469,22 +469,45 @@ class TestFunnelChart:
 
 
 class TestValidationScoresThreshold:
-    """Tests for threshold overlay on create_validation_scores_chart."""
+    """Tests for the per-criterion gate overlay on create_validation_scores_chart."""
 
-    def test_validation_scores_with_threshold(self) -> None:
-        """Verify add_hline shape is present when threshold is provided."""
+    def test_one_cut_line_per_criterion(self) -> None:
+        """Verify each violin gets a segment at its own criterion gate."""
         qa_pairs = [_make_qa_pair(), _make_qa_pair(faithfulness=0.6)]
-        fig = create_validation_scores_chart(qa_pairs, threshold=0.7)
+        fig = create_validation_scores_chart(
+            qa_pairs,
+            criterion_thresholds={
+                "faithfulness": 0.625,
+                "bloom_calibration": 0.625,
+                "informativeness": 0.5,
+                "self_containedness": 0.625,
+            },
+        )
         assert isinstance(fig, go.Figure)
-        # add_hline adds a shape and annotation
-        assert len(fig.layout.shapes) > 0
-        y_vals = [s.y0 for s in fig.layout.shapes]
-        assert 0.7 in y_vals
+        assert len(fig.layout.shapes) == 4
+        assert [s.y0 for s in fig.layout.shapes] == [0.625, 0.625, 0.5, 0.625]
 
-    def test_validation_scores_without_threshold(self) -> None:
-        """Verify no shape added when threshold is None."""
+    def test_cut_lines_stay_within_their_violin_slot(self) -> None:
+        """Verify segments are local to a violin rather than spanning the axis."""
         qa_pairs = [_make_qa_pair()]
-        fig = create_validation_scores_chart(qa_pairs, threshold=None)
+        fig = create_validation_scores_chart(
+            qa_pairs, criterion_thresholds={"informativeness": 0.625}
+        )
+        shape = fig.layout.shapes[0]
+        # "informativeness" is the third violin, so slot index 2.
+        assert shape.x0 > 1.0
+        assert shape.x1 < 3.0
+
+    def test_criterion_without_gate_gets_no_line(self) -> None:
+        """Verify criteria absent from the mapping are left unmarked."""
+        qa_pairs = [_make_qa_pair()]
+        fig = create_validation_scores_chart(qa_pairs, criterion_thresholds={"faithfulness": 0.625})
+        assert len(fig.layout.shapes) == 1
+
+    def test_validation_scores_without_thresholds(self) -> None:
+        """Verify no shape added when no gates are known."""
+        qa_pairs = [_make_qa_pair()]
+        fig = create_validation_scores_chart(qa_pairs, criterion_thresholds=None)
         assert isinstance(fig, go.Figure)
         assert len(fig.layout.shapes) == 0
 
@@ -508,25 +531,31 @@ class TestTranscriptionQualityThreshold:
 
 
 class TestBloomHeatmapThreshold:
-    """Tests for threshold annotation styling on create_bloom_validation_heatmap."""
+    """Tests for gate annotation styling on create_bloom_validation_heatmap."""
 
-    def test_bloom_heatmap_with_threshold_marks_low_cells(self) -> None:
-        """Verify cells below threshold are annotated with warning marker."""
+    def test_bloom_heatmap_marks_cells_below_their_column_gate(self) -> None:
+        """Verify each column is compared against its own criterion gate."""
         qa_pairs = [
-            _make_qa_pair(bloom_level="remember", faithfulness=0.3),
-            _make_qa_pair(bloom_level="analyze", faithfulness=0.9),
+            _make_qa_pair(bloom_level="remember", faithfulness=0.3, informativeness=0.3),
+            _make_qa_pair(bloom_level="analyze", faithfulness=0.9, informativeness=0.9),
         ]
-        fig = create_bloom_validation_heatmap(qa_pairs, threshold=0.7)
+        fig = create_bloom_validation_heatmap(
+            qa_pairs,
+            # Only faithfulness is gated high enough to flag the 0.3 cell.
+            criterion_thresholds={"faithfulness": 0.7, "informativeness": 0.2},
+        )
         assert isinstance(fig, go.Figure)
         heatmap = fig.data[0]
-        # Flatten text to find any ⚠ annotation
-        all_texts = [cell for row in heatmap.text for cell in row]
-        assert any("⚠" in t for t in all_texts)
+        # Rows are ordered remember/understand/analyze/evaluate; columns follow
+        # faithfulness/bloom_calibration/informativeness/self_containedness.
+        remember_row = heatmap.text[0]
+        assert "⚠" in remember_row[0]
+        assert "⚠" not in remember_row[2]
 
-    def test_bloom_heatmap_without_threshold(self) -> None:
-        """Verify no ⚠ annotations when threshold is None."""
+    def test_bloom_heatmap_without_thresholds(self) -> None:
+        """Verify no ⚠ annotations when no gates are known."""
         qa_pairs = [_make_qa_pair(bloom_level="remember")]
-        fig = create_bloom_validation_heatmap(qa_pairs, threshold=None)
+        fig = create_bloom_validation_heatmap(qa_pairs, criterion_thresholds=None)
         assert isinstance(fig, go.Figure)
         heatmap = fig.data[0]
         all_texts = [cell for row in heatmap.text for cell in row]

@@ -9,14 +9,26 @@ import plotly.graph_objects as go
 from .style import get_criterion_color
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from typing import Any
 
     from arandu.report.dataset import QAPairRow
 
+_CEP_CRITERIA: tuple[str, ...] = (
+    "faithfulness",
+    "bloom_calibration",
+    "informativeness",
+    "self_containedness",
+)
+"""The four CEP QA criteria, in the order they are plotted."""
+
+_VIOLIN_HALF_WIDTH: float = 0.4
+"""Half-width, in category units, of the slot a single violin occupies."""
+
 
 def create_validation_scores_chart(
     qa_pairs: list[QAPairRow],
-    threshold: float | None = None,
+    criterion_thresholds: Mapping[str, float] | None = None,
 ) -> go.Figure:
     """Create violin plots showing validation score distributions.
 
@@ -25,17 +37,21 @@ def create_validation_scores_chart(
 
     Args:
         qa_pairs: List of QAPairRow objects to visualize.
-        threshold: Optional validation threshold for overlay line.
+        criterion_thresholds: Optional per-criterion judge gate. Each plotted
+            criterion gets a cut line at its own gate; criteria missing from
+            the mapping are left unmarked. There is no aggregate cut, so no
+            single line spans the whole axis.
 
     Returns:
         Plotly Figure object.
     """
-    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
     fig = go.Figure()
+    plotted: list[str] = []
 
-    for criterion in criteria:
+    for criterion in _CEP_CRITERIA:
         scores = [getattr(qa, criterion) for qa in qa_pairs if getattr(qa, criterion) is not None]
         if scores:
+            plotted.append(criterion)
             fig.add_trace(
                 go.Violin(
                     y=scores,
@@ -53,31 +69,35 @@ def create_validation_scores_chart(
         height=450,
     )
 
-    if threshold is not None:
-        _add_threshold_line(fig, threshold)
+    if criterion_thresholds:
+        _add_criterion_cut_lines(fig, plotted, criterion_thresholds)
 
     return fig
 
 
 def create_bloom_validation_heatmap(
     qa_pairs: list[QAPairRow],
-    threshold: float | None = None,
+    criterion_thresholds: Mapping[str, float] | None = None,
 ) -> go.Figure:
     """Create a heatmap of mean validation scores by Bloom level and criterion.
 
     Rows: Bloom levels, Cols: validation criteria. Cells annotated with mean +/- std.
-    When threshold is provided, cells with mean score below threshold are marked with a warning.
+    When a criterion's gate is known, cells whose mean falls below that column's
+    own gate are marked with a warning.
 
     Args:
         qa_pairs: List of QAPairRow objects to visualize.
-        threshold: Optional threshold; cells with mean below this value are flagged.
+        criterion_thresholds: Optional per-criterion judge gate. Each column is
+            compared against its own gate; columns missing from the mapping are
+            never flagged.
 
     Returns:
         Plotly Figure object.
     """
     bloom_levels = ["remember", "understand", "analyze", "evaluate"]
-    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
+    criteria = list(_CEP_CRITERIA)
     criteria_labels = [c.replace("_", " ").title() for c in criteria]
+    gates = criterion_thresholds or {}
 
     # Collect scores by bloom level and criterion
     data: dict[str, dict[str, list[float]]] = {b: {c: [] for c in criteria} for b in bloom_levels}
@@ -102,7 +122,8 @@ def create_bloom_validation_heatmap(
                 std = (sum((s - mean) ** 2 for s in scores) / len(scores)) ** 0.5
                 row_z.append(mean)
                 cell_text = f"{mean:.2f}\n+/-{std:.2f}"
-                if threshold is not None and mean < threshold:
+                gate = gates.get(criterion)
+                if gate is not None and mean < gate:
                     cell_text = f"\u26a0 {cell_text}"
                 row_text.append(cell_text)
             else:
@@ -145,13 +166,7 @@ def create_correlation_heatmap(qa_pairs: list[QAPairRow]) -> go.Figure:
     Returns:
         Plotly Figure object.
     """
-    fields = [
-        "faithfulness",
-        "bloom_calibration",
-        "informativeness",
-        "self_containedness",
-        "confidence",
-    ]
+    fields = [*_CEP_CRITERIA, "confidence"]
     labels = [f.replace("_", " ").title() for f in fields]
 
     # Collect rows where all values are present
@@ -235,6 +250,46 @@ def _add_threshold_line(
     if col is not None:
         kwargs["col"] = col
     fig.add_hline(**kwargs)
+
+
+def _add_criterion_cut_lines(
+    fig: go.Figure,
+    criteria: list[str],
+    thresholds: Mapping[str, float],
+) -> None:
+    """Overlay one dashed cut line per violin, each at that criterion's own gate.
+
+    The judge verdict is a conjunction of independent per-criterion gates, so a
+    single figure-wide ``add_hline`` would draw a cut that does not exist. Each
+    segment is therefore confined to the slot of the violin it belongs to.
+
+    Args:
+        fig: Plotly Figure to modify in place.
+        criteria: Criterion names in the order their violins were added.
+        thresholds: Per-criterion gate; criteria absent from it are skipped.
+    """
+    for slot, criterion in enumerate(criteria):
+        threshold = thresholds.get(criterion)
+        if threshold is None:
+            continue
+        fig.add_shape(
+            type="line",
+            xref="x",
+            yref="y",
+            x0=slot - _VIOLIN_HALF_WIDTH,
+            x1=slot + _VIOLIN_HALF_WIDTH,
+            y0=threshold,
+            y1=threshold,
+            line={"color": "red", "dash": "dash", "width": 2},
+        )
+        fig.add_annotation(
+            x=slot,
+            y=threshold,
+            text=f"Gate: {threshold:g}",
+            showarrow=False,
+            yshift=10,
+            font={"color": "red", "size": 10},
+        )
 
 
 def _pearson_r(x: tuple[float, ...], y: tuple[float, ...]) -> float:

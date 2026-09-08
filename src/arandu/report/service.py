@@ -39,14 +39,13 @@ logger = logging.getLogger(__name__)
 
 _THRESHOLD_FIELDS: dict[str, list[str]] = {
     "transcription": ["quality_threshold"],
-    "cep": [
-        "validation_threshold",
-        "faithfulness_weight",
-        "bloom_calibration_weight",
-        "informativeness_weight",
-        "self_containedness_weight",
-    ],
 }
+"""Config fields that are real pass/fail gates, per pipeline step.
+
+The CEP step has no entry: its verdict is a conjunction of independent
+per-criterion gates recorded on each ``CriterionScore``, surfaced as
+``RunSummaryRow.criterion_thresholds``, not a configured aggregate cut.
+"""
 _TEXT_PREVIEW_CHARS: int = 500
 
 

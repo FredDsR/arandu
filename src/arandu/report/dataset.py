@@ -14,6 +14,9 @@ from pydantic import BaseModel, Field, computed_field
 if TYPE_CHECKING:
     from .collector import RunReport
 
+CEP_JUDGE_STAGE = "cep_validation"
+"""Name of the judge stage that carries the four CEP QA criteria."""
+
 
 class QAPairRow(BaseModel):
     """Flat row representing a single QA pair with all associated metadata."""
@@ -87,11 +90,16 @@ class RunSummaryRow(BaseModel):
     provider: str | None = Field(default=None, description="LLM provider (openai, ollama)")
 
     # Thresholds (from ConfigSnapshot)
-    validation_threshold: float | None = Field(
-        default=None, description="CEP validation pass/fail threshold"
-    )
     quality_threshold: float | None = Field(
         default=None, description="Transcription quality pass/fail threshold"
+    )
+    criterion_thresholds: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Per-criterion pass/fail gate actually applied by the CEP judge, read back "
+            "from the judged pairs. A criterion appears only when every judged pair in "
+            "the run was gated at the same value."
+        ),
     )
 
     # Validity counts
@@ -177,6 +185,36 @@ def build_dataset(reports: list[RunReport]) -> ReportDataset:
     )
 
 
+def _criterion_thresholds(report: RunReport) -> dict[str, float]:
+    """Collect the per-criterion gates the CEP judge actually applied in a run.
+
+    Each ``CriterionScore`` records the ``threshold`` it was compared against,
+    so the real gate is read back from the judged pairs instead of from a
+    configuration field. A criterion is reported only when every judged pair
+    agrees on its gate; a disagreement would make any single overlay value
+    wrong for part of the run, so the criterion is dropped instead.
+
+    Args:
+        report: Source RunReport.
+
+    Returns:
+        Mapping of criterion name to its shared threshold. Empty when the run
+        has no judged CEP pairs.
+    """
+    seen: dict[str, set[float]] = {}
+    for cep_record in report.cep_records:
+        for qa_pair in cep_record.qa_pairs:
+            validation = getattr(qa_pair, "validation", None)
+            stage_results = getattr(validation, "stage_results", None) or {}
+            stage = stage_results.get(CEP_JUDGE_STAGE)
+            if stage is None:
+                continue
+            for name, cs in stage.criterion_scores.items():
+                seen.setdefault(name, set()).add(cs.threshold)
+
+    return {name: next(iter(values)) for name, values in seen.items() if len(values) == 1}
+
+
 def _build_run_summary(report: RunReport, run_rows: list[RunSummaryRow]) -> None:
     """Extract run summary from a RunReport.
 
@@ -224,8 +262,8 @@ def _build_run_summary(report: RunReport, run_rows: list[RunSummaryRow]) -> None
         cep_model_id=cep_config.get("model_id"),
         validator_model_id=cep_config.get("validator_model_id"),
         provider=cep_config.get("provider"),
-        validation_threshold=cep_config.get("validation_threshold"),
         quality_threshold=transcription_config.get("quality_threshold"),
+        criterion_thresholds=_criterion_thresholds(report),
         valid_transcriptions=valid_transcriptions,
         invalid_transcriptions=invalid_transcriptions,
         valid_qa_pairs=valid_qa_pairs,
@@ -348,7 +386,7 @@ def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:
     if stage_results is None:
         return empty
 
-    stage = stage_results.get("cep_validation")
+    stage = stage_results.get(CEP_JUDGE_STAGE)
     if stage is None:
         return empty
 
