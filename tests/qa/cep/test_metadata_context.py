@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from arandu.qa.cep.metadata_context import (
     build_judge_context,
+    build_pair_judge_context,
     format_metadata_section,
     render_metadata_context,
 )
@@ -170,3 +171,59 @@ class TestBuildJudgeContext:
         )
 
         assert context == transcript
+
+
+class TestBuildPairJudgeContext:
+    """Tests for build_pair_judge_context()."""
+
+    def test_grounds_on_the_pair_chunk_not_the_transcription(self) -> None:
+        """The judge sees the chunk generation used, not the whole document.
+
+        CEP generation runs the Bloom ladder per chunk, so grounding the judge
+        on the full transcription would let faithfulness pass on evidence the
+        generator never saw.
+        """
+        chunk = "O pescador guardou o barco antes da enchente."
+        transcript = f"Conversa inicial sobre o tempo. {chunk} Depois falou da prefeitura."
+
+        context = build_pair_judge_context(
+            chunk,
+            transcript,
+            None,
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert context == chunk
+        assert "prefeitura" not in context
+
+    def test_falls_back_to_transcription_when_pair_has_no_context(self) -> None:
+        """Legacy pairs without a persisted chunk still get judged."""
+        transcript = "O pescador guardou o barco."
+
+        context = build_pair_judge_context(
+            "   ",
+            transcript,
+            None,
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert context == transcript
+
+    def test_appends_metadata_to_the_chunk(self) -> None:
+        """Metadata symmetry is preserved on top of the chunk grounding."""
+        chunk = "O pescador guardou o barco."
+        transcript = f"Abertura. {chunk} Encerramento."
+
+        context = build_pair_judge_context(
+            chunk,
+            transcript,
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert context.startswith(chunk)
+        assert "- Local: DOQUINHAS" in context
+        assert "Encerramento" not in context

@@ -120,7 +120,13 @@ class QAJudge(BaseJudge):
 
         Args:
             qa_pair: QA pair to validate.
-            context: Source context for grounding check.
+            context: Grounding context for the criteria. This is the source
+                *chunk* the pair was generated from (``QAPairCEP.context``,
+                optionally with the source-metadata block appended), not the
+                full transcription: grounding the judge on more text than
+                generation saw lets ``faithfulness`` pass on evidence the
+                generator never had. Build it with
+                :func:`arandu.qa.cep.metadata_context.build_pair_judge_context`.
 
         Returns:
             QAPairCEP with the ``validation`` field populated. ``is_valid``
@@ -155,11 +161,15 @@ class QAJudge(BaseJudge):
         qa_pairs: list[QAPairCEP],
         context: str,
     ) -> list[QAPairCEP]:
-        """Validate multiple QA pairs.
+        """Validate multiple QA pairs against one shared context.
+
+        Only usable when every pair was generated from the same source text.
+        CEP generation is per chunk, so the ``judge-qa`` command builds a
+        per-pair context instead and calls :meth:`validate` directly.
 
         Args:
             qa_pairs: List of QA pairs to validate.
-            context: Source context.
+            context: Grounding context shared by all the pairs.
 
         Returns:
             List of QA pairs with their ``validation`` field populated.

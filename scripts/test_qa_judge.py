@@ -27,8 +27,9 @@ from rich.console import Console
 from rich.table import Table
 
 from arandu.qa.cep.judge import QAJudge
+from arandu.qa.cep.metadata_context import build_pair_judge_context
 from arandu.qa.config import CEPConfig
-from arandu.qa.schemas import QAPairCEP
+from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.llm_client import create_llm_client
 
 console = Console()
@@ -80,23 +81,27 @@ def main() -> None:
     all_results: list[dict] = []
 
     for qa_file in qa_files:
-        data = json.loads(qa_file.read_text())
-        context = data.get("transcription_text") or data.get("context", "")
-        all_pairs = data.get("qa_pairs", [])
+        record = QARecordCEP.model_validate_json(qa_file.read_text())
 
         # Sample one pair per Bloom level for diversity
         seen_levels: set[str] = set()
-        pairs: list[dict] = []
-        for p in all_pairs:
-            level = p.get("bloom_level", "")
-            if level not in seen_levels and len(pairs) < args.pairs:
-                pairs.append(p)
-                seen_levels.add(level)
+        pairs: list[QAPairCEP] = []
+        for pair in record.qa_pairs:
+            if pair.bloom_level not in seen_levels and len(pairs) < args.pairs:
+                pairs.append(pair)
+                seen_levels.add(pair.bloom_level)
 
         console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
 
-        for pair_data in pairs:
-            qa = QAPairCEP(**pair_data)
+        for qa in pairs:
+            # Same grounding the judge-qa command uses: the originating chunk.
+            context = build_pair_judge_context(
+                qa.context,
+                record.transcription_text,
+                record.source_metadata,
+                enable_metadata=record.source_metadata_context_enabled,
+                language=record.language,
+            )
             result = judge.validate(qa, context)
 
             table = Table(show_header=True, border_style="dim", width=90)
