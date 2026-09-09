@@ -190,6 +190,27 @@ class EnrichedRecord(InputRecord, JudgeResultMixin):
         # Anything else (legacy weighted-score struct, or None) → drop the key.
         return new_data
 
+    @field_validator("transcription_text")
+    @classmethod
+    def _normalize_transcription_text(cls, v: str) -> str:
+        """Strip surrounding whitespace to fix one canonical coordinate space.
+
+        Every char offset in the pipeline is stamped against this string: the
+        ``chunk`` stage's ``ChunkSet``, CEP generation's ``chunk_id``, the
+        answerer's chunk resolver, and the atlas passage-offset sidecar. Whisper
+        prefixes its output with a space, and when one consumer stripped it
+        while another did not, the two produced disjoint ``chunk_id``
+        namespaces. Normalizing here makes the coordinate space a property of
+        the record rather than a habit each reader must remember.
+
+        Args:
+            v: Raw transcription text as produced or persisted.
+
+        Returns:
+            The text with surrounding whitespace removed.
+        """
+        return v.strip()
+
     source_metadata: SourceMetadata | None = Field(
         default=None,
         description="Extracted metadata from source catalog (None = not yet extracted)",
