@@ -252,7 +252,10 @@ class TestAranduChunkContentInvariants:
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        text = "Esta é uma frase de teste. " * 20
+        # Trailing whitespace is trimmed here because EnrichedRecord normalizes
+        # transcription_text on construction: the sha the chunk stage records
+        # is always over the canonical (stripped) text, never the raw fixture.
+        text = ("Esta é uma frase de teste. " * 20).strip()
         _write_enriched_record(in_dir, "src_a", text)
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])

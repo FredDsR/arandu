@@ -77,7 +77,7 @@ class CEPQAGenerator:
         Returns:
             QARecordCEP with cognitive-level QA pairs.
         """
-        text = transcription.transcription_text.strip()
+        text = transcription.transcription_text
 
         logger.info(f"Generating CEP QA pairs for {transcription.file_id} ({len(text)} chars)")
 
