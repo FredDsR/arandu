@@ -1137,7 +1137,7 @@ def shift_passage_offsets(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/scripts/test_migrate_chunk_id_namespace.py -v`
-Expected: PASS, 18 passed.
+Expected: PASS, 17 passed (7 from Task 2 plus the 10 new ones above).
 
 - [ ] **Step 5: Lint, format, commit**
 
@@ -1551,7 +1551,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/scripts/test_migrate_chunk_id_namespace.py -v`
-Expected: PASS, 28 passed (18 from Tasks 2 and 3, 6 for `verify`, 4 for `main`).
+Expected: PASS, 27 passed (17 from Tasks 2 and 3, 6 for `verify`, 4 for `main`).
 
 - [ ] **Step 5: Correct spec section 5.5**
 
