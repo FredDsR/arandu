@@ -197,7 +197,7 @@ Give every char offset in the pipeline exactly one string to refer to, so artifa
 
 `chunk_id` is `sha1(source_file_id|chunker_id|start_char|end_char)[:16]` (`src/arandu/shared/chunking/chonkie_adapter.py`). The offsets are part of the key, so a one-character disagreement about which text is being chunked makes every id diverge.
 
-Four consumers stamp offsets against `EnrichedRecord.transcription_text`:
+Five places read this text as the coordinate space for char offsets. The first four stamp offsets into artifacts; the fifth resolves already-persisted offsets back to text:
 
 | Consumer | Artifact |
 | --- | --- |
@@ -205,6 +205,7 @@ Four consumers stamp offsets against `EnrichedRecord.transcription_text`:
 | `qa/cep/generator.py` | `QAPairCEP.chunk_id` |
 | `shared/rag/answer/resolver.py` | the `chunk_id` to text map at answer time |
 | `kg/passage_offsets.py` | the atlas passage-offset sidecar |
+| `shared/rag/retrieve/factory.py` (`_build_chunk_resolver`) | the `ChunkResolver` that slices `ChunkSet` spans into the text BM25 tokenizes at index build |
 
 The field validator strips surrounding whitespace, so the coordinate space is a property of the record rather than a habit each reader must remember. Whisper prefixes its output with a space, and when the chunk stage kept it while CEP generation stripped it, the two produced disjoint namespaces (issue #166).
 

@@ -71,10 +71,10 @@ O campo também é documentado como "Reference into the source ChunkSet"
    todos eles. Normalizar para stripado deixa o `qa_pair_id` intacto.
 2. **Canônico no schema**, via `@field_validator` em
    `EnrichedRecord.transcription_text`, não num helper chamado pelos
-   consumidores. São quatro consumidores do mesmo espaço de coordenadas
+   consumidores. São cinco consumidores do mesmo espaço de coordenadas
    (`chunking/batch.py`, `qa/cep/generator.py`, `shared/rag/answer/resolver.py`,
-   `kg/passage_offsets.py`); um helper pode derivar de novo, que é exatamente
-   como chegamos aqui.
+   `kg/passage_offsets.py`, `shared/rag/retrieve/factory.py`); um helper pode
+   derivar de novo, que é exatamente como chegamos aqui.
 3. **Clonar o run** em vez de reescrever no lugar. `thesis-run-01` fica
    congelado como registro do estado pré-correção.
 4. **O rejudge do #168 cai no mesmo run novo.** Os vereditos divergem de fato,
@@ -107,6 +107,13 @@ reescritos**.
 | `shared/chunking/batch.py:180` | nenhuma, passa a ler o texto canônico |
 | `shared/rag/answer/resolver.py:97` | nenhuma, idem |
 | `kg/passage_offsets.py` | nenhuma, idem |
+| `shared/rag/retrieve/factory.py:217` | nenhuma, idem |
+
+Os quatro primeiros **gravam** offsets. O quinto,
+`_build_chunk_resolver`, é o consumidor no outro sentido: monta o
+`ChunkResolver` que fatia `record.transcription_text` pelos spans já
+persistidos nas ChunkSets para produzir o texto que o índice BM25 tokeniza. Ele
+lê o mesmo espaço de coordenadas, então entra na mesma lista.
 
 O único outro consumidor que hasheia esse texto é `chunking/batch.py:181`, e é
 o hash que queremos que mude.
@@ -123,7 +130,21 @@ o hash que queremos que mude.
 
 `scripts/migrate_chunk_id_namespace.py`, seguindo o precedente do
 `scripts/kg_relabel_predicate.py`. Interface: `--id <run>`, `--dry-run`,
-`--verify`.
+`--verify`, `--allow-original`.
+
+O precedente do `kg_relabel_predicate.py` inclui um `.bak` antes de escrever;
+aqui o substituto é o clone do run, e o clone só existe se o operador se
+lembrar de fazê-lo. Para não deixar isso na cabeça de ninguém, escrever exige
+proveniência de clone: o `pipeline.json` do run precisa carregar
+`replicated_from` (gravado pelo `arandu replicate`, `shared/results_manager.py`),
+senão o script recusa com código 2 e sugere `--allow-original`. `--dry-run` e
+`--verify` são somente leitura e não passam por essa exigência, justamente para
+que o ensaio contra o `thesis-run-01` congelado siga possível.
+
+`main()` sempre roda a passada inteira em modo `dry_run=True` antes da passada
+que escreve. Nenhum dos passos tem atomicidade entre arquivos, então todo
+aborto de lógica precisa acontecer antes do primeiro byte escrito, não no meio
+dos 214 ChunkSets.
 
 ### 5.1 Abordagem
 
@@ -159,11 +180,21 @@ que o script não deve encobrir.
 
 ### 5.3 Passos
 
-1. Para cada `chunk/outputs/<view>/<file_id>.json`: resolve a transcrição, roda
-   `get_chunker(view)` sobre o texto canônico, grava o `ChunkSet` novo (ids,
-   offsets e `source_text_sha256`), e acumula `old_id -> new_id`. Antes de
-   escrever, afirma que cada fronteira nova é a antiga menos `lead_ws`; se não
-   for, aborta sem tocar em disco.
+1. Para cada `chunk/outputs/<view>/<file_id>.json`: resolve a transcrição,
+   classifica o `source_text_sha256` gravado, roda `get_chunker(view)` sobre o
+   texto canônico, grava o `ChunkSet` novo (ids, offsets e
+   `source_text_sha256`), e acumula `old_id -> new_id`. Antes de escrever,
+   afirma que cada fronteira nova é a antiga menos `lead_ws`; se não for,
+   aborta sem tocar em disco.
+
+   A classificação do hash gravado tem três saídas: igual ao sha do texto
+   canônico significa **já migrado**, então o arquivo é pulado (e reporta lead
+   0, para o passo 4 não deslocar duas vezes) e o script fica idempotente;
+   igual ao sha do texto cru significa **entrada da migração**, segue;
+   nenhum dos dois significa que aquele `ChunkSet` não foi construído a partir
+   daquela transcrição, e aí aborta com essa mensagem em vez de com um span
+   inesperado. Recuperar uma migração que falhou no meio é re-clonar, nunca
+   rerodar.
 2. `retrieve/indexes/bm25_*/manifest.json`: remapeia `chunk_ids` por lookup no
    mapa, não por posição. O `bm25.pkl` não é tocado e o `sha256` do manifest
    cobre o pkl, não o manifest, então segue válido.
@@ -173,7 +204,14 @@ que o script não deve encobrir.
    (`<file_id>:<index>`), `khop_triple` (`triple:<sha>`) e `null` (sem
    passages) sem codificar nome de arm.
 4. `kg/outputs/passage_offsets.json`: desloca `start_char`/`end_char` pelo
-   `lead_ws` do arquivo de origem, com clamp em 0.
+   `lead_ws` do arquivo de origem, com clamp em 0. Antes de escrever, afirma
+   que o span novo resolve para o mesmo texto que o antigo resolvia (§5.5,
+   item 5). Um `source_file_id` ausente do mapa `file_id -> lead_ws` é
+   **aborto**, não skip: o mapa vem do estágio `chunk` e o sidecar vem do
+   estágio `kg`, que selecionam arquivos de entrada de forma independente
+   (`shared/chunking/batch.py` glob `*.json`, `kg/batch.py` glob
+   `*_transcription.json`), e uma chave faltando é indistinguível de um
+   `lead_ws == 0` legítimo. Um `lead_ws == 0` de verdade segue sendo no-op.
 
 ### 5.4 Alcance medido
 
@@ -195,7 +233,10 @@ não valer:
 
 1. **Todo** par CEP tem `chunk_id` presente no `ChunkSet` do seu arquivo. No
    `thesis-run-02` isso significa 2670/2670, contra 0/2670 antes. O script
-   reporta a fração e exige que seja total, sem número fixo no código.
+   reporta a fração (`verify` devolve `resolved` e `total`, e `main()` imprime
+   `resolved/total` em toda execução de `--verify`) e exige que seja total, sem
+   número fixo no código. `total == 0` é falha: sem par nenhum para resolver, a
+   asserção principal não rodou, e um `--verify` verde não significaria nada.
 2. `source_text_sha256` de cada `ChunkSet` bate com o sha do texto canônico.
 3. Re-chunkar o texto canônico reproduz exatamente os ids em disco, ou seja o
    artefato é o que o pipeline corrigido produziria. A preservação de conteúdo
@@ -208,7 +249,17 @@ não valer:
    `stripped[3836:7534]`, o mesmo texto, e BM25 não tokeniza espaço.
 4. Nenhuma referência pendurada: todo id derivado de offset citado por um
    manifest do BM25 ou por `passages[].chunk_id` resolve para um chunk.
-5. Todo offset do `passage_offsets.json` cai dentro do seu texto canônico.
+5. **Texto resolvido do `passage_offsets.json` inalterado**: cada span
+   deslocado resolve para a mesma string que o span antigo resolvia, com a
+   única exceção do whitespace inicial que o schema removeu (um span que
+   entrava no lead o perde, igual ao primeiro chunk). Ao contrário das
+   ChunkSets, aqui o estado anterior **está em mão** na hora da migração: o
+   script já lê as duas leituras da transcrição, então o span antigo continua
+   resolvível. A checagem vive portanto em `_assert_offset_preserved`, chamada
+   por `shift_passage_offsets` antes de escrever, no mesmo lugar em que
+   `_assert_pure_shift` faz o seu trabalho. O que `--verify` consegue afirmar
+   depois é só o mais fraco, e afirma: todo offset cai dentro do seu texto
+   canônico.
 
 ## 6. Execução
 
@@ -223,8 +274,26 @@ arandu judge-qa results/thesis-run-02/cep/outputs --rejudge   # cluster, custa L
 ```
 
 `arandu replicate` (`cli/manage.py:117`) já copia a árvore, reescreve
-`pipeline_id`/`run_id` em cada `run_metadata.json` e grava `replicated_from`
-como proveniência. O clone nasce internamente consistente, sem `cp -r`.
+`pipeline_id`/`run_id` em cada `run_metadata.json` e grava `replicated_from` no
+`pipeline.json` do clone como proveniência. O clone nasce internamente
+consistente, sem `cp -r`. Essa proveniência é o que o script exige para
+escrever, então a ordem acima não é só convenção: sem o `replicate` na frente,
+o script recusa.
+
+**A migração precisa vir antes de qualquer re-save de transcrição.** O texto
+cru é a única fonte do `lead_ws` (§5.2), e ele só sobrevive porque
+`transcription/outputs/` não é reescrito (§9). Mas todo caminho que carrega um
+`EnrichedRecord` e o grava de volta agora persiste o texto **stripado**: é o
+caso do `arandu judge-transcriptions` (`cli/transcribe.py`, ~linha 720, que faz
+`EnrichedRecord(**data)` e depois `model_dump_json`). Rodar
+`judge-transcriptions --rejudge` no clone antes da migração torna a migração
+inexecutável, porque `lead_ws` passa a ser 0 para os arquivos regravados. Falha
+segura, e desde a passada de validação do §5 o aborto vem antes de qualquer
+escrita: o `source_text_sha256` gravado deixa de bater com qualquer das duas
+leituras e o `_classify_chunk_set` do passo 1 aborta dizendo exatamente isso.
+Mesmo assim, uma ocorrência parcial deixa o run sem migração possível e a
+recuperação é re-clonar. Então: migrar primeiro, re-julgar depois. Não reescrever `transcription/outputs/` continua desnecessário; agora é
+também inevitável em qualquer re-save.
 
 ## 7. Docs
 
@@ -243,7 +312,9 @@ conscientemente; não há nada no código que resolva isso.
 
 ## 9. Fora de escopo
 
-- Reescrever `transcription/outputs/`. O validador torna desnecessário.
+- Reescrever `transcription/outputs/`. O validador torna desnecessário, e o
+  texto cru precisa continuar em disco para a migração ler o `lead_ws` (ver a
+  ordem obrigatória na §6).
 - Tocar em `QAJudge.validate_batch`, que assume um contexto compartilhado por
   vários pares. Sem chamadores em `src/`, e o #168 já documenta a restrição.
 - Qualquer métrica nova de recall de recuperação. A normalização a

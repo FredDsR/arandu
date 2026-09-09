@@ -1726,6 +1726,7 @@ Expected:
 
 ```
 thesis-run-01 (dry run)
+  replicated from: nothing (not a clone)
   chunk_ids would remap: 445 across 214 files
   bm25 manifest ids would remap: 445
   passage references would remap: <non-zero> in <non-zero> files
@@ -1750,5 +1751,23 @@ uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-02
 uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-02 --verify
 arandu judge-qa results/thesis-run-02/cep/outputs --rejudge   # cluster, costs LLM
 ```
+
+`replicate` is not optional: writing refuses a run whose `pipeline.json` carries
+no `replicated_from`, since there is no `.bak` to fall back on. `--allow-original`
+overrides that, deliberately and only. The rehearsal above is unaffected;
+`--dry-run` and `--verify` are read-only and never gated.
+
+`--verify` now prints `CEP pairs resolving against a ChunkSet: 2670/2670`. That
+fraction is the whole point of the exercise, and a run with no pairs at all
+fails rather than passing green.
+
+**Run the migration before any re-judge of the transcriptions.** The raw text is
+the only source of `lead_ws`, and it survives only because
+`transcription/outputs/` is never rewritten. Every path that loads an
+`EnrichedRecord` and saves it back now persists the stripped text, including
+`arandu judge-transcriptions --rejudge`. Doing that on the clone first makes the
+migration unrunnable. It fails safe, and the validating pass now aborts before
+writing anything, but a partial occurrence leaves a run that cannot be migrated
+at all: recovery is a re-clone.
 
 Then generate and upload `thesis-run-02.tgz` and `thesis-run-02_with-indexes.tgz` to the Drive folder. That step is Fred's and has no code behind it.
