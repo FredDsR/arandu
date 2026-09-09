@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from arandu.shared.chunking.registry import get_chunker
-from arandu.shared.chunking.schemas import ChunkSet
+from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from scripts.migrate_chunk_id_namespace import (
+    _assert_pure_shift,
     load_source_texts,
     main,
     remap_bm25_manifests,
@@ -24,8 +25,6 @@ from scripts.migrate_chunk_id_namespace import (
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from arandu.shared.chunking.schemas import Chunk
 
 VIEW = "cep_4k"
 
@@ -85,12 +84,50 @@ def write_stale_chunk_set(run_dir: Path, file_id: str, raw_text: str) -> list[Ch
     return chunks
 
 
+def make_chunk(file_id: str, start: int, end: int) -> Chunk:
+    """Build a Chunk with an arbitrary but well-formed id."""
+    return Chunk(
+        chunk_id=f"{start:08x}{end:08x}",
+        source_file_id=file_id,
+        chunker_id=VIEW,
+        start_char=start,
+        end_char=end,
+    )
+
+
+def write_pipeline_metadata(run_dir: Path, *, replicated: bool) -> Path:
+    """Write the run's ``pipeline.json``, optionally with clone provenance.
+
+    ``arandu replicate`` stamps ``PipelineMetadata.replicated_from``; the
+    migration refuses to write to a run that carries no such provenance.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "pipeline.json"
+    payload: dict[str, Any] = {
+        "pipeline_id": run_dir.name,
+        "created_at": "2026-06-24T18:36:30.403511Z",
+        "steps_run": ["transcription", "chunk"],
+        "schema_version": "2.0",
+        "replicated_from": (
+            {
+                "source_pipeline_id": "thesis-run-01",
+                "replicated_at": "2026-06-24T18:36:30.403511Z",
+            }
+            if replicated
+            else None
+        ),
+    }
+    path.write_text(json.dumps(payload))
+    return path
+
+
 @pytest.fixture
 def run_dir(tmp_path: Path) -> Path:
     """A synthetic run carrying one file with Whisper's leading space."""
     run = tmp_path / "thesis-run-02"
     write_transcription(run, "file-1", f" {BODY}")
     write_stale_chunk_set(run, "file-1", f" {BODY}")
+    write_pipeline_metadata(run, replicated=True)
     return run
 
 
@@ -160,6 +197,102 @@ class TestRewriteChunkSets:
 
         assert id_map
         assert path.read_text() == before
+
+    def test_writes_nothing_when_the_canonical_chunking_diverges(self, run_dir: Path) -> None:
+        """The safety rail must abort before touching the ChunkSet on disk."""
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        ChunkSet(
+            source_file_id="file-1",
+            source_filename="file-1.mp3",
+            source_text_sha256=hashlib.sha256(f" {BODY}".encode()).hexdigest(),
+            views={VIEW: [make_chunk("file-1", 1, 400)]},
+            generated_at=datetime(2026, 6, 24, tzinfo=UTC),
+        ).save(path)
+        before = path.read_text()
+
+        with pytest.raises(ValueError, match="chunk count changed"):
+            rewrite_chunk_sets(run_dir, dry_run=False)
+
+        assert path.read_text() == before
+
+    def test_rejects_a_chunk_set_holding_more_than_its_directorys_view(self, run_dir: Path) -> None:
+        """A multi-view file under ``<view>/`` would lose its other views."""
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        stale = ChunkSet.load(path)
+        ChunkSet(
+            source_file_id=stale.source_file_id,
+            source_filename=stale.source_filename,
+            source_text_sha256=stale.source_text_sha256,
+            views={VIEW: stale.view(VIEW), "bm25_512t": [make_chunk("file-1", 1, 400)]},
+            generated_at=stale.generated_at,
+        ).save(path)
+        before = path.read_text()
+
+        with pytest.raises(ValueError, match="expected only the 'cep_4k' view"):
+            rewrite_chunk_sets(run_dir, dry_run=False)
+
+        assert path.read_text() == before
+
+    def test_reports_a_chunk_set_built_from_another_text(self, run_dir: Path) -> None:
+        """Neither hash matching means the ChunkSet is not this file's."""
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        stale = ChunkSet.load(path)
+        ChunkSet(
+            source_file_id=stale.source_file_id,
+            source_filename=stale.source_filename,
+            source_text_sha256=hashlib.sha256(b"some other transcription").hexdigest(),
+            views={VIEW: stale.view(VIEW)},
+            generated_at=stale.generated_at,
+        ).save(path)
+        before = path.read_text()
+
+        with pytest.raises(ValueError, match="was not built from"):
+            rewrite_chunk_sets(run_dir, dry_run=False)
+
+        assert path.read_text() == before
+
+    def test_is_idempotent_on_an_already_migrated_run(self, run_dir: Path) -> None:
+        """A second pass recognizes the canonical hash and leaves the run alone."""
+        rewrite_chunk_sets(run_dir, dry_run=False)
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+
+        id_map, lead_by_file = rewrite_chunk_sets(run_dir, dry_run=False)
+
+        assert id_map == {}
+        assert lead_by_file == {"file-1": 0}
+        assert path.read_text() == before
+
+
+class TestAssertPureShift:
+    """The safety rail behind re-chunking instead of shifting arithmetically."""
+
+    def test_accepts_the_expected_shift(self, tmp_path: Path) -> None:
+        stale = [make_chunk("file-1", 1, 400), make_chunk("file-1", 400, 900)]
+        fresh = [make_chunk("file-1", 0, 399), make_chunk("file-1", 399, 899)]
+
+        _assert_pure_shift(tmp_path / "file-1.json", stale, fresh, 1)
+
+    def test_raises_when_the_chunk_count_changed(self, tmp_path: Path) -> None:
+        stale = [make_chunk("file-1", 1, 400), make_chunk("file-1", 400, 900)]
+        fresh = [make_chunk("file-1", 0, 899)]
+
+        with pytest.raises(ValueError, match="chunk count changed"):
+            _assert_pure_shift(tmp_path / "file-1.json", stale, fresh, 1)
+
+    def test_raises_when_a_span_does_not_match_the_shift(self, tmp_path: Path) -> None:
+        stale = [make_chunk("file-1", 1, 400)]
+        fresh = [make_chunk("file-1", 1, 400)]
+
+        with pytest.raises(ValueError, match="refusing to write"):
+            _assert_pure_shift(tmp_path / "file-1.json", stale, fresh, 1)
+
+    def test_clamps_the_first_span_at_zero(self, tmp_path: Path) -> None:
+        """The first chunk loses the stripped lead instead of going negative."""
+        stale = [make_chunk("file-1", 0, 400)]
+        fresh = [make_chunk("file-1", 0, 399)]
+
+        _assert_pure_shift(tmp_path / "file-1.json", stale, fresh, 1)
 
 
 def write_retrieval_output(
@@ -287,20 +420,20 @@ class TestShiftPassageOffsets:
         )
         return path
 
+    def _offset(self, file_id: str, start: int, end: int) -> dict[str, Any]:
+        """One sidecar entry for ``file_id`` spanning ``[start, end)``."""
+        return {
+            "passage_id": f"{file_id}:0",
+            "source_file_id": file_id,
+            "start_char": start,
+            "end_char": end,
+            "chunker_id": "atlas_8k",
+        }
+
     def test_shifts_by_the_files_stripped_lead(self, tmp_path: Path) -> None:
         run = tmp_path / "run"
-        path = self._write_sidecar(
-            run,
-            [
-                {
-                    "passage_id": "file-1:0",
-                    "source_file_id": "file-1",
-                    "start_char": 10,
-                    "end_char": 100,
-                    "chunker_id": "atlas_8k",
-                }
-            ],
-        )
+        write_transcription(run, "file-1", f" {BODY}")
+        path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
 
         assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 1
 
@@ -309,18 +442,8 @@ class TestShiftPassageOffsets:
 
     def test_clamps_a_zero_start_at_zero(self, tmp_path: Path) -> None:
         run = tmp_path / "run"
-        path = self._write_sidecar(
-            run,
-            [
-                {
-                    "passage_id": "file-1:0",
-                    "source_file_id": "file-1",
-                    "start_char": 0,
-                    "end_char": 50,
-                    "chunker_id": "atlas_8k",
-                }
-            ],
-        )
+        write_transcription(run, "file-1", f" {BODY}")
+        path = self._write_sidecar(run, [self._offset("file-1", 0, 50)])
 
         shift_passage_offsets(run, {"file-1": 1}, dry_run=False)
 
@@ -329,18 +452,7 @@ class TestShiftPassageOffsets:
 
     def test_leaves_files_with_no_stripped_lead_alone(self, tmp_path: Path) -> None:
         run = tmp_path / "run"
-        path = self._write_sidecar(
-            run,
-            [
-                {
-                    "passage_id": "file-2:0",
-                    "source_file_id": "file-2",
-                    "start_char": 10,
-                    "end_char": 100,
-                    "chunker_id": "atlas_8k",
-                }
-            ],
-        )
+        path = self._write_sidecar(run, [self._offset("file-2", 10, 100)])
         before = path.read_text()
 
         assert shift_passage_offsets(run, {"file-2": 0}, dry_run=False) == 0
@@ -351,6 +463,39 @@ class TestShiftPassageOffsets:
         run.mkdir()
 
         assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 0
+
+    def test_aborts_when_the_file_has_no_chunk_set(self, tmp_path: Path) -> None:
+        """A missing key is not a lead of zero: the stages may select differently."""
+        run = tmp_path / "run"
+        write_transcription(run, "file-1", f" {BODY}")
+        path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
+        before = path.read_text()
+
+        with pytest.raises(ValueError, match="file-1"):
+            shift_passage_offsets(run, {}, dry_run=False)
+
+        assert path.read_text() == before
+
+    def test_aborts_when_the_shifted_span_resolves_to_other_text(self, tmp_path: Path) -> None:
+        """The sidecar's old state is in hand, so the shift is checked before writing."""
+        run = tmp_path / "run"
+        write_transcription(run, "file-1", f" {BODY}")
+        path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
+        before = path.read_text()
+
+        with pytest.raises(ValueError, match="resolves to different text"):
+            shift_passage_offsets(run, {"file-1": 5}, dry_run=False)
+
+        assert path.read_text() == before
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        write_transcription(run, "file-1", f" {BODY}")
+        path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
+        before = path.read_text()
+
+        assert shift_passage_offsets(run, {"file-1": 1}, dry_run=True) == 1
+        assert path.read_text() == before
 
 
 def write_cep_record(run_dir: Path, file_id: str, chunk_ids: list[str]) -> Path:
@@ -394,14 +539,14 @@ class TestVerify:
         id_map, lead_by_file = rewrite_chunk_sets(run_dir, dry_run=False)
         shift_passage_offsets(run_dir, lead_by_file, dry_run=False)
 
-        assert verify(run_dir) == []
+        assert verify(run_dir).failures == []
         assert len(id_map) == len(fresh_ids)
 
     def test_reports_cep_pairs_that_do_not_resolve(self, run_dir: Path) -> None:
         write_cep_record(run_dir, "file-1", ["not-a-real-chunk-id"])
         rewrite_chunk_sets(run_dir, dry_run=False)
 
-        failures = verify(run_dir)
+        failures = verify(run_dir).failures
 
         assert any("not-a-real-chunk-id" in f for f in failures)
 
@@ -410,7 +555,7 @@ class TestVerify:
         fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
         write_cep_record(run_dir, "file-1", fresh_ids)
 
-        failures = verify(run_dir)
+        failures = verify(run_dir).failures
 
         assert any("source_text_sha256" in f for f in failures)
 
@@ -422,7 +567,7 @@ class TestVerify:
         directory.mkdir(parents=True)
         (directory / "manifest.json").write_text(json.dumps({"chunk_ids": ["0123456789abcdef"]}))
 
-        failures = verify(run_dir)
+        failures = verify(run_dir).failures
 
         assert any("0123456789abcdef" in f for f in failures)
 
@@ -432,7 +577,7 @@ class TestVerify:
         rewrite_chunk_sets(run_dir, dry_run=False)
         write_retrieval_output(run_dir, "retrieve", "bm25", "q0", ["fedcba9876543210"])
 
-        failures = verify(run_dir)
+        failures = verify(run_dir).failures
 
         assert any("fedcba9876543210" in f for f in failures)
 
@@ -445,7 +590,35 @@ class TestVerify:
         write_retrieval_output(run_dir, "retrieve", "atlas_rag", "q0", ["file-9:3"])
         write_retrieval_output(run_dir, "retrieve", "khop_triple", "q1", ["triple:abc123"])
 
-        assert verify(run_dir) == []
+        assert verify(run_dir).failures == []
+
+    def test_reports_the_resolved_fraction(self, run_dir: Path) -> None:
+        """The headline number: the fraction, never hard-coded."""
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+        rewrite_chunk_sets(run_dir, dry_run=False)
+
+        result = verify(run_dir)
+
+        assert (result.resolved, result.total) == (len(fresh_ids), len(fresh_ids))
+
+    def test_reports_the_fraction_when_pairs_do_not_resolve(self, run_dir: Path) -> None:
+        write_cep_record(run_dir, "file-1", ["not-a-real-chunk-id"])
+        rewrite_chunk_sets(run_dir, dry_run=False)
+
+        result = verify(run_dir)
+
+        assert (result.resolved, result.total) == (0, 1)
+        assert any("0/1" in f for f in result.failures)
+
+    def test_fails_when_the_run_carries_no_cep_pairs(self, run_dir: Path) -> None:
+        """Nothing to resolve means the headline check never ran."""
+        rewrite_chunk_sets(run_dir, dry_run=False)
+
+        result = verify(run_dir)
+
+        assert result.total == 0
+        assert any("no CEP" in f for f in result.failures)
 
 
 class TestMain:
@@ -498,7 +671,150 @@ class TestMain:
         monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
         main()
 
+        out = capsys.readouterr().out
+        assert "is consistent in the canonical space" in out
+        assert f"{len(fresh_ids)}/{len(fresh_ids)}" in out
+
+    def test_apply_shifts_the_sidecar_and_still_verifies(
+        self,
+        run_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The whole operator path, sidecar included."""
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+        directory = run_dir / "kg" / "outputs"
+        directory.mkdir(parents=True)
+        sidecar = directory / "passage_offsets.json"
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "kg_run_id": "run",
+                    "offsets": [
+                        {
+                            "passage_id": "file-1:0",
+                            "source_file_id": "file-1",
+                            "start_char": 0,
+                            "end_char": 5000,
+                            "chunker_id": "atlas_8k",
+                        },
+                        {
+                            "passage_id": "file-1:1",
+                            "source_file_id": "file-1",
+                            "start_char": 5000,
+                            "end_char": 10000,
+                            "chunker_id": "atlas_8k",
+                        },
+                    ],
+                    "unmatched": [],
+                    "generated_at": "2026-06-24T18:40:49.678102Z",
+                }
+            )
+        )
+
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir))
+        main()
+        assert "atlas offsets shifted: 2" in capsys.readouterr().out
+
+        spans = [
+            (o["start_char"], o["end_char"]) for o in json.loads(sidecar.read_text())["offsets"]
+        ]
+        assert spans == [(0, 4999), (4999, 9999)]
+
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
+        main()
+
         assert "is consistent in the canonical space" in capsys.readouterr().out
+
+    def test_refuses_to_migrate_a_run_that_is_not_a_clone(
+        self,
+        run_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Without ``replicated_from`` the target may be the frozen baseline."""
+        write_pipeline_metadata(run_dir, replicated=False)
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir))
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 2
+        assert "--allow-original" in capsys.readouterr().out
+        assert path.read_text() == before
+
+    def test_allow_original_overrides_the_clone_check(
+        self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        write_pipeline_metadata(run_dir, replicated=False)
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--allow-original"))
+
+        main()
+
+        assert path.read_text() != before
+
+    def test_dry_run_is_not_gated_by_the_clone_check(
+        self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The runbook rehearses --dry-run against the frozen baseline."""
+        write_pipeline_metadata(run_dir, replicated=False)
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--dry-run"))
+
+        main()
+
+        assert path.read_text() == before
+
+    def test_verify_is_not_gated_by_the_clone_check(
+        self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        write_pipeline_metadata(run_dir, replicated=False)
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        # Exit 1 is verify's own failure, not the clone gate's exit 2.
+        assert excinfo.value.code == 1
+
+    def test_an_abort_in_a_later_step_leaves_nothing_written(
+        self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The validating pass runs first, so a sidecar abort spares the ChunkSets."""
+        directory = run_dir / "kg" / "outputs"
+        directory.mkdir(parents=True)
+        (directory / "passage_offsets.json").write_text(
+            json.dumps(
+                {
+                    "kg_run_id": "run",
+                    "offsets": [
+                        {
+                            "passage_id": "file-9:0",
+                            "source_file_id": "file-9",
+                            "start_char": 10,
+                            "end_char": 100,
+                            "chunker_id": "atlas_8k",
+                        }
+                    ],
+                    "unmatched": [],
+                    "generated_at": "2026-06-24T18:40:49.678102Z",
+                }
+            )
+        )
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir))
+
+        with pytest.raises(ValueError, match="file-9"):
+            main()
+
+        assert path.read_text() == before
 
     def test_verify_exits_one_on_an_unmigrated_run(
         self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
