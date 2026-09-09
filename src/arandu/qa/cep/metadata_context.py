@@ -80,7 +80,7 @@ def render_metadata_context(
 
 
 def build_judge_context(
-    transcription_text: str,
+    source_text: str,
     source_metadata: SourceMetadata | None,
     *,
     enable_metadata: bool,
@@ -90,13 +90,15 @@ def build_judge_context(
 
     Appends the same metadata section generation used so faithfulness and
     self-containedness are judged against identical grounding. The block is
-    placed *after* the transcript to match the generation prompt order
+    placed *after* the source text to match the generation prompt order
     (``$context`` then ``$metadata_section``). Gated on ``enable_metadata`` to
     stay symmetric with generation: when generation injected no metadata,
     neither does the judge.
 
     Args:
-        transcription_text: Full transcription text of the record.
+        source_text: Grounding text the pair was generated from. CEP
+            generation runs per chunk, so this is the chunk text, not the
+            whole transcription; see :func:`build_pair_judge_context`.
         source_metadata: Source metadata carried on the record, if any.
         enable_metadata: Whether source-metadata context was injected at
             generation time (``QARecordCEP.source_metadata_context_enabled``).
@@ -104,12 +106,49 @@ def build_judge_context(
             language so labels match what generation rendered.
 
     Returns:
-        The transcription text, optionally followed by the metadata block.
+        The source text, optionally followed by the metadata block.
     """
     section = render_metadata_context(
         source_metadata, enable_metadata=enable_metadata, language=language
     )
     if not section:
-        return transcription_text
+        return source_text
 
-    return f"{transcription_text}\n\n{section.strip()}"
+    return f"{source_text}\n\n{section.strip()}"
+
+
+def build_pair_judge_context(
+    pair_context: str,
+    transcription_text: str,
+    source_metadata: SourceMetadata | None,
+    *,
+    enable_metadata: bool,
+    language: str,
+) -> str:
+    """Build the grounding context for a single QA pair.
+
+    CEP generation slices the transcription into chunks and runs the Bloom
+    ladder on one chunk at a time, persisting that slice on
+    ``QAPairCEP.context``. Judging the pair against the whole transcription
+    would let ``faithfulness`` pass on evidence the generator never saw, so
+    the judge is grounded on the originating chunk instead.
+
+    Args:
+        pair_context: ``QAPairCEP.context``, the chunk text generation used.
+        transcription_text: Full transcription text of the record, used as a
+            fallback for legacy records whose pairs carry no context.
+        source_metadata: Source metadata carried on the record, if any.
+        enable_metadata: Whether source-metadata context was injected at
+            generation time (``QARecordCEP.source_metadata_context_enabled``).
+        language: Prompt language (ISO 639-1).
+
+    Returns:
+        The chunk text (or the full transcription when the pair carries no
+        context), optionally followed by the metadata block.
+    """
+    return build_judge_context(
+        pair_context.strip() or transcription_text,
+        source_metadata,
+        enable_metadata=enable_metadata,
+        language=language,
+    )

@@ -321,7 +321,7 @@ def judge_qa(
         arandu judge-qa cep_dataset/ --rejudge
     """
     from arandu.qa.cep.judge import QAJudge
-    from arandu.qa.cep.metadata_context import build_judge_context
+    from arandu.qa.cep.metadata_context import build_pair_judge_context
     from arandu.qa.config import CEPConfig, get_judge_config
     from arandu.qa.schemas import QAPairCEP, QARecordCEP
     from arandu.transcription.judge import build_validator_client
@@ -380,17 +380,6 @@ def judge_qa(
             print_error(f"Failed to read {qa_file.name}: {e}")
             continue
 
-        # Give the judge the SAME grounding generation saw: append the source
-        # metadata block so answers/questions grounded in metadata are not
-        # scored as fabricated or context-dependent. Drive symmetry off the
-        # values persisted on the record at generation time (not judge-time
-        # config), so the judge cannot drift from what generation injected.
-        context = build_judge_context(
-            record.transcription_text,
-            record.source_metadata,
-            enable_metadata=record.source_metadata_context_enabled,
-            language=record.language,
-        )
         all_pairs = record.qa_pairs
 
         # Sample diverse pairs by Bloom level first, then fill remaining slots
@@ -428,6 +417,19 @@ def judge_qa(
                 file_skipped += 1
                 total_skipped += 1
                 continue
+            # Give the judge the SAME grounding generation saw: the chunk the
+            # pair came from (persisted on ``QAPairCEP.context``), plus the
+            # source metadata block so answers/questions grounded in metadata
+            # are not scored as fabricated or context-dependent. Drive symmetry
+            # off the values persisted at generation time (not judge-time
+            # config), so the judge cannot drift from what generation injected.
+            context = build_pair_judge_context(
+                qa.context,
+                record.transcription_text,
+                record.source_metadata,
+                enable_metadata=record.source_metadata_context_enabled,
+                language=record.language,
+            )
             try:
                 validated = judge.validate(qa, context)
                 updated_pairs[idx] = validated
