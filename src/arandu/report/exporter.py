@@ -135,12 +135,14 @@ def _consensus_threshold(values: list[float | None]) -> float | None:
 
 
 def _consensus_criterion_thresholds(runs: list[RunSummaryRow]) -> dict[str, float]:
-    """Return the per-criterion judge gates every run agrees on.
+    """Return the per-criterion judge gates the runs that report them agree on.
 
     The CEP verdict is a conjunction of independent per-criterion gates, so
     there is no aggregate threshold to overlay. Each criterion is resolved on
     its own via :func:`_consensus_threshold`; a criterion gated differently
-    across runs is dropped without affecting the others.
+    across runs is dropped without affecting the others. Runs that do not
+    report a criterion at all (unjudged, or gated inconsistently inside the
+    run) abstain rather than veto, matching :func:`_consensus_threshold`.
 
     Args:
         runs: Run summary rows carrying the gates read back from judged pairs.

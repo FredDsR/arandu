@@ -17,6 +17,14 @@ if TYPE_CHECKING:
 CEP_JUDGE_STAGE = "cep_validation"
 """Name of the judge stage that carries the four CEP QA criteria."""
 
+CEP_CRITERIA: tuple[str, ...] = (
+    "faithfulness",
+    "bloom_calibration",
+    "informativeness",
+    "self_containedness",
+)
+"""The four CEP QA criteria, in the canonical order rows and charts use."""
+
 
 class QAPairRow(BaseModel):
     """Flat row representing a single QA pair with all associated metadata."""
@@ -375,8 +383,7 @@ def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:
     Returns:
         Dict mapping criterion names (and ``overall_score``) to floats.
     """
-    criteria = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
-    empty: dict[str, float | None] = dict.fromkeys(criteria)
+    empty: dict[str, float | None] = dict.fromkeys(CEP_CRITERIA)
     empty["overall_score"] = None
 
     if validation is None:
@@ -391,7 +398,7 @@ def _extract_criterion_scores(validation: Any) -> dict[str, float | None]:
         return empty
 
     scores: dict[str, float | None] = {}
-    for name in criteria:
+    for name in CEP_CRITERIA:
         cs = stage.criterion_scores.get(name)
         scores[name] = cs.score if cs else None
 

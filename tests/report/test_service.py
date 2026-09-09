@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import json
+from io import StringIO
 from unittest.mock import MagicMock
 
 import pytest
@@ -366,6 +369,32 @@ class TestExportCsv:
 
         csv_empty = service.export_csv("qa", {"pipeline": "nonexistent"})
         assert "pipe_000" not in csv_empty
+
+    def test_export_csv_runs_encodes_criterion_thresholds_as_json(
+        self, mock_collector: MagicMock
+    ) -> None:
+        """The per-criterion gate cell is JSON, not a Python repr.
+
+        ``criterion_thresholds`` is the one mapping-valued column in the runs
+        export; written straight through ``csv.DictWriter`` it would land as
+        ``{'faithfulness': 0.625}``, which no CSV consumer can parse.
+        """
+        svc = ReportService(mock_collector)
+        svc._dataset = ReportDataset(
+            runs=[
+                RunSummaryRow(
+                    pipeline_id="pipe_000",
+                    criterion_thresholds={"faithfulness": 0.625, "informativeness": 0.5},
+                )
+            ]
+        )
+
+        rows = list(csv.DictReader(StringIO(svc.export_csv("runs", {}))))
+
+        assert json.loads(rows[0]["criterion_thresholds"]) == {
+            "faithfulness": 0.625,
+            "informativeness": 0.5,
+        }
 
     def test_export_csv_runs_with_pipeline_filter(self, service: ReportService) -> None:
         """Pipeline filter narrows run export."""

@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 import plotly.graph_objects as go
 
+from arandu.report.dataset import CEP_CRITERIA
+
 from .style import get_criterion_color
 
 if TYPE_CHECKING:
@@ -13,14 +15,6 @@ if TYPE_CHECKING:
     from typing import Any
 
     from arandu.report.dataset import QAPairRow
-
-_CEP_CRITERIA: tuple[str, ...] = (
-    "faithfulness",
-    "bloom_calibration",
-    "informativeness",
-    "self_containedness",
-)
-"""The four CEP QA criteria, in the order they are plotted."""
 
 _VIOLIN_HALF_WIDTH: float = 0.4
 """Half-width, in category units, of the slot a single violin occupies."""
@@ -48,7 +42,7 @@ def create_validation_scores_chart(
     fig = go.Figure()
     plotted: list[str] = []
 
-    for criterion in _CEP_CRITERIA:
+    for criterion in CEP_CRITERIA:
         scores = [getattr(qa, criterion) for qa in qa_pairs if getattr(qa, criterion) is not None]
         if scores:
             plotted.append(criterion)
@@ -95,7 +89,7 @@ def create_bloom_validation_heatmap(
         Plotly Figure object.
     """
     bloom_levels = ["remember", "understand", "analyze", "evaluate"]
-    criteria = list(_CEP_CRITERIA)
+    criteria = list(CEP_CRITERIA)
     criteria_labels = [c.replace("_", " ").title() for c in criteria]
     gates = criterion_thresholds or {}
 
@@ -166,7 +160,7 @@ def create_correlation_heatmap(qa_pairs: list[QAPairRow]) -> go.Figure:
     Returns:
         Plotly Figure object.
     """
-    fields = [*_CEP_CRITERIA, "confidence"]
+    fields = [*CEP_CRITERIA, "confidence"]
     labels = [f.replace("_", " ").title() for f in fields]
 
     # Collect rows where all values are present

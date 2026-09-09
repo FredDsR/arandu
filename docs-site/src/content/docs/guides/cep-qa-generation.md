@@ -35,9 +35,12 @@ Main `ARANDU_CEP_*` knobs:
 - `ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT`
 - `ARANDU_CEP_LANGUAGE`
 
-`CEPConfig` holds no judge scoring field. A pair passes `judge-qa` only when all four
-criteria clear their own gate, set by `threshold` in
+`CEPConfig` holds no judge scoring field. A pair passes `judge-qa` only when every
+criterion evaluated for it clears its own gate, set by `threshold` in
 `prompts/judge/criteria/<criterion>/config.json` (`0.625` for every criterion today).
+Non-remember pairs are judged on all four criteria; `remember` pairs are judged on
+`faithfulness` and `bloom_calibration` only (the other two are not evaluated, not
+auto-passed).
 
 ## Judge configuration
 

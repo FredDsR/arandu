@@ -284,7 +284,7 @@ Each line contains one QA pair:
 
 ## Validation Criteria
 
-Validation runs via the separate [`judge-qa`](cli-reference.md#judge-qa) command. Each sampled QA pair is scored on four criteria, and each criterion is an independent gate: the pair passes only if **all four** clear their own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights.
+Validation runs via the separate [`judge-qa`](cli-reference.md#judge-qa) command. Each criterion is an independent gate: the pair passes only if **every** criterion evaluated for it clears its own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights. Non-remember pairs are scored on all four criteria below; `remember` pairs are scored on **faithfulness** and **bloom calibration** only, since factual recall is neither expected to reveal tacit knowledge nor to be fully self-contained (the other two are omitted, not auto-passed).
 
 ### Faithfulness
 Is the answer grounded in the provided context?
@@ -329,7 +329,7 @@ Can the question be understood and answered without external context beyond the 
 | 0.6 | Mostly self-contained with minor ambiguity |
 | 0.0 | Depends on context not present in the question/answer |
 
-A QA pair is marked invalid (`is_valid = false`) as soon as **one** of the four criteria scores below its own gate. A high score on the other three does not compensate for it.
+A QA pair is marked invalid (`is_valid = false`) as soon as **one** of the criteria evaluated for it scores below its own gate. A high score on the others does not compensate for it.
 
 ## Programmatic Usage
 
