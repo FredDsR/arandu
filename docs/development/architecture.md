@@ -11,11 +11,12 @@
 1. [Architecture Overview](#architecture-overview)
 2. [Checkpoint System Pattern](#checkpoint-system-pattern)
 3. [Results Directory Layout](#results-directory-layout)
-4. [Batch Processing Pattern](#batch-processing-pattern)
-5. [Worker Initialization Pattern](#worker-initialization-pattern)
-6. [CLI Command Pattern](#cli-command-pattern)
-7. [Error Handling Pattern](#error-handling-pattern)
-8. [Applying Patterns to Phase 2](#applying-patterns-to-phase-2)
+4. [Canonical Coordinate Space](#canonical-coordinate-space)
+5. [Batch Processing Pattern](#batch-processing-pattern)
+6. [Worker Initialization Pattern](#worker-initialization-pattern)
+7. [CLI Command Pattern](#cli-command-pattern)
+8. [Error Handling Pattern](#error-handling-pattern)
+9. [Applying Patterns to Phase 2](#applying-patterns-to-phase-2)
 
 ---
 
@@ -179,6 +180,40 @@ Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieve`, `answers`, `judg
 - `results/<id>/retrieve/outputs/<arm_id>/<source>/<safe_qa_pair_id>.json` — one `RetrievalRecord` per (arm, question) tuple. `<source>` is `cep` or `nonanswerable`. `<safe_qa_pair_id>` is the schema's `qa_pair_id` with `":"` replaced by `"__"` for cross-platform path safety; the `RetrievalRecord.qa_pair_id` field INSIDE the file preserves the original colons.
 
 Atlas-rag's precompute lives under `results/<id>/kg/outputs/atlas_output/precompute/`, NOT under `retrieve/indexes/`. Rationale: the precompute is intrinsic to the KG (depends on the graphml's sha256), not to the benchmark run that consumes it. `arandu kg-build-retriever-index` builds it; `arandu retrieve` only reads it.
+
+---
+
+## Canonical Coordinate Space
+
+### Location
+
+`src/arandu/shared/schemas.py` - `EnrichedRecord.transcription_text` and its `_normalize_transcription_text` validator.
+
+### Purpose
+
+Give every char offset in the pipeline exactly one string to refer to, so artifacts stamped by different stages can be joined.
+
+### The convention
+
+`chunk_id` is `sha1(source_file_id|chunker_id|start_char|end_char)[:16]` (`src/arandu/shared/chunking/chonkie_adapter.py`). The offsets are part of the key, so a one-character disagreement about which text is being chunked makes every id diverge.
+
+Five places read this text as the coordinate space for char offsets. The first four stamp offsets into artifacts; the fifth resolves already-persisted offsets back to text:
+
+| Consumer | Artifact |
+| --- | --- |
+| `shared/chunking/batch.py` | `ChunkSet` in `chunk/outputs/<view>/` |
+| `qa/cep/generator.py` | `QAPairCEP.chunk_id` |
+| `shared/rag/answer/resolver.py` | the `chunk_id` to text map at answer time |
+| `kg/passage_offsets.py` | the atlas passage-offset sidecar |
+| `shared/rag/retrieve/factory.py` (`_build_chunk_resolver`) | the `ChunkResolver` that slices `ChunkSet` spans into the text BM25 tokenizes at index build |
+
+The field validator strips surrounding whitespace, so the coordinate space is a property of the record rather than a habit each reader must remember. Whisper prefixes its output with a space, and when the chunk stage kept it while CEP generation stripped it, the two produced disjoint namespaces (issue #166).
+
+### What this means in practice
+
+- Never re-derive the text a chunk offset refers to. Read `record.transcription_text` and trust it.
+- Never add a `.strip()`, `.replace()`, or normalization pass on that text at a call site. If the canonical form must change, change the validator, and migrate every persisted artifact that carries an offset (see `scripts/migrate_chunk_id_namespace.py`).
+- The validator runs on `model_validate_json` too, so already-persisted transcriptions load canonical without being rewritten. `model_construct` bypasses validators and must not be used on `EnrichedRecord`.
 
 ---
 
