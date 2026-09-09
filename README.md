@@ -5,7 +5,7 @@
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
-📖 **[Documentation](https://FredDsR.github.io/arandu/)** | **[Run Results](https://drive.google.com/drive/folders/1OAELvX2akMaKJKheh5NWfHrH0jzIsjAp?usp=sharing)** ([how to extract](#run-results-thesis-run-01))
+📖 **[Documentation](https://FredDsR.github.io/arandu/)** | **[Run Results](https://drive.google.com/drive/folders/1OAELvX2akMaKJKheh5NWfHrH0jzIsjAp?usp=sharing)** ([how to extract](#run-results-thesis-run-02))
 
 Composable pipelines for ethnographic knowledge elicitation: transcription, QA generation, and knowledge graph construction.
 
@@ -54,10 +54,10 @@ uv sync
 pip install -e .
 ```
 
-## Run Results (`thesis-run-01`)
+## Run Results (`thesis-run-02`)
 
 The [Run Results](https://drive.google.com/drive/folders/1OAELvX2akMaKJKheh5NWfHrH0jzIsjAp?usp=sharing)
-folder on Google Drive publishes the full artifact tree of the `thesis-run-01`
+folder on Google Drive publishes the full artifact tree of the `thesis-run-02`
 pipeline, so the analysis can be reproduced without re-running transcription,
 CEP generation, KG construction, retrieval, or the judges. Stages included:
 `transcription`, `chunk`, `cep`, `kg`, `non_answerable`, `retrieve`, `answers`,
@@ -69,8 +69,8 @@ one.
 
 | Archive | Size | Contents |
 |---------|------|----------|
-| `thesis-run-01.tgz` | ~220 MB | Every stage artifact: transcriptions, chunks, CEP QA pairs, KG passage offsets, retrieved passages, generated answers, judged answers, and the analysis tables. Enough to inspect the run and re-run `rag-analysis` / `report` / `build-human-eval-sample`. |
-| `thesis-run-01_with-indexes.tgz` | ~696 MB | The same tree **plus** the precomputed retriever indexes: `retrieve/indexes/bm25_cep_4k/bm25.pkl` and the AtlasRAG FAISS indexes and embeddings under `kg/outputs/atlas_output/precompute/`. Pick this one to re-run `arandu retrieve` without rebuilding the indexes (which needs a GPU and hours of compute). |
+| `thesis-run-02.tgz` | ~220 MB | Every stage artifact: transcriptions, chunks, CEP QA pairs, KG passage offsets, retrieved passages, generated answers, judged answers, and the analysis tables. Enough to inspect the run and re-run `rag-analysis` / `report` / `build-human-eval-sample`. |
+| `thesis-run-02_with-indexes.tgz` | ~696 MB | The same tree **plus** the precomputed retriever indexes: `retrieve/indexes/bm25_cep_4k/bm25.pkl` and the AtlasRAG FAISS indexes and embeddings under `kg/outputs/atlas_output/precompute/`. Pick this one to re-run `arandu retrieve` without rebuilding the indexes (which needs a GPU and hours of compute). |
 
 ### 1. Download
 
@@ -80,43 +80,43 @@ in the repository root; adjust the paths otherwise.
 ### 2. Extract into `results/`
 
 Both archives are rooted at `./`: the stage directories sit at the top level of
-the tarball, with no `thesis-run-01/` wrapper. Create the run directory first
+the tarball, with no `thesis-run-02/` wrapper. Create the run directory first
 and extract into it, so the layout matches what the CLI expects
 (`results/<run-id>/<stage>/outputs/`):
 
 ```bash
 # Without the retriever indexes
-mkdir -p results/thesis-run-01
-tar -xzf thesis-run-01.tgz -C results/thesis-run-01
+mkdir -p results/thesis-run-02
+tar -xzf thesis-run-02.tgz -C results/thesis-run-02
 
 # Or, with the retriever indexes
-mkdir -p results/thesis-run-01
-tar -xzf thesis-run-01_with-indexes.tgz -C results/thesis-run-01
+mkdir -p results/thesis-run-02
+tar -xzf thesis-run-02_with-indexes.tgz -C results/thesis-run-02
 ```
 
 To confirm the archive layout before extracting:
 
 ```bash
-tar -tzf thesis-run-01.tgz | head
+tar -tzf thesis-run-02.tgz | head
 ```
 
-If the listing shows a leading `thesis-run-01/` component instead of `./`,
+If the listing shows a leading `thesis-run-02/` component instead of `./`,
 extract into `results/` directly and drop the `mkdir`:
 
 ```bash
-tar -xzf thesis-run-01.tgz -C results/
+tar -xzf thesis-run-02.tgz -C results/
 ```
 
 ### 3. Verify
 
 ```bash
-ls results/thesis-run-01
+ls results/thesis-run-02
 # analysis  answers  cep  chunk  judge_answers  kg
 # non_answerable  pipeline.json  retrieve  transcription
 
-cat results/thesis-run-01/pipeline.json   # stages already executed
+cat results/thesis-run-02/pipeline.json   # stages already executed
 arandu list-runs
-arandu run-info thesis-run-01 --pipeline analysis
+arandu run-info thesis-run-02 --pipeline analysis
 ```
 
 Extracting somewhere other than `./results` is fine as long as
@@ -129,17 +129,17 @@ export ARANDU_RESULTS_BASE_DIR=/data/arandu/results
 ### 4. Run commands against the extracted run
 
 Every stage command resolves its inputs and outputs from the pipeline ID, so
-pass `--id thesis-run-01`:
+pass `--id thesis-run-02`:
 
 ```bash
 # Rebuild the cross-arm comparison tables from the judged answers
-arandu rag-analysis --id thesis-run-01
+arandu rag-analysis --id thesis-run-02
 
 # Draw the stratified human-eval sample from the judged answers
-arandu build-human-eval-sample --id thesis-run-01
+arandu build-human-eval-sample --id thesis-run-02
 
-# Re-run retrieval (requires thesis-run-01_with-indexes.tgz)
-arandu retrieve --id thesis-run-01 --arm bm25 --top-k 10
+# Re-run retrieval (requires thesis-run-02_with-indexes.tgz)
+arandu retrieve --id thesis-run-02 --arm bm25 --top-k 10
 
 # Interactive dashboard (requires the `report` extra: uv sync --extra report)
 arandu serve-report results/
