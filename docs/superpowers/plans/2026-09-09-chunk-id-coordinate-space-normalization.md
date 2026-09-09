@@ -1278,12 +1278,92 @@ class TestVerify:
         write_retrieval_output(run_dir, "retrieve", "khop_triple", "q1", ["triple:abc123"])
 
         assert verify(run_dir) == []
+
+
+class TestMain:
+    """The CLI entry point, against a synthetic run tree only.
+
+    These tests never touch ``results/``. A test that reads a real run would
+    couple the suite to 1.5G of data outside the repo and would pass or fail on
+    what that data happens to contain rather than on this code.
+    """
+
+    def _argv(self, run_dir: Path, *extra: str) -> list[str]:
+        """Build an argv pointing the CLI at ``run_dir``."""
+        return [
+            "migrate_chunk_id_namespace.py",
+            "--id",
+            run_dir.name,
+            "--results-dir",
+            str(run_dir.parent),
+            *extra,
+        ]
+
+    def test_dry_run_reports_without_writing(
+        self,
+        run_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--dry-run"))
+
+        main()
+
+        assert path.read_text() == before
+        assert "dry run" in capsys.readouterr().out
+
+    def test_apply_then_verify_reports_consistency(
+        self,
+        run_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir))
+        main()
+        capsys.readouterr()
+
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
+        main()
+
+        assert "is consistent in the canonical space" in capsys.readouterr().out
+
+    def test_verify_exits_one_on_an_unmigrated_run(
+        self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Guards against a green --verify on a run the rewrite never touched."""
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 1
+
+    def test_exits_two_when_the_run_has_no_chunk_stage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["migrate_chunk_id_namespace.py", "--id", "ghost", "--results-dir", str(tmp_path)],
+        )
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 2
 ```
+
+The `TestMain` block needs `import sys` in the test file's standard-library imports, and `main` added to the `scripts.migrate_chunk_id_namespace` import list.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/scripts/test_migrate_chunk_id_namespace.py -v`
-Expected: FAIL at collection with `ImportError: cannot import name 'verify'`.
+Expected: FAIL at collection with `ImportError: cannot import name 'main'` (isort puts `main` before `verify` in the import list, so it is the first missing name reported; either name in the message is fine).
 
 - [ ] **Step 3: Implement `verify` and `main`**
 
@@ -1471,42 +1551,9 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/scripts/test_migrate_chunk_id_namespace.py -v`
-Expected: PASS, 24 passed.
+Expected: PASS, 28 passed (18 from Tasks 2 and 3, 6 for `verify`, 4 for `main`).
 
-- [ ] **Step 5: Dry-run against the real `thesis-run-01`**
-
-`--dry-run` writes nothing, so this is safe to point at the real run, and it is worth far more than a synthetic fixture: it puts `_assert_pure_shift` against all 214 real files. Do **not** copy the run first; it is 1.5G.
-
-```bash
-uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-01 --dry-run
-```
-
-Expected output:
-
-```
-thesis-run-01 (dry run)
-  chunk_ids would remap: 445 across 214 files
-  bm25 manifest ids would remap: 445
-  passage references would remap: <non-zero> in <non-zero> files
-  atlas offsets would shift: 302
-```
-
-The `445` and `302` are measured from the current run and are the real check on this step. A `ValueError` from `_assert_pure_shift` means a file does not shift cleanly: investigate that file, do not loosen the assertion.
-
-`results/` is gitignored, so `git status` proves nothing. Confirm the dry run wrote nothing by hashing a ChunkSet before and after:
-
-```bash
-CS=results/thesis-run-01/chunk/outputs/cep_4k/1-ZWwPv7DM458HviU5UkJgJEHzVXan0la.json
-sha256sum "$CS"
-uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-01 --dry-run
-sha256sum "$CS"
-```
-
-Expected: the two hashes are identical.
-
-Do not run the apply path here. The real apply happens on `thesis-run-02` per the operator runbook at the end of this plan, after the clone.
-
-- [ ] **Step 6: Correct spec section 5.5**
+- [ ] **Step 5: Correct spec section 5.5**
 
 In `docs/superpowers/specs/2026-09-09-chunk-id-coordinate-space-normalization-design.md`, replace item 3 of section 5.5 with:
 
@@ -1527,7 +1574,7 @@ In `docs/superpowers/specs/2026-09-09-chunk-id-coordinate-space-normalization-de
 
 and delete the old items 3 and 4 that this replaces.
 
-- [ ] **Step 7: Run the full suite, lint, format, commit**
+- [ ] **Step 6: Run the full suite, lint, format, commit**
 
 ```bash
 uv run pytest
@@ -1667,7 +1714,34 @@ EOF
 
 ## Operator runbook (not part of the implementation)
 
-After all five tasks land and both PRs are merged:
+After all five tasks land and both PRs are merged. Run from the main checkout, not from a worktree: `results/` is gitignored, so a worktree's `results/` holds only `.gitkeep`.
+
+First, a read-only rehearsal against the frozen run. `--dry-run` writes nothing, and this is worth more than any fixture can be: it puts `_assert_pure_shift` against all 214 real files at once. This is an operator step on purpose, never a pytest test, because the suite must not depend on 1.5G of data outside the repo.
+
+```bash
+uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-01 --dry-run
+```
+
+Expected:
+
+```
+thesis-run-01 (dry run)
+  chunk_ids would remap: 445 across 214 files
+  bm25 manifest ids would remap: 445
+  passage references would remap: <non-zero> in <non-zero> files
+  atlas offsets would shift: 302
+```
+
+The `445` and `302` are measured from the current run. A `ValueError` from `_assert_pure_shift` means some file does not shift cleanly: investigate that file, do not loosen the assertion. Confirm the rehearsal wrote nothing by hashing a ChunkSet either side of it (`git status` proves nothing here, `results/` being gitignored):
+
+```bash
+CS=results/thesis-run-01/chunk/outputs/cep_4k/1-ZWwPv7DM458HviU5UkJgJEHzVXan0la.json
+sha256sum "$CS"
+uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-01 --dry-run
+sha256sum "$CS"
+```
+
+Then the real thing, on the clone:
 
 ```bash
 arandu replicate thesis-run-01 --id thesis-run-02
