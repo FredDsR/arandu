@@ -80,14 +80,7 @@ def mock_llm_client(mocker: MockerFixture) -> Any:
 @pytest.fixture
 def cep_config() -> CEPConfig:
     """Create a CEP config for testing."""
-    return CEPConfig(
-        validation_threshold=0.6,
-        faithfulness_weight=0.30,
-        bloom_calibration_weight=0.25,
-        informativeness_weight=0.25,
-        self_containedness_weight=0.20,
-        language="pt",
-    )
+    return CEPConfig(language="pt")
 
 
 @pytest.fixture

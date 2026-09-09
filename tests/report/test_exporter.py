@@ -14,7 +14,11 @@ from arandu.report.dataset import (
     RunSummaryRow,
     TranscriptionRow,
 )
-from arandu.report.exporter import _consensus_threshold, export_charts_as_png
+from arandu.report.exporter import (
+    _consensus_criterion_thresholds,
+    _consensus_threshold,
+    export_charts_as_png,
+)
 
 # All chart function names referenced by exporter.py
 _CHART_FUNCTIONS = [
@@ -154,3 +158,48 @@ class TestConsensusThreshold:
     def test_partial_none_disagree(self) -> None:
         """Mixed None with differing values — returns None."""
         assert _consensus_threshold([None, 0.6, 0.7]) is None
+
+
+class TestConsensusCriterionThresholds:
+    """Tests for _consensus_criterion_thresholds helper."""
+
+    @staticmethod
+    def _run(pipeline_id: str, thresholds: dict[str, float]) -> RunSummaryRow:
+        """Build a run row carrying the given per-criterion gates."""
+        return RunSummaryRow(pipeline_id=pipeline_id, criterion_thresholds=thresholds)
+
+    def test_single_run(self) -> None:
+        """A single run's gates are returned as-is."""
+        runs = [self._run("r1", {"faithfulness": 0.625})]
+        assert _consensus_criterion_thresholds(runs) == {"faithfulness": 0.625}
+
+    def test_runs_agree(self) -> None:
+        """Gates shared by every run are kept."""
+        runs = [
+            self._run("r1", {"faithfulness": 0.625, "informativeness": 0.625}),
+            self._run("r2", {"faithfulness": 0.625, "informativeness": 0.625}),
+        ]
+        assert _consensus_criterion_thresholds(runs) == {
+            "faithfulness": 0.625,
+            "informativeness": 0.625,
+        }
+
+    def test_disagreement_drops_only_that_criterion(self) -> None:
+        """A criterion gated differently across runs is dropped; the rest survive."""
+        runs = [
+            self._run("r1", {"faithfulness": 0.625, "informativeness": 0.625}),
+            self._run("r2", {"faithfulness": 0.5, "informativeness": 0.625}),
+        ]
+        assert _consensus_criterion_thresholds(runs) == {"informativeness": 0.625}
+
+    def test_missing_in_one_run_still_agrees(self) -> None:
+        """An unjudged run contributes no gate and does not veto the others."""
+        runs = [
+            self._run("r1", {"faithfulness": 0.625}),
+            self._run("r2", {}),
+        ]
+        assert _consensus_criterion_thresholds(runs) == {"faithfulness": 0.625}
+
+    def test_no_runs(self) -> None:
+        """No runs at all yields no gates."""
+        assert _consensus_criterion_thresholds([]) == {}

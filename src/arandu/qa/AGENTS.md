@@ -51,8 +51,10 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
 
 ## Gotchas
 
-- `CEPConfig.validate_scoring_weights` requires the four weights to sum to 1.0
-  (defaults 0.30/0.25/0.25/0.20); changing one means rebalancing the rest.
+- `CEPConfig` carries no validation gate. A pair passes when **every** criterion
+  passes (`JudgeStepResult.passed` is an `all()`), each against the `threshold`
+  in `prompts/judge/criteria/<criterion>/config.json`. There is no aggregate
+  score and no criterion weights; zeroing a criterion is not possible from config.
 - `MAX_BLOOM_PAIRS_PER_CHUNK = 50` caps the distribution sum (typo guard against
   runaway cost like `remember:9999`).
 - `extra="ignore"` on the configs silently drops unknown/misspelled env vars.

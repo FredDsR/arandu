@@ -352,7 +352,7 @@ class QAPairCEP(QAPair, JudgeResultMixin):
 
 ### QA-pair validation
 
-There is no separate `ValidationScore` or `QAPairValidated` model. A judged CEP pair is just a `QAPairCEP` whose `validation` field (from [`JudgeResultMixin`](#judgeresultmixin)) holds a [`JudgePipelineResult`](#judgepipelineresult); `is_valid` is computed from `validation.passed`. The four QA criteria (`faithfulness`, `bloom_calibration`, `informativeness`, `self_containedness`) are individual `CriterionScore` entries under the judge stage — there is no aggregate `overall_score` field on the pair. The criterion weights and `validation_threshold` that gate a pair live in `CEPConfig`.
+There is no separate `ValidationScore` or `QAPairValidated` model. A judged CEP pair is just a `QAPairCEP` whose `validation` field (from [`JudgeResultMixin`](#judgeresultmixin)) holds a [`JudgePipelineResult`](#judgepipelineresult); `is_valid` is computed from `validation.passed`. The four QA criteria (`faithfulness`, `bloom_calibration`, `informativeness`, `self_containedness`) are individual `CriterionScore` entries under the judge stage — there is no aggregate `overall_score` field on the pair. Each `CriterionScore` carries the `threshold` it was compared against, loaded from `prompts/judge/criteria/<criterion>/config.json`; the gate is per criterion, and `CEPConfig` holds no validation field.
 
 **Example** (a judged `QAPairCEP`):
 ```json

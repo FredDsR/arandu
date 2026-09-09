@@ -231,7 +231,6 @@ class TestCEPConfig:
 
         assert config.enable_reasoning_traces is False
         assert config.max_hop_count == 3
-        assert config.validation_threshold == 0.6
         assert config.language == "pt"
 
     def test_valid_bloom_distribution(self) -> None:
@@ -301,40 +300,31 @@ class TestCEPConfig:
             CEPConfig(language="fr")
         assert "Invalid CEP language" in str(exc_info.value)
 
-    def test_valid_scoring_weights(self) -> None:
-        """Test valid scoring weights summing to 1.0."""
-        config = CEPConfig(
-            faithfulness_weight=0.30,
-            bloom_calibration_weight=0.25,
-            informativeness_weight=0.25,
-            self_containedness_weight=0.20,
-        )
-        total = (
-            config.faithfulness_weight
-            + config.bloom_calibration_weight
-            + config.informativeness_weight
-            + config.self_containedness_weight
-        )
-        assert 0.99 <= total <= 1.01
+    def test_carries_no_scoring_fields(self) -> None:
+        """CEPConfig exposes no validation gate or criterion weight.
 
-    def test_invalid_scoring_weights_sum(self) -> None:
-        """Test validation error when scoring weights don't sum to 1.0."""
-        with pytest.raises(ValidationError) as exc_info:
-            CEPConfig(
-                faithfulness_weight=0.5,
-                bloom_calibration_weight=0.5,
-                informativeness_weight=0.5,
-                self_containedness_weight=0.5,  # Sum = 2.0, invalid
-            )
-        assert "Scoring weights must sum to 1.0" in str(exc_info.value)
+        The judge verdict is the conjunction of independent per-criterion gates
+        (``prompts/judge/criteria/<criterion>/config.json``), so a config-level
+        cut or weight would be dead state that misdescribes the decision.
+        """
+        config = CEPConfig()
+        for field in (
+            "validation_threshold",
+            "faithfulness_weight",
+            "bloom_calibration_weight",
+            "informativeness_weight",
+            "self_containedness_weight",
+        ):
+            assert field not in CEPConfig.model_fields
+            assert not hasattr(config, field)
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test CEP config loading from environment variables."""
-        monkeypatch.setenv("ARANDU_CEP_VALIDATION_THRESHOLD", "0.8")
+        monkeypatch.setenv("ARANDU_CEP_MAX_HOP_COUNT", "5")
 
         config = CEPConfig()
 
-        assert config.validation_threshold == 0.8
+        assert config.max_hop_count == 5
 
     def test_max_hop_count_boundaries(self) -> None:
         """Test max_hop_count boundary values."""

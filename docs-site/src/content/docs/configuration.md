@@ -76,11 +76,6 @@ Current settings classes:
 | `max_scaffolding_pairs` | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` |
 | `max_hop_count` | `ARANDU_CEP_MAX_HOP_COUNT` | `3` |
 | `reasoning_max_tokens` | `ARANDU_CEP_REASONING_MAX_TOKENS` | `8192` |
-| `validation_threshold` | `ARANDU_CEP_VALIDATION_THRESHOLD` | `0.6` |
-| `faithfulness_weight` | `ARANDU_CEP_FAITHFULNESS_WEIGHT` | `0.30` |
-| `bloom_calibration_weight` | `ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT` | `0.25` |
-| `informativeness_weight` | `ARANDU_CEP_INFORMATIVENESS_WEIGHT` | `0.25` |
-| `self_containedness_weight` | `ARANDU_CEP_SELF_CONTAINEDNESS_WEIGHT` | `0.20` |
 | `enable_source_metadata_context` | `ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT` | `true` |
 | `language` | `ARANDU_CEP_LANGUAGE` | `pt` |
 
