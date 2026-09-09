@@ -210,17 +210,9 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 
 ### Judge Scoring Settings
 
-These fields drive `judge-qa` (the four-criterion LLM-as-a-Judge over generated pairs). The validator *client* settings (model, provider, base URL) live in [`JudgeConfig`](#judgeconfig).
+`CEPConfig` has none. `judge-qa` decides with the four-criterion LLM-as-a-Judge, and a pair passes only when **every** criterion passes its own gate (`JudgeStepResult.passed` is an `all()` over the criterion scores). Each gate is the `threshold` in `prompts/judge/criteria/<criterion>/config.json`. There is no aggregate score, no criterion weights, and no environment variable that moves the cut.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `validation_threshold` | `float` | `0.6` | Minimum overall score to pass validation (range: 0.0-1.0) |
-| `faithfulness_weight` | `float` | `0.30` | Weight for faithfulness score |
-| `bloom_calibration_weight` | `float` | `0.25` | Weight for Bloom calibration score |
-| `informativeness_weight` | `float` | `0.25` | Weight for informativeness score |
-| `self_containedness_weight` | `float` | `0.20` | Weight for self-containedness score |
-
-> **Note**: The four scoring weights must sum to 1.0. A `@model_validator` (`validate_scoring_weights`) enforces this constraint.
+The validator *client* settings (model, provider, base URL) live in [`JudgeConfig`](#judgeconfig).
 
 ### Language Settings
 
@@ -235,7 +227,6 @@ from arandu.qa.config import CEPConfig
 config = CEPConfig(
     bloom_distribution={"remember": 3, "understand": 2, "analyze": 1},
     enable_scaffolding_context=True,
-    validation_threshold=0.7,
 )
 print(config.pairs_per_chunk)  # 6
 ```
@@ -451,7 +442,7 @@ Configuration settings are loaded from environment variables with config-specifi
 |--------------|--------|---------|
 | `TranscriberConfig` | `ARANDU_` | `ARANDU_MODEL_ID` |
 | `QAConfig` | `ARANDU_QA_` | `ARANDU_QA_PROVIDER` |
-| `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_VALIDATION_THRESHOLD` |
+| `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_MAX_HOP_COUNT` |
 | `JudgeConfig` | `ARANDU_JUDGE_` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `KGConfig` | `ARANDU_KG_` | `ARANDU_KG_PROVIDER` |
 | `LLMConfig` | (No prefix) | `OPENAI_API_KEY`, `ARANDU_LLM_BASE_URL` |
@@ -483,7 +474,6 @@ export ARANDU_QA_LANGUAGE=pt
 
 **CEPConfig** (`ARANDU_CEP_`):
 ```bash
-export ARANDU_CEP_VALIDATION_THRESHOLD=0.7
 export ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
 export ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
 # Bloom distribution is a dict; set it as JSON
@@ -555,7 +545,7 @@ ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 ARANDU_QA_LANGUAGE=pt
 
 # CEP (Cognitive Elicitation Pipeline)
-ARANDU_CEP_VALIDATION_THRESHOLD=0.6
+ARANDU_CEP_LANGUAGE=pt
 
 # Judge (validator client for judge-qa / judge-transcription)
 ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
@@ -596,7 +586,6 @@ ARANDU_QA_LANGUAGE=en
 # Judge with OpenAI
 ARANDU_JUDGE_VALIDATOR_PROVIDER=openai
 ARANDU_JUDGE_VALIDATOR_MODEL=gpt-4o-mini
-ARANDU_CEP_VALIDATION_THRESHOLD=0.7
 
 # KG Construction with OpenAI
 ARANDU_KG_PROVIDER=openai
@@ -692,12 +681,8 @@ ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
 # Bloom distribution (integer pair counts per level; single source of truth)
 ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
 
-# Judge scoring (used by judge-qa)
-ARANDU_CEP_VALIDATION_THRESHOLD=0.7
-ARANDU_CEP_FAITHFULNESS_WEIGHT=0.30
-ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT=0.25
-ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.25
-ARANDU_CEP_SELF_CONTAINEDNESS_WEIGHT=0.20
+# Judge gates are per criterion and live in
+# prompts/judge/criteria/<criterion>/config.json, not in the environment.
 
 # Validator client
 ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
@@ -735,17 +720,13 @@ backend: str = Field(
 ### Model Validation (Cross-Field)
 
 ```python
-# From CEPConfig — the four judge scoring weights must sum to 1.0
+# From AnswererSettings — three independently overridable token budgets
+# must still leave room for the retrieved passages
 @model_validator(mode="after")
-def validate_scoring_weights(self) -> CEPConfig:
-    total = (
-        self.faithfulness_weight
-        + self.bloom_calibration_weight
-        + self.informativeness_weight
-        + self.self_containedness_weight
-    )
-    if not (0.99 <= total <= 1.01):
-        raise ValueError(f"Scoring weights must sum to 1.0, got {total:.3f}")
+def _check_packing_budget(self) -> Self:
+    budget = self.max_context_tokens - self.prompt_overhead_tokens - self.max_tokens
+    if budget <= 0:
+        raise ValueError(...)
     return self
 ```
 
@@ -892,12 +873,8 @@ ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=10
 # Reasoning
 ARANDU_CEP_MAX_HOP_COUNT=3
 
-# Judge scoring (used by judge-qa; weights must sum to 1.0)
-ARANDU_CEP_VALIDATION_THRESHOLD=0.6
-ARANDU_CEP_FAITHFULNESS_WEIGHT=0.30
-ARANDU_CEP_BLOOM_CALIBRATION_WEIGHT=0.25
-ARANDU_CEP_INFORMATIVENESS_WEIGHT=0.25
-ARANDU_CEP_SELF_CONTAINEDNESS_WEIGHT=0.20
+# Judge gates are per criterion and live in
+# prompts/judge/criteria/<criterion>/config.json, not in the environment.
 
 # Language
 ARANDU_CEP_LANGUAGE=pt

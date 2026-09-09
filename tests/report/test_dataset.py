@@ -115,6 +115,7 @@ def _make_cep_record(
     participant: str | None = "Maria",
     location: str | None = "Barra de Pelotas",
     num_pairs: int = 2,
+    threshold: float = 0.6,
 ) -> QARecordCEP:
     """Create a sample QARecordCEP for testing."""
     source = None
@@ -132,6 +133,7 @@ def _make_cep_record(
             bloom_calibration=0.85,
             informativeness=0.75,
             self_containedness=0.95,
+            threshold=threshold,
         )
         pair = QAPairCEP(
             question=f"Question {i}?",
@@ -412,26 +414,61 @@ class TestRunSummaryNewFields:
         assert run.validator_model_id == "gpt-4o-mini"
         assert run.provider == "openai"
 
-    def test_run_summary_includes_thresholds(self) -> None:
-        """Verify threshold values are extracted from config."""
+    def test_run_summary_includes_quality_threshold(self) -> None:
+        """Verify the transcription quality threshold is extracted from config."""
         transcription_meta = make_run_metadata(
             pipeline_type=PipelineType.TRANSCRIPTION,
             config_values={"quality_threshold": 0.65},
         )
-        cep_meta = make_run_metadata(
-            pipeline_type=PipelineType.CEP,
-            config_values={"validation_threshold": 0.75},
-        )
         report = RunReport(
             pipeline_id="run_thresholds",
             transcription_metadata=transcription_meta,
-            cep_metadata=cep_meta,
         )
         dataset = build_dataset([report])
         run = dataset.runs[0]
 
         assert run.quality_threshold == 0.65
-        assert run.validation_threshold == 0.75
+
+    def test_run_summary_criterion_thresholds_from_judged_pairs(self) -> None:
+        """Verify per-criterion gates come from the judged pairs, not from config."""
+        report = RunReport(
+            pipeline_id="run_criterion_thresholds",
+            cep_metadata=make_run_metadata(pipeline_type=PipelineType.CEP),
+            cep_records=[_make_cep_record(threshold=0.625)],
+        )
+        dataset = build_dataset([report])
+        run = dataset.runs[0]
+
+        assert run.criterion_thresholds == {
+            "faithfulness": 0.625,
+            "bloom_calibration": 0.625,
+            "informativeness": 0.625,
+            "self_containedness": 0.625,
+        }
+
+    def test_run_summary_criterion_thresholds_empty_without_judge(self) -> None:
+        """Verify unjudged runs expose no criterion gates."""
+        report = RunReport(
+            pipeline_id="run_unjudged",
+            cep_metadata=make_run_metadata(pipeline_type=PipelineType.CEP),
+        )
+        dataset = build_dataset([report])
+
+        assert dataset.runs[0].criterion_thresholds == {}
+
+    def test_run_summary_criterion_thresholds_drop_disagreements(self) -> None:
+        """Verify a criterion judged under two different gates is omitted."""
+        report = RunReport(
+            pipeline_id="run_mixed_thresholds",
+            cep_metadata=make_run_metadata(pipeline_type=PipelineType.CEP),
+            cep_records=[
+                _make_cep_record(source_filename="a.mp3", threshold=0.625),
+                _make_cep_record(source_filename="b.mp3", threshold=0.5),
+            ],
+        )
+        dataset = build_dataset([report])
+
+        assert dataset.runs[0].criterion_thresholds == {}
 
     def test_run_summary_validity_counts(self) -> None:
         """Verify valid/invalid counts are computed from records."""
@@ -524,7 +561,7 @@ class TestRunSummaryNewFields:
         assert run.validator_model_id is None
         assert run.provider is None
         assert run.quality_threshold is None
-        assert run.validation_threshold is None
+        assert run.criterion_thresholds == {}
         assert run.valid_transcriptions == 0
         assert run.invalid_transcriptions == 0
 

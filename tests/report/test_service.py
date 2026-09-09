@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import json
+from io import StringIO
 from unittest.mock import MagicMock
 
 import pytest
@@ -232,7 +235,7 @@ class TestGetRunConfig:
         )
         cep_snap = ConfigSnapshot(
             config_type="CEPConfig",
-            config_values={"model_id": "gpt-4o", "validation_threshold": 0.75},
+            config_values={"model_id": "gpt-4o"},
         )
         mock_collector.load_all_run_configs.return_value = {
             "transcription": trans_snap,
@@ -247,10 +250,14 @@ class TestGetRunConfig:
         assert "transcription" in config.configs
         assert "cep" in config.configs
         assert "quality_threshold" in config.threshold_fields["transcription"]
-        assert "validation_threshold" in config.threshold_fields["cep"]
 
-    def test_get_run_config_cep_weight_thresholds(self, mock_collector: MagicMock) -> None:
-        """Returns cep weight fields as thresholds when present."""
+    def test_get_run_config_cep_has_no_threshold_fields(self, mock_collector: MagicMock) -> None:
+        """CEP config exposes no gate: the judge gates per criterion, not in config.
+
+        Legacy runs recorded a weighted-score cut plus criterion weights. Those
+        values never reached the decision path, so they are not reported as
+        threshold fields even when a stored snapshot still carries them.
+        """
         cep_snap = ConfigSnapshot(
             config_type="CEPConfig",
             config_values={
@@ -268,15 +275,12 @@ class TestGetRunConfig:
         svc = ReportService(mock_collector)
         config = svc.get_run_config("pipe_000")
 
-        cep_thresholds = config.threshold_fields.get("cep", [])
-        assert "validation_threshold" in cep_thresholds
-        assert "faithfulness_weight" in cep_thresholds
-        assert "bloom_calibration_weight" in cep_thresholds
-        assert "informativeness_weight" in cep_thresholds
-        assert "self_containedness_weight" in cep_thresholds
+        assert "cep" not in config.threshold_fields
+        # The raw snapshot is still served verbatim for legacy datasets.
+        assert config.configs["cep"]["validation_threshold"] == 0.75
 
     def test_get_run_config_no_cross_step_leakage(self, mock_collector: MagicMock) -> None:
-        """Transcription step does not inherit CEP threshold fields."""
+        """Transcription step reports only its own threshold fields."""
         trans_snap = ConfigSnapshot(
             config_type="TranscriberConfig",
             config_values={
@@ -365,6 +369,32 @@ class TestExportCsv:
 
         csv_empty = service.export_csv("qa", {"pipeline": "nonexistent"})
         assert "pipe_000" not in csv_empty
+
+    def test_export_csv_runs_encodes_criterion_thresholds_as_json(
+        self, mock_collector: MagicMock
+    ) -> None:
+        """The per-criterion gate cell is JSON, not a Python repr.
+
+        ``criterion_thresholds`` is the one mapping-valued column in the runs
+        export; written straight through ``csv.DictWriter`` it would land as
+        ``{'faithfulness': 0.625}``, which no CSV consumer can parse.
+        """
+        svc = ReportService(mock_collector)
+        svc._dataset = ReportDataset(
+            runs=[
+                RunSummaryRow(
+                    pipeline_id="pipe_000",
+                    criterion_thresholds={"faithfulness": 0.625, "informativeness": 0.5},
+                )
+            ]
+        )
+
+        rows = list(csv.DictReader(StringIO(svc.export_csv("runs", {}))))
+
+        assert json.loads(rows[0]["criterion_thresholds"]) == {
+            "faithfulness": 0.625,
+            "informativeness": 0.5,
+        }
 
     def test_export_csv_runs_with_pipeline_filter(self, service: ReportService) -> None:
         """Pipeline filter narrows run export."""

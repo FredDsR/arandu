@@ -8,6 +8,7 @@ to keep data access concerns separate.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 from io import StringIO
 from typing import TYPE_CHECKING, Any
@@ -39,15 +40,29 @@ logger = logging.getLogger(__name__)
 
 _THRESHOLD_FIELDS: dict[str, list[str]] = {
     "transcription": ["quality_threshold"],
-    "cep": [
-        "validation_threshold",
-        "faithfulness_weight",
-        "bloom_calibration_weight",
-        "informativeness_weight",
-        "self_containedness_weight",
-    ],
 }
+"""Config fields that are real pass/fail gates, per pipeline step.
+
+The CEP step has no entry: its verdict is a conjunction of independent
+per-criterion gates recorded on each ``CriterionScore``, surfaced as
+``RunSummaryRow.criterion_thresholds``, not a configured aggregate cut.
+"""
 _TEXT_PREVIEW_CHARS: int = 500
+
+
+def _csv_encode_mappings(row: dict[str, Any]) -> dict[str, Any]:
+    """JSON-encode mapping-valued cells so a CSV row stays machine-readable.
+
+    ``RunSummaryRow.criterion_thresholds`` is a dict; written straight to CSV it
+    would land as a Python repr (single quotes) that no CSV consumer can parse.
+
+    Args:
+        row: A dumped row whose values may include mappings.
+
+    Returns:
+        The same row with every mapping value replaced by its JSON text.
+    """
+    return {k: json.dumps(v, sort_keys=True) if isinstance(v, dict) else v for k, v in row.items()}
 
 
 def _extract_rationale(validation: Any) -> str | None:
@@ -510,7 +525,7 @@ class ReportService:
                 writer = csv.DictWriter(output, fieldnames=list(RunSummaryRow.model_fields))
                 writer.writeheader()
                 for row in run_rows:
-                    writer.writerow(row.model_dump())
+                    writer.writerow(_csv_encode_mappings(row.model_dump()))
         else:
             raise ValueError(
                 f"Unsupported data_type: {data_type!r}. Use 'qa', 'transcriptions', or 'runs'"
