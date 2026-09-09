@@ -6,14 +6,16 @@
 
 ---
 
-## Status snapshot (2026-04-29)
+## Status snapshot (2026-09-09)
 
-- **Phase A — Unblock KG**: substantially **done**. First Portuguese KG built (`test-kg-04`, 14,617 nodes / 60,318 edges, 95.7% in the largest weakly-connected component). Five distinct atlas-rag bug families surfaced and patched as on-disk shims; upstream issue [HKUST-KnowComp/AutoSchemaKG#45](https://github.com/HKUST-KnowComp/AutoSchemaKG/issues/45) **was answered the same day** with a three-layer fix on `release/v0.0.6` — most of our local shims become removable on the version bump (tracked in the dedicated `atlas-rag-v006-cleanup` session).
-- **Phase B — Judge Refactor**: structural work merged via PRs [#84](https://github.com/FredDsR/arandu/pull/84), [#87](https://github.com/FredDsR/arandu/pull/87); LLM criteria open in PR [#88](https://github.com/FredDsR/arandu/pull/88). Remaining: **manual QA-judge calibration audit** (43 rejected + 31 admitted pairs from 2,410 valid; ~6–8 h of work) → returns the remediation decision that closes Phase B.
-- **Phase C — RAG Evaluation**: not started; unblocks when Phase B closes.
-- **New gate added — C′: Fresh-Corpus Rerun**. New interviews were uploaded to the Drive corpus since `test-kg-04`; the thesis Results chapter must use a clean run on the updated corpus, so a single end-to-end run (transcription → CEP → QA → judge → KG → metrics → RAG eval) sits between Phase C and the Results chapter. Should run on atlas-rag 0.0.6 (post-shim-cleanup).
-- **Architectural pivot**: shard-and-merge KG migration was the only durable answer when leak-per-interruption was the failure mode. With upstream's three-layer fix in 0.0.6, monolithic runs become much safer — sharding is now a *nice-to-have* refactor rather than a forcing function.
-- **Timeline reality**: ~5 weeks were spent on the atlas-rag bug-hunt that the original Phase A plan didn't anticipate. The upstream fix bought back ~2 weeks of pressure. June 2026 (A–C done) is **tight but reachable** if Phase C scopes to BM25 vs GraphRAG only. December 2026 hard deadline remains comfortable.
+- **Phases A, B, C and C′ are closed.** Issues [#78](https://github.com/FredDsR/arandu/issues/78), [#79](https://github.com/FredDsR/arandu/issues/79) and [#80](https://github.com/FredDsR/arandu/issues/80) were closed on 2026-09-09 with the evidence summarised in each phase section below.
+- **Canonical thesis dataset: `thesis-run-01`.** A single end-to-end run on the updated Drive corpus, from transcription (2026-06-23) to RAG analysis (2026-07-07). Stage tally: 455/456 transcriptions, 214 records through chunking and CEP, a Portuguese KG of 18,454 nodes / 76,919 edges, 334 non-answerable questions, 9,012 retrievals across 5 arms, 15,020 answers generated and judged. The Results chapter draws from this run and no other.
+- **Phase A (Unblock KG)**: done. The `test-kg-04` graph proved the pipeline; `thesis-run-01` produced the canonical graph. Five atlas-rag failure modes were shimmed locally and fixed upstream on `release/v0.0.6`.
+- **Phase B (Judge Refactor)**: done. Shared multi-stage judge in `shared/judge/`, heuristic and LLM criteria behind one protocol, standalone CLI commands, and the calibration audit that gated the phase (documented in `docs/research/judge-pipeline-calibration.md`).
+- **Phase C (RAG Evaluation)**: done. Five arms compared on a joint answerable/non-answerable benchmark, results in `results/thesis-run-01/analysis/outputs/`.
+- **Phase C′ (Fresh-Corpus Rerun)**: done. It *is* `thesis-run-01`.
+- **Current front: Phase D.** The emic evaluation stack is built (`arandu emic-judge`, the signed-off emic-validity ruler, the Label Studio annotation instrument, the Bloom-stratified sample builder, and the agreement coefficients module). Open work is the specialist sessions, the agreement analysis on their returns, and the writing.
+- **Timeline**: the June target for A-C was met, with the full evaluation chain finishing 2026-07-07. The December 2026 hard deadline stays comfortable; the remaining critical path is human evaluation plus the Results chapter.
 
 ---
 
@@ -21,12 +23,12 @@
 
 | Phase | Issue | When | Goal | Status / Blocked By |
 |-------|-------|------|------|---------------------|
-| **A: Unblock KG** | [#78](https://github.com/FredDsR/etno-kgc-preprocessing/issues/78) | April (actual: ~4 weeks) | Get a complete GraphML from the corpus | **Done** — `test-kg-04` graphml built; 5 atlas-rag bugs shimmed; upstream #45 acknowledged |
-| **B: Judge Refactor** | [#79](https://github.com/FredDsR/etno-kgc-preprocessing/issues/79) | April–May (actual: ~5 weeks) | Composable multi-stage judge as shared module | **Closing** — structural work merged; PR #88 (LLM criteria) open; QA calibration audit pending |
-| **C: RAG Evaluation** | [#80](https://github.com/FredDsR/etno-kgc-preprocessing/issues/80) | May–June (~4 weeks) | BM25 vs GraphRAG comparison using QA pairs | Blocked on B |
-| **C′: Fresh-Corpus Rerun** | — | After C (~1 week wall-time) | Clean end-to-end run on updated Drive corpus; produces canonical thesis dataset | Blocked on B + C |
-| **D: Writing & Human Eval** | — | Parallel, intensifies June–Aug | Dissertation chapters, specialist evaluation, articles | B for human eval protocol; C′ for results chapter |
-| **E: Polish** | — | July–Dec if needed | Bloom article, KG framework comparison, conferences | D for human eval data |
+| **A: Unblock KG** | [#78](https://github.com/FredDsR/arandu/issues/78) | April (actual: ~4 weeks) | Get a complete GraphML from the corpus | **Done**, closed 2026-09-09. Canonical graph built in `thesis-run-01` |
+| **B: Judge Refactor** | [#79](https://github.com/FredDsR/arandu/issues/79) | April-May (actual: ~5 weeks) | Composable multi-stage judge as shared module | **Done**, closed 2026-09-09. Calibration audit published |
+| **C: RAG Evaluation** | [#80](https://github.com/FredDsR/arandu/issues/80) | May-July (actual: ~9 weeks) | BM25 vs GraphRAG comparison using QA pairs | **Done**, closed 2026-09-09. Five arms scored on the joint benchmark |
+| **C′: Fresh-Corpus Rerun** | (no issue) | June-July 2026 | Clean end-to-end run on updated Drive corpus; produces canonical thesis dataset | **Done**. `thesis-run-01`, 2026-06-23 to 2026-07-07 |
+| **D: Writing & Human Eval** | (no issue) | Active since July | Dissertation chapters, specialist evaluation, articles | **Active**. Instrument built; specialist sessions and agreement analysis pending |
+| **E: Polish** | (no issue) | If time permits | Bloom article, KG framework comparison, conferences | Blocked on D for human eval data |
 
 ### Chronogram
 
@@ -38,14 +40,14 @@ gantt
 
     section Implementation
     A · Unblock KG                        :done, task_a, 2026-04-01, 28d
-    B · Judge refactor                    :active, task_b, 2026-04-01, 35d
-    C · RAG evaluation + experiments      :task_c, after task_b, 33d
-    C' · Fresh-corpus rerun               :task_cr, after task_c, 7d
+    B · Judge refactor                    :done, task_b, 2026-04-01, 35d
+    C · RAG evaluation + experiments      :done, task_c, 2026-05-06, 63d
+    C' · Fresh-corpus rerun               :done, task_cr, 2026-06-23, 15d
 
     section Research
-    Human evaluation with specialists     :task_h, after task_b, 55d
-    Chapters 1-3                          :active, task_w, 2026-04-01, 75d
-    Results chapter                       :task_r, after task_cr task_h, 30d
+    Human evaluation with specialists     :active, task_h, 2026-07-08, 90d
+    Chapters 1-3                          :active, task_w, 2026-04-01, 180d
+    Results chapter                       :task_r, after task_h, 30d
 
     section Publication
     Articles + conferences                :task_p, after task_r, 60d
@@ -102,6 +104,8 @@ flowchart TD
 
 **Context (original)**: `test-kg-02` got halfway through concept generation (6,256/13,383 nodes) before SLURM killed it. A language bug meant concepts were generated with English prompts. No GraphML output existed.
 
+**Outcome (closed 2026-09-09)**: the canonical graph is the one built inside `thesis-run-01` (2026-06-28 to 2026-06-30): **18,454 nodes / 76,919 edges** over 214 documents, `language: pt`, extracted with `qwen3:14b`. The earlier `test-kg-04` graph is what proved the pipeline and paid for the bug-hunt; it stays in the text as narrative, not as a result.
+
 **Outcome (2026-04-29)**: `test-kg-04` produced a valid Portuguese GraphML — **14,617 nodes / 60,318 edges**, 95.7% in the largest weakly-connected component. The bug-hunt that paid for this took ~4 weeks (vs. 2 planned) and surfaced five distinct atlas-rag failure modes, all interruption-derived. Upstream answered our report the same day with a three-layer fix on `release/v0.0.6`, which retroactively obsoletes most of the local shims.
 
 ### Tasks
@@ -110,10 +114,10 @@ flowchart TD
 2. ~~**Patch atlas-rag `KeyError: 'id'`** — monkey-patch `csvs_to_temp_graphml()` in `atlas_backend.py` so edge endpoints get `id`/`type` attributes.~~ Done in PR [#85](https://github.com/FredDsR/arandu/pull/85). *(Note: this monkey-patch turned out to be dead code due to a Python `from … import` capture issue; the real fix is the disk-rewrite shims in PR #92, and now upstream 0.0.6.)*
 3. ~~**File upstream issue** on [HKUST-KnowComp/AutoSchemaKG](https://github.com/HKUST-KnowComp/AutoSchemaKG) so the local patch can eventually be removed.~~ Done — [issue #45](https://github.com/HKUST-KnowComp/AutoSchemaKG/issues/45). **Maintainer responded 2026-04-29 with a three-layer fix on `release/v0.0.6`.**
 4. ~~**Run KG pipeline to completion**~~ Done — `test-kg-04` graphml built locally on the partial cluster state after concept generation finished (job 780114, 21h 44m on tupi).
-5. **Inspect output quality** — Portuguese entities and relations look sensible at a structural level (95.7% giant component, moderate clustering 0.23, max degree 6,949 — power-law shape). Manual semantic inspection still pending; will land alongside the QA-judge calibration audit.
-6. **Analyze predicate explosion** — surfaced empirically: 1,957 unique predicates in `test-kg-04`. atlas-rag's hardcoded English `is participated by` accounted for 37.3% of `Relation`-typed edges; now relabeled to Portuguese `envolve` for `lang=pt` runs. Semantic canonicalization (e.g. `lutar`/`combater`/`brigar`) deferred to RAG-time normalization in Phase C. (Feedback: Joel, midway seminar)
+5. ~~**Inspect output quality**~~ Done. Portuguese entities and relations are sensible at a structural level (95.7% giant component, moderate clustering 0.23, max degree 6,949, power-law shape). Semantic inspection was absorbed by the emic-validity work in Phase D, which reads the graph's content through the QA pairs it supports.
+6. ~~**Analyze predicate explosion**~~ Done, with one part deferred by decision. Surfaced empirically: 1,957 unique predicates in `test-kg-04`. atlas-rag's hardcoded English `is participated by` accounted for 37.3% of `Relation`-typed edges; now relabeled to Portuguese `envolve` for `lang=pt` runs. Semantic canonicalization (e.g. `lutar`/`combater`/`brigar`) deferred to RAG-time normalization in Phase C. (Feedback: Joel, midway seminar)
 7. ~~**Close #75** — superseded by #77~~ Done
-8. **Land PR #92 (KG fixes bundle)** — three on-disk shims + predicate relabel + new analytics scripts. Decision (2026-04-29): merge as-is; cleanup of redundant shims happens in the dedicated `atlas-rag-v006-cleanup` workstream after upstream 0.0.6 releases.
+8. ~~**Land PR #92 (KG fixes bundle)**~~ Merged 2026-04-30: three on-disk shims + predicate relabel + new analytics scripts. Cleanup of the redundant shims stays parked in the `atlas-rag-v006-cleanup` workstream; it is a tidy-up, not a blocker.
 
 ### Success Criteria
 
@@ -178,8 +182,8 @@ Stage 3: Human-comparable evaluation (single LLM criterion)
 3. ~~**Move judge to `shared/judge/`**~~ Done (PR [#84](https://github.com/FredDsR/arandu/pull/84))
 4. ~~**#35: `generate_structured()` on LLMClient**~~ Done — `JudgeResultMixin` extracts the pattern (commit `6b142c2`)
 5. ~~**Extract heuristic validators as criteria**~~ Done (PR [#87](https://github.com/FredDsR/arandu/pull/87))
-6. **New transcription criteria** — `language_drift` and `hallucination_loop` open in PR [#88](https://github.com/FredDsR/arandu/pull/88)
-7. **Human-comparable QA criterion** — **deferred to Phase D** (depends on the annotation protocol design)
+6. ~~**New transcription criteria**~~ Done: `language_drift` and `hallucination_loop` merged in PR [#88](https://github.com/FredDsR/arandu/pull/88) (2026-04-30)
+7. ~~**Human-comparable QA criterion**~~ Deferred to Phase D as planned, and delivered there: the emic-validity ruler and `arandu emic-judge` produce the ordinal scores that the specialist annotations are compared against
 8. ~~**Remove `--validate` flag** from `generate-cep-qa`~~ Done (PR [#87](https://github.com/FredDsR/arandu/pull/87))
 9. ~~**Standalone CLI**: `arandu judge-transcription` / `arandu judge-qa`~~ Done (PR [#87](https://github.com/FredDsR/arandu/pull/87))
 
@@ -189,7 +193,8 @@ A judge isn't usable until we know how often its decisions agree with a human re
 
 - **Dual notebooks** (transcription + QA) covering per-criterion distributions, inter-criterion correlation, stage attribution, failure co-occurrence, and threshold proximity.
 - **Audit protocol**: dual-class proportional sampling at 30% of rejected + 15% of admitted, sample sizes set so Clopper-Pearson 95% CIs land inside ±10pp of the observed rate.
-- **QA-side sample drawn 2026-04-28**: 43 rejected + 31 admitted pairs from 2,410 valid (population pulled from `test-judge-01`, seed=42). Manual audit pending (~6–8 h of work) — its remediation decision is the gate that closes Phase B.
+- **Audit complete and written up** in [`docs/research/judge-pipeline-calibration.md`](../research/judge-pipeline-calibration.md): 353 records evaluated, 43 rejected + 31 admitted audited (seed=42, 21% of the corpus). No unambiguous false positives; sample false-negative rate 3.2%. The two stages contribute complementary coverage (58% of rejections heuristic, 42% LLM), which is the evidence for keeping both.
+- **Remediation applied**: the single false negative motivated the `content_length_floor` heuristic now sitting at the head of the heuristic stage, subsuming the legacy 200-character filter that used to live inside QA generation.
 - **Transcription-side audit complete**; silence-filler gap closed in `e1a091c`.
 
 Tracked in the dedicated `judge-calibration-notebooks` work session.
@@ -205,6 +210,8 @@ Tracked in the dedicated `judge-calibration-notebooks` work session.
 ## Phase C: RAG Evaluation
 
 **Goal**: Compare retrieval strategies using CEP QA pairs as the benchmark dataset.
+
+**Outcome (closed 2026-09-09)**: five arms were scored on a joint benchmark of 2,670 answerable and 334 non-answerable questions inside `thesis-run-01`. Retrieval ran 2026-07-02/03 (9,012 items), answering 2026-07-04 (15,020 items), answer judging 2026-07-04 to 2026-07-07, analysis 2026-07-07. See "Results" below.
 
 ### Design
 
@@ -233,20 +240,36 @@ Generate a subset of questions whose answers are **not** present in the KG, to t
 
 ### Tasks
 
-1. Define retriever protocol
-2. Implement BM25 baseline retriever
-3. Implement GraphRAG retriever (using Phase A graph)
-4. Design non-answerable question subset (questions the KG cannot answer)
-5. Implement `arandu retrieve` CLI command
-6. Implement `arandu judge answers` CLI command (reuses Phase B judge)
-7. Run experiments, collect results
-8. Analyze: separate graph quality limitations from retrieval tool limitations (Feedback: Joel, midway seminar)
+1. ~~Define retriever protocol~~ Done: `shared/rag/retrieve/`, contract test in `tests/shared/rag/test_protocol.py`
+2. ~~Implement BM25 baseline retriever~~ Done: `shared/rag/retrievers/bm25.py`, run as the `bm25_cep_4k` arm
+3. ~~Implement GraphRAG retriever~~ Done, and it became three arms rather than one: `atlas_rag.py` (HippoRAG-style), `khop_subgraph.py` (passage-level) and `khop_triple.py` (triple-level)
+4. ~~Design non-answerable question subset~~ Done: `arandu generate-non-answerable`, 334 questions in the run
+5. ~~Implement `arandu retrieve`~~ Done
+6. ~~Implement `arandu judge-answers`~~ Done, reusing the Phase B judge
+7. ~~Run experiments, collect results~~ Done: `results/thesis-run-01/analysis/outputs/`
+8. ~~Analyze: separate graph quality limitations from retrieval tool limitations~~ Done. The `null` arm (no retrieval at all) is the parametric-knowledge floor, and passage coverage is reported separately from knowledge coverage, so a low score can be attributed to the graph or to the retriever rather than being read as one undifferentiated number
+
+### Results
+
+Per-arm joint-benchmark metrics (2,670 answerable + 334 non-answerable per arm), from `results/thesis-run-01/analysis/outputs/tables.md`:
+
+| Arm | KC ↑ | Hallucination ↓ | Over-caution ↓ | Abstention F1 ↑ | Passage cov ↑ |
+|-----|------|-----------------|----------------|-----------------|---------------|
+| bm25_cep_4k | 0.613 | 0.365 | 0.325 | 0.300 | 0.736 |
+| atlas_rag_hipporag | 0.592 | 0.198 | 0.587 | 0.247 | 0.528 |
+| khop_passage | 0.585 | 0.216 | 0.613 | 0.235 | 0.606 |
+| khop_triple | 0.464 | 0.054 | 0.857 | 0.215 | 0.239 |
+| null | n/a | 0.000 | 1.000 | 0.200 | 0.000 |
+
+The headline for the Results chapter: BM25 wins on knowledge coverage but hallucinates the most; the graph arms trade coverage for abstention discipline. Bloom-stratified and question-type-stratified breakdowns are in the same file.
 
 ---
 
 ## Phase C′: Fresh-Corpus Rerun (gate before Results chapter)
 
 **Goal**: Single end-to-end run on the updated Drive corpus, producing the canonical thesis dataset.
+
+**Outcome (done)**: the run is `thesis-run-01`, executed 2026-06-23 to 2026-07-07. All nine stages completed: transcription (455/456), chunk, cep (214/214), kg (214/214), non_answerable (334), retrieve (9,012), answers (15,020), judge_answers (15,020), analysis. The manifest of steps run is in `results/thesis-run-01/pipeline.json`.
 
 **Why this exists (added 2026-04-29)**: New interviews were uploaded to the Drive source corpus since `test-kg-04`. The thesis Results chapter must reflect the *current* dataset, not a mid-2026 snapshot. A fresh run also eliminates artifact contamination (stale CEPs, partial concept-gen state, pre-relabel graphmls, pre-LLM-criteria judge verdicts). The numbers from `test-kg-04` are valid for *describing* the pipeline (bug-hunt narrative, structural metrics, calibration evidence) but **must not** appear in the Results chapter.
 
@@ -334,18 +357,18 @@ Experiment results, analysis, human evaluation findings.
 
 | Section | Blocked on |
 |---------|------------|
-| Transcription results (353/354 files, quality analysis) | Nothing — data exists |
-| CEP QA results (241/309 records, Bloom distribution, judge scores) | Nothing — data exists |
-| KG construction results (graph structure, Portuguese entities/relations) | Phase A (no graph yet) |
-| RAG evaluation (BM25 vs GraphRAG comparison) | Phase C |
-| Non-answerable questions (parametric knowledge detection) | Phase C |
-| Human evaluation (kappa analysis, LLM vs specialist agreement) | Phase D human eval sessions |
-| Graph value argument (knowledge distillation independent of RAG) | Phase A (graph must exist) |
-| Predicate explosion analysis (semantic duplicates in predicates) | Phase A (graph must exist) |
-| Technique vs data limitations discussion | All above |
-| Discussion (Bloom-stratified depth profiling, tacit knowledge layers) | All above |
+| Transcription results (455/456 files, quality analysis) | Nothing, `thesis-run-01` data exists |
+| CEP QA results (214 records, Bloom distribution, judge scores) | Nothing, `thesis-run-01` data exists |
+| KG construction results (18,454 nodes / 76,919 edges, Portuguese entities/relations) | Nothing, `thesis-run-01` data exists |
+| RAG evaluation (BM25 vs GraphRAG comparison) | Nothing, tables in `results/thesis-run-01/analysis/outputs/` |
+| Non-answerable questions (parametric knowledge detection) | Nothing, 334 questions scored across 5 arms |
+| Human evaluation (kappa analysis, LLM vs specialist agreement) | Phase D specialist sessions |
+| Graph value argument (knowledge distillation independent of RAG) | Nothing, graph and metrics exist |
+| Predicate explosion analysis (semantic duplicates in predicates) | Nothing, analytics scripts exist |
+| Technique vs data limitations discussion | Human evaluation only |
+| Discussion (Bloom-stratified depth profiling, tacit knowledge layers) | Human evaluation only |
 
-**Can start**: transcription and CEP results sections now. Rest blocked.
+**Can start**: everything except the human-evaluation sections and the discussion that leans on them.
 
 #### Chapter 5 — Conclusão
 
@@ -391,12 +414,14 @@ Each pipeline step is an atomic CLI command. No model co-loading. Pipeline orche
 | Command | Input | Output | Models |
 |---------|-------|--------|--------|
 | `arandu transcribe` | audio/video | EnrichedRecord | Whisper |
-| `arandu judge transcription` | EnrichedRecord | scored EnrichedRecord | LLM (heuristics need no model) |
+| `arandu judge-transcription` | EnrichedRecord | scored EnrichedRecord | LLM (heuristics need no model) |
 | `arandu generate-cep-qa` | EnrichedRecord | QAPairCEP | LLM |
-| `arandu judge qa` | QAPairCEP | scored QAPairCEP | LLM |
+| `arandu judge-qa` | QAPairCEP | scored QAPairCEP | LLM |
 | `arandu build-kg` | EnrichedRecord | GraphML | LLM |
 | `arandu retrieve` | QA pairs + source | retriever answers | depends on retriever |
-| `arandu judge answers` | QA pairs + answers | judge scores | LLM |
+| `arandu judge-answers` | QA pairs + answers | judge scores | LLM |
+| `arandu rag-analysis` | judge scores | metrics tables + figures | none |
+| `arandu emic-judge` | approved QA pairs | ordinal emic-validity scores | LLM |
 
 ---
 
@@ -436,8 +461,12 @@ Feedback from Luciana and Joel incorporated into the roadmap:
 | ~~[#77](https://github.com/FredDsR/etno-kgc-preprocessing/issues/77)~~ | ~~Resumable concept generation + language bug~~ | A | Closed (PR #81) |
 | ~~[#35](https://github.com/FredDsR/etno-kgc-preprocessing/issues/35)~~ | ~~Extract `generate_structured()` to LLMClient~~ | B | Closed (folded into `JudgeResultMixin`) |
 | ~~[#75](https://github.com/FredDsR/etno-kgc-preprocessing/issues/75)~~ | ~~Concept gen resume~~ | — | Closed (superseded by #77) |
-| [PR #88](https://github.com/FredDsR/arandu/pull/88) | Judge LLM criteria (`language_drift`, `hallucination_loop`) | B | Open — ready for merge |
-| [PR #92](https://github.com/FredDsR/arandu/pull/92) | KG fixes bundle (3 shims + predicate relabel + analytics) | A | Open — to merge as-is, then strip in `atlas-rag-v006-cleanup` |
+| ~~[PR #88](https://github.com/FredDsR/arandu/pull/88)~~ | ~~Judge LLM criteria (`language_drift`, `hallucination_loop`)~~ | B | Merged 2026-04-30 |
+| ~~[PR #92](https://github.com/FredDsR/arandu/pull/92)~~ | ~~KG fixes bundle (3 shims + predicate relabel + analytics)~~ | A | Merged 2026-04-30 |
+| ~~[#78](https://github.com/FredDsR/arandu/issues/78)~~ | ~~Phase A: Unblock KG~~ | A | Closed 2026-09-09 |
+| ~~[#79](https://github.com/FredDsR/arandu/issues/79)~~ | ~~Phase B: Judge pipeline refactor~~ | B | Closed 2026-09-09 |
+| ~~[#80](https://github.com/FredDsR/arandu/issues/80)~~ | ~~Phase C: RAG evaluation framework~~ | C | Closed 2026-09-09 |
+| [#166](https://github.com/FredDsR/arandu/issues/166) | QA judge scores against the whole transcription instead of the originating chunk | B follow-up | Open |
 | [HKUST-KnowComp/AutoSchemaKG#45](https://github.com/HKUST-KnowComp/AutoSchemaKG/issues/45) | Upstream attribute-leak fix | A | **Answered + fixed on `release/v0.0.6`** (2026-04-29) |
 
 ---
