@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -13,10 +14,12 @@ from arandu.shared.chunking.registry import get_chunker
 from arandu.shared.chunking.schemas import ChunkSet
 from scripts.migrate_chunk_id_namespace import (
     load_source_texts,
+    main,
     remap_bm25_manifests,
     remap_passage_chunk_ids,
     rewrite_chunk_sets,
     shift_passage_offsets,
+    verify,
 )
 
 if TYPE_CHECKING:
@@ -348,3 +351,176 @@ class TestShiftPassageOffsets:
         run.mkdir()
 
         assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 0
+
+
+def write_cep_record(run_dir: Path, file_id: str, chunk_ids: list[str]) -> Path:
+    """Write a CEP QA record whose pairs point at ``chunk_ids``."""
+    directory = run_dir / "cep" / "outputs"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{file_id}_cep_qa.json"
+    path.write_text(
+        json.dumps(
+            {
+                "source_gdrive_id": file_id,
+                "source_filename": f"{file_id}.mp3",
+                "transcription_text": BODY,
+                "model_id": "qwen3:14b",
+                "provider": "ollama",
+                "language": "pt",
+                "total_pairs": len(chunk_ids),
+                "qa_pairs": [
+                    {
+                        "question": f"Pergunta {i}?",
+                        "answer": "Resposta.",
+                        "context": "Trecho.",
+                        "question_type": "factual",
+                        "bloom_level": "remember",
+                        "chunk_id": cid,
+                    }
+                    for i, cid in enumerate(chunk_ids)
+                ],
+            }
+        )
+    )
+    return path
+
+
+class TestVerify:
+    """verify() is the migration's proof, run after the rewrite."""
+
+    def test_passes_on_a_fully_migrated_run(self, run_dir: Path) -> None:
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+        id_map, lead_by_file = rewrite_chunk_sets(run_dir, dry_run=False)
+        shift_passage_offsets(run_dir, lead_by_file, dry_run=False)
+
+        assert verify(run_dir) == []
+        assert len(id_map) == len(fresh_ids)
+
+    def test_reports_cep_pairs_that_do_not_resolve(self, run_dir: Path) -> None:
+        write_cep_record(run_dir, "file-1", ["not-a-real-chunk-id"])
+        rewrite_chunk_sets(run_dir, dry_run=False)
+
+        failures = verify(run_dir)
+
+        assert any("not-a-real-chunk-id" in f for f in failures)
+
+    def test_reports_a_stale_source_text_sha(self, run_dir: Path) -> None:
+        """A ChunkSet still hashing the raw text means the rewrite never ran."""
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+
+        failures = verify(run_dir)
+
+        assert any("source_text_sha256" in f for f in failures)
+
+    def test_reports_a_dangling_bm25_manifest_reference(self, run_dir: Path) -> None:
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+        rewrite_chunk_sets(run_dir, dry_run=False)
+        directory = run_dir / "retrieve" / "indexes" / "bm25_cep_4k"
+        directory.mkdir(parents=True)
+        (directory / "manifest.json").write_text(json.dumps({"chunk_ids": ["0123456789abcdef"]}))
+
+        failures = verify(run_dir)
+
+        assert any("0123456789abcdef" in f for f in failures)
+
+    def test_reports_a_dangling_passage_reference(self, run_dir: Path) -> None:
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+        rewrite_chunk_sets(run_dir, dry_run=False)
+        write_retrieval_output(run_dir, "retrieve", "bm25", "q0", ["fedcba9876543210"])
+
+        failures = verify(run_dir)
+
+        assert any("fedcba9876543210" in f for f in failures)
+
+    def test_ignores_foreign_namespaces_when_checking_for_dangling_refs(
+        self, run_dir: Path
+    ) -> None:
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+        rewrite_chunk_sets(run_dir, dry_run=False)
+        write_retrieval_output(run_dir, "retrieve", "atlas_rag", "q0", ["file-9:3"])
+        write_retrieval_output(run_dir, "retrieve", "khop_triple", "q1", ["triple:abc123"])
+
+        assert verify(run_dir) == []
+
+
+class TestMain:
+    """The CLI entry point, against a synthetic run tree only.
+
+    These tests never touch ``results/``. A test that reads a real run would
+    couple the suite to 1.5G of data outside the repo and would pass or fail on
+    what that data happens to contain rather than on this code.
+    """
+
+    def _argv(self, run_dir: Path, *extra: str) -> list[str]:
+        """Build an argv pointing the CLI at ``run_dir``."""
+        return [
+            "migrate_chunk_id_namespace.py",
+            "--id",
+            run_dir.name,
+            "--results-dir",
+            str(run_dir.parent),
+            *extra,
+        ]
+
+    def test_dry_run_reports_without_writing(
+        self,
+        run_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        path = run_dir / "chunk" / "outputs" / VIEW / "file-1.json"
+        before = path.read_text()
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--dry-run"))
+
+        main()
+
+        assert path.read_text() == before
+        assert "dry run" in capsys.readouterr().out
+
+    def test_apply_then_verify_reports_consistency(
+        self,
+        run_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fresh_ids = [c.chunk_id for c in get_chunker(VIEW).chunk(BODY, source_file_id="file-1")]
+        write_cep_record(run_dir, "file-1", fresh_ids)
+
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir))
+        main()
+        capsys.readouterr()
+
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
+        main()
+
+        assert "is consistent in the canonical space" in capsys.readouterr().out
+
+    def test_verify_exits_one_on_an_unmigrated_run(
+        self, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Guards against a green --verify on a run the rewrite never touched."""
+        monkeypatch.setattr(sys, "argv", self._argv(run_dir, "--verify"))
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 1
+
+    def test_exits_two_when_the_run_has_no_chunk_stage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["migrate_chunk_id_namespace.py", "--id", "ghost", "--results-dir", str(tmp_path)],
+        )
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 2

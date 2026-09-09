@@ -197,12 +197,18 @@ não valer:
    `thesis-run-02` isso significa 2670/2670, contra 0/2670 antes. O script
    reporta a fração e exige que seja total, sem número fixo no código.
 2. `source_text_sha256` de cada `ChunkSet` bate com o sha do texto canônico.
-3. **Content-preserving**: para cada `old_id -> new_id`, o texto resolvido
-   antes e depois é idêntico, com a única exceção do primeiro chunk de cada
-   arquivo, que perde um espaço inicial. É isso que garante que scores e
-   ranking do BM25 não mudam: o chunk 1 antigo era `raw[3837:7535]` e o novo é
+3. Re-chunkar o texto canônico reproduz exatamente os ids em disco, ou seja o
+   artefato é o que o pipeline corrigido produziria. A preservação de conteúdo
+   não é checada aqui: `--verify` roda depois da reescrita e não vê o estado
+   anterior. Ela é afirmada durante a migração, por `_assert_pure_shift`, onde
+   as duas chunkagens estão em mão. Spans idênticos sobre o mesmo texto
+   resolvem para as mesmas strings, com a única exceção do primeiro chunk, que
+   perde o whitespace inicial. É isso que garante que scores e ranking do BM25
+   não mudam: o chunk 1 antigo era `raw[3837:7535]` e o novo é
    `stripped[3836:7534]`, o mesmo texto, e BM25 não tokeniza espaço.
-4. Texto resolvido do `passage_offsets.json` inalterado.
+4. Nenhuma referência pendurada: todo id derivado de offset citado por um
+   manifest do BM25 ou por `passages[].chunk_id` resolve para um chunk.
+5. Todo offset do `passage_offsets.json` cai dentro do seu texto canônico.
 
 ## 6. Execução
 

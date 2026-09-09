@@ -21,13 +21,20 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import re
+import sys
 from dataclasses import dataclass
-from pathlib import Path  # noqa: TC003 - runtime use in signatures
+from pathlib import Path
 
+from rich.console import Console
+
+from arandu.qa.schemas import QARecordCEP
 from arandu.shared.chunking.registry import get_chunker
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
+from arandu.shared.config import get_results_config
 from arandu.shared.io import resolve_transcription_path
 from arandu.shared.schemas import EnrichedRecord
 
@@ -291,3 +298,181 @@ def shift_passage_offsets(run_dir: Path, lead_by_file: dict[str, int], *, dry_ru
     if shifted and not dry_run:
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return shifted
+
+
+# Offset-derived chunk_ids are a 16-char lowercase sha1 prefix. Foreign
+# namespaces are shaped differently on purpose: atlas_rag and khop_passage use
+# "<file_id>:<index>", khop_triple uses "triple:<sha>". Only the offset-derived
+# ones are expected to resolve against a ChunkSet.
+_OFFSET_DERIVED_ID = re.compile(r"^[0-9a-f]{16}$")
+
+
+def _known_chunk_ids(run_dir: Path) -> set[str]:
+    """Collect every chunk_id present in the run's ChunkSets."""
+    known: set[str] = set()
+    for path in sorted((run_dir / "chunk" / "outputs").rglob("*.json")):
+        for chunks in ChunkSet.load(path).views.values():
+            known.update(chunk.chunk_id for chunk in chunks)
+    return known
+
+
+def verify(run_dir: Path) -> list[str]:
+    """Check that a migrated run is internally consistent.
+
+    Runs after the rewrite, so it cannot compare against the pre-migration
+    state. Content preservation is asserted during the rewrite instead, by
+    :func:`_assert_pure_shift`. What is checked here:
+
+    1. Every CEP pair's ``chunk_id`` resolves against its file's ChunkSet. This
+       is the headline: 2670 of 2670 in ``thesis-run-02``, against 0 of 2670
+       before. The count is reported, never hard-coded.
+    2. Every ChunkSet's ``source_text_sha256`` matches its canonical text.
+    3. Re-chunking the canonical text reproduces the ids already on disk, so the
+       artifact really is what the fixed pipeline would produce.
+    4. No offset-derived id referenced by a BM25 manifest or by
+       ``passages[].chunk_id`` dangles.
+    5. Every atlas passage offset lies within its canonical text.
+
+    Args:
+        run_dir: The run directory.
+
+    Returns:
+        Human-readable failures, empty when the run is consistent.
+    """
+    failures: list[str] = []
+    transcription_dir = run_dir / "transcription" / "outputs"
+
+    chunk_outputs = run_dir / "chunk" / "outputs"
+    for view_dir in sorted(p for p in chunk_outputs.iterdir() if p.is_dir()):
+        view_id = view_dir.name
+        chunker = get_chunker(view_id)
+        for path in sorted(view_dir.glob("*.json")):
+            chunk_set = ChunkSet.load(path)
+            texts = load_source_texts(transcription_dir, chunk_set.source_file_id)
+
+            expected_sha = hashlib.sha256(texts.canonical.encode("utf-8")).hexdigest()
+            if chunk_set.source_text_sha256 != expected_sha:
+                failures.append(
+                    f"{path.name}: source_text_sha256 does not match the canonical text"
+                )
+
+            on_disk = [c.chunk_id for c in chunk_set.view(view_id)]
+            recomputed = [
+                c.chunk_id
+                for c in chunker.chunk(texts.canonical, source_file_id=chunk_set.source_file_id)
+            ]
+            if on_disk != recomputed:
+                failures.append(
+                    f"{path.name}: re-chunking the canonical text does not reproduce "
+                    f"the persisted chunk_ids"
+                )
+
+    known = _known_chunk_ids(run_dir)
+
+    cep_outputs = run_dir / "cep" / "outputs"
+    cep_files = sorted(cep_outputs.glob("*_cep_qa.json")) if cep_outputs.is_dir() else []
+    resolved = 0
+    total = 0
+    for path in cep_files:
+        record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
+        for pair in record.qa_pairs:
+            total += 1
+            if pair.chunk_id is None:
+                failures.append(f"{path.name}: a pair carries no chunk_id")
+            elif pair.chunk_id in known:
+                resolved += 1
+            else:
+                failures.append(f"{path.name}: chunk_id {pair.chunk_id} resolves to no chunk")
+    if total and resolved != total:
+        failures.append(f"CEP pairs resolving against a ChunkSet: {resolved}/{total}")
+
+    for manifest_path in sorted((run_dir / "retrieve" / "indexes").glob("bm25_*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for cid in manifest.get("chunk_ids", []):
+            if _OFFSET_DERIVED_ID.match(cid) and cid not in known:
+                failures.append(f"{manifest_path.parent.name}/manifest.json: dangling {cid}")
+
+    for stage in PASSAGE_STAGES:
+        stage_outputs = run_dir / stage / "outputs"
+        if not stage_outputs.is_dir():
+            continue
+        for path in sorted(stage_outputs.rglob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            passages = payload.get("passages")
+            if not isinstance(passages, list):
+                continue
+            for passage in passages:
+                cid = passage.get("chunk_id", "")
+                if _OFFSET_DERIVED_ID.match(cid) and cid not in known:
+                    failures.append(f"{stage}/{path.name}: dangling passage chunk_id {cid}")
+
+    sidecar = run_dir / "kg" / "outputs" / "passage_offsets.json"
+    if sidecar.exists():
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        for offset in payload.get("offsets", []):
+            texts = load_source_texts(transcription_dir, offset["source_file_id"])
+            if offset["end_char"] > len(texts.canonical):
+                failures.append(
+                    f"passage_offsets.json: {offset['passage_id']} ends past the "
+                    f"canonical text ({offset['end_char']} > {len(texts.canonical)})"
+                )
+
+    return failures
+
+
+def main() -> None:
+    """Entry point."""
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--id", required=True, help="Pipeline/run ID under the results base dir")
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=None,
+        help="Base results directory. Defaults to ARANDU_RESULTS_BASE_DIR, then ./results.",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Report what would change, write nothing"
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Check an already-migrated run instead of migrating it",
+    )
+    args = parser.parse_args()
+
+    console = Console()
+    base_dir = args.results_dir or get_results_config().base_dir
+    run_dir = base_dir / args.id
+    if not (run_dir / "chunk" / "outputs").is_dir():
+        console.print(f"[red]No chunk stage under {run_dir}[/red]")
+        sys.exit(2)
+
+    if args.verify:
+        failures = verify(run_dir)
+        if failures:
+            console.print(f"[red]{len(failures)} check(s) failed:[/red]")
+            for failure in failures:
+                console.print(f"  [red]{failure}[/red]")
+            sys.exit(1)
+        console.print(f"[green]{args.id} is consistent in the canonical space[/green]")
+        return
+
+    id_map, lead_by_file = rewrite_chunk_sets(run_dir, dry_run=args.dry_run)
+    manifest_ids = remap_bm25_manifests(run_dir, id_map, dry_run=args.dry_run)
+    files, refs = remap_passage_chunk_ids(run_dir, id_map, dry_run=args.dry_run)
+    offsets = shift_passage_offsets(run_dir, lead_by_file, dry_run=args.dry_run)
+
+    label = "would remap" if args.dry_run else "remapped"
+    console.print(f"[bold]{args.id}[/bold] ({'dry run' if args.dry_run else 'applied'})")
+    console.print(f"  chunk_ids {label}: {len(id_map)} across {len(lead_by_file)} files")
+    console.print(f"  bm25 manifest ids {label}: {manifest_ids}")
+    console.print(f"  passage references {label}: {refs} in {files} files")
+    console.print(f"  atlas offsets {'would shift' if args.dry_run else 'shifted'}: {offsets}")
+    if not args.dry_run:
+        console.print(f"\nNow run: [cyan]--id {args.id} --verify[/cyan]")
+
+
+if __name__ == "__main__":
+    main()
