@@ -13,7 +13,10 @@ from arandu.shared.chunking.registry import get_chunker
 from arandu.shared.chunking.schemas import ChunkSet
 from scripts.migrate_chunk_id_namespace import (
     load_source_texts,
+    remap_bm25_manifests,
+    remap_passage_chunk_ids,
     rewrite_chunk_sets,
+    shift_passage_offsets,
 )
 
 if TYPE_CHECKING:
@@ -154,3 +157,194 @@ class TestRewriteChunkSets:
 
         assert id_map
         assert path.read_text() == before
+
+
+def write_retrieval_output(
+    run_dir: Path, stage: str, arm: str, name: str, chunk_ids: list[str]
+) -> Path:
+    """Write a minimal retrieval-shaped artifact carrying ``chunk_ids``."""
+    directory = run_dir / stage / "outputs" / arm / "cep"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{name}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "qa_pair_id": f"file-1:{name}:0",
+                "question": "Pergunta?",
+                "retriever_id": f"{arm}_cep_4k",
+                "chunker_id": VIEW,
+                "top_k": len(chunk_ids),
+                "passages": [
+                    {"chunk_id": cid, "rank": i, "score": 1.0, "payload": None}
+                    for i, cid in enumerate(chunk_ids)
+                ],
+            }
+        )
+    )
+    return path
+
+
+class TestRemapBm25Manifests:
+    """The BM25 index manifest lists chunk_ids positionally against bm25.pkl."""
+
+    def test_remaps_known_ids_and_leaves_others_alone(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        directory = run / "retrieve" / "indexes" / "bm25_cep_4k"
+        directory.mkdir(parents=True)
+        manifest = directory / "manifest.json"
+        manifest.write_text(
+            json.dumps({"sha256": "deadbeef", "chunk_ids": ["old-a", "unknown", "old-b"]})
+        )
+
+        remapped = remap_bm25_manifests(run, {"old-a": "new-a", "old-b": "new-b"}, dry_run=False)
+
+        assert remapped == 2
+        written = json.loads(manifest.read_text())
+        assert written["chunk_ids"] == ["new-a", "unknown", "new-b"]
+        # The manifest's sha256 covers bm25.pkl, not the manifest, so it stays.
+        assert written["sha256"] == "deadbeef"
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        directory = run / "retrieve" / "indexes" / "bm25_cep_4k"
+        directory.mkdir(parents=True)
+        manifest = directory / "manifest.json"
+        manifest.write_text(json.dumps({"chunk_ids": ["old-a"]}))
+        before = manifest.read_text()
+
+        assert remap_bm25_manifests(run, {"old-a": "new-a"}, dry_run=True) == 1
+        assert manifest.read_text() == before
+
+
+class TestRemapPassageChunkIds:
+    """Only offset-derived ids are in the map, so other namespaces survive."""
+
+    def test_remaps_across_all_three_stages(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        paths = [
+            write_retrieval_output(run, stage, "bm25", "q0", ["old-a", "old-b"])
+            for stage in ("retrieve", "answers", "judge_answers")
+        ]
+
+        files, refs = remap_passage_chunk_ids(
+            run, {"old-a": "new-a", "old-b": "new-b"}, dry_run=False
+        )
+
+        assert (files, refs) == (3, 6)
+        for path in paths:
+            ids = [p["chunk_id"] for p in json.loads(path.read_text())["passages"]]
+            assert ids == ["new-a", "new-b"]
+
+    def test_leaves_foreign_namespaces_untouched(self, tmp_path: Path) -> None:
+        """atlas_rag/khop_passage use <file_id>:<index>, khop_triple uses triple:<sha>."""
+        run = tmp_path / "run"
+        atlas = write_retrieval_output(run, "retrieve", "atlas_rag", "q0", ["file-9:3"])
+        triple = write_retrieval_output(run, "retrieve", "khop_triple", "q0", ["triple:abc123"])
+
+        files, refs = remap_passage_chunk_ids(run, {"old-a": "new-a"}, dry_run=False)
+
+        assert (files, refs) == (0, 0)
+        assert json.loads(atlas.read_text())["passages"][0]["chunk_id"] == "file-9:3"
+        assert json.loads(triple.read_text())["passages"][0]["chunk_id"] == "triple:abc123"
+
+    def test_skips_artifacts_without_passages(self, tmp_path: Path) -> None:
+        """The null arm carries no passages; run_metadata.json carries no ids."""
+        run = tmp_path / "run"
+        directory = run / "retrieve" / "outputs" / "null" / "cep"
+        directory.mkdir(parents=True)
+        (directory / "q0.json").write_text(json.dumps({"qa_pair_id": "file-1:x:0"}))
+
+        assert remap_passage_chunk_ids(run, {"old-a": "new-a"}, dry_run=False) == (0, 0)
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        path = write_retrieval_output(run, "retrieve", "bm25", "q0", ["old-a"])
+        before = path.read_text()
+
+        assert remap_passage_chunk_ids(run, {"old-a": "new-a"}, dry_run=True) == (1, 1)
+        assert path.read_text() == before
+
+
+class TestShiftPassageOffsets:
+    """Atlas passage offsets live in EnrichedRecord space, which just moved."""
+
+    def _write_sidecar(self, run_dir: Path, offsets: list[dict[str, Any]]) -> Path:
+        directory = run_dir / "kg" / "outputs"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "passage_offsets.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "kg_run_id": "run",
+                    "offsets": offsets,
+                    "unmatched": [],
+                    "generated_at": "2026-06-24T18:40:49.678102Z",
+                }
+            )
+        )
+        return path
+
+    def test_shifts_by_the_files_stripped_lead(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        path = self._write_sidecar(
+            run,
+            [
+                {
+                    "passage_id": "file-1:0",
+                    "source_file_id": "file-1",
+                    "start_char": 10,
+                    "end_char": 100,
+                    "chunker_id": "atlas_8k",
+                }
+            ],
+        )
+
+        assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 1
+
+        offset = json.loads(path.read_text())["offsets"][0]
+        assert (offset["start_char"], offset["end_char"]) == (9, 99)
+
+    def test_clamps_a_zero_start_at_zero(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        path = self._write_sidecar(
+            run,
+            [
+                {
+                    "passage_id": "file-1:0",
+                    "source_file_id": "file-1",
+                    "start_char": 0,
+                    "end_char": 50,
+                    "chunker_id": "atlas_8k",
+                }
+            ],
+        )
+
+        shift_passage_offsets(run, {"file-1": 1}, dry_run=False)
+
+        offset = json.loads(path.read_text())["offsets"][0]
+        assert (offset["start_char"], offset["end_char"]) == (0, 49)
+
+    def test_leaves_files_with_no_stripped_lead_alone(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        path = self._write_sidecar(
+            run,
+            [
+                {
+                    "passage_id": "file-2:0",
+                    "source_file_id": "file-2",
+                    "start_char": 10,
+                    "end_char": 100,
+                    "chunker_id": "atlas_8k",
+                }
+            ],
+        )
+        before = path.read_text()
+
+        assert shift_passage_offsets(run, {"file-2": 0}, dry_run=False) == 0
+        assert path.read_text() == before
+
+    def test_returns_zero_when_the_sidecar_is_absent(self, tmp_path: Path) -> None:
+        run = tmp_path / "run"
+        run.mkdir()
+
+        assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 0

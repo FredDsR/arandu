@@ -165,3 +165,129 @@ def rewrite_chunk_sets(run_dir: Path, *, dry_run: bool) -> tuple[dict[str, str],
                 ).save(path)
 
     return id_map, lead_by_file
+
+
+PASSAGE_STAGES: tuple[str, ...] = ("retrieve", "answers", "judge_answers")
+
+
+def remap_bm25_manifests(run_dir: Path, id_map: dict[str, str], *, dry_run: bool) -> int:
+    """Remap ``chunk_ids`` in every BM25 index manifest.
+
+    The manifest's ``chunk_ids`` are positionally aligned with the pickled BM25
+    corpus, and its ``sha256`` covers ``bm25.pkl`` rather than the manifest
+    itself, so rewriting the ids leaves the index valid and the pickle untouched.
+    Ids are remapped by lookup, not by position, so a reordered manifest cannot
+    silently mis-map.
+
+    Args:
+        run_dir: The run directory.
+        id_map: Old to new ``chunk_id``.
+        dry_run: When true, count but write nothing.
+
+    Returns:
+        The number of ids remapped.
+    """
+    remapped = 0
+    for manifest_path in sorted((run_dir / "retrieve" / "indexes").glob("bm25_*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        stale_ids = manifest.get("chunk_ids")
+        if not stale_ids:
+            continue
+
+        fresh_ids = [id_map.get(cid, cid) for cid in stale_ids]
+        changed = sum(1 for old, new in zip(stale_ids, fresh_ids, strict=True) if old != new)
+        if not changed:
+            continue
+
+        remapped += changed
+        if not dry_run:
+            manifest["chunk_ids"] = fresh_ids
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+    return remapped
+
+
+def remap_passage_chunk_ids(
+    run_dir: Path, id_map: dict[str, str], *, dry_run: bool
+) -> tuple[int, int]:
+    """Remap ``passages[].chunk_id`` across the retrieval-shaped stages.
+
+    Every passage is visited exactly once and looked up against the original
+    value, so a new id that happens to collide with some other old id cannot be
+    mapped twice. Ids absent from the map are left alone, which is what
+    preserves the foreign namespaces without naming a single arm: ``atlas_rag``
+    and ``khop_passage`` use ``<file_id>:<index>`` and ``khop_triple`` uses
+    ``triple:<sha>``.
+
+    Args:
+        run_dir: The run directory.
+        id_map: Old to new ``chunk_id``.
+        dry_run: When true, count but write nothing.
+
+    Returns:
+        A tuple of (files touched, passage references remapped).
+    """
+    files = 0
+    refs = 0
+    for stage in PASSAGE_STAGES:
+        stage_outputs = run_dir / stage / "outputs"
+        if not stage_outputs.is_dir():
+            continue
+        for path in sorted(stage_outputs.rglob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            passages = payload.get("passages")
+            if not isinstance(passages, list):
+                continue
+
+            touched = 0
+            for passage in passages:
+                fresh = id_map.get(passage.get("chunk_id"))
+                if fresh is not None and fresh != passage["chunk_id"]:
+                    passage["chunk_id"] = fresh
+                    touched += 1
+
+            if not touched:
+                continue
+            files += 1
+            refs += touched
+            if not dry_run:
+                path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return files, refs
+
+
+def shift_passage_offsets(run_dir: Path, lead_by_file: dict[str, int], *, dry_run: bool) -> int:
+    """Shift the atlas passage-offset sidecar into the canonical space.
+
+    The sidecar's spans are expressed against ``EnrichedRecord.transcription_text``,
+    which the schema validator just moved by the stripped leading whitespace. The
+    synthesized ``passage_id`` is index-based, so ids stay stable and only spans
+    move.
+
+    Args:
+        run_dir: The run directory.
+        lead_by_file: ``file_id`` to stripped leading-whitespace count.
+        dry_run: When true, count but write nothing.
+
+    Returns:
+        The number of offsets shifted.
+    """
+    path = run_dir / "kg" / "outputs" / "passage_offsets.json"
+    if not path.exists():
+        return 0
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    shifted = 0
+    for offset in payload.get("offsets", []):
+        lead = lead_by_file.get(offset["source_file_id"], 0)
+        if not lead:
+            continue
+        offset["start_char"] = max(offset["start_char"] - lead, 0)
+        # end_char is constrained gt=0 on PassageOffset; clamp so a degenerate
+        # one-character span cannot make the sidecar unloadable.
+        offset["end_char"] = max(offset["end_char"] - lead, 1)
+        shifted += 1
+
+    if shifted and not dry_run:
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return shifted
