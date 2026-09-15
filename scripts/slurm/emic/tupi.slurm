@@ -9,8 +9,8 @@
 #SBATCH --output=logs/emic_judge_tupi_%j.out
 #SBATCH --error=logs/emic_judge_tupi_%j.err
 # Send SIGTERM to the batch shell 60s before the time limit so the teardown
-# trap can stop the docker containers before SLURM's SIGKILL (prevents orphaned
-# ollama-gpu / arandu-emic-run containers; see scripts/slurm/container_teardown.sh).
+# trap can stop the Podman pod before SLURM's SIGKILL (prevents orphaned
+# ollama-gpu / arandu-worker containers; see scripts/slurm/container_lib.sh).
 #SBATCH --signal=B:TERM@60
 
 # =============================================================================
@@ -59,4 +59,5 @@ export ARANDU_EMIC_JUDGE_WORKERS="${ARANDU_EMIC_JUDGE_WORKERS:-4}"
 export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-$ARANDU_EMIC_JUDGE_WORKERS}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
 
-source "${SLURM_SUBMIT_DIR}/scripts/slurm/emic/emic_common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/emic_common.sh"
