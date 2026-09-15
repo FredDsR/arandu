@@ -59,5 +59,5 @@ export ARANDU_EMIC_JUDGE_WORKERS="${ARANDU_EMIC_JUDGE_WORKERS:-4}"
 export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-$ARANDU_EMIC_JUDGE_WORKERS}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/emic_common.sh"
+PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$HOME/etno-kgc-preprocessing}}"
+source "${PROJECT_DIR}/scripts/slurm/emic/emic_common.sh"

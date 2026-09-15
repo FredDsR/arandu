@@ -36,5 +36,5 @@ export JUDGE_SUBCOMMAND=judge-qa
 # Partition-specific settings (validator model default lives in judge_common.sh)
 export USE_GPU_OLLAMA=true
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../judge_common.sh"
+PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$HOME/etno-kgc-preprocessing}}"
+source "${PROJECT_DIR}/scripts/slurm/judge/judge_common.sh"
