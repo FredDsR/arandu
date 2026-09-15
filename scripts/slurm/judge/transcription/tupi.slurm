@@ -8,6 +8,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/judge_transcription_tupi_%j.out
 #SBATCH --error=logs/judge_transcription_tupi_%j.err
+#SBATCH --signal=B:TERM@60
 
 # =============================================================================
 # Arandu Transcription Judge — TUPI Partition
@@ -34,4 +35,5 @@ export JUDGE_SUBCOMMAND=judge-transcription
 # Partition-specific settings (validator model default lives in judge_common.sh)
 export USE_GPU_OLLAMA=true
 
-source "${SLURM_SUBMIT_DIR}/scripts/slurm/judge/judge_common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../judge_common.sh"
