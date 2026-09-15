@@ -10,4 +10,4 @@
 
 # This script cleans up the project directory by removing all files and directories except for the cache directory.
 
-docker run --rm -v /home/users/fdsreckziegel/etno-kgc-preprocessing:/project alpine find /project -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +
+podman run --rm -v /home/users/fdsreckziegel/etno-kgc-preprocessing:/project alpine find /project -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +

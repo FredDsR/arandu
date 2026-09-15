@@ -160,61 +160,52 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Build Docker image (if needed)
+# Run Transcription via Podman
 # -----------------------------------------------------------------------------
-echo ""
-echo "Pruning all unused Docker data (images, containers, volumes, build cache) to free disk space..."
-# Match the kg/ step's aggressive reclaim: `system prune -af --volumes`
-# also removes STOPPED CONTAINERS (whose writable layers can fill the
-# node's docker storage), which the previous builder/image/volume trio
-# left behind -> caused job 793351's "No space left on device" at the
-# apt-get ffmpeg build step.
-docker system prune -af --volumes 2>/dev/null || true
-docker builder prune -af 2>/dev/null || true
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
+    exit 1
+fi
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-echo ""
-echo "Building Docker image..."
+# Preflight + cleanup
+arandu_preflight_and_clean
 
-# Use -f flag to specify docker-compose.yml location from PROJECT_DIR
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
-
+IMAGE_TAG="arandu:latest"
+DOCKERFILE="Dockerfile"
 if [ "$USE_ROCM" = "true" ]; then
-    docker compose -f "$COMPOSE_FILE" --profile rocm build arandu-rocm
-elif [ "$USE_CPU" = "true" ]; then
-    docker compose -f "$COMPOSE_FILE" --profile cpu build arandu-cpu
-else
-    docker compose -f "$COMPOSE_FILE" --profile gpu build arandu
+    IMAGE_TAG="arandu:rocm"
+    DOCKERFILE="Dockerfile.rocm"
 fi
 
-# -----------------------------------------------------------------------------
-# Run transcription
-# -----------------------------------------------------------------------------
+arandu_build_image "$IMAGE_TAG" "$DOCKERFILE"
+arandu_init_pod
+
+WORKER_GPU=false
+if [ "$GPU_AVAILABLE" = "true" ] && [ "$USE_CPU" != "true" ]; then
+    WORKER_GPU=true
+fi
+
 echo ""
 echo "Starting transcription process..."
 echo "=============================================="
 
-# set +e: a failing run must not abort the script before the cleanup below
-# (a skipped `down` leaks containers on the shared node).
-set +e
-if [ "$USE_ROCM" = "true" ]; then
-    echo "Running with AMD ROCm support..."
-    docker compose -f "$COMPOSE_FILE" --profile rocm up arandu-rocm --abort-on-container-exit
-elif [ "$USE_CPU" = "true" ]; then
-    echo "Running in CPU mode..."
-    docker compose -f "$COMPOSE_FILE" --profile cpu up arandu-cpu --abort-on-container-exit
-else
-    echo "Running with NVIDIA GPU support..."
-    docker compose -f "$COMPOSE_FILE" --profile gpu up arandu --abort-on-container-exit
-fi
-TRANSCRIBE_RC=$?
-set -e
+TRANSCRIBE_CMD=(
+    "batch-transcribe"
+    "/app/input/${CATALOG_FILE}"
+    "--credentials" "/app/credentials/credentials.json"
+    "--token" "/app/credentials/token.json"
+    "--output-dir" "/app/results"
+    "--id" "${PIPELINE_ID:-}"
+    "--workers" "${WORKERS:-1}"
+)
+[ -n "$QUANTIZE_FLAG" ] && TRANSCRIBE_CMD+=("$QUANTIZE_FLAG")
+[ -n "$CPU_FLAG" ] && TRANSCRIBE_CMD+=("$CPU_FLAG")
 
-# -----------------------------------------------------------------------------
-# Cleanup
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" down
+arandu_run_worker "$IMAGE_TAG" "$WORKER_GPU" "${TRANSCRIBE_CMD[@]}"
+TRANSCRIBE_RC=$?
 
 # -----------------------------------------------------------------------------
 # Job Summary
