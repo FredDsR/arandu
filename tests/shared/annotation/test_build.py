@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -386,3 +387,37 @@ class TestSampleFromBeforeTheMetadataField:
         with pytest.raises(ValueError):
             run_build_annotation("run-a", seed=5, base_dir=base)
         assert not (base / "run-a" / "annotation" / "outputs" / TASKS_FILENAME).exists()
+
+
+class TestTheTwoUploadedArtifactsAgree:
+    """The canvas and the tasks are pushed verbatim and separately.
+
+    ``push`` transports ``labeling_config.xml`` and ``tasks.json`` as written,
+    and Label Studio resolves the bindings only when an annotator opens a task:
+    a variable bound on the canvas with no key in the task data renders as the
+    literal ``$name``, and nothing before that point says so. The build is where
+    the two are still checkable together.
+    """
+
+    def test_every_bound_variable_has_a_key_in_every_task(self, sample_run: Path) -> None:
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        outputs = sample_run / "run-a" / "annotation" / "outputs"
+        config = (outputs / CONFIG_FILENAME).read_text(encoding="utf-8")
+        tasks = json.loads((outputs / TASKS_FILENAME).read_text(encoding="utf-8"))
+
+        bound = {match.group(1) for match in re.finditer(r"\$(\w+)", config)}
+        assert bound, "expected the canvas to bind the pair fields"
+        for task in tasks:
+            assert not bound - set(task["data"]), (
+                f"canvas binds {sorted(bound - set(task['data']))} with no key in the task data"
+            )
+
+    def test_the_metadata_value_reaches_the_uploaded_tasks(self, sample_run: Path) -> None:
+        """The binding added in #173 is worth nothing if the payload drops it."""
+        run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        outputs = sample_run / "run-a" / "annotation" / "outputs"
+        config = (outputs / CONFIG_FILENAME).read_text(encoding="utf-8")
+        tasks = json.loads((outputs / TASKS_FILENAME).read_text(encoding="utf-8"))
+
+        assert "$metadata" in config
+        assert all(task["data"]["metadata"].startswith("- Participante: P") for task in tasks)
