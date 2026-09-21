@@ -16,6 +16,8 @@ from arandu.shared.schemas import PipelineType, RunStatus
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import TranscriptionRecordWriter
+
 
 @pytest.fixture
 def runner() -> CliRunner:
@@ -30,39 +32,20 @@ def results_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return base
 
 
-def _write_enriched_record(dir_: Path, file_id: str, text: str) -> Path:
-    """Write a minimal-but-valid EnrichedRecord JSON to ``dir_/file_id.json``."""
-    payload = {
-        "gdrive_id": file_id,
-        "name": f"{file_id}.mp4",
-        "mimeType": "video/mp4",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 30.5,
-        "transcription_status": "completed",
-    }
-    path = dir_ / f"{file_id}.json"
-    path.write_text(json.dumps(payload))
-    return path
-
-
 class TestAranduChunkPathLayout:
     """Outputs land under `results/<pipeline_id>/chunk/outputs/<chunker_id>/<file_id>.json`."""
 
     def test_writes_chunkset_per_source_under_chunker_subdir(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "Esta é uma frase de teste. " * 50)
-        _write_enriched_record(in_dir, "src_b", "Outra frase. " * 30)
+        write_transcription_record(in_dir, "src_a", "Esta é uma frase de teste. " * 50, suffix="")
+        write_transcription_record(in_dir, "src_b", "Outra frase. " * 30, suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
@@ -77,11 +60,15 @@ class TestAranduChunkPathLayout:
         assert len(cs.view("cep_4k")) >= 1
 
     def test_multiple_views_emit_one_file_per_view(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "Esta é uma frase de teste. " * 200)
+        write_transcription_record(in_dir, "src_a", "Esta é uma frase de teste. " * 200, suffix="")
 
         result = runner.invoke(
             app,
@@ -108,14 +95,18 @@ class TestAranduChunkPathLayout:
         assert set(ChunkSet.load(nx_path).views) == {"nx_2k"}
 
     def test_auto_generates_pipeline_id_when_not_passed(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         # Mirrors ResultsManager's local-id pattern (YYYYMMDD_HHMMSS_local).
         # We don't assert the format, only that a run dir was created and its
         # name is reported in the CLI output.
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "frase. " * 20)
+        write_transcription_record(in_dir, "src_a", "frase. " * 20, suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
@@ -130,12 +121,16 @@ class TestAranduChunkCounterSemantics:
     """Counter was ambiguous for multi-view runs — split into source vs artifact counts."""
 
     def test_multi_view_run_reports_artifact_count_not_source_count(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "frase. " * 30)
-        _write_enriched_record(in_dir, "src_b", "frase. " * 30)
+        write_transcription_record(in_dir, "src_a", "frase. " * 30, suffix="")
+        write_transcription_record(in_dir, "src_b", "frase. " * 30, suffix="")
 
         result = runner.invoke(
             app,
@@ -164,12 +159,16 @@ class TestAranduChunkResumability:
     """The chunk stage resumes from checkpoint like sibling orchestrators."""
 
     def test_second_run_with_same_id_skips_completed_sources(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
-        _write_enriched_record(in_dir, "src_b", "frase. " * 10)
+        write_transcription_record(in_dir, "src_a", "frase. " * 10, suffix="")
+        write_transcription_record(in_dir, "src_b", "frase. " * 10, suffix="")
 
         # First run: chunk both sources.
         first = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
@@ -191,11 +190,15 @@ class TestAranduChunkResultsManagerWiring:
     """The CLI emits the standard stage triplet: outputs/, checkpoint, run_metadata."""
 
     def test_emits_run_metadata_json(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
+        write_transcription_record(in_dir, "src_a", "frase. " * 10, suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
@@ -210,12 +213,16 @@ class TestAranduChunkResultsManagerWiring:
         assert "config" in meta
 
     def test_emits_checkpoint_with_completed_file_ids(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
-        _write_enriched_record(in_dir, "src_b", "frase. " * 10)
+        write_transcription_record(in_dir, "src_a", "frase. " * 10, suffix="")
+        write_transcription_record(in_dir, "src_b", "frase. " * 10, suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
@@ -228,11 +235,15 @@ class TestAranduChunkResultsManagerWiring:
         assert set(completed) >= {"src_a", "src_b"}
 
     def test_emits_pipeline_json_at_run_root(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "frase. " * 10)
+        write_transcription_record(in_dir, "src_a", "frase. " * 10, suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
@@ -248,7 +259,11 @@ class TestAranduChunkContentInvariants:
     """Per-view ChunkSet contents are preserved across the path migration."""
 
     def test_chunk_records_source_text_sha256(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
@@ -256,7 +271,7 @@ class TestAranduChunkContentInvariants:
         # transcription_text on construction: the sha the chunk stage records
         # is always over the canonical (stripped) text, never the raw fixture.
         text = ("Esta é uma frase de teste. " * 20).strip()
-        _write_enriched_record(in_dir, "src_a", text)
+        write_transcription_record(in_dir, "src_a", text, suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "cep_4k"])
         assert result.exit_code == 0, result.output
@@ -266,18 +281,26 @@ class TestAranduChunkContentInvariants:
         assert cs.source_text_sha256 == expected_sha
 
     def test_rejects_unknown_view(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        _write_enriched_record(in_dir, "src_a", "text")
+        write_transcription_record(in_dir, "src_a", "text", suffix="")
 
         result = runner.invoke(app, ["chunk", str(in_dir), "--id", "run_x", "--view", "garbage"])
         assert result.exit_code != 0
         assert "Unknown chunker_id" in result.output or "garbage" in result.output
 
     def test_handles_empty_input_dir(
-        self, runner: CliRunner, tmp_path: Path, results_base: Path
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        results_base: Path,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()

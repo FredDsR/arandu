@@ -7,9 +7,8 @@ diverge. This file pins the two producers together (issue #166).
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -24,6 +23,8 @@ if TYPE_CHECKING:
     from pytest import MonkeyPatch
     from pytest_mock import MockerFixture
 
+    from tests.conftest import TranscriptionRecordWriter
+
 
 # Long enough that cep_4k (RecursiveChunker, chunk_size=4000) emits several
 # chunks, so the test exercises interior boundaries and not just chunk 0.
@@ -31,28 +32,6 @@ _BODY = (
     "O pescador contou que quando o rio sobe ele guarda o barco no barranco alto. "
     "Depois falou da prefeitura, do ciclone e da ajuda que veio da universidade. "
 ) * 120
-
-
-def _write_transcription(directory: Path, file_id: str, text: str) -> None:
-    """Write a minimal-but-valid EnrichedRecord transcription JSON."""
-    payload: dict[str, Any] = {
-        "file_id": file_id,
-        "name": f"{file_id}.mp3",
-        "mimeType": "audio/mpeg",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 10.0,
-        "transcription_status": "completed",
-        "validation": {"stage_results": {}, "passed": True, "rejected_at": None},
-    }
-    (directory / f"{file_id}_transcription.json").write_text(json.dumps(payload))
 
 
 @pytest.fixture
@@ -92,7 +71,10 @@ def generator(mocker: MockerFixture) -> CEPQAGenerator:
 
 
 def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
-    tmp_path: Path, monkeypatch: MonkeyPatch, generator: CEPQAGenerator
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    generator: CEPQAGenerator,
+    write_transcription_record: TranscriptionRecordWriter,
 ) -> None:
     """A leading space must not split the two producers into separate namespaces.
 
@@ -110,7 +92,7 @@ def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     # The leading space is the whole point: it is what Whisper emits.
-    _write_transcription(input_dir, "file-1", f" {_BODY}")
+    write_transcription_record(input_dir, "file-1", f" {_BODY}", is_valid=True)
 
     result = run_chunk_batch(
         input_dir=input_dir, views=[CEP_CHUNKER_ID], pipeline_id="invariant-run"

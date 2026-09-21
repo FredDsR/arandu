@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path  # noqa: TC003 — used at runtime for tmp_path fixtures
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,66 +14,34 @@ from arandu.kg.schemas import KGConstructionResult, KGMetadata
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
-
-def _write_transcription(
-    directory: Path,
-    file_id: str = "test123",
-    text: str = "Test transcription text.",
-    is_valid: bool = True,
-) -> Path:
-    """Write a minimal transcription JSON file.
-
-    ``is_valid`` is a derived field on ``EnrichedRecord`` (computed from
-    ``validation.passed``), so the fixture writes a stub ``validation``
-    payload whose ``passed`` flag matches the desired value.
-    """
-    data: dict[str, Any] = {
-        "file_id": file_id,
-        "name": f"{file_id}.mp3",
-        "mimeType": "audio/mpeg",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 10.0,
-        "transcription_status": "completed",
-        "validation": {
-            "stage_results": {},
-            "passed": is_valid,
-            "rejected_at": None if is_valid else "heuristic_filter",
-        },
-    }
-    filepath = directory / f"{file_id}_transcription.json"
-    filepath.write_text(json.dumps(data))
-    return filepath
+    from tests.conftest import TranscriptionRecordWriter
 
 
 class TestLoadTranscriptionRecords:
     """Tests for _load_transcription_records."""
 
-    def test_loads_valid_records(self, tmp_path: Path) -> None:
+    def test_loads_valid_records(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         """Test loading valid transcription records."""
         from arandu.kg.batch import _load_transcription_records
 
-        _write_transcription(tmp_path, "id1")
-        _write_transcription(tmp_path, "id2")
+        write_transcription_record(tmp_path, "id1", is_valid=True)
+        write_transcription_record(tmp_path, "id2", is_valid=True)
 
         records = _load_transcription_records(tmp_path)
         assert len(records) == 2
         ids = {r.file_id for r in records}
         assert ids == {"id1", "id2"}
 
-    def test_skips_invalid_records(self, tmp_path: Path) -> None:
+    def test_skips_invalid_records(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         """Test that is_valid=False records are skipped."""
         from arandu.kg.batch import _load_transcription_records
 
-        _write_transcription(tmp_path, "valid", is_valid=True)
-        _write_transcription(tmp_path, "invalid", is_valid=False)
+        write_transcription_record(tmp_path, "valid", is_valid=True)
+        write_transcription_record(tmp_path, "invalid", is_valid=False)
 
         records = _load_transcription_records(tmp_path)
         assert len(records) == 1
@@ -91,11 +58,13 @@ class TestLoadTranscriptionRecords:
 class TestResolveTranscriptionDir:
     """Tests for _resolve_transcription_dir."""
 
-    def test_returns_dir_with_transcription_files(self, tmp_path: Path) -> None:
+    def test_returns_dir_with_transcription_files(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         """Test fast path: dir already contains transcription files."""
         from arandu.kg.batch import _resolve_transcription_dir
 
-        _write_transcription(tmp_path, "test")
+        write_transcription_record(tmp_path, "test", is_valid=True)
         result = _resolve_transcription_dir(tmp_path)
         assert result == tmp_path
 
@@ -125,7 +94,12 @@ class TestRunBatchKGConstruction:
         # Should not raise
         run_batch_kg_construction(tmp_path, output_dir, config)
 
-    def test_processes_records(self, tmp_path: Path, mocker: MockerFixture) -> None:
+    def test_processes_records(
+        self,
+        tmp_path: Path,
+        mocker: MockerFixture,
+        write_transcription_record: TranscriptionRecordWriter,
+    ) -> None:
         """Test orchestrator dispatches to constructor and tracks results."""
         mocker.patch(
             "arandu.kg.batch.ResultsConfig",
@@ -135,8 +109,8 @@ class TestRunBatchKGConstruction:
         # Write transcription files
         input_dir = tmp_path / "input"
         input_dir.mkdir()
-        _write_transcription(input_dir, "id1", "Texto um.")
-        _write_transcription(input_dir, "id2", "Texto dois.")
+        write_transcription_record(input_dir, "id1", "Texto um.", is_valid=True)
+        write_transcription_record(input_dir, "id2", "Texto dois.", is_valid=True)
 
         output_dir = tmp_path / "output"
 
@@ -170,7 +144,12 @@ class TestRunBatchKGConstruction:
         call_args = mock_constructor.build_graph.call_args
         assert len(call_args[0][0]) == 2  # 2 records
 
-    def test_constructor_failure_marks_failed(self, tmp_path: Path, mocker: MockerFixture) -> None:
+    def test_constructor_failure_marks_failed(
+        self,
+        tmp_path: Path,
+        mocker: MockerFixture,
+        write_transcription_record: TranscriptionRecordWriter,
+    ) -> None:
         """Test orchestrator handles constructor exceptions gracefully."""
         mocker.patch(
             "arandu.kg.batch.ResultsConfig",
@@ -179,7 +158,7 @@ class TestRunBatchKGConstruction:
 
         input_dir = tmp_path / "input"
         input_dir.mkdir()
-        _write_transcription(input_dir, "id1")
+        write_transcription_record(input_dir, "id1", is_valid=True)
 
         mock_constructor = MagicMock()
         mock_constructor.build_graph.side_effect = RuntimeError("LLM error")

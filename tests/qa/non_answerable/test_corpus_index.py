@@ -8,10 +8,11 @@ import networkx as nx
 
 from arandu.qa.non_answerable import corpus_index as ci
 from arandu.qa.non_answerable.corpus_index import SourceCorpusIndex, load_kg_node_set
-from arandu.shared.schemas import EnrichedRecord
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from tests.conftest import TranscriptionRecordWriter
 
 
 class TestLoadKgNodeSet:
@@ -37,33 +38,19 @@ class TestLoadKgNodeSet:
         assert load_kg_node_set(tmp_path / "missing.graphml") == set()
 
 
-def _write_transcription(transcription_dir: Path, *, file_id: str, text: str) -> None:
-    transcription_dir.mkdir(parents=True, exist_ok=True)
-    record = EnrichedRecord(
-        file_id=file_id,
-        name=f"{file_id}.wav",
-        mimeType="audio/wav",
-        parents=["root"],
-        web_content_link=f"https://example.test/{file_id}",
-        transcription_text=text,
-        detected_language="pt",
-        language_probability=0.99,
-        model_id="whisper-large-v3",
-        compute_device="cpu",
-        processing_duration_sec=1.0,
-        transcription_status="completed",
-    )
-    (transcription_dir / f"{file_id}.json").write_text(record.model_dump_json(), encoding="utf-8")
-
-
 class TestSourceCorpusIndex:
     """Tests for the source-corpus membership gate (NER + token fallback)."""
 
-    def test_token_fallback_indexes_alpha_tokens(self, tmp_path: Path, monkeypatch: object) -> None:
+    def test_token_fallback_indexes_alpha_tokens(
+        self,
+        tmp_path: Path,
+        monkeypatch: object,
+        write_transcription_record: TranscriptionRecordWriter,
+    ) -> None:
         # Force the no-spaCy fallback so the test is deterministic + fast.
         monkeypatch.setattr(ci, "_portuguese_nlp", lambda: None)  # type: ignore[attr-defined]
         tdir = tmp_path / "transcription" / "outputs"
-        _write_transcription(tdir, file_id="src1", text="Maria viu a enchente em Itaqui")
+        write_transcription_record(tdir, "src1", "Maria viu a enchente em Itaqui", suffix="")
         index = SourceCorpusIndex(tdir)
         assert "maria" in index
         assert "itaqui" in index
@@ -71,7 +58,10 @@ class TestSourceCorpusIndex:
         assert "joana" not in index
 
     def test_backstop_catches_terms_the_span_set_misses(
-        self, tmp_path: Path, monkeypatch: object
+        self,
+        tmp_path: Path,
+        monkeypatch: object,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         # The fallback span set only holds alpha tokens >= 4 chars; the full-text
         # word-boundary backstop catches present terms it misses: multi-word
@@ -79,7 +69,9 @@ class TestSourceCorpusIndex:
         # still read as absent.
         monkeypatch.setattr(ci, "_portuguese_nlp", lambda: None)  # type: ignore[attr-defined]
         tdir = tmp_path / "transcription" / "outputs"
-        _write_transcription(tdir, file_id="src1", text="Em 2012 a avó morava na Ponta da Areia")
+        write_transcription_record(
+            tdir, "src1", "Em 2012 a avó morava na Ponta da Areia", suffix=""
+        )
         index = SourceCorpusIndex(tdir)
         assert "Ponta da Areia" in index  # multi-word, not a single span
         assert "2012" in index  # bare year, not an alpha token

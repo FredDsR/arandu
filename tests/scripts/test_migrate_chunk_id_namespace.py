@@ -6,6 +6,7 @@ import hashlib
 import json
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -24,9 +25,12 @@ from scripts.migrate_chunk_id_namespace import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from tests.conftest import TranscriptionRecordWriter
 
 VIEW = "cep_4k"
+
+#: Where the transcription stage writes, relative to a run directory.
+TRANSCRIPTION_OUTPUTS = Path("transcription") / "outputs"
 
 # Long enough that cep_4k emits several chunks. Stripped so BODY itself is
 # already canonical: the repeated unit ends in ". " and the multiplication
@@ -40,29 +44,6 @@ BODY = (
     )
     * 120
 ).strip()
-
-
-def write_transcription(run_dir: Path, file_id: str, raw_text: str) -> None:
-    """Write a transcription whose stored text is ``raw_text`` verbatim."""
-    directory = run_dir / "transcription" / "outputs"
-    directory.mkdir(parents=True, exist_ok=True)
-    payload: dict[str, Any] = {
-        "file_id": file_id,
-        "name": f"{file_id}.mp3",
-        "mimeType": "audio/mpeg",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": raw_text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 10.0,
-        "transcription_status": "completed",
-    }
-    (directory / f"{file_id}_transcription.json").write_text(json.dumps(payload))
 
 
 def write_stale_chunk_set(run_dir: Path, file_id: str, raw_text: str) -> list[Chunk]:
@@ -122,10 +103,10 @@ def write_pipeline_metadata(run_dir: Path, *, replicated: bool) -> Path:
 
 
 @pytest.fixture
-def run_dir(tmp_path: Path) -> Path:
+def run_dir(tmp_path: Path, write_transcription_record: TranscriptionRecordWriter) -> Path:
     """A synthetic run carrying one file with Whisper's leading space."""
     run = tmp_path / "thesis-run-02"
-    write_transcription(run, "file-1", f" {BODY}")
+    write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-1", f" {BODY}")
     write_stale_chunk_set(run, "file-1", f" {BODY}")
     write_pipeline_metadata(run, replicated=True)
     return run
@@ -141,9 +122,11 @@ class TestLoadSourceTexts:
         assert texts.lead_ws == 1
         assert texts.filename == "file-1.mp3"
 
-    def test_lead_is_zero_when_the_raw_text_is_already_canonical(self, tmp_path: Path) -> None:
+    def test_lead_is_zero_when_the_raw_text_is_already_canonical(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         run = tmp_path / "run"
-        write_transcription(run, "file-2", BODY)
+        write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-2", BODY)
 
         texts = load_source_texts(run / "transcription" / "outputs", "file-2")
 
@@ -430,9 +413,11 @@ class TestShiftPassageOffsets:
             "chunker_id": "atlas_8k",
         }
 
-    def test_shifts_by_the_files_stripped_lead(self, tmp_path: Path) -> None:
+    def test_shifts_by_the_files_stripped_lead(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         run = tmp_path / "run"
-        write_transcription(run, "file-1", f" {BODY}")
+        write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-1", f" {BODY}")
         path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
 
         assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 1
@@ -440,9 +425,11 @@ class TestShiftPassageOffsets:
         offset = json.loads(path.read_text())["offsets"][0]
         assert (offset["start_char"], offset["end_char"]) == (9, 99)
 
-    def test_clamps_a_zero_start_at_zero(self, tmp_path: Path) -> None:
+    def test_clamps_a_zero_start_at_zero(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         run = tmp_path / "run"
-        write_transcription(run, "file-1", f" {BODY}")
+        write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-1", f" {BODY}")
         path = self._write_sidecar(run, [self._offset("file-1", 0, 50)])
 
         shift_passage_offsets(run, {"file-1": 1}, dry_run=False)
@@ -464,10 +451,12 @@ class TestShiftPassageOffsets:
 
         assert shift_passage_offsets(run, {"file-1": 1}, dry_run=False) == 0
 
-    def test_aborts_when_the_file_has_no_chunk_set(self, tmp_path: Path) -> None:
+    def test_aborts_when_the_file_has_no_chunk_set(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         """A missing key is not a lead of zero: the stages may select differently."""
         run = tmp_path / "run"
-        write_transcription(run, "file-1", f" {BODY}")
+        write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-1", f" {BODY}")
         path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
         before = path.read_text()
 
@@ -476,10 +465,12 @@ class TestShiftPassageOffsets:
 
         assert path.read_text() == before
 
-    def test_aborts_when_the_shifted_span_resolves_to_other_text(self, tmp_path: Path) -> None:
+    def test_aborts_when_the_shifted_span_resolves_to_other_text(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         """The sidecar's old state is in hand, so the shift is checked before writing."""
         run = tmp_path / "run"
-        write_transcription(run, "file-1", f" {BODY}")
+        write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-1", f" {BODY}")
         path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
         before = path.read_text()
 
@@ -488,9 +479,11 @@ class TestShiftPassageOffsets:
 
         assert path.read_text() == before
 
-    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+    def test_dry_run_writes_nothing(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         run = tmp_path / "run"
-        write_transcription(run, "file-1", f" {BODY}")
+        write_transcription_record(run / TRANSCRIPTION_OUTPUTS, "file-1", f" {BODY}")
         path = self._write_sidecar(run, [self._offset("file-1", 10, 100)])
         before = path.read_text()
 
