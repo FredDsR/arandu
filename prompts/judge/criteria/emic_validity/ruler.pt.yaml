@@ -9,23 +9,35 @@
 # Consumidores:
 #   - prompts/judge/criteria/emic_validity/pt/prompt.md  (juiz LLM)
 #   - docs/emic/annotator-instructions.pt.md             (anotadores humanos)
-#   - labeling_config.xml do Label Studio                (a construir)
+#   - labeling_config.xml do Label Studio                (canvas do anotador)
+#   - expert_instruction.html do Label Studio            (modal de instruções)
 #
 # tests/shared/judge/test_emic_ruler.py falha se qualquer consumidor divergir
 # deste arquivo.
 
 signed_off: true
 signed_off_by: Fred (antropologia)
-signed_off_on: "2026-08-11"
+signed_off_on: "2026-09-21"
 gate: anthropologist-validation-of-readings
 
-# Revisão de forma, não de método. A assinatura de 2026-08-11 continua valendo, e
-# por isso signed_off_on não muda; o campo abaixo registra a única alteração
-# posterior ao texto, para que um auditor veja o que mudou e por quê.
+# Revisão de forma, não de método. A cascata continua valendo como estava; o
+# campo registra a alteração para que um auditor veja o que mudou e por quê.
 presentation_revision: >-
   2026-08-17: a cascata passou a ser lida como frases ("Se <condição>, atribua
   nota N.") em vez de lista numerada. As condições, a ordem delas e a escala
   continuam as mesmas.
+
+# Revisão de método: muda o que o leitor vê e, com isso, o que ele pontua. Por
+# isso signed_off_on foi para a data desta revisão. Notas êmicas produzidas antes
+# dela não são comparáveis com as de depois, e anotação humana coletada com o
+# instrumento anterior não é comparável com o juiz sob este.
+method_revision: >-
+  2026-09-21 (issue #173): o juiz e o anotador passaram a ver os metadados da
+  entrevista, que a geração já injetava. Sem eles, um nome de participante ou um
+  local citado na resposta aparecia como acréscimo sem respaldo no trecho, o que
+  derrubava a nota de pares corretamente fundamentados. Os dois lados mudaram
+  juntos, porque mudar um só quebraria a simetria de que o estudo de
+  concordância depende.
 
 # --- Construto -------------------------------------------------------------
 
@@ -122,10 +134,20 @@ provisions:
       Perder um nome próprio ou um objeto específico quando a pergunta não pedia
       aquele detalhe e a lógica que a pessoa enunciou continua inteira.
     - Responder de forma curta, ou menos detalhada que o trecho.
+    - >-
+      Nomear o participante, o local, a data ou o evento quando o dado consta
+      nos metadados da entrevista.
   out_of_scope: >-
     Fora deste escopo: se o par está bem escrito, se a resposta está correta,
     completa ou bem fundamentada no trecho. Aqui se julga apenas se a perspectiva
     da pessoa foi preservada.
+  source_metadata: >-
+    Junto do trecho você vê os metadados da entrevista: participante,
+    pesquisador(a), local, data e contexto do registro. Eles estavam
+    disponíveis quando o par foi gerado, então um nome, um local ou uma data que
+    consta nos metadados não é informação vinda de fora. O trecho continua sendo
+    a fonte do que a pessoa disse; os metadados dizem apenas de quem é a fala,
+    onde e quando ela foi dita.
 
 # --- Guia de avaliação -----------------------------------------------------
 #

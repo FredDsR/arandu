@@ -1,10 +1,18 @@
-"""Shared source-metadata context helpers for CEP generation and judging.
+"""Shared source-metadata rendering for generation, judging and annotation.
 
 QA *generation* may inject a source-metadata block (participant, researcher,
 location, date, event context) into the prompt. If the *judge* does not see the
 same block, answers and questions legitimately grounded in that metadata are
 scored as fabricated or context-dependent (false rejections). These helpers are
 the single, shared rendering path so generation and the judge cannot drift.
+
+The same asymmetry exists on the emic path, and is closed the same way: the
+emic judge (``shared/emic/batch.py``) and the human annotation instrument
+(``shared/human_eval``, ``shared/annotation``) both render from here, under the
+same gate, so a pair whose answer names the participant is not read as
+fabricated by either. Judge and annotator have to be blinded to the *same*
+things, or the agreement study measures the difference between the two
+instruments instead of the construct.
 """
 
 from __future__ import annotations
@@ -14,13 +22,30 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from arandu.shared.schemas import SourceMetadata
 
+#: Stands in for an empty metadata block, on every surface that renders one.
+#:
+#: Both measurement surfaces state unconditionally that their reader sees the
+#: interview metadata, and the ruler licenses a name that appears in it as not
+#: an addition. For a record carrying none -- or whose generation ran with the
+#: gate closed -- an empty block would make that licence uncheckable: a name in
+#: the answer could be waved through against a block that was never rendered.
+#: Naming the absence keeps the provision verifiable, and keeps the judge and
+#: the annotator saying the same thing about the same record.
+NO_METADATA_TEXT = "(sem metadados registrados para esta entrevista)"
 
-def format_metadata_section(metadata: SourceMetadata, language: str) -> str:
-    """Format source metadata as a prompt section.
 
-    Only non-None fields are included, with language-aware labels. The
-    Drive path is deliberately never rendered: it carries PII-ish folder
-    names and must not reach the prompt.
+def format_metadata_lines(metadata: SourceMetadata, language: str) -> str:
+    """Format source metadata as bare ``- Label: value`` lines, with no header.
+
+    The single place where the fields, their order and their labels are
+    decided; :func:`format_metadata_section` adds the prompt header on top of
+    this. Surfaces that carry their own heading (the Label Studio canvas, whose
+    sections are titled by the labeling config) consume these lines directly,
+    so an annotator and the judge read the same fields in the same order.
+
+    Only non-None fields are included. The Drive path is deliberately never
+    rendered: it carries PII-ish folder names and must not reach a prompt or an
+    annotator.
 
     Args:
         metadata: Source metadata to format.
@@ -28,8 +53,8 @@ def format_metadata_section(metadata: SourceMetadata, language: str) -> str:
             labels, anything else falls back to English.
 
     Returns:
-        Formatted metadata section beginning with a leading newline, or an
-        empty string when no fields are populated.
+        One ``- Label: value`` line per populated field, newline-joined, with
+        no leading or trailing newline; ``""`` when no field is populated.
     """
     is_pt = language == "pt"
 
@@ -45,12 +70,29 @@ def format_metadata_section(metadata: SourceMetadata, language: str) -> str:
     if metadata.event_context:
         fields.append(("Contexto" if is_pt else "Context", metadata.event_context))
 
-    if not fields:
+    return "\n".join(f"- {label}: {value}" for label, value in fields)
+
+
+def format_metadata_section(metadata: SourceMetadata, language: str) -> str:
+    """Format source metadata as a prompt section.
+
+    The header plus :func:`format_metadata_lines`.
+
+    Args:
+        metadata: Source metadata to format.
+        language: Prompt language (ISO 639-1); ``"pt"`` selects Portuguese
+            labels, anything else falls back to English.
+
+    Returns:
+        Formatted metadata section beginning with a leading newline, or an
+        empty string when no fields are populated.
+    """
+    lines = format_metadata_lines(metadata, language)
+    if not lines:
         return ""
 
-    header = "Metadados da Entrevista:" if is_pt else "Interview Metadata:"
-    lines = [f"- {label}: {value}" for label, value in fields]
-    return f"\n{header}\n" + "\n".join(lines)
+    header = "Metadados da Entrevista:" if language == "pt" else "Interview Metadata:"
+    return f"\n{header}\n{lines}"
 
 
 def render_metadata_context(
@@ -77,6 +119,35 @@ def render_metadata_context(
     if not enable_metadata or source_metadata is None:
         return ""
     return format_metadata_section(source_metadata, language)
+
+
+def render_metadata_lines(
+    source_metadata: SourceMetadata | None,
+    *,
+    enable_metadata: bool,
+    language: str,
+) -> str:
+    """Render the header-less metadata lines iff they should be shown, else ``""``.
+
+    Same gate as :func:`render_metadata_context`, different presentation: this
+    is what a surface with its own section heading consumes (the human
+    annotation instrument). Sharing the gate is what keeps the annotator and
+    the judge blinded to exactly the same thing -- a record whose generation
+    ran without metadata shows none on either side.
+
+    Args:
+        source_metadata: Source metadata to render, if any.
+        enable_metadata: Whether source-metadata context was injected at
+            generation time (``QARecordCEP.source_metadata_context_enabled``).
+        language: Prompt language (ISO 639-1).
+
+    Returns:
+        The ``- Label: value`` lines, or ``""`` when metadata must not be
+        shown or has no renderable fields.
+    """
+    if not enable_metadata or source_metadata is None:
+        return ""
+    return format_metadata_lines(source_metadata, language)
 
 
 def build_judge_context(

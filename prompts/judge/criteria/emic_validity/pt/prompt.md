@@ -35,12 +35,15 @@ O objeto de avaliação é o par. Avalia-se a pergunta e a resposta juntas, e a 
 
 A pergunta define o que conta como perda. Um detalhe que a pergunta não punha em jogo pode desaparecer sem custo. O que carrega o conhecimento que a pergunta pede, não. Se a pergunta trata de como algo é feito, perder o nome de quem emprestou o dinheiro não é perda, desde que a lógica que a pessoa deu continue inteira; se a pergunta trata de como se sabe algo, perder quem sabe é perda. A pergunta calibra a expectativa de detalhe e nada além disso.
 
+Junto do trecho você vê os metadados da entrevista: participante, pesquisador(a), local, data e contexto do registro. Eles estavam disponíveis quando o par foi gerado, então um nome, um local ou uma data que consta nos metadados não é informação vinda de fora. O trecho continua sendo a fonte do que a pessoa disse; os metadados dizem apenas de quem é a fala, onde e quando ela foi dita.
+
 Não são perda êmica:
 
 - Generalizar ou abstrair preservando o sentido. Alguma generalização é esperada.
 - Trocar uma palavra por outra sem apagar nada: dizer embarcação onde a pessoa disse barco não custa ponto.
 - Perder um nome próprio ou um objeto específico quando a pergunta não pedia aquele detalhe e a lógica que a pessoa enunciou continua inteira.
 - Responder de forma curta, ou menos detalhada que o trecho.
+- Nomear o participante, o local, a data ou o evento quando o dado consta nos metadados da entrevista.
 
 Fora deste escopo: se o par está bem escrito, se a resposta está correta, completa ou bem fundamentada no trecho. Aqui se julga apenas se a perspectiva da pessoa foi preservada.
 
@@ -120,10 +123,11 @@ Nota 1, pela pergunta
 - Resposta: "O aprendizado ocorre pela observação do trabalho dos mais velhos, desde os nove anos de idade."
 - Por quê: a resposta é sóbria e fiel ao trecho. A perda está na pergunta, que insere "sabedoria ancestral", um clichê que a pessoa não usou, e faz o par inteiro afirmar isso. A condição dispara pela pergunta, não pela resposta.
 
-Avalie o par abaixo. Você vê apenas o trecho de origem, a pergunta e a resposta.
+Avalie o par abaixo. Você vê apenas os metadados da entrevista, o trecho de origem, a pergunta e a resposta.
 
 Trecho de origem:
 $context
+$metadata
 
 Par:
 - Pergunta: $question

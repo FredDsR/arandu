@@ -10,8 +10,10 @@ from __future__ import annotations
 from arandu.qa.cep.metadata_context import (
     build_judge_context,
     build_pair_judge_context,
+    format_metadata_lines,
     format_metadata_section,
     render_metadata_context,
+    render_metadata_lines,
 )
 from arandu.shared.schemas import SourceMetadata
 
@@ -74,6 +76,83 @@ class TestFormatMetadataSection:
 
         assert "Secret Folder" not in section
         assert "aida.mp4" not in section
+
+
+class TestFormatMetadataLines:
+    """Tests for format_metadata_lines() - the header-less rendering."""
+
+    def test_renders_the_same_fields_without_the_header(self) -> None:
+        """Same labels and same order as the section, minus the header line."""
+        metadata = SourceMetadata(
+            participant_name="Aida",
+            researcher_name="Julia",
+            location="DOQUINHAS",
+            recording_date="23-04-2026",
+            event_context="Aida- 23-04-2026",
+        )
+
+        lines = format_metadata_lines(metadata, "pt")
+
+        assert lines.splitlines() == [
+            "- Participante: Aida",
+            "- Pesquisador(a): Julia",
+            "- Local: DOQUINHAS",
+            "- Data: 23-04-2026",
+            "- Contexto: Aida- 23-04-2026",
+        ]
+        assert "Metadados da Entrevista:" not in lines
+
+    def test_starts_with_no_blank_line(self) -> None:
+        """The annotation canvas supplies its own header, so no leading newline."""
+        lines = format_metadata_lines(SourceMetadata(location="DOQUINHAS"), "pt")
+
+        assert lines == "- Local: DOQUINHAS"
+
+    def test_renders_english_labels(self) -> None:
+        lines = format_metadata_lines(SourceMetadata(location="Barra de Pelotas"), "en")
+
+        assert lines == "- Location: Barra de Pelotas"
+
+    def test_empty_when_no_renderable_fields(self) -> None:
+        assert format_metadata_lines(SourceMetadata(), "pt") == ""
+
+    def test_never_leaks_source_gdrive_path(self) -> None:
+        """The Drive path is excluded here exactly as it is from the section."""
+        metadata = SourceMetadata(
+            location="DOQUINHAS",
+            source_gdrive_path="/MyDrive/Secret Folder/aida.mp4",
+        )
+
+        lines = format_metadata_lines(metadata, "pt")
+
+        assert "Secret Folder" not in lines
+        assert "aida.mp4" not in lines
+
+
+class TestRenderMetadataLines:
+    """Tests for render_metadata_lines() - the same gate, header-less output."""
+
+    def test_renders_lines_when_enabled_and_present(self) -> None:
+        lines = render_metadata_lines(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert lines == "- Local: DOQUINHAS"
+
+    def test_empty_when_disabled(self) -> None:
+        """The annotator is blinded to metadata generation never injected."""
+        lines = render_metadata_lines(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert lines == ""
+
+    def test_empty_when_metadata_none(self) -> None:
+        assert render_metadata_lines(None, enable_metadata=True, language="pt") == ""
 
 
 class TestRenderMetadataContext:
