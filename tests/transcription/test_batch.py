@@ -539,7 +539,7 @@ class TestTranscribeSingleFile:
     @patch("arandu.transcription.batch.WhisperEngine")
     @patch("arandu.transcription.batch.DriveClient")
     @patch("arandu.transcription.batch.create_temp_file")
-    @patch("arandu.transcription.batch.save_enriched_record")
+    @patch("arandu.transcription.batch.save_transcription_record")
     @patch("arandu.transcription.batch.has_audio_stream")
     @patch("arandu.transcription.batch.get_media_duration_ms")
     def test_transcribe_single_file_audio_success(
@@ -680,7 +680,7 @@ class TestTranscribeSingleFile:
     @patch("arandu.transcription.batch.WhisperEngine")
     @patch("arandu.transcription.batch.DriveClient")
     @patch("arandu.transcription.batch.create_temp_file")
-    @patch("arandu.transcription.batch.save_enriched_record")
+    @patch("arandu.transcription.batch.save_transcription_record")
     @patch("arandu.transcription.batch.extract_audio")
     @patch("arandu.transcription.batch.requires_audio_extraction")
     @patch("arandu.transcription.batch.get_media_duration_ms")

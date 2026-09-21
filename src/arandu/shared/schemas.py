@@ -161,11 +161,14 @@ class TranscriptionRecord(InputRecord, JudgeResultMixin):
     compute_device: str = Field(..., description="Device used for computation (cpu/cuda/mps)")
     processing_duration_sec: float = Field(..., description="Processing time in seconds")
     transcription_status: str = Field(..., description="Status of transcription process")
-    # ``created_at_enrichment`` is the legacy on-disk key, kept as a read alias
-    # so the records already written under the old vocabulary keep loading. New
-    # writes carry the field name, exactly as ``file_id`` does against its own
-    # ``gdrive_id`` alias; ``populate_by_name`` (inherited from InputRecord)
-    # accepts both spellings.
+    # ``created_at_enrichment`` is the legacy on-disk key, kept as an alias so
+    # the records already written under the old vocabulary keep loading;
+    # ``populate_by_name`` (inherited from InputRecord) accepts both spellings
+    # on read. It behaves exactly as ``file_id`` does against its own
+    # ``gdrive_id`` alias, serialization included: a plain ``model_dump_json``
+    # (``save_transcription_record``) writes the field name, while a
+    # ``by_alias=True`` dump (``arandu judge-transcription``) writes the legacy
+    # key. Both spellings therefore occur on disk, and both load.
     created_at_transcription: datetime = Field(
         default_factory=datetime.now,
         alias="created_at_enrichment",

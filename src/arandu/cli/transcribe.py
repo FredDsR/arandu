@@ -16,7 +16,7 @@ from arandu.shared.io import (
     create_temp_file,
     get_mime_type,
     get_output_filename,
-    save_enriched_record,
+    save_transcription_record,
 )
 from arandu.shared.schemas import InputRecord, TranscriptionRecord
 from arandu.transcription.config import TranscriberConfig
@@ -159,7 +159,7 @@ def transcribe(
             output = file_path.parent / get_output_filename(file_path.name)
 
         # Save result
-        save_enriched_record(enriched, output)
+        save_transcription_record(enriched, output)
 
         # Display result
         display_result_panel(enriched)
@@ -319,7 +319,7 @@ def drive_transcribe(
             # Save locally first
             output_filename = get_output_filename(input_record.name)
             local_output = temp_file.parent / output_filename
-            save_enriched_record(enriched, local_output)
+            save_transcription_record(enriched, local_output)
 
             # Upload to Drive (same folder as original)
             if input_record.parents:

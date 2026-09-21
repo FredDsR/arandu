@@ -14,6 +14,8 @@ from arandu.transcription.judge import TranscriptionJudge, build_validator_clien
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
+    from tests.conftest import TranscriptionRecordWriter
+
 # Long enough Portuguese text to exceed 30 wpm at 60s duration (>30 words)
 _GOOD_PT_TEXT = (
     "O pescador mencionou a enchente que afetou a regiao no ultimo ano. "
@@ -325,7 +327,12 @@ class TestJudgeTranscriptionCLI:
         call_kwargs = build_spy.call_args.kwargs
         assert call_kwargs["model_id"] == "qwen3:14b"
 
-    def test_writes_verdict_back_into_record(self, mocker: MockerFixture, tmp_path: Any) -> None:
+    def test_writes_verdict_back_into_record(
+        self,
+        mocker: MockerFixture,
+        tmp_path: Any,
+        write_transcription_record: TranscriptionRecordWriter,
+    ) -> None:
         """judge-transcription mutates the on-disk record and does not write an aggregate file."""
         import json as _json
 
@@ -371,26 +378,7 @@ class TestJudgeTranscriptionCLI:
         )
 
         input_dir = tmp_path / "outputs"
-        input_dir.mkdir()
-        sample_file = input_dir / "abc_transcription.json"
-        sample_file.write_text(
-            _json.dumps(
-                {
-                    "gdrive_id": "abc",
-                    "name": "sample.mp4",
-                    "mimeType": "video/mp4",
-                    "parents": ["p1"],
-                    "webContentLink": "https://x",
-                    "transcription_text": _GOOD_PT_TEXT,
-                    "detected_language": "pt",
-                    "language_probability": 0.99,
-                    "model_id": "whisper",
-                    "compute_device": "cpu",
-                    "processing_duration_sec": 1.0,
-                    "transcription_status": "completed",
-                }
-            )
-        )
+        sample_file = write_transcription_record(input_dir, "abc", _GOOD_PT_TEXT)
 
         runner = CliRunner()
         result = runner.invoke(app, ["judge-transcription", str(input_dir)])
@@ -409,10 +397,12 @@ class TestJudgeTranscriptionCLI:
         assert aggregate_candidates == []
 
     def test_resume_skips_already_judged_records(
-        self, mocker: MockerFixture, tmp_path: Any
+        self,
+        mocker: MockerFixture,
+        tmp_path: Any,
+        write_transcription_record: TranscriptionRecordWriter,
     ) -> None:
         """Default --resume mode does not re-evaluate records that already carry validation."""
-        import json as _json
 
         from typer.testing import CliRunner
 
@@ -439,26 +429,11 @@ class TestJudgeTranscriptionCLI:
         )
 
         input_dir = tmp_path / "outputs"
-        input_dir.mkdir()
-        already_judged = input_dir / "abc_transcription.json"
-        already_judged.write_text(
-            _json.dumps(
-                {
-                    "gdrive_id": "abc",
-                    "name": "sample.mp4",
-                    "mimeType": "video/mp4",
-                    "parents": ["p1"],
-                    "webContentLink": "https://x",
-                    "transcription_text": _GOOD_PT_TEXT,
-                    "detected_language": "pt",
-                    "language_probability": 0.99,
-                    "model_id": "whisper",
-                    "compute_device": "cpu",
-                    "processing_duration_sec": 1.0,
-                    "transcription_status": "completed",
-                    "validation": {"stage_results": {}, "passed": False, "rejected_at": None},
-                }
-            )
+        write_transcription_record(
+            input_dir,
+            "abc",
+            _GOOD_PT_TEXT,
+            validation={"stage_results": {}, "passed": False, "rejected_at": None},
         )
 
         runner = CliRunner()

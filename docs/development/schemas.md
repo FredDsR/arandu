@@ -36,7 +36,7 @@ Represents a transcription record with enrichment metadata. Extends `InputRecord
 | `compute_device` | `str` | Yes | Device used for computation (cpu/cuda/mps) |
 | `processing_duration_sec` | `float` | Yes | Processing time in seconds |
 | `transcription_status` | `str` | Yes | Status of transcription process |
-| `created_at_transcription` | `datetime` | Yes | Timestamp of when the record was produced. Reads the legacy `created_at_enrichment` key via `Field(alias=...)` |
+| `created_at_transcription` | `datetime` | Yes | Timestamp of when the record was produced. Carries the legacy `created_at_enrichment` key as a `Field(alias=...)`, so both spellings load and a `by_alias=True` dump writes the legacy one |
 | `segments` | `list[TranscriptionSegment] \| None` | No | Detailed timestamp segments |
 | `validation` | `JudgePipelineResult \| None` | No | Full judge pipeline result (from `JudgeResultMixin`). None = not yet judged |
 | `is_valid` | `bool \| None` | Computed | Derived from `validation.passed` (None when not yet judged). See `JudgeResultMixin` |

@@ -73,13 +73,20 @@ def mock_subprocess_run(mocker: MockerFixture) -> MagicMock:
 
 #: Default transcription text for the shared record builders.
 #:
-#: Long and sentence-shaped on purpose: the chunkers need a substantial body
-#: before they emit more than one chunk, so tests that do not care about the
-#: text still get one that exercises real chunk boundaries.
+#: Long and sentence-shaped on purpose: the widest char-mode view (``cep_4k``,
+#: ``chunk_size=4000``) needs a body past 4000 characters before it emits more
+#: than one chunk, so tests that do not care about the text still get one that
+#: exercises real chunk boundaries. ``.strip()``ed so the default is already
+#: canonical: ``TranscriptionRecord`` normalizes ``transcription_text``, and a
+#: trailing space would make the bytes on disk differ from the loaded record
+#: for every test that takes the default.
 DEFAULT_TRANSCRIPTION_TEXT = (
-    "O pescador contou que quando o rio sobe ele guarda o barco no barranco alto. "
-    "Depois falou da prefeitura, do ciclone e da ajuda que veio da universidade. "
-) * 20
+    (
+        "O pescador contou que quando o rio sobe ele guarda o barco no barranco alto. "
+        "Depois falou da prefeitura, do ciclone e da ajuda que veio da universidade. "
+    )
+    * 30
+).strip()
 
 
 class TranscriptionRecordPayloadBuilder(Protocol):

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from arandu import __version__
 from arandu.shared.config import ResultsConfig
-from arandu.shared.io import save_enriched_record
+from arandu.shared.io import save_transcription_record
 from arandu.shared.schemas import TranscriptionRecord
 from arandu.utils.console import console
 from arandu.utils.logger import (
@@ -614,7 +614,7 @@ def enrich_metadata(
             continue
 
         enrich_with_source_metadata(record, catalog_row, extractor=extractor)
-        save_enriched_record(record, tf)
+        save_transcription_record(record, tf)
         enriched_count += 1
 
     print_success(f"Enriched {enriched_count} transcription(s) (skipped {skipped_count})")
