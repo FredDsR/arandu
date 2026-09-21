@@ -17,7 +17,7 @@ import re
 import unicodedata
 from typing import TYPE_CHECKING
 
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -70,7 +70,7 @@ def load_kg_node_set(graphml_path: Path) -> set[str]:
 class SourceCorpusIndex:
     """Bag of named entities + alpha tokens drawn from the source corpus.
 
-    Built once per run over every :class:`EnrichedRecord` transcription.
+    Built once per run over every :class:`TranscriptionRecord` transcription.
     Membership is the second absence gate for a candidate replacement
     entity. Uses spaCy ``pt_core_news_sm`` with NER enabled; when the
     model is unavailable it degrades to an alpha-token-only bag (logged)
@@ -78,7 +78,7 @@ class SourceCorpusIndex:
     """
 
     def __init__(self, transcription_dir: Path) -> None:
-        """Build the index from every ``EnrichedRecord`` under ``transcription_dir``."""
+        """Build the index from every ``TranscriptionRecord`` under ``transcription_dir``."""
         self._spans: set[str] = set()
         self._corpus_folded: str = ""
         self._nlp = _portuguese_nlp()
@@ -115,7 +115,7 @@ class SourceCorpusIndex:
         folded_parts: list[str] = []
         for path in sorted(transcription_dir.glob("*.json")):
             try:
-                record = EnrichedRecord.model_validate_json(path.read_text(encoding="utf-8"))
+                record = TranscriptionRecord.model_validate_json(path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
                 logger.warning("Skipping unreadable transcription %s: %s", path, exc)
                 continue

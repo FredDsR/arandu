@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 
 def _get_default_temp_dir() -> str:
@@ -68,13 +68,13 @@ def create_temp_file(
 
 
 def save_enriched_record(
-    record: EnrichedRecord,
+    record: TranscriptionRecord,
     output_path: str | Path,
 ) -> Path:
-    """Save an EnrichedRecord to a JSON file.
+    """Save a TranscriptionRecord to a JSON file.
 
     Args:
-        record: The enriched record to save.
+        record: The transcription record to save.
         output_path: Path to save the JSON file.
 
     Returns:

@@ -1,7 +1,7 @@
 """Source metadata enrichment for transcription records.
 
 Provides the convenience function for attaching extracted metadata
-to EnrichedRecord instances.  Mutates the record in-place.
+to TranscriptionRecord instances.  Mutates the record in-place.
 """
 
 from __future__ import annotations
@@ -13,23 +13,23 @@ from arandu.metadata.extractor import GDriveCatalogExtractor
 
 if TYPE_CHECKING:
     from arandu.metadata.protocol import MetadataExtractor
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 logger = logging.getLogger(__name__)
 
 
 def enrich_with_source_metadata(
-    record: EnrichedRecord,
+    record: TranscriptionRecord,
     catalog_row: dict[str, str],
     *,
     extractor: MetadataExtractor | None = None,
-) -> EnrichedRecord:
-    """Extract and attach source metadata to an enriched record.
+) -> TranscriptionRecord:
+    """Extract and attach source metadata to a transcription record.
 
     Mutates the record in-place.
 
     Args:
-        record: EnrichedRecord to enrich with source metadata.
+        record: TranscriptionRecord to enrich with source metadata.
         catalog_row: Raw catalog row dictionary (from CSV DictReader).
         extractor: Optional pre-instantiated extractor. If None, uses
             GDriveCatalogExtractor with defaults.

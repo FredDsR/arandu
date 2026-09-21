@@ -267,7 +267,7 @@ class TestAranduChunkContentInvariants:
     ) -> None:
         in_dir = tmp_path / "in"
         in_dir.mkdir()
-        # Trailing whitespace is trimmed here because EnrichedRecord normalizes
+        # Trailing whitespace is trimmed here because TranscriptionRecord normalizes
         # transcription_text on construction: the sha the chunk stage records
         # is always over the canonical (stripped) text, never the raw fixture.
         text = ("Esta é uma frase de teste. " * 20).strip()

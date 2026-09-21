@@ -200,11 +200,11 @@ def kg_link_passages(
         ),
     ] = None,
 ) -> None:
-    """Map atlas-rag passages back to char offsets in source ``EnrichedRecord`` space.
+    """Map atlas-rag passages back to char offsets in source ``TranscriptionRecord`` space.
 
     Reads every atlas-rag ``kg_extraction/*.json`` record for the given run,
     strips the atlas-injected ``[Contexto…][Transcrição]\\n`` header, and
-    anchors the chunk text against ``EnrichedRecord.transcription_text``.
+    anchors the chunk text against ``TranscriptionRecord.transcription_text``.
     Emits a ``PassageOffsetSidecar`` (default location:
     ``results/<id>/kg/outputs/passage_offsets.json``) that brings atlas-rag
     passages into the same coordinate space as BM25 / NetworkX chunks.

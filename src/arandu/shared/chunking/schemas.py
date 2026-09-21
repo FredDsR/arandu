@@ -2,7 +2,7 @@
 
 Defines an offsets-only ``Chunk`` reference and a ``ChunkSet`` container that
 holds multiple chunker views over a single source transcription. Chunks do not
-carry text — text is resolved on demand from the source ``EnrichedRecord`` by
+carry text — text is resolved on demand from the source ``TranscriptionRecord`` by
 ``ChunkResolver`` using the recorded char span.
 """
 
@@ -22,11 +22,11 @@ class Chunk(BaseModel):
     """Offsets-only chunk reference into a source transcription.
 
     The chunk does not carry text. Use ``ChunkResolver.text(chunk)`` to materialize
-    the text on demand from the source ``EnrichedRecord``.
+    the text on demand from the source ``TranscriptionRecord``.
 
     Attributes:
         chunk_id: Stable content hash, sha1(``source_file_id|chunker_id|start|end``)[:16].
-        source_file_id: ID of the source transcription (matches ``EnrichedRecord.file_id``).
+        source_file_id: ID of the source transcription (matches ``TranscriptionRecord.file_id``).
         chunker_id: Identifier of the chunker view (e.g. ``cep_4k``, ``bm25_512t``).
         start_char: Inclusive start offset (char) in the source text.
         end_char: Exclusive end offset (char) in the source text. Must be > start_char.

@@ -17,7 +17,7 @@ from arandu.qa.config import CEPConfig, QAConfig
 from arandu.qa.schemas import QAPairCEP
 from arandu.shared.chunking.batch import run_chunk_batch
 from arandu.shared.chunking.schemas import ChunkSet
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
@@ -78,7 +78,7 @@ def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
 ) -> None:
     """A leading space must not split the two producers into separate namespaces.
 
-    Whisper prefixes transcriptions with a space. Before the EnrichedRecord
+    Whisper prefixes transcriptions with a space. Before the TranscriptionRecord
     validator, the chunk stage chunked that raw text while CEP generation
     chunked it stripped, so 0 of 2670 pairs in thesis-run-01 resolved against
     their persisted ChunkSet.
@@ -101,7 +101,7 @@ def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
     chunk_set = ChunkSet.load(Path(result.run_dir) / "outputs" / CEP_CHUNKER_ID / "file-1.json")
     stage_ids = [c.chunk_id for c in chunk_set.view(CEP_CHUNKER_ID)]
 
-    record = EnrichedRecord.model_validate_json(
+    record = TranscriptionRecord.model_validate_json(
         (input_dir / "file-1_transcription.json").read_text()
     )
     qa_record = generator.generate_qa_pairs(record)

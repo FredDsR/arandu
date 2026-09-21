@@ -24,7 +24,7 @@ from arandu.utils.console import console
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 # Constants
 MAX_DISPLAY_FILES = 20  # Maximum number of files to display in file list
@@ -112,11 +112,11 @@ def _truncate_text(text: str, max_length: int = 500) -> str:
     return truncated + "..."
 
 
-def display_result_panel(record: EnrichedRecord) -> None:
+def display_result_panel(record: TranscriptionRecord) -> None:
     """Display a panel with transcription results.
 
     Args:
-        record: Enriched record with transcription results.
+        record: Transcription record with its results.
     """
     truncated_text = _truncate_text(record.transcription_text, 500)
 

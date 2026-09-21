@@ -18,7 +18,7 @@ from arandu.shared.io import (
     get_output_filename,
     save_enriched_record,
 )
-from arandu.shared.schemas import EnrichedRecord, InputRecord
+from arandu.shared.schemas import InputRecord, TranscriptionRecord
 from arandu.transcription.config import TranscriberConfig
 from arandu.transcription.engine import WhisperEngine
 from arandu.utils.console import console
@@ -134,11 +134,11 @@ def transcribe(
             result = engine.transcribe(file_path)
             progress.update(task, completed=100)
 
-        # Create enriched record
+        # Create transcription record
         segments = _create_segments_from_result(result)
 
         # Create a minimal input record for local files
-        enriched = EnrichedRecord(
+        enriched = TranscriptionRecord(
             file_id="local",
             name=file_path.name,
             mimeType=get_mime_type(file_path),
@@ -296,10 +296,10 @@ def drive_transcribe(
                 result = engine.transcribe(temp_file)
                 progress.update(task, completed=100)
 
-            # Create enriched record
+            # Create transcription record
             segments = _create_segments_from_result(result)
 
-            enriched = EnrichedRecord(
+            enriched = TranscriptionRecord(
                 file_id=input_record.file_id,
                 name=input_record.name,
                 mimeType=input_record.mimeType,
@@ -698,7 +698,7 @@ def judge_transcription(
                 with open(json_path) as f:
                     data = json.load(f)
 
-                record = EnrichedRecord(**data)
+                record = TranscriptionRecord(**data)
 
                 if not rejudge and record.validation is not None:
                     # Already judged — count toward final tallies and skip.

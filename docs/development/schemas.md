@@ -15,7 +15,7 @@ This document provides complete specifications for all data schemas used in the 
 
 ## Input Schemas
 
-### EnrichedRecord
+### TranscriptionRecord
 
 Represents a transcription record with enrichment metadata. Extends `InputRecord` (transcription results) and `JudgeResultMixin` (judge verdict fields).
 
@@ -36,7 +36,7 @@ Represents a transcription record with enrichment metadata. Extends `InputRecord
 | `compute_device` | `str` | Yes | Device used for computation (cpu/cuda/mps) |
 | `processing_duration_sec` | `float` | Yes | Processing time in seconds |
 | `transcription_status` | `str` | Yes | Status of transcription process |
-| `created_at_enrichment` | `datetime` | Yes | Timestamp of enrichment |
+| `created_at_transcription` | `datetime` | Yes | Timestamp of when the record was produced. Reads the legacy `created_at_enrichment` key via `Field(alias=...)` |
 | `segments` | `list[TranscriptionSegment] \| None` | No | Detailed timestamp segments |
 | `validation` | `JudgePipelineResult \| None` | No | Full judge pipeline result (from `JudgeResultMixin`). None = not yet judged |
 | `is_valid` | `bool \| None` | Computed | Derived from `validation.passed` (None when not yet judged). See `JudgeResultMixin` |
@@ -63,7 +63,7 @@ The `detected_language` field provides the language code directly. There is **no
   "compute_device": "cuda",
   "processing_duration_sec": 45.2,
   "transcription_status": "success",
-  "created_at_enrichment": "2026-01-14T10:00:00Z",
+  "created_at_transcription": "2026-01-14T10:00:00Z",
   "segments": [
     {
       "text": "A enchente foi causada por chuvas intensas",
@@ -110,7 +110,7 @@ class TranscriptionSegment(BaseModel):
     start: float = Field(..., description="Start time in seconds")
     end: float = Field(..., description="End time in seconds")
 
-class EnrichedRecord(InputRecord, JudgeResultMixin):
+class TranscriptionRecord(InputRecord, JudgeResultMixin):
     """Schema for output records containing transcription results and metadata.
 
     The ``validation`` field and the computed ``is_valid`` property come from
@@ -123,8 +123,10 @@ class EnrichedRecord(InputRecord, JudgeResultMixin):
     compute_device: str = Field(..., description="Device used for computation (cpu/cuda/mps)")
     processing_duration_sec: float = Field(..., description="Processing time in seconds")
     transcription_status: str = Field(..., description="Status of transcription process")
-    created_at_enrichment: datetime = Field(
-        default_factory=datetime.now, description="Timestamp of enrichment"
+    created_at_transcription: datetime = Field(
+        default_factory=datetime.now,
+        alias="created_at_enrichment",
+        description="Timestamp of when the transcription record was produced",
     )
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"
@@ -146,7 +148,7 @@ Transcription quality is no longer a single weighted score. It is the verdict of
 
 ### JudgeResultMixin
 
-Mixin that adds the canonical judge verdict fields to any record schema (e.g. `EnrichedRecord`). Stores the full pipeline result under `validation` and derives `is_valid` from it so the two cannot drift.
+Mixin that adds the canonical judge verdict fields to any record schema (e.g. `TranscriptionRecord`). Stores the full pipeline result under `validation` and derives `is_valid` from it so the two cannot drift.
 
 **Fields / computed properties**:
 
@@ -237,7 +239,7 @@ The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for cog
 
 ### QAPairCEP
 
-Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `EnrichedRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once `judge-qa` has run.
+Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `TranscriptionRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once `judge-qa` has run.
 
 **Fields** (in addition to QAPair base fields):
 
@@ -1323,7 +1325,7 @@ class RunMetadata(BaseModel):
 
 ```mermaid
 graph TD
-    A[EnrichedRecord] --> P[CEPQAGenerator]
+    A[TranscriptionRecord] --> P[CEPQAGenerator]
     P --> Q[QARecordCEP]
     Q --> R[QAPairCEP]
     R --> S["validation: JudgePipelineResult (via JudgeResultMixin)"]

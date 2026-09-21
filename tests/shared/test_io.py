@@ -16,7 +16,7 @@ from arandu.shared.io import (
     get_output_filename,
     save_enriched_record,
 )
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 
 class TestEnsureTempDir:
@@ -108,12 +108,12 @@ class TestCreateTempFile:
         assert temp_file.exists()
 
 
-class TestSaveEnrichedRecord:
+class TestSaveTranscriptionRecord:
     """Tests for save_enriched_record function."""
 
     def test_save_enriched_record(self, tmp_path: Path) -> None:
-        """Test saving an enriched record."""
-        record = EnrichedRecord(
+        """Test saving a transcription record."""
+        record = TranscriptionRecord(
             file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -141,7 +141,7 @@ class TestSaveEnrichedRecord:
 
     def test_save_enriched_record_creates_parent_dir(self, tmp_path: Path) -> None:
         """Test that save_enriched_record creates parent directories."""
-        record = EnrichedRecord(
+        record = TranscriptionRecord(
             file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -163,8 +163,8 @@ class TestSaveEnrichedRecord:
         assert saved_path.parent.exists()
 
     def test_save_enriched_record_with_str_path(self, tmp_path: Path) -> None:
-        """Test saving enriched record with string path."""
-        record = EnrichedRecord(
+        """Test saving a transcription record with a string path."""
+        record = TranscriptionRecord(
             file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",

@@ -34,7 +34,7 @@ flowchart TD
         DL --> FF --> WH --> QV
     end
 
-    QV -->|pass| ER(["EnrichedRecord · .json"]):::data
+    QV -->|pass| ER(["TranscriptionRecord · .json"]):::data
     QV -.->|fail| SK(["Skipped · is_valid = false"]):::data
 
     ER --> BL
@@ -118,7 +118,7 @@ A record passes only if it clears every active stage. Rejected records are **aut
 
 ### 3.5 Output
 
-Each processed file produces an **EnrichedRecord** (JSON) containing: transcription text, timestamped segments, detected language, language probability, quality scores, hardware metadata, and processing duration.
+Each processed file produces a **TranscriptionRecord** (JSON) containing: transcription text, timestamped segments, detected language, language probability, quality scores, hardware metadata, and processing duration.
 
 ---
 
@@ -787,7 +787,7 @@ flowchart LR
     classDef final fill:#2d6a4f,stroke:#1b4332,color:#fff,rx:10,ry:10
 
     A["Audio / Video<br/><i>Google Drive</i>"]:::src
-    B["EnrichedRecord<br/><i>.json</i>"]:::json
+    B["TranscriptionRecord<br/><i>.json</i>"]:::json
     C["QARecordCEP<br/><i>.json / .jsonl</i>"]:::json
     D["Knowledge Graph<br/><i>.graphml</i>"]:::kg
     E["EvaluationReport<br/><i>.json</i>"]:::final

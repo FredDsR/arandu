@@ -20,7 +20,7 @@ from arandu.shared.config import ResultsConfig
 from arandu.shared.drive import DriveClient, NoAudioStreamError
 from arandu.shared.io import create_temp_file, save_enriched_record
 from arandu.shared.results_manager import ResultsManager
-from arandu.shared.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
+from arandu.shared.schemas import PipelineType, TranscriptionRecord, TranscriptionSegment
 from arandu.transcription.config import TranscriberConfig
 from arandu.transcription.engine import WhisperEngine
 from arandu.transcription.media import (
@@ -289,10 +289,10 @@ def transcribe_single_file(
             result = _worker_engine.transcribe(transcription_file)
             logger.info(f"Transcribed: {task.name}")
 
-            # Create enriched record
+            # Create transcription record
             segments = _create_segments_from_result(result)
 
-            enriched = EnrichedRecord(
+            enriched = TranscriptionRecord(
                 file_id=task.file_id,
                 name=task.name,
                 mimeType=task.mime_type,

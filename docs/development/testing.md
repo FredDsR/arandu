@@ -222,7 +222,7 @@ def test_mark_completed_removes_from_failed(tmp_path: Path) -> None:
 Tests for file operations and temporary file management:
 - Temporary directory creation
 - Temporary file creation
-- EnrichedRecord saving
+- TranscriptionRecord saving
 - MIME type detection
 - Cleanup operations
 
@@ -308,7 +308,7 @@ def test_example(caplog: pytest.LogCaptureFixture) -> None:
 
 ### `transcription_record_payload` / `write_transcription_record` (`tests/conftest.py`)
 
-The single source of truth for a transcription-stage record (`EnrichedRecord`)
+The single source of truth for a transcription-stage record (`TranscriptionRecord`)
 in tests. Anything that needs one on disk, or as a payload to feed the model,
 goes through these instead of hand-rolling the literal: a new required field on
 the schema is then fixed in one place rather than in every test module.
@@ -325,7 +325,7 @@ def test_reads_a_record(
 def test_validates_a_payload(
     transcription_record_payload: TranscriptionRecordPayloadBuilder,
 ) -> None:
-    record = EnrichedRecord(**transcription_record_payload(text=" texto cru"))
+    record = TranscriptionRecord(**transcription_record_payload(text=" texto cru"))
 ```
 
 `is_valid` stamps the transcription judge's `validation` payload (`True` /

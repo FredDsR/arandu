@@ -373,7 +373,7 @@ These commands implement the Phase C retrieval-augmented-generation evaluation c
 |---------|-------------|
 | `chunk` | Build `ChunkSets` across one or more chunker views |
 | `build-kg` | Build a knowledge graph from transcription records |
-| `kg-link-passages` | Map atlas-rag passages back to char offsets in source `EnrichedRecord` space |
+| `kg-link-passages` | Map atlas-rag passages back to char offsets in source `TranscriptionRecord` space |
 | `kg-build-retriever-index` | Build the atlas-rag retriever's precomputed index for a run |
 | `retrieve` | Run Phase C retrievers over a populated run |
 | `answer` | Run the Answerer LLM over every `RetrievalRecord` in a populated run |

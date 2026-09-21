@@ -34,7 +34,7 @@ from arandu.shared.rag.retrievers.bm25 import BM25Retriever
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -218,7 +218,7 @@ def _build_chunk_resolver(*, pipeline_id: str, base_dir: Path) -> ChunkResolver:
     """Construct a :class:`ChunkResolver` reading source text from this run.
 
     Source text lives at ``<base_dir>/<pipeline_id>/transcription/outputs/`` as
-    an :class:`EnrichedRecord`. The filename (``_transcription`` suffix, bare
+    an :class:`TranscriptionRecord`. The filename (``_transcription`` suffix, bare
     fallback) is resolved by
     :func:`arandu.shared.io.resolve_transcription_path` — the single source of
     the read-side convention. The loader reads lazily; ``ChunkResolver`` caches
@@ -238,7 +238,7 @@ def _build_chunk_resolver(*, pipeline_id: str, base_dir: Path) -> ChunkResolver:
                 f"Transcription not found for file_id {file_id!r} in {transcription_dir} "
                 f"(tried {file_id}_transcription.json and {file_id}.json)."
             )
-        record = EnrichedRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        record = TranscriptionRecord.model_validate_json(path.read_text(encoding="utf-8"))
         return record.transcription_text
 
     return ChunkResolver(text_loader=_load_text)

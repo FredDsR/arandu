@@ -413,11 +413,11 @@ Each pipeline step is an atomic CLI command. No model co-loading. Pipeline orche
 
 | Command | Input | Output | Models |
 |---------|-------|--------|--------|
-| `arandu transcribe` | audio/video | EnrichedRecord | Whisper |
-| `arandu judge-transcription` | EnrichedRecord | scored EnrichedRecord | LLM (heuristics need no model) |
-| `arandu generate-cep-qa` | EnrichedRecord | QAPairCEP | LLM |
+| `arandu transcribe` | audio/video | TranscriptionRecord | Whisper |
+| `arandu judge-transcription` | TranscriptionRecord | scored TranscriptionRecord | LLM (heuristics need no model) |
+| `arandu generate-cep-qa` | TranscriptionRecord | QAPairCEP | LLM |
 | `arandu judge-qa` | QAPairCEP | scored QAPairCEP | LLM |
-| `arandu build-kg` | EnrichedRecord | GraphML | LLM |
+| `arandu build-kg` | TranscriptionRecord | GraphML | LLM |
 | `arandu retrieve` | QA pairs + source | retriever answers | depends on retriever |
 | `arandu judge-answers` | QA pairs + answers | judge scores | LLM |
 | `arandu rag-analysis` | judge scores | metrics tables + figures | none |

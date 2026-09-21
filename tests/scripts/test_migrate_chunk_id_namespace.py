@@ -34,7 +34,7 @@ TRANSCRIPTION_OUTPUTS = Path("transcription") / "outputs"
 
 # Long enough that cep_4k emits several chunks. Stripped so BODY itself is
 # already canonical: the repeated unit ends in ". " and the multiplication
-# would otherwise leave a trailing space that the EnrichedRecord validator
+# would otherwise leave a trailing space that the TranscriptionRecord validator
 # (a full .strip()) would remove along with the leading space the tests add,
 # breaking the "lead-only shift" assumption the assertions below rely on.
 BODY = (
@@ -385,7 +385,7 @@ class TestRemapPassageChunkIds:
 
 
 class TestShiftPassageOffsets:
-    """Atlas passage offsets live in EnrichedRecord space, which just moved."""
+    """Atlas passage offsets live in TranscriptionRecord space, which just moved."""
 
     def _write_sidecar(self, run_dir: Path, offsets: list[dict[str, Any]]) -> Path:
         directory = run_dir / "kg" / "outputs"

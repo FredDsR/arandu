@@ -142,7 +142,7 @@ class TestLinkPassages:
     ) -> None:
         # The kg_extraction record's `original_text` starts with the atlas-rag
         # `[Contexto da Entrevista]...[Transcrição]\n` header that does NOT exist
-        # in EnrichedRecord.transcription_text. Successful anchoring proves the
+        # in TranscriptionRecord.transcription_text. Successful anchoring proves the
         # linker stripped the header before searching.
         base, pid = kg_run_fixture
         sidecar = link_passages(pipeline_id=pid, base_dir=base)
@@ -162,7 +162,7 @@ class TestLinkPassages:
         write_transcription_record(tr_out, "src_a", "Some legitimate transcription.", suffix="")
 
         kg_ext = base / pid / "kg" / "outputs" / "atlas_output" / "kg_extraction"
-        # Passage text doesn't appear in the EnrichedRecord at all.
+        # Passage text doesn't appear in the TranscriptionRecord at all.
         _write_kg_extraction_jsonl(
             kg_ext,
             [
@@ -218,7 +218,7 @@ class TestLinkPassages:
     def test_orphan_source_file_id_skipped_with_warning(
         self, kg_run_fixture: tuple[Path, str]
     ) -> None:
-        # src_c has an EnrichedRecord but no atlas-rag extraction. That's not
+        # src_c has a TranscriptionRecord but no atlas-rag extraction. That's not
         # an error — the KG simply didn't index it. Sidecar should not contain
         # src_c entries.
         base, pid = kg_run_fixture

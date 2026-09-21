@@ -83,7 +83,7 @@ DEFAULT_TRANSCRIPTION_TEXT = (
 
 
 class TranscriptionRecordPayloadBuilder(Protocol):
-    """Callable that builds a minimal-but-valid ``EnrichedRecord`` payload."""
+    """Callable that builds a minimal-but-valid ``TranscriptionRecord`` payload."""
 
     def __call__(
         self,
@@ -98,7 +98,7 @@ class TranscriptionRecordPayloadBuilder(Protocol):
 
 
 class TranscriptionRecordWriter(Protocol):
-    """Callable that writes an ``EnrichedRecord`` JSON into a directory."""
+    """Callable that writes a ``TranscriptionRecord`` JSON into a directory."""
 
     def __call__(
         self,
@@ -118,7 +118,7 @@ class TranscriptionRecordWriter(Protocol):
 def transcription_record_payload() -> TranscriptionRecordPayloadBuilder:
     """Build minimal-but-valid transcription-stage record payloads.
 
-    The single source of truth for what an ``EnrichedRecord`` needs on disk.
+    The single source of truth for what a ``TranscriptionRecord`` needs on disk.
     A new required field on the schema is fixed here, not in every test module
     that happens to need a transcription artifact.
 
