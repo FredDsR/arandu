@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from arandu.qa.cep.metadata_context import render_metadata_context
+from arandu.qa.cep.metadata_context import NO_METADATA_TEXT, render_metadata_context
 from arandu.qa.schemas import QARecordCEP
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
@@ -216,10 +216,16 @@ def run_emic_judge_batch(
         # Without it, item 3 of the scale ("adds something the person did not
         # say") fires on any pair whose answer names the participant or the
         # location -- grounding the generator was given and the judge was not.
-        metadata_section = render_metadata_context(
-            record.source_metadata,
-            enable_metadata=record.source_metadata_context_enabled,
-            language=record.language,
+        # The `or` branch matches the rendered block's shape (it opens with a
+        # newline) so the slot reads the same either way. An empty slot would
+        # leave the prompt claiming metadata the judge does not have.
+        metadata_section = (
+            render_metadata_context(
+                record.source_metadata,
+                enable_metadata=record.source_metadata_context_enabled,
+                language=record.language,
+            )
+            or f"\n{NO_METADATA_TEXT}"
         )
 
         in_scope: list[tuple[int, QAPairCEP]] = []

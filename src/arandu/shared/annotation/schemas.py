@@ -33,13 +33,19 @@ class AnnotationTask(BaseModel):
     an attentive annotator group pairs from the same interview and infer the
     stratification. The join lives in :class:`AnnotationManifest`.
 
-    ``metadata`` is not a hole in that blinding, and the distinction is the
-    reason it can ship (issue #173). The annotators are project members who
-    conducted these interviews: they recognise an interview from ``segment``
-    alone, so a participant name adds no grouping power that the payload does
-    not already carry. ``pair_id`` stays out anyway, because it is a mechanical
-    and exact grouping key rather than recognition by reading, and keeping it
-    out costs nothing.
+    ``metadata`` does give grouping power, and shipping it is a decision rather
+    than an oversight (issue #173). Its value is byte-identical across an
+    interview's tasks, so sorting on it partitions the instrument by interview
+    exactly -- more than the recognition-by-reading the annotators already have
+    from ``segment``, being people who conducted these interviews. What makes
+    that acceptable is that the design does not stratify by interview: knowing
+    which tasks share one says nothing about which cell a pair was drawn into.
+
+    ``pair_id`` stays out because its second half survives that argument.
+    ``pair_index`` is the pair's position in its record, and generation walks
+    the Bloom ladder in hierarchy order within a chunk
+    (``qa/cep/bloom_scaffolding.py``), so the index tracks the Bloom level --
+    which is precisely what the sample IS stratified by.
 
     Attributes:
         task_id: Opaque 0-based index into the shuffled order.

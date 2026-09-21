@@ -47,7 +47,11 @@ class SampleItem(BaseModel):
             judge must have them too, or a pair that names the participant
             reads as an unsupported addition (issue #173). Rendered at pool
             construction because the CEP record is the last place the metadata
-            and its injection gate are both in hand.
+            and its injection gate are both in hand. No default: ``""`` (no
+            metadata injected) and "written before this field existed" are
+            different facts, and only the first may reach an annotator. A
+            sample that predates the field fails to load instead of silently
+            annotating blind against a judge that sees the real block.
         bloom_level: Bloom level. This is the stratification cell.
         slot_id: 0-based slot within the cell (``0..per_cell-1``).
     """
@@ -58,7 +62,7 @@ class SampleItem(BaseModel):
     segment: str
     question: str
     answer: str
-    metadata: str = ""
+    metadata: str
     bloom_level: str
     slot_id: int = Field(..., ge=0)
 

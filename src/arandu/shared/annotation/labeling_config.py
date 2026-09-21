@@ -37,15 +37,6 @@ _HEADER = "Validade êmica do par"
 _SUMMARY_TITLE = "Guia de avaliação"
 _METADATA_TITLE = "Metadados da entrevista"
 
-#: Shown in place of an empty metadata block.
-#:
-#: The canvas is static XML, so the block is rendered for every task whether or
-#: not the record carried metadata. An empty box reads as a broken instrument
-#: and invites the annotator to go looking for the missing data; naming the
-#: absence closes that off. Lives here rather than in the builder because it is
-#: annotator-facing copy, like every other string in this module.
-NO_METADATA_TEXT = "(sem metadados registrados para esta entrevista)"
-
 #: Canvas typography.
 #:
 #: Three jobs, all of them consequences of the dry run: cap the segment box so a
@@ -54,6 +45,11 @@ NO_METADATA_TEXT = "(sem metadados registrados para esta entrevista)"
 #: judgment; and make the collapsed ruler summary secondary to it. Prose is
 #: capped at ~70 characters per line, which is where continuous reading stops
 #: costing extra eye travel.
+#:
+#: ``.emic-metadata`` additionally sets ``white-space: pre-wrap``. It is the one
+#: bound value that is a multi-line block (one ``- Label: value`` line per
+#: field), and HTML collapses those newlines by default, which would run the
+#: five fields together into a single unreadable line.
 #:
 #: Theme-agnostic by construction. The first version hardcoded light-theme greys
 #: and went unreadable under Label Studio's dark theme, so no rule here may name
@@ -102,7 +98,9 @@ _STYLE = """
       border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 4px;
       padding: 8px 10px; line-height: 1.55;
     }
-    .emic-metadata { line-height: 1.5; opacity: 0.85; margin: 0 0 4px; }
+    .emic-metadata {
+      white-space: pre-wrap; line-height: 1.5; opacity: 0.85; margin: 0 0 4px;
+    }
     .emic-score h4 { font-size: 0.95em; margin: 12px 0 6px; color: inherit; }
     .emic-score h6 {
       max-width: 70ch; font-size: 0.88em; font-weight: 400; color: inherit;

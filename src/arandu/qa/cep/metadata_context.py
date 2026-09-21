@@ -22,6 +22,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from arandu.shared.schemas import SourceMetadata
 
+#: Stands in for an empty metadata block, on every surface that renders one.
+#:
+#: Both measurement surfaces state unconditionally that their reader sees the
+#: interview metadata, and the ruler licenses a name that appears in it as not
+#: an addition. For a record carrying none -- or whose generation ran with the
+#: gate closed -- an empty block would make that licence uncheckable: a name in
+#: the answer could be waved through against a block that was never rendered.
+#: Naming the absence keeps the provision verifiable, and keeps the judge and
+#: the annotator saying the same thing about the same record.
+NO_METADATA_TEXT = "(sem metadados registrados para esta entrevista)"
+
 
 def format_metadata_lines(metadata: SourceMetadata, language: str) -> str:
     """Format source metadata as bare ``- Label: value`` lines, with no header.

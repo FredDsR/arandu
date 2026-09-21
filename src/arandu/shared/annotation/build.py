@@ -17,8 +17,10 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
+from arandu.qa.cep.metadata_context import NO_METADATA_TEXT
 from arandu.shared.annotation.labeling_config import (
-    NO_METADATA_TEXT,
     render_expert_instruction,
     render_labeling_config,
 )
@@ -76,9 +78,32 @@ def shuffle_order(pair_ids: list[str], seed: int) -> list[str]:
 
 
 def _load_sample(path: Path) -> list[SampleItem]:
-    """Read ``sample.jsonl`` into sample items."""
+    """Read ``sample.jsonl`` into sample items.
+
+    Args:
+        path: The sample file written by ``build-human-eval-sample``.
+
+    Returns:
+        The sample items, in file order.
+
+    Raises:
+        ValueError: If the sample predates ``SampleItem.metadata``. A pydantic
+            error naming a missing field would send the reader looking for a
+            bug; the real remediation is to rebuild the sample.
+    """
     with path.open(encoding="utf-8") as fh:
-        return [SampleItem.model_validate_json(line) for line in fh if line.strip()]
+        try:
+            return [SampleItem.model_validate_json(line) for line in fh if line.strip()]
+        except ValidationError as exc:
+            if not any(error["loc"] == ("metadata",) for error in exc.errors()):
+                raise
+            raise ValueError(
+                f"{path} predates the source-metadata field: its items carry no `metadata`, so "
+                f"every task would tell the annotator no metadata was recorded while the emic "
+                f"judge reads the real block from the CEP records. That is the asymmetry the "
+                f"field exists to close, and it leaves no trace in the artifacts. Re-run "
+                f"`arandu build-human-eval-sample` for this run first."
+            ) from exc
 
 
 def run_build_annotation(
@@ -178,8 +203,11 @@ def run_build_annotation(
                 task_id=task_id,
                 # The canvas renders this block for every task, so an absent
                 # one has to say so rather than show an empty box (see
-                # NO_METADATA_TEXT). This is the last point where the two are
-                # still distinguishable: downstream, the task IS the surface.
+                # NO_METADATA_TEXT). The emic judge substitutes the same marker
+                # for the same record, which is what keeps the two readers
+                # looking at the same thing. This is the last point where the
+                # two cases are still distinguishable: downstream, the task IS
+                # the surface.
                 metadata=item.metadata or NO_METADATA_TEXT,
                 segment=item.segment,
                 question=item.question,

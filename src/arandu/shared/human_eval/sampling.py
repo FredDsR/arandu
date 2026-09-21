@@ -47,7 +47,9 @@ class PoolEntry(BaseModel):
             This is the stratification cell.
         metadata: The source-metadata block as ``- Label: value`` lines
             (annotation payload), rendered upstream under the record's own
-            injection gate. ``""`` when generation injected none.
+            injection gate. ``""`` when generation injected none, which is a
+            value and not an omission: no default, so a caller that forgets the
+            field fails here instead of re-blinding the annotator.
     """
 
     pair_id: str
@@ -57,7 +59,7 @@ class PoolEntry(BaseModel):
     question: str
     answer: str
     bloom_level: str
-    metadata: str = ""
+    metadata: str
 
 
 def all_cell_ids() -> list[str]:

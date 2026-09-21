@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from arandu.qa.cep.metadata_context import NO_METADATA_TEXT
 from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.emic.batch import run_emic_judge_batch
 from arandu.shared.emic.schemas import EmicSourceScores
@@ -138,6 +139,41 @@ class TestSourceMetadataReachesTheJudge:
         prompt = _prompts_sent(mock_emic_client)[0]
         assert "Metadados da Entrevista:" not in prompt
         assert "$metadata" not in prompt
+
+    def test_an_absent_block_is_named_rather_than_left_empty(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        """The prompt states unconditionally that the judge sees the metadata.
+
+        An empty slot would make that false in the one way that matters: the
+        "a name that is in the metadata is not an addition" provision would
+        license waving a name through against a block that was never rendered.
+        Same marker the annotation canvas uses, for the same reason.
+        """
+        cep_outputs = tmp_path / "run_absent" / "cep" / "outputs"
+        _write_cep_record(cep_outputs, "src1", [_pair("Q", approved=True)])
+
+        run_emic_judge_batch("run_absent", settings=settings, base_dir=tmp_path)
+
+        assert NO_METADATA_TEXT in _prompts_sent(mock_emic_client)[0]
+
+    def test_a_closed_gate_is_named_too(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        cep_outputs = tmp_path / "run_gate" / "cep" / "outputs"
+        _write_cep_record(
+            cep_outputs,
+            "src1",
+            [_pair("Q", approved=True)],
+            metadata=SourceMetadata(participant_name="Aida"),
+            metadata_enabled=False,
+        )
+
+        run_emic_judge_batch("run_gate", settings=settings, base_dir=tmp_path)
+
+        prompt = _prompts_sent(mock_emic_client)[0]
+        assert NO_METADATA_TEXT in prompt
+        assert "Aida" not in prompt
 
     def test_each_record_gets_its_own_metadata(
         self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings

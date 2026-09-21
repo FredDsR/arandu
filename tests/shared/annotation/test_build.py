@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 import yaml
 
+from arandu.qa.cep.metadata_context import NO_METADATA_TEXT
 from arandu.shared.annotation.build import (
     CONFIG_FILENAME,
     INSTRUCTION_FILENAME,
@@ -17,7 +18,6 @@ from arandu.shared.annotation.build import (
     run_build_annotation,
     shuffle_order,
 )
-from arandu.shared.annotation.labeling_config import NO_METADATA_TEXT
 from arandu.shared.annotation.ruler import RULER_PATH, RulerNotSignedOffError
 from arandu.shared.annotation.schemas import AnnotationManifest
 from arandu.shared.human_eval.schemas import SampleItem, SampleManifest
@@ -349,3 +349,40 @@ class TestSourceMetadataReachesTheAnnotator:
         outputs = base / "run-a" / "annotation" / "outputs"
         tasks = json.loads((outputs / TASKS_FILENAME).read_text(encoding="utf-8"))
         assert all(task["data"]["metadata"] == NO_METADATA_TEXT for task in tasks)
+
+
+class TestSampleFromBeforeTheMetadataField:
+    """A pre-#173 sample.jsonl must not build quietly.
+
+    Its items carry no ``metadata``, so every task would render "no metadata
+    recorded" while a re-run of ``emic-judge`` over the same CEP records reads
+    the real block: exactly the judge/annotator asymmetry this stage exists to
+    prevent, and invisible in the artifacts.
+    """
+
+    def test_it_is_refused_with_a_remediation(self, tmp_path: Path) -> None:
+        base = _write_sample_run(tmp_path, [_item(i) for i in range(16)])
+        path = base / "run-a" / "human_eval" / "outputs" / "sample.jsonl"
+        stripped = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            item = json.loads(line)
+            del item["metadata"]
+            stripped.append(json.dumps(item))
+        path.write_text("\n".join(stripped) + "\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="predates the source-metadata field"):
+            run_build_annotation("run-a", seed=5, base_dir=base)
+
+    def test_it_writes_no_tasks(self, tmp_path: Path) -> None:
+        base = _write_sample_run(tmp_path, [_item(i) for i in range(16)])
+        path = base / "run-a" / "human_eval" / "outputs" / "sample.jsonl"
+        stripped = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            item = json.loads(line)
+            del item["metadata"]
+            stripped.append(json.dumps(item))
+        path.write_text("\n".join(stripped) + "\n", encoding="utf-8")
+
+        with pytest.raises(ValueError):
+            run_build_annotation("run-a", seed=5, base_dir=base)
+        assert not (base / "run-a" / "annotation" / "outputs" / TASKS_FILENAME).exists()

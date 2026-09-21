@@ -423,7 +423,13 @@ agreement study must pin the model the dissertation describes. See
 (participant, researcher, location, date, event context) is rendered through the
 same shared path the CEP judge uses, under the record's own
 `source_metadata_context_enabled` gate. Both are grounding generation had; a
-judge without them scores a legitimately grounded pair as an addition.
+judge without them scores a legitimately grounded pair as an addition. Parity
+with the CEP judge is over the metadata block only: this stage reads
+`QAPairCEP.context` directly and never falls back to `transcription_text`, so a
+legacy record whose pairs carry no context is scored against an empty excerpt
+rather than against the whole interview. A record carrying no metadata gets an
+explicit "none recorded" marker in the slot, the same one the annotation canvas
+shows, so neither reader is told it can see a block that was never rendered.
 
 **The ruler is a signed-off single source.** The construct, the 1-5 scale, the
 loss types and the decision guide live in
@@ -544,11 +550,14 @@ same gate (`QARecordCEP.source_metadata_context_enabled`), so the two
 instruments cannot drift. A record generated without metadata shows none on
 either side, and the canvas says so rather than showing an empty box.
 
-This does not reopen the blinding the missing `pair_id` protects. The annotators
-are project members who conducted these interviews and recognise one from the
-excerpt alone, so a participant name adds no grouping power the payload did not
-already carry; `pair_id` stays out because it is a mechanical, exact grouping
-key rather than recognition by reading.
+`metadata` does give grouping power, and that is a decision rather than an
+oversight: its value is identical across an interview's tasks, so sorting on it
+partitions the instrument by interview exactly. What makes it acceptable is that
+the design does not stratify by interview, so knowing which tasks share one says
+nothing about which cell a pair was drawn into. `pair_id` stays out because its
+`pair_index` half is the pair's position in its record, and generation walks the
+Bloom ladder in hierarchy order within a chunk, so that index tracks the Bloom
+level the sample *is* stratified by.
 
 **The sign-off gate is mechanical.** While the ruler carries `signed_off: false`
 the command refuses to run and names the gate. The anchors the annotators read
