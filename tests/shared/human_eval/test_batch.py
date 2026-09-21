@@ -11,6 +11,7 @@ from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.human_eval.batch import run_build_sample_batch
 from arandu.shared.human_eval.schemas import SampleItem, SampleManifest
 from arandu.shared.judge.schemas import JudgePipelineResult
+from arandu.shared.schemas import SourceMetadata
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,6 +34,8 @@ def _write_source(
     specs: list[str],
     *,
     approved: bool = True,
+    metadata: SourceMetadata | None = None,
+    metadata_enabled: bool = True,
 ) -> None:
     """Write one CEP record. No emic stage is written: the builder must not need it."""
     cep_outputs = base / pipeline_id / "cep" / "outputs"
@@ -52,6 +55,8 @@ def _write_source(
     QARecordCEP(
         source_gdrive_id=source_id,
         source_filename=f"{source_id}.mp4",
+        source_metadata=metadata,
+        source_metadata_context_enabled=metadata_enabled,
         transcription_text="t",
         qa_pairs=pairs,
         model_id="m",
@@ -185,3 +190,75 @@ class TestRunBuildSampleBatch:
         manifest = run_build_sample_batch("run10", seed=1, base_dir=tmp_path, per_cell=2)
         path = tmp_path / "run10" / "human_eval" / "outputs" / "sample_manifest.json"
         assert SampleManifest.load(path) == manifest
+
+
+class TestSourceMetadataReachesTheSample:
+    """Issue #173: the annotator sees the same metadata the generator had.
+
+    Rendered here, at pool construction, because the CEP record is the last
+    place the metadata and the gate are both in hand: the annotation build reads
+    only ``sample.jsonl``.
+    """
+
+    def test_metadata_lines_are_carried_on_every_item(self, tmp_path: Path) -> None:
+        _write_source(
+            tmp_path,
+            "run-md",
+            "s1",
+            _frame_specs(1),
+            metadata=SourceMetadata(participant_name="Aida", location="DOQUINHAS"),
+        )
+
+        run_build_sample_batch("run-md", seed=1, base_dir=tmp_path, per_cell=1)
+
+        for item in _load_sample(tmp_path, "run-md"):
+            assert item.metadata == "- Participante: Aida\n- Local: DOQUINHAS"
+
+    def test_no_header_line_is_carried(self, tmp_path: Path) -> None:
+        """The canvas titles the block itself; a second heading would be noise."""
+        _write_source(
+            tmp_path, "run-hdr", "s1", _frame_specs(1), metadata=SourceMetadata(location="X")
+        )
+
+        run_build_sample_batch("run-hdr", seed=1, base_dir=tmp_path, per_cell=1)
+
+        assert "Metadados da Entrevista:" not in _load_sample(tmp_path, "run-hdr")[0].metadata
+
+    def test_empty_when_generation_had_metadata_disabled(self, tmp_path: Path) -> None:
+        """Same gate as the judge: neither side sees what generation never injected."""
+        _write_source(
+            tmp_path,
+            "run-off",
+            "s1",
+            _frame_specs(1),
+            metadata=SourceMetadata(participant_name="Aida"),
+            metadata_enabled=False,
+        )
+
+        run_build_sample_batch("run-off", seed=1, base_dir=tmp_path, per_cell=1)
+
+        assert all(item.metadata == "" for item in _load_sample(tmp_path, "run-off"))
+
+    def test_each_source_keeps_its_own_metadata(self, tmp_path: Path) -> None:
+        _write_source(
+            tmp_path,
+            "run-two",
+            "s1",
+            _frame_specs(1),
+            metadata=SourceMetadata(participant_name="Aida"),
+        )
+        _write_source(
+            tmp_path,
+            "run-two",
+            "s2",
+            _frame_specs(1),
+            metadata=SourceMetadata(participant_name="Julia"),
+        )
+
+        run_build_sample_batch("run-two", seed=1, base_dir=tmp_path, per_cell=2)
+
+        by_source = {
+            item.source_file_id: item.metadata for item in _load_sample(tmp_path, "run-two")
+        }
+        assert by_source["s1"] == "- Participante: Aida"
+        assert by_source["s2"] == "- Participante: Julia"

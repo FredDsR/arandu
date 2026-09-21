@@ -45,6 +45,9 @@ class PoolEntry(BaseModel):
         answer: The generated answer.
         bloom_level: Bloom level; must be one of :data:`FRAME_BLOOM_LEVELS`.
             This is the stratification cell.
+        metadata: The source-metadata block as ``- Label: value`` lines
+            (annotation payload), rendered upstream under the record's own
+            injection gate. ``""`` when generation injected none.
     """
 
     pair_id: str
@@ -54,6 +57,7 @@ class PoolEntry(BaseModel):
     question: str
     answer: str
     bloom_level: str
+    metadata: str = ""
 
 
 def all_cell_ids() -> list[str]:
@@ -158,6 +162,7 @@ def build_sample(pool: list[PoolEntry], seed: int, *, per_cell: int = PER_CELL) 
                     segment=entry.segment,
                     question=entry.question,
                     answer=entry.answer,
+                    metadata=entry.metadata,
                     bloom_level=entry.bloom_level,
                     slot_id=slot_id,
                 )

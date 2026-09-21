@@ -28,13 +28,27 @@ class AnnotationBuildConfig(BaseModel):
 class AnnotationTask(BaseModel):
     """One blinded task as Label Studio receives it.
 
-    These four fields are the complete payload. ``pair_id`` is deliberately
+    These five fields are the complete payload. ``pair_id`` is deliberately
     absent: it is ``"{source_file_id}:{pair_index}"``, so shipping it would let
     an attentive annotator group pairs from the same interview and infer the
     stratification. The join lives in :class:`AnnotationManifest`.
 
+    ``metadata`` is not a hole in that blinding, and the distinction is the
+    reason it can ship (issue #173). The annotators are project members who
+    conducted these interviews: they recognise an interview from ``segment``
+    alone, so a participant name adds no grouping power that the payload does
+    not already carry. ``pair_id`` stays out anyway, because it is a mechanical
+    and exact grouping key rather than recognition by reading, and keeping it
+    out costs nothing.
+
     Attributes:
         task_id: Opaque 0-based index into the shuffled order.
+        metadata: The interview's source-metadata block, as the presentation
+            lines the canvas renders. Generation had these fields, so the
+            annotator must have them too: without them a pair naming the
+            participant or the location reads as an addition the person never
+            made, which is a score of 3 on a pair that deserves 5. The emic
+            judge is given the same block, from the same gate.
         segment: Source transcript segment.
         question: The generated question.
         answer: The generated answer.
@@ -43,6 +57,7 @@ class AnnotationTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: int = Field(..., ge=0)
+    metadata: str
     segment: str
     question: str
     answer: str

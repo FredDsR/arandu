@@ -13,6 +13,7 @@ from arandu.shared.emic.schemas import EmicSourceScores
 from arandu.shared.emic.settings import EmicJudgeSettings
 from arandu.shared.judge.criterion import OrdinalCriterionResponse
 from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult
+from arandu.shared.schemas import SourceMetadata
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,10 +36,19 @@ def _pair(
     )
 
 
-def _write_cep_record(cep_outputs: Path, file_id: str, pairs: list[QAPairCEP]) -> None:
+def _write_cep_record(
+    cep_outputs: Path,
+    file_id: str,
+    pairs: list[QAPairCEP],
+    *,
+    metadata: SourceMetadata | None = None,
+    metadata_enabled: bool = True,
+) -> None:
     record = QARecordCEP(
         source_gdrive_id=file_id,
         source_filename=f"{file_id}.mp4",
+        source_metadata=metadata,
+        source_metadata_context_enabled=metadata_enabled,
         transcription_text="t",
         qa_pairs=pairs,
         model_id="test-model",
@@ -47,6 +57,11 @@ def _write_cep_record(cep_outputs: Path, file_id: str, pairs: list[QAPairCEP]) -
     )
     cep_outputs.mkdir(parents=True, exist_ok=True)
     record.save(cep_outputs / f"{file_id}_cep_qa.json")
+
+
+def _prompts_sent(client: Any) -> list[str]:
+    """Every prompt the judge actually sent to the LLM."""
+    return [call.kwargs["prompt"] for call in client.generate_structured.call_args_list]
 
 
 @pytest.fixture
@@ -63,6 +78,94 @@ def mock_emic_client(mocker: MockerFixture) -> Any:
 @pytest.fixture
 def settings() -> EmicJudgeSettings:
     return EmicJudgeSettings(provider="ollama", model_id="test-model")
+
+
+class TestSourceMetadataReachesTheJudge:
+    """Issue #173: generation injected the metadata block; the judge must see it.
+
+    Item 3 of the emic scale is "adds something the person did not say". Without
+    the block, a pair whose answer names the participant or the location reads
+    as an addition with nothing in the chunk backing it, and a correctly
+    grounded pair is scored down. Same shared renderer and same gate as the CEP
+    judge, so the two cannot drift.
+    """
+
+    def test_the_metadata_block_is_in_the_prompt(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        cep_outputs = tmp_path / "run_md" / "cep" / "outputs"
+        _write_cep_record(
+            cep_outputs,
+            "src1",
+            [_pair("Q", approved=True)],
+            metadata=SourceMetadata(participant_name="Aida", location="DOQUINHAS"),
+        )
+
+        run_emic_judge_batch("run_md", settings=settings, base_dir=tmp_path)
+
+        prompt = _prompts_sent(mock_emic_client)[0]
+        assert "Metadados da Entrevista:" in prompt
+        assert "- Participante: Aida" in prompt
+        assert "- Local: DOQUINHAS" in prompt
+
+    def test_no_block_when_generation_had_metadata_disabled(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        """The gate is the record's, not judge-time config: stay symmetric."""
+        cep_outputs = tmp_path / "run_off" / "cep" / "outputs"
+        _write_cep_record(
+            cep_outputs,
+            "src1",
+            [_pair("Q", approved=True)],
+            metadata=SourceMetadata(participant_name="Aida"),
+            metadata_enabled=False,
+        )
+
+        run_emic_judge_batch("run_off", settings=settings, base_dir=tmp_path)
+
+        prompt = _prompts_sent(mock_emic_client)[0]
+        assert "Metadados da Entrevista:" not in prompt
+        assert "Aida" not in prompt
+
+    def test_no_dangling_header_when_the_record_carries_no_metadata(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        cep_outputs = tmp_path / "run_none" / "cep" / "outputs"
+        _write_cep_record(cep_outputs, "src1", [_pair("Q", approved=True)])
+
+        run_emic_judge_batch("run_none", settings=settings, base_dir=tmp_path)
+
+        prompt = _prompts_sent(mock_emic_client)[0]
+        assert "Metadados da Entrevista:" not in prompt
+        assert "$metadata" not in prompt
+
+    def test_each_record_gets_its_own_metadata(
+        self, tmp_path: Path, mock_emic_client: Any, settings: EmicJudgeSettings
+    ) -> None:
+        """One source's participant must never be rendered against another's chunk."""
+        cep_outputs = tmp_path / "run_two" / "cep" / "outputs"
+        _write_cep_record(
+            cep_outputs,
+            "src1",
+            [_pair("Q1", approved=True)],
+            metadata=SourceMetadata(participant_name="Aida"),
+        )
+        _write_cep_record(
+            cep_outputs,
+            "src2",
+            [_pair("Q2", approved=True)],
+            metadata=SourceMetadata(participant_name="Julia"),
+        )
+
+        run_emic_judge_batch("run_two", settings=settings, base_dir=tmp_path)
+
+        by_question = {
+            "Q1" if "Q1" in prompt else "Q2": prompt for prompt in _prompts_sent(mock_emic_client)
+        }
+        assert "- Participante: Aida" in by_question["Q1"]
+        assert "Julia" not in by_question["Q1"]
+        assert "- Participante: Julia" in by_question["Q2"]
+        assert "Aida" not in by_question["Q2"]
 
 
 class TestEmicJudgeBatch:

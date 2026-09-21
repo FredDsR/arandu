@@ -17,6 +17,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING
 
+from arandu.qa.cep.metadata_context import render_metadata_lines
 from arandu.qa.schemas import QARecordCEP
 from arandu.shared.config import ResultsConfig
 from arandu.shared.human_eval.sampling import (
@@ -92,6 +93,16 @@ def run_build_sample_batch(
     excluded_bloom: dict[str, int] = {}
     for cep_path in sorted(cep_outputs.glob("*_cep_qa.json")):
         record = QARecordCEP.load(cep_path)
+        # Per record, not per pair: the metadata and its injection gate both
+        # live on the record, and the annotation build never reads the CEP
+        # records again. Header-less because the Label Studio canvas titles the
+        # block itself; the gate is the shared one, so the annotator is blinded
+        # to exactly what the emic judge is blinded to.
+        metadata_lines = render_metadata_lines(
+            record.source_metadata,
+            enable_metadata=record.source_metadata_context_enabled,
+            language=record.language,
+        )
         for pair_index, pair in enumerate(record.qa_pairs):
             # The study's frame is the corpus judge-qa approved. The verdict is
             # read from the CEP record, which is the authoritative copy: a
@@ -120,6 +131,7 @@ def run_build_sample_batch(
                     segment=pair.context,
                     question=pair.question,
                     answer=pair.answer,
+                    metadata=metadata_lines,
                     bloom_level=pair.bloom_level,
                 )
             )

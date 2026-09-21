@@ -35,6 +35,16 @@ from xml.sax.saxutils import quoteattr
 
 _HEADER = "Validade êmica do par"
 _SUMMARY_TITLE = "Guia de avaliação"
+_METADATA_TITLE = "Metadados da entrevista"
+
+#: Shown in place of an empty metadata block.
+#:
+#: The canvas is static XML, so the block is rendered for every task whether or
+#: not the record carried metadata. An empty box reads as a broken instrument
+#: and invites the annotator to go looking for the missing data; naming the
+#: absence closes that off. Lives here rather than in the builder because it is
+#: annotator-facing copy, like every other string in this module.
+NO_METADATA_TEXT = "(sem metadados registrados para esta entrevista)"
 
 #: Canvas typography.
 #:
@@ -92,6 +102,7 @@ _STYLE = """
       border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 4px;
       padding: 8px 10px; line-height: 1.55;
     }
+    .emic-metadata { line-height: 1.5; opacity: 0.85; margin: 0 0 4px; }
     .emic-score h4 { font-size: 0.95em; margin: 12px 0 6px; color: inherit; }
     .emic-score h6 {
       max-width: 70ch; font-size: 0.88em; font-weight: 400; color: inherit;
@@ -215,6 +226,10 @@ def _summary_lines(ruler: dict[str, Any]) -> list[str]:
     lines += [
         _header("Não reduzem a nota", indent),
         _paragraph(guide["no_penalty"], indent),
+        # The metadata block is on the canvas, so the rule about it has to be
+        # reachable from the canvas too: "is this name an addition?" is a
+        # mid-doubt question, which is exactly what this summary is for.
+        _paragraph(ruler["provisions"]["source_metadata"], indent),
         _header("Quando hesitar", indent),
     ]
     lines += [_paragraph(text, indent) for text in ruler["annotator_only"].values()]
@@ -249,11 +264,18 @@ def render_labeling_config(ruler: dict[str, Any]) -> str:
 
     lines += _summary_lines(ruler)
 
-    # The pair under judgment. These three are the ONLY task variables bound:
+    # The pair under judgment. These four are the ONLY task variables bound:
     # anything else would let an attentive annotator reconstruct the
-    # stratification (spec section 5).
+    # stratification (spec section 5). `metadata` is the fourth since issue
+    # #173: generation saw the interview's metadata, so an annotator judging
+    # "adds something the person did not say" has to see it too. It leads the
+    # block because it says whose words follow, and it is secondary to them.
     lines += [
         '  <View className="emic-pair">',
+        _header(_METADATA_TITLE, "    "),
+        '    <View className="emic-metadata">',
+        '      <Text name="metadata" value="$metadata" />',
+        "    </View>",
         _header("Trecho da entrevista", "    "),
         '    <View className="emic-segment">',
         '      <Text name="segment" value="$segment" />',
@@ -354,7 +376,15 @@ def render_expert_instruction(ruler: dict[str, Any]) -> str:
 
     lines.append("<h2>O que se avalia</h2>")
     lines += _html_paragraphs(
-        [provisions[key] for key in ("unit_of_judgment", "question_calibrates", "out_of_scope")]
+        [
+            provisions[key]
+            for key in (
+                "unit_of_judgment",
+                "question_calibrates",
+                "source_metadata",
+                "out_of_scope",
+            )
+        ]
     )
     lines.append("<h3>Não são perda</h3>")
     lines += _html_list(list(provisions["not_a_loss"]))

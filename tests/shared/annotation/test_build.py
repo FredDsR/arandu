@@ -17,6 +17,7 @@ from arandu.shared.annotation.build import (
     run_build_annotation,
     shuffle_order,
 )
+from arandu.shared.annotation.labeling_config import NO_METADATA_TEXT
 from arandu.shared.annotation.ruler import RULER_PATH, RulerNotSignedOffError
 from arandu.shared.annotation.schemas import AnnotationManifest
 from arandu.shared.human_eval.schemas import SampleItem, SampleManifest
@@ -35,7 +36,7 @@ FORBIDDEN_KEYS = {
 }
 
 
-def _item(index: int) -> SampleItem:
+def _item(index: int, *, metadata: str | None = None) -> SampleItem:
     return SampleItem(
         pair_id=f"src-{index // 2}:{index}",
         source_file_id=f"src-{index // 2}",
@@ -43,17 +44,16 @@ def _item(index: int) -> SampleItem:
         segment=f"segmento {index}",
         question=f"pergunta {index}",
         answer=f"resposta {index}",
+        metadata=f"- Participante: P{index}" if metadata is None else metadata,
         bloom_level=("remember", "understand", "analyze", "evaluate")[index % 4],
         slot_id=index,
     )
 
 
-@pytest.fixture
-def sample_run(tmp_path: Path) -> Path:
-    """A results tree with a populated human_eval stage (16 pairs)."""
+def _write_sample_run(tmp_path: Path, items: list[SampleItem]) -> Path:
+    """Write a results tree with a populated human_eval stage."""
     outputs = tmp_path / "run-a" / "human_eval" / "outputs"
     outputs.mkdir(parents=True)
-    items = [_item(i) for i in range(16)]
     with (outputs / "sample.jsonl").open("w", encoding="utf-8") as fh:
         for item in items:
             fh.write(item.model_dump_json())
@@ -68,6 +68,12 @@ def sample_run(tmp_path: Path) -> Path:
         pool_sha256="c" * 64,
     ).save(outputs / "sample_manifest.json")
     return tmp_path
+
+
+@pytest.fixture
+def sample_run(tmp_path: Path) -> Path:
+    """A results tree with a populated human_eval stage (16 pairs)."""
+    return _write_sample_run(tmp_path, [_item(i) for i in range(16)])
 
 
 def _unsigned_ruler(tmp_path: Path) -> Path:
@@ -178,13 +184,19 @@ class TestArtifacts:
 
 
 class TestBlinding:
-    def test_tasks_carry_only_the_four_allowed_keys(self, sample_run: Path) -> None:
+    def test_tasks_carry_only_the_five_allowed_keys(self, sample_run: Path) -> None:
         run_build_annotation("run-a", seed=5, base_dir=sample_run)
         outputs = sample_run / "run-a" / "annotation" / "outputs"
         tasks = json.loads((outputs / TASKS_FILENAME).read_text(encoding="utf-8"))
         for task in tasks:
             assert set(task.keys()) == {"data"}
-            assert set(task["data"].keys()) == {"task_id", "segment", "question", "answer"}
+            assert set(task["data"].keys()) == {
+                "task_id",
+                "metadata",
+                "segment",
+                "question",
+                "answer",
+            }
 
     def test_no_forbidden_value_appears_anywhere_in_tasks_json(self, sample_run: Path) -> None:
         """Checked against the raw text, so a nested leak cannot hide."""
@@ -308,3 +320,32 @@ class TestRebuildUnderPulledLabels:
         run_build_annotation("run-a", seed=5, base_dir=sample_run)
         (sample_run / "run-a" / "annotation" / "outputs" / LABELS_DIRNAME).mkdir()
         assert run_build_annotation("run-a", seed=6, base_dir=sample_run).seed == 6
+
+
+class TestSourceMetadataReachesTheAnnotator:
+    """Issue #173: the annotator and the emic judge are given the same grounding.
+
+    The metadata generation injected reaches the task here. Changing only one of
+    the two sides would leave the agreement study comparing two instruments
+    instead of measuring one construct.
+    """
+
+    def test_the_task_carries_the_metadata_of_its_own_pair(self, sample_run: Path) -> None:
+        manifest = run_build_annotation("run-a", seed=5, base_dir=sample_run)
+        outputs = sample_run / "run-a" / "annotation" / "outputs"
+        tasks = json.loads((outputs / TASKS_FILENAME).read_text(encoding="utf-8"))
+
+        for task in tasks:
+            data = task["data"]
+            pair_index = manifest.pair_id_for(data["task_id"]).split(":")[1]
+            assert data["metadata"] == f"- Participante: P{pair_index}"
+
+    def test_an_empty_block_renders_as_an_explicit_absence(self, tmp_path: Path) -> None:
+        """An empty box reads as a broken instrument; say there is nothing instead."""
+        base = _write_sample_run(tmp_path, [_item(i, metadata="") for i in range(16)])
+
+        run_build_annotation("run-a", seed=5, base_dir=base)
+
+        outputs = base / "run-a" / "annotation" / "outputs"
+        tasks = json.loads((outputs / TASKS_FILENAME).read_text(encoding="utf-8"))
+        assert all(task["data"]["metadata"] == NO_METADATA_TEXT for task in tasks)

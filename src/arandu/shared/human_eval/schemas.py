@@ -22,8 +22,8 @@ class HumanEvalSampleConfig(BaseModel):
 class SampleItem(BaseModel):
     """One pair selected into the human-comparison sample.
 
-    Carries the blinded annotation payload (segment + question + answer) plus the
-    stratification bookkeeping. Deliberately excludes ``tacit_inference`` and the
+    Carries the blinded annotation payload (metadata + segment + question +
+    answer) plus the stratification bookkeeping. Deliberately excludes ``tacit_inference`` and the
     canonical judge scores; further blinding (hiding ``bloom_level`` from the
     annotator) is the annotation instrument's responsibility, not this artifact's.
 
@@ -40,6 +40,14 @@ class SampleItem(BaseModel):
         segment: Source transcript segment the QA pair was generated from.
         question: The generated question.
         answer: The generated answer.
+        metadata: The source-metadata block (participant, researcher, location,
+            date, event context) as ``- Label: value`` lines, or ``""`` when
+            generation injected none for this record. Part of the annotation
+            payload: generation had these fields, so the annotator and the emic
+            judge must have them too, or a pair that names the participant
+            reads as an unsupported addition (issue #173). Rendered at pool
+            construction because the CEP record is the last place the metadata
+            and its injection gate are both in hand.
         bloom_level: Bloom level. This is the stratification cell.
         slot_id: 0-based slot within the cell (``0..per_cell-1``).
     """
@@ -50,6 +58,7 @@ class SampleItem(BaseModel):
     segment: str
     question: str
     answer: str
+    metadata: str = ""
     bloom_level: str
     slot_id: int = Field(..., ge=0)
 
@@ -76,7 +85,9 @@ class SampleManifest(BaseModel):
             (``apply`` / ``create``), keyed by level.
         pool_sha256: Hash of the in-frame pool entries incl. payload
             (provenance). Not comparable across the two designs either: the pool
-            model no longer carries ``emic_score``.
+            model no longer carries ``emic_score``, and since 2026-09-21 it
+            carries the rendered source-metadata block (issue #173), so the
+            same corpus hashes differently on either side of that change.
     """
 
     pipeline_id: str

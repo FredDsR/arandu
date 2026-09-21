@@ -18,6 +18,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from arandu.shared.annotation.labeling_config import (
+    NO_METADATA_TEXT,
     render_expert_instruction,
     render_labeling_config,
 )
@@ -175,6 +176,11 @@ def run_build_annotation(
         tasks.append(
             AnnotationTask(
                 task_id=task_id,
+                # The canvas renders this block for every task, so an absent
+                # one has to say so rather than show an empty box (see
+                # NO_METADATA_TEXT). This is the last point where the two are
+                # still distinguishable: downstream, the task IS the surface.
+                metadata=item.metadata or NO_METADATA_TEXT,
                 segment=item.segment,
                 question=item.question,
                 answer=item.answer,
