@@ -3,29 +3,43 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING
 
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
+
+if TYPE_CHECKING:
+    from tests.conftest import TranscriptionRecordPayloadBuilder
 
 
-def _record_payload(text: str) -> dict[str, Any]:
-    """Return a minimal-but-valid EnrichedRecord payload carrying ``text``."""
-    return {
-        "file_id": "file-1",
-        "name": "entrevista.mp3",
-        "mimeType": "audio/mpeg",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 10.0,
-        "transcription_status": "completed",
-    }
+class TestCreatedAtLegacyAlias:
+    """``created_at_transcription`` must still read the legacy on-disk key.
+
+    The field was named ``created_at_enrichment`` when the class was called
+    ``EnrichedRecord``, and unlike the class name that key *is* serialized:
+    every record persisted before the rename carries it. The alias is what
+    makes the rename free of an artifact migration (issue #170).
+    """
+
+    def test_reads_the_legacy_created_at_enrichment_key(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
+        payload = transcription_record_payload(created_at_enrichment="2026-01-14T10:00:00Z")
+
+        record = TranscriptionRecord.model_validate_json(json.dumps(payload))
+
+        expected = datetime.fromisoformat("2026-01-14T10:00:00+00:00")
+        assert record.created_at_transcription == expected
+
+    def test_reads_the_field_name_too(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
+        payload = transcription_record_payload(created_at_transcription="2026-02-01T08:30:00Z")
+
+        record = TranscriptionRecord.model_validate_json(json.dumps(payload))
+
+        expected = datetime.fromisoformat("2026-02-01T08:30:00+00:00")
+        assert record.created_at_transcription == expected
 
 
 class TestTranscriptionTextIsCanonical:
@@ -36,39 +50,53 @@ class TestTranscriptionTextIsCanonical:
     another did not, they produced disjoint chunk_id namespaces (issue #166).
     """
 
-    def test_strips_leading_whitespace_on_construction(self) -> None:
-        record = EnrichedRecord(**_record_payload(" O pescador guardou o barco."))
+    def test_strips_leading_whitespace_on_construction(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
+        record = TranscriptionRecord(
+            **transcription_record_payload(text=" O pescador guardou o barco.")
+        )
 
         assert record.transcription_text == "O pescador guardou o barco."
 
-    def test_strips_trailing_whitespace_on_construction(self) -> None:
-        record = EnrichedRecord(**_record_payload("O pescador guardou o barco.\n\n"))
+    def test_strips_trailing_whitespace_on_construction(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
+        record = TranscriptionRecord(
+            **transcription_record_payload(text="O pescador guardou o barco.\n\n")
+        )
 
         assert record.transcription_text == "O pescador guardou o barco."
 
-    def test_strips_on_json_round_trip(self) -> None:
+    def test_strips_on_json_round_trip(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
         """Already-persisted records load canonical, so no file needs rewriting.
 
         Whisper prefixes its output with a single space, so every transcription
         on disk carries one leading character that must not reach an offset.
         """
-        payload = json.dumps(_record_payload(" O pescador guardou o barco."))
+        payload = json.dumps(transcription_record_payload(text=" O pescador guardou o barco."))
 
-        record = EnrichedRecord.model_validate_json(payload)
+        record = TranscriptionRecord.model_validate_json(payload)
 
         assert record.transcription_text == "O pescador guardou o barco."
 
-    def test_leaves_already_canonical_text_untouched(self) -> None:
+    def test_leaves_already_canonical_text_untouched(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
         text = "O pescador guardou o barco."
 
-        record = EnrichedRecord(**_record_payload(text))
+        record = TranscriptionRecord(**transcription_record_payload(text=text))
 
         assert record.transcription_text == text
 
-    def test_preserves_interior_whitespace(self) -> None:
+    def test_preserves_interior_whitespace(
+        self, transcription_record_payload: TranscriptionRecordPayloadBuilder
+    ) -> None:
         """Only the edges are normalized; interior offsets must not move."""
         text = "Primeira fala.\n\nSegunda fala."
 
-        record = EnrichedRecord(**_record_payload(text))
+        record = TranscriptionRecord(**transcription_record_payload(text=text))
 
         assert record.transcription_text == text

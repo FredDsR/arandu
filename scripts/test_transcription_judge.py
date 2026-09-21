@@ -34,7 +34,7 @@ from rich.console import Console
 from rich.table import Table
 
 from arandu.shared.llm_client import LLMClient, LLMProvider
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 from arandu.transcription.judge import TranscriptionJudge, build_validator_client
 
 # Load .env so OPENAI_API_KEY / ARANDU_LLM_BASE_URL are visible to the
@@ -146,7 +146,7 @@ def main() -> None:
 
     for json_path in json_files:
         data = json.loads(json_path.read_text())
-        record = EnrichedRecord(**data)
+        record = TranscriptionRecord(**data)
 
         result = judge.evaluate_transcription(
             text=record.transcription_text,

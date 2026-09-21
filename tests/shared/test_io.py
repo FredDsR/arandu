@@ -14,9 +14,9 @@ from arandu.shared.io import (
     ensure_temp_dir,
     get_mime_type,
     get_output_filename,
-    save_enriched_record,
+    save_transcription_record,
 )
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 
 class TestEnsureTempDir:
@@ -108,12 +108,12 @@ class TestCreateTempFile:
         assert temp_file.exists()
 
 
-class TestSaveEnrichedRecord:
-    """Tests for save_enriched_record function."""
+class TestSaveTranscriptionRecord:
+    """Tests for save_transcription_record function."""
 
-    def test_save_enriched_record(self, tmp_path: Path) -> None:
-        """Test saving an enriched record."""
-        record = EnrichedRecord(
+    def test_save_transcription_record(self, tmp_path: Path) -> None:
+        """Test saving a transcription record."""
+        record = TranscriptionRecord(
             file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -129,7 +129,7 @@ class TestSaveEnrichedRecord:
         )
 
         output_path = tmp_path / "output.json"
-        saved_path = save_enriched_record(record, output_path)
+        saved_path = save_transcription_record(record, output_path)
 
         assert saved_path == output_path
         assert output_path.exists()
@@ -139,9 +139,9 @@ class TestSaveEnrichedRecord:
         assert "test.mp3" in content
         assert "This is a test transcription" in content
 
-    def test_save_enriched_record_creates_parent_dir(self, tmp_path: Path) -> None:
-        """Test that save_enriched_record creates parent directories."""
-        record = EnrichedRecord(
+    def test_save_transcription_record_creates_parent_dir(self, tmp_path: Path) -> None:
+        """Test that save_transcription_record creates parent directories."""
+        record = TranscriptionRecord(
             file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -157,14 +157,14 @@ class TestSaveEnrichedRecord:
         )
 
         output_path = tmp_path / "nested" / "dir" / "output.json"
-        saved_path = save_enriched_record(record, output_path)
+        saved_path = save_transcription_record(record, output_path)
 
         assert saved_path.exists()
         assert saved_path.parent.exists()
 
-    def test_save_enriched_record_with_str_path(self, tmp_path: Path) -> None:
-        """Test saving enriched record with string path."""
-        record = EnrichedRecord(
+    def test_save_transcription_record_with_str_path(self, tmp_path: Path) -> None:
+        """Test saving a transcription record with a string path."""
+        record = TranscriptionRecord(
             file_id="file123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -180,7 +180,7 @@ class TestSaveEnrichedRecord:
         )
 
         output_path = str(tmp_path / "output.json")
-        saved_path = save_enriched_record(record, output_path)
+        saved_path = save_transcription_record(record, output_path)
 
         assert saved_path.exists()
         assert isinstance(saved_path, Path)

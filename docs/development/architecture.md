@@ -187,7 +187,7 @@ Atlas-rag's precompute lives under `results/<id>/kg/outputs/atlas_output/precomp
 
 ### Location
 
-`src/arandu/shared/schemas.py` - `EnrichedRecord.transcription_text` and its `_normalize_transcription_text` validator.
+`src/arandu/shared/schemas.py` - `TranscriptionRecord.transcription_text` and its `_normalize_transcription_text` validator.
 
 ### Purpose
 
@@ -213,7 +213,7 @@ The field validator strips surrounding whitespace, so the coordinate space is a 
 
 - Never re-derive the text a chunk offset refers to. Read `record.transcription_text` and trust it.
 - Never add a `.strip()`, `.replace()`, or normalization pass on that text at a call site. If the canonical form must change, change the validator, and migrate every persisted artifact that carries an offset (see `scripts/migrate_chunk_id_namespace.py`).
-- The validator runs on `model_validate_json` too, so already-persisted transcriptions load canonical without being rewritten. `model_construct` bypasses validators and must not be used on `EnrichedRecord`.
+- The validator runs on `model_validate_json` too, so already-persisted transcriptions load canonical without being rewritten. `model_construct` bypasses validators and must not be used on `TranscriptionRecord`.
 
 ---
 

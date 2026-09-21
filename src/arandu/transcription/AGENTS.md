@@ -3,7 +3,7 @@
 Whisper ASR over local files / Google Drive, plus a two-stage quality judge.
 Config: `TranscriberConfig` (`config.py`, env prefix `ARANDU_`). CLI:
 `arandu transcribe` / `drive-transcribe` / `batch-transcribe` / `judge-transcription`
-(`cli/transcribe.py`). Output: `EnrichedRecord` JSON under
+(`cli/transcribe.py`). Output: `TranscriptionRecord` JSON under
 `results/<id>/transcription/outputs/`.
 
 ## Module map
@@ -35,7 +35,7 @@ Config: `TranscriberConfig` (`config.py`, env prefix `ARANDU_`). CLI:
 
 ## Complex logic worth knowing
 
-- `EnrichedRecord` mixes in `JudgeResultMixin`: judge output lands in
+- `TranscriptionRecord` mixes in `JudgeResultMixin`: judge output lands in
   `validation` (a `JudgePipelineResult`), `is_valid` is computed from
   `validation.passed`. A `@model_validator` migrates the retired
   `transcription_quality` payload to `validation` (or drops the very old

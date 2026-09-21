@@ -15,10 +15,10 @@ from arandu.report.dataset import (
 )
 from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
 from arandu.shared.schemas import (
-    EnrichedRecord,
     PipelineMetadata,
     PipelineType,
     SourceMetadata,
+    TranscriptionRecord,
 )
 from tests.report.helpers import make_run_metadata
 
@@ -32,8 +32,8 @@ def _make_enriched_record(
     repetition: float = 0.8,
     segment_quality: float = 0.85,
     content_density: float = 0.7,
-) -> EnrichedRecord:
-    """Create a sample EnrichedRecord for testing."""
+) -> TranscriptionRecord:
+    """Create a sample TranscriptionRecord for testing."""
     source = None
     if participant or location:
         source = SourceMetadata(
@@ -64,7 +64,7 @@ def _make_enriched_record(
         },
         passed=bool(is_valid),
     )
-    return EnrichedRecord(
+    return TranscriptionRecord(
         file_id="gdrive_123",
         name=name,
         mimeType="audio/mpeg",

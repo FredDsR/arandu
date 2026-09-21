@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 from arandu.utils.ui import (
     MAX_DISPLAY_FILES,
     _truncate_text,
@@ -94,7 +94,7 @@ class TestDisplayResultPanel:
     @patch("arandu.utils.ui.console")
     def test_display_result_panel(self, mock_console: MagicMock) -> None:
         """Test displaying result panel."""
-        record = EnrichedRecord(
+        record = TranscriptionRecord(
             file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -120,7 +120,7 @@ class TestDisplayResultPanel:
     def test_display_result_panel_long_text(self, mock_console: MagicMock) -> None:
         """Test displaying result panel with long transcription text."""
         long_text = "This is a very long transcription. " * 50
-        record = EnrichedRecord(
+        record = TranscriptionRecord(
             file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",

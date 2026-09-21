@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 
 def _get_default_temp_dir() -> str:
@@ -67,14 +67,14 @@ def create_temp_file(
     return Path(path)
 
 
-def save_enriched_record(
-    record: EnrichedRecord,
+def save_transcription_record(
+    record: TranscriptionRecord,
     output_path: str | Path,
 ) -> Path:
-    """Save an EnrichedRecord to a JSON file.
+    """Save a TranscriptionRecord to a JSON file.
 
     Args:
-        record: The enriched record to save.
+        record: The transcription record to save.
         output_path: Path to save the JSON file.
 
     Returns:
@@ -107,7 +107,7 @@ def resolve_transcription_path(transcription_dir: Path, file_id: str) -> Path | 
     """Return the on-disk transcription file for ``file_id``, or ``None``.
 
     The transcription stage writes ``<file_id>_transcription.json`` (see
-    :func:`get_output_filename` and :func:`save_enriched_record`); older or
+    :func:`get_output_filename` and :func:`save_transcription_record`); older or
     future runs may use the bare ``<file_id>.json``. Tries the suffixed form
     first, then the bare form, and returns the first that exists. Single source
     of the read-side filename convention so readers

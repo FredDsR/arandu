@@ -12,7 +12,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from arandu.qa.schemas import QARecordCEP
-from arandu.shared.schemas import ConfigSnapshot, EnrichedRecord, PipelineMetadata, RunMetadata
+from arandu.shared.schemas import ConfigSnapshot, PipelineMetadata, RunMetadata, TranscriptionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class RunReport(BaseModel):
         default=None, description="Transcription step metadata"
     )
     cep_metadata: RunMetadata | None = Field(default=None, description="CEP step metadata")
-    transcription_records: list[EnrichedRecord] = Field(
+    transcription_records: list[TranscriptionRecord] = Field(
         default_factory=list, description="Transcription output records"
     )
     cep_records: list[QARecordCEP] = Field(default_factory=list, description="CEP QA records")
@@ -105,7 +105,7 @@ class ResultsCollector:
             if outputs_dir.exists():
                 for output_file in outputs_dir.glob("*.json"):
                     try:
-                        record = EnrichedRecord.model_validate_json(output_file.read_text())
+                        record = TranscriptionRecord.model_validate_json(output_file.read_text())
                         report.transcription_records.append(record)
                     except Exception:
                         logger.debug(
@@ -237,7 +237,7 @@ class ResultsCollector:
 
     def load_transcription_record(
         self, pipeline_id: str, source_filename: str
-    ) -> EnrichedRecord | None:
+    ) -> TranscriptionRecord | None:
         """Load a single transcription record by source filename.
 
         Looks up the record from the cached RunReport, matching on
@@ -248,7 +248,7 @@ class ResultsCollector:
             source_filename: Original source filename to match.
 
         Returns:
-            EnrichedRecord if found, None otherwise.
+            TranscriptionRecord if found, None otherwise.
         """
         try:
             report = self.load_run(pipeline_id)

@@ -17,7 +17,7 @@ bump in the `kg` extra needs a `Dockerfile.kg` rebuild. Full cross-layer map:
 | File | Role |
 | ---- | ---- |
 | `atlas_backend.py` | The atlas-rag backend: extraction, concept generation, GraphML conversion, all resume logic and upstream shims |
-| `batch.py` | Orchestrator: loads `EnrichedRecord`s, checkpointing, ResultsManager wiring |
+| `batch.py` | Orchestrator: loads `TranscriptionRecord`s, checkpointing, ResultsManager wiring |
 | `config.py` | `KGConfig` (pydantic-settings, `ARANDU_KG_` prefix) |
 | `factory.py` | Backend dispatch (`atlas` only today) |
 | `passage_offsets.py` | `arandu kg-link-passages`: maps atlas-rag passages to char offsets in transcriptions |
@@ -26,7 +26,7 @@ bump in the `kg` extra needs a `Dockerfile.kg` rebuild. Full cross-layer map:
 
 ## Pipeline stages (`AtlasBackend.build_graph` -> `_run_pipeline`)
 
-1. Prepare input: `EnrichedRecord`s -> atlas-rag JSON under `atlas_input/`,
+1. Prepare input: `TranscriptionRecord`s -> atlas-rag JSON under `atlas_input/`,
    with a per-document metadata header prepended to every chunk (enriched
    `DatasetProcessor` subclass, swapped in via monkey-patch).
 2. Triple extraction (`run_extraction`): one LLM call per batch, output JSONL

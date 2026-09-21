@@ -7,13 +7,13 @@ from datetime import datetime
 import pytest
 
 from arandu.metadata.enrichment import enrich_with_source_metadata
-from arandu.shared.schemas import EnrichedRecord, SourceMetadata
+from arandu.shared.schemas import SourceMetadata, TranscriptionRecord
 
 
 @pytest.fixture
-def sample_record() -> EnrichedRecord:
-    """Create a minimal EnrichedRecord for testing."""
-    return EnrichedRecord(
+def sample_record() -> TranscriptionRecord:
+    """Create a minimal TranscriptionRecord for testing."""
+    return TranscriptionRecord(
         file_id="test_id_123",
         name="Glenio_D.Elaine_30-07-2025_BARRA_20.mp4",
         mimeType="video/mp4",
@@ -26,14 +26,14 @@ def sample_record() -> EnrichedRecord:
         compute_device="cuda",
         processing_duration_sec=10.5,
         transcription_status="completed",
-        created_at_enrichment=datetime.now(),
+        created_at_transcription=datetime.now(),
     )
 
 
 class TestEnrichWithSourceMetadata:
     """Tests for the enrichment function."""
 
-    def test_sets_source_metadata(self, sample_record: EnrichedRecord) -> None:
+    def test_sets_source_metadata(self, sample_record: TranscriptionRecord) -> None:
         """Enrichment should set the source_metadata field."""
         assert sample_record.source_metadata is None
 
@@ -50,12 +50,12 @@ class TestEnrichWithSourceMetadata:
         assert sample_record.source_metadata is not None
         assert isinstance(sample_record.source_metadata, SourceMetadata)
 
-    def test_returns_record_for_chaining(self, sample_record: EnrichedRecord) -> None:
+    def test_returns_record_for_chaining(self, sample_record: TranscriptionRecord) -> None:
         """Enrichment should return the same record for chaining."""
         result = enrich_with_source_metadata(sample_record, {"name": "test.mp3"})
         assert result is sample_record
 
-    def test_preserves_existing_fields(self, sample_record: EnrichedRecord) -> None:
+    def test_preserves_existing_fields(self, sample_record: TranscriptionRecord) -> None:
         """Enrichment should not modify other record fields."""
         original_text = sample_record.transcription_text
         original_id = sample_record.file_id
@@ -65,7 +65,7 @@ class TestEnrichWithSourceMetadata:
         assert sample_record.transcription_text == original_text
         assert sample_record.file_id == original_id
 
-    def test_with_custom_extractor(self, sample_record: EnrichedRecord) -> None:
+    def test_with_custom_extractor(self, sample_record: TranscriptionRecord) -> None:
         """Should work with a custom extractor implementation."""
 
         class FixedExtractor:

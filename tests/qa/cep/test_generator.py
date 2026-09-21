@@ -10,7 +10,7 @@ import pytest
 from arandu.qa.cep.generator import CEPQAGenerator
 from arandu.qa.config import CEPConfig, QAConfig
 from arandu.qa.schemas import QARecordCEP
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
@@ -60,9 +60,9 @@ def cep_config() -> CEPConfig:
 
 
 @pytest.fixture
-def sample_transcription() -> EnrichedRecord:
+def sample_transcription() -> TranscriptionRecord:
     """Create a sample transcription for testing."""
-    return EnrichedRecord(
+    return TranscriptionRecord(
         file_id="test123",
         name="test.mp3",
         mimeType="audio/mpeg",
@@ -105,7 +105,7 @@ class TestCEPQAGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Test that generate_qa_pairs returns a QARecordCEP."""
         generator = CEPQAGenerator(
@@ -127,7 +127,7 @@ class TestCEPQAGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """The record captures whether metadata context was injected.
 
@@ -149,7 +149,7 @@ class TestCEPQAGenerator:
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """A run generated with the flag off persists False on the record.
 
@@ -176,7 +176,7 @@ class TestCEPQAGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Test that result includes Bloom level distribution."""
         generator = CEPQAGenerator(
@@ -207,7 +207,7 @@ class TestCEPQAGenerator:
         levels.
         """
         long_text = "Frase de teste sobre o evento climático e a comunidade ribeirinha. " * 250
-        transcription = EnrichedRecord(
+        transcription = TranscriptionRecord(
             file_id="multichunk1",
             name="long.mp3",
             mimeType="audio/mpeg",
@@ -253,7 +253,7 @@ class TestCEPQAGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Test generation without validation."""
         generator = CEPQAGenerator(
@@ -374,7 +374,7 @@ class TestCEPQAGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Generated QA pairs inherit the source chunk_id; record records chunker_id."""
         generator = CEPQAGenerator(
@@ -396,7 +396,7 @@ class TestCEPQAGenerator:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Test JSONL export format."""
         generator = CEPQAGenerator(
@@ -428,7 +428,7 @@ class TestCEPGenerationPromptIntegration:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Test that full pipeline produces pairs with non-None generation_prompt."""
         generator = CEPQAGenerator(
@@ -449,7 +449,7 @@ class TestCEPGenerationPromptIntegration:
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
-        sample_transcription: EnrichedRecord,
+        sample_transcription: TranscriptionRecord,
     ) -> None:
         """Test that JSONL export includes generation_prompt field."""
         generator = CEPQAGenerator(

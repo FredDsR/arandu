@@ -15,7 +15,7 @@ from arandu.kg.factory import create_kg_constructor
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
 from arandu.shared.results_manager import ResultsManager
-from arandu.shared.schemas import EnrichedRecord, PipelineType
+from arandu.shared.schemas import PipelineType, TranscriptionRecord
 
 if TYPE_CHECKING:
     from arandu.kg.config import KGConfig
@@ -57,7 +57,7 @@ def _resolve_transcription_dir(
 
 def _load_transcription_records(
     transcription_dir: Path,
-) -> list[EnrichedRecord]:
+) -> list[TranscriptionRecord]:
     """Load and filter transcription records from JSON files.
 
     Records with ``is_valid=False`` are skipped.
@@ -66,15 +66,15 @@ def _load_transcription_records(
         transcription_dir: Directory containing ``*_transcription.json`` files.
 
     Returns:
-        List of valid ``EnrichedRecord`` instances.
+        List of valid ``TranscriptionRecord`` instances.
     """
-    records: list[EnrichedRecord] = []
+    records: list[TranscriptionRecord] = []
     skipped = 0
 
     for json_file in sorted(transcription_dir.glob("*_transcription.json")):
         try:
             data = json.loads(json_file.read_text())
-            record = EnrichedRecord.model_validate(data)
+            record = TranscriptionRecord.model_validate(data)
 
             # Shared predicate (JudgeResultMixin.is_judge_rejected): drop
             # judge-failed records, keep unjudged. Same rule used by chunk.

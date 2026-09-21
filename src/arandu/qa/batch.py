@@ -21,7 +21,7 @@ from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
 from arandu.shared.llm_client import LLMClient, parse_provider
 from arandu.shared.results_manager import ResultsManager
-from arandu.shared.schemas import EnrichedRecord, PipelineType
+from arandu.shared.schemas import PipelineType, TranscriptionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def load_transcription_tasks(
       defaults.
 
     Args:
-        input_dir: Directory containing EnrichedRecord JSON files, or the
+        input_dir: Directory containing TranscriptionRecord JSON files, or the
             base versioned results directory.
         output_dir: Directory for QA output JSON files.
         pipeline_id: Optional pipeline ID for direct transcription resolution.
@@ -307,7 +307,7 @@ def generate_cep_qa_for_transcription(
         # Load transcription
         with open(task.transcription_file, encoding="utf-8") as f:
             data = json.load(f)
-            enriched = EnrichedRecord(**data)
+            enriched = TranscriptionRecord(**data)
 
         # Generate CEP QA pairs
         qa_record = _worker_cep_generator.generate_qa_pairs(enriched)
