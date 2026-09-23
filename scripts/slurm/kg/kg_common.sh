@@ -94,121 +94,36 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Run KG Construction via Docker with Ollama sidecar
+# Run KG Construction via Podman with Ollama sidecar
 # -----------------------------------------------------------------------------
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
-
-# Clean up any orphan containers from previous runs to avoid conflicts
-echo ""
-echo "Cleaning up any orphan containers from previous runs..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
-
-echo ""
-echo "Pruning all unused Docker data (images, containers, volumes, build cache)..."
-docker system prune -af --volumes 2>/dev/null || true
-docker builder prune -af 2>/dev/null || true
-
-echo ""
-echo "Cleaning up partial Ollama downloads and unused models..."
-# Remove partial/interrupted model downloads (blobs/sha256-*-partial)
-find "$OLLAMA_MODELS_DIR" -name "*-partial" -delete 2>/dev/null || true
-# Remove orphaned temp files left by interrupted pulls
-find "$OLLAMA_MODELS_DIR" -name "*.tmp" -delete 2>/dev/null || true
-
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE" 2>/dev/null || true
-OLLAMA_UP=false
-for i in {1..30}; do
-    if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-        OLLAMA_UP=true
-        break
-    fi
-    echo "  Waiting for Ollama... ($i/30)"
-    sleep 5
-done
-if [ "$OLLAMA_UP" = true ]; then
-    REQUIRED_MODELS=("$ARANDU_KG_MODEL_ID")
-    INSTALLED=$(docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list 2>/dev/null | tail -n +2 | awk '{print $1}') || true
-    for model in $INSTALLED; do
-        is_required=false
-        for req in "${REQUIRED_MODELS[@]}"; do
-            [ "$model" = "$req" ] && is_required=true && break
-        done
-        if [ "$is_required" = false ]; then
-            echo "  Removing unused model: $model"
-            docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama rm "$model" 2>/dev/null || true
-        fi
-    done
-    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down 2>/dev/null || true
-fi
-
-# Fail fast if disk space is critically low (need ~15 GB for build + model)
-# Check Docker's storage partition, not the project directory
-MIN_DISK_GB=${MIN_DISK_GB:-15}
-DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
-[ -d "$DOCKER_ROOT" ] || DOCKER_ROOT=/var/lib/docker
-AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || true)
-AVAIL_GB=$(( ${AVAIL_KB:-0} / 1024 / 1024 ))
-echo "Docker storage: $DOCKER_ROOT"
-echo "Available disk space: ${AVAIL_GB} GB (minimum: ${MIN_DISK_GB} GB)"
-if [ "${AVAIL_KB:-0}" -gt 0 ] && [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
-    echo "ERROR: Not enough disk space on Docker partition (${AVAIL_GB} GB < ${MIN_DISK_GB} GB). Aborting."
-    echo "Tip: manually run 'docker system prune -af --volumes' on the node."
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
     exit 1
 fi
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-echo ""
-echo "Building Docker images..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-kg
+# Preflight + cleanup
+arandu_preflight_and_clean
 
-echo ""
-echo "Starting Ollama sidecar ($OLLAMA_SERVICE) and pulling model..."
-echo "=============================================="
+# Build image (uses Dockerfile.kg with atlas-rag)
+arandu_build_image "arandu-kg:latest" "Dockerfile.kg"
 
-# Start Ollama in background and wait for it to be healthy
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE"
+# Initialize isolated pod
+arandu_init_pod
 
-# Wait for Ollama to be ready
-echo "Waiting for Ollama to be ready..."
-OLLAMA_READY=false
-for i in {1..30}; do
-    if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-        echo "Ollama is ready!"
-        OLLAMA_READY=true
-        break
-    fi
-    echo "  Waiting... ($i/30)"
-    sleep 5
-done
-
-if [ "$OLLAMA_READY" = false ]; then
-    echo "ERROR: Ollama failed to start after 30 attempts"
-    exit 1
-fi
-
-# Pull the model if using Ollama provider
+# Start Ollama sidecar if using ollama provider
 if [ "$ARANDU_KG_PROVIDER" = "ollama" ]; then
-    echo ""
-    echo "Pulling model: $ARANDU_KG_MODEL_ID"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$ARANDU_KG_MODEL_ID"
+    arandu_start_ollama "$ARANDU_KG_MODEL_ID" "$USE_GPU_OLLAMA" 3
 fi
 
-echo ""
 echo "Starting KG construction process..."
 echo "=============================================="
 
-# set +e: a failing stage must not abort the script before the cleanup
-# below runs (a skipped `down` leaks the ollama sidecar on the shared node).
-set +e
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up arandu-kg --abort-on-container-exit
+arandu_run_worker "arandu-kg:latest" false \
+    build-kg /app/results --id "$PIPELINE_ID"
 KG_RC=$?
-set -e
-
-# -----------------------------------------------------------------------------
-# Cleanup
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down
 
 # -----------------------------------------------------------------------------
 # Job Summary

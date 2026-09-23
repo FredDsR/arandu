@@ -149,74 +149,31 @@ mkdir -p logs
 
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 
-# -----------------------------------------------------------------------------
-# Docker profile
-# -----------------------------------------------------------------------------
-if [ "$USE_GPU_OLLAMA" = "true" ]; then
-    DOCKER_PROFILE="judge-gpu"
-    OLLAMA_SERVICE="ollama-gpu"
-else
-    DOCKER_PROFILE="judge"
-    OLLAMA_SERVICE="ollama"
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
+    exit 1
 fi
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+# Preflight + cleanup
+arandu_preflight_and_clean
 
-# -----------------------------------------------------------------------------
-# Clean up from previous runs
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up any orphan containers from previous runs..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
+# Build image
+arandu_build_image "arandu:latest" "Dockerfile"
 
-# -----------------------------------------------------------------------------
-# Build + start ollama, pull model (only when using the ollama provider)
-# -----------------------------------------------------------------------------
-echo ""
-echo "Building arandu-judge image..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-judge
+# Initialize isolated pod
+arandu_init_pod
 
+# Start Ollama sidecar if using ollama provider
 if [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
-    echo ""
-    echo "Starting Ollama sidecar ($OLLAMA_SERVICE)..."
-    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE"
-
-    echo "Waiting for Ollama to be ready..."
-    for i in {1..30}; do
-        if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-            echo "Ollama is ready."
-            break
-        fi
-        echo "  Waiting... ($i/30)"
-        sleep 5
-    done
-
-    echo ""
-    echo "Pulling model: $ARANDU_JUDGE_VALIDATOR_MODEL"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" \
-        ollama pull "$ARANDU_JUDGE_VALIDATOR_MODEL"
+    arandu_start_ollama "$ARANDU_JUDGE_VALIDATOR_MODEL" "$USE_GPU_OLLAMA" "${ARANDU_JUDGE_WORKERS:-2}"
 fi
 
-# -----------------------------------------------------------------------------
-# Run the judge
-# -----------------------------------------------------------------------------
-echo ""
-echo "Starting judge process..."
-echo "CLI: arandu ${JUDGE_CMD[*]}"
-echo "=============================================="
-
-set +e
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" \
-    run --rm arandu-judge "${JUDGE_CMD[@]}"
+# Run judge worker in the pod
+arandu_run_worker "arandu:latest" false "${JUDGE_CMD[@]}"
 JUDGE_EXIT=$?
-set -e
-
-# -----------------------------------------------------------------------------
-# Cleanup
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down
 
 # -----------------------------------------------------------------------------
 # Summary

@@ -117,101 +117,40 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Run CEP QA Generation via Docker with Ollama sidecar
+# Run CEP QA Generation via Podman with Ollama sidecar
 # -----------------------------------------------------------------------------
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
-
-# Clean up any orphan containers from previous runs to avoid conflicts
-echo ""
-echo "Cleaning up any orphan containers from previous runs..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
-
-echo ""
-echo "Pruning Docker build cache, unused images, and volumes to free disk space..."
-docker builder prune -af 2>/dev/null || true
-docker image prune -af 2>/dev/null || true
-docker volume prune -f 2>/dev/null || true
-
-echo ""
-echo "Cleaning up unused Ollama models to free disk space..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE" 2>/dev/null || true
-OLLAMA_UP=false
-for i in {1..30}; do
-    if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-        OLLAMA_UP=true
-        break
-    fi
-    echo "  Waiting for Ollama... ($i/30)"
-    sleep 5
-done
-if [ "$OLLAMA_UP" = true ]; then
-    REQUIRED_MODELS=("$ARANDU_QA_MODEL_ID")
-    INSTALLED=$(docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list 2>/dev/null | tail -n +2 | awk '{print $1}') || true
-    for model in $INSTALLED; do
-        is_required=false
-        for req in "${REQUIRED_MODELS[@]}"; do
-            [ "$model" = "$req" ] && is_required=true && break
-        done
-        if [ "$is_required" = false ]; then
-            echo "  Removing unused model: $model"
-            docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama rm "$model" 2>/dev/null || true
-        fi
-    done
-fi
-
-echo ""
-echo "Building Docker images..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-cep
-
-echo ""
-echo "Starting Ollama sidecar ($OLLAMA_SERVICE) and pulling model..."
-echo "=============================================="
-
-# Start Ollama in background and wait for it to be healthy
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE"
-
-# Wait for Ollama to be ready
-echo "Waiting for Ollama to be ready..."
-OLLAMA_READY=false
-for i in {1..30}; do
-    if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-        echo "Ollama is ready!"
-        OLLAMA_READY=true
-        break
-    fi
-    echo "  Waiting... ($i/30)"
-    sleep 5
-done
-
-if [ "$OLLAMA_READY" = false ]; then
-    echo "ERROR: Ollama failed to start after 30 attempts"
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
     exit 1
 fi
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-# Pull the model if using Ollama provider
+# Preflight + cleanup
+arandu_preflight_and_clean
+
+# Build image
+arandu_build_image "arandu:latest" "Dockerfile"
+
+# Initialize isolated pod
+arandu_init_pod
+
+# Start Ollama sidecar if using ollama provider
 if [ "$ARANDU_QA_PROVIDER" = "ollama" ]; then
-    echo ""
-    echo "Pulling model: $ARANDU_QA_MODEL_ID"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$ARANDU_QA_MODEL_ID"
+    arandu_start_ollama "$ARANDU_QA_MODEL_ID" "$USE_GPU_OLLAMA" "${ARANDU_QA_WORKERS:-2}"
 fi
 
-echo ""
-echo "Starting CEP QA generation process..."
-echo "=============================================="
+CEP_CMD=(
+    "generate-cep-qa"
+    "/app/results"
+    "--id" "$PIPELINE_ID"
+    "--workers" "${ARANDU_QA_WORKERS:-2}"
+)
+[ -n "${CEP_REBUILD_FLAG:-}" ] && CEP_CMD+=("$CEP_REBUILD_FLAG")
 
-# set +e: a failing stage must not abort the script before the cleanup
-# below runs (a skipped `down` leaks the ollama sidecar on the shared node).
-set +e
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up arandu-cep --abort-on-container-exit
+arandu_run_worker "arandu:latest" false "${CEP_CMD[@]}"
 CEP_RC=$?
-set -e
-
-# -----------------------------------------------------------------------------
-# Cleanup
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down
 
 # -----------------------------------------------------------------------------
 # Job Summary

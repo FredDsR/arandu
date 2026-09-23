@@ -62,7 +62,7 @@ echo "Node:        $(hostname)"
 echo "=============================================="
 
 # Narrow blast radius: mount ONLY the pipeline's kg/ dir into the container.
-docker run --rm \
+podman run --rm \
     -v "$PIPELINE_DIR/kg":/target \
     -e CLEAN_MODEL="$CLEAN_MODEL" \
     alpine sh -c '
