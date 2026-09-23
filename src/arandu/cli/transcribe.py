@@ -16,9 +16,9 @@ from arandu.shared.io import (
     create_temp_file,
     get_mime_type,
     get_output_filename,
-    save_enriched_record,
+    save_transcription_record,
 )
-from arandu.shared.schemas import EnrichedRecord, InputRecord
+from arandu.shared.schemas import InputRecord, TranscriptionRecord
 from arandu.transcription.config import TranscriberConfig
 from arandu.transcription.engine import WhisperEngine
 from arandu.utils.console import console
@@ -134,11 +134,11 @@ def transcribe(
             result = engine.transcribe(file_path)
             progress.update(task, completed=100)
 
-        # Create enriched record
+        # Create transcription record
         segments = _create_segments_from_result(result)
 
         # Create a minimal input record for local files
-        enriched = EnrichedRecord(
+        enriched = TranscriptionRecord(
             file_id="local",
             name=file_path.name,
             mimeType=get_mime_type(file_path),
@@ -159,7 +159,7 @@ def transcribe(
             output = file_path.parent / get_output_filename(file_path.name)
 
         # Save result
-        save_enriched_record(enriched, output)
+        save_transcription_record(enriched, output)
 
         # Display result
         display_result_panel(enriched)
@@ -296,10 +296,10 @@ def drive_transcribe(
                 result = engine.transcribe(temp_file)
                 progress.update(task, completed=100)
 
-            # Create enriched record
+            # Create transcription record
             segments = _create_segments_from_result(result)
 
-            enriched = EnrichedRecord(
+            enriched = TranscriptionRecord(
                 file_id=input_record.file_id,
                 name=input_record.name,
                 mimeType=input_record.mimeType,
@@ -319,7 +319,7 @@ def drive_transcribe(
             # Save locally first
             output_filename = get_output_filename(input_record.name)
             local_output = temp_file.parent / output_filename
-            save_enriched_record(enriched, local_output)
+            save_transcription_record(enriched, local_output)
 
             # Upload to Drive (same folder as original)
             if input_record.parents:
@@ -698,7 +698,7 @@ def judge_transcription(
                 with open(json_path) as f:
                     data = json.load(f)
 
-                record = EnrichedRecord(**data)
+                record = TranscriptionRecord(**data)
 
                 if not rejudge and record.validation is not None:
                     # Already judged — count toward final tallies and skip.

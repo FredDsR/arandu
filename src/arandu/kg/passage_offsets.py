@@ -5,7 +5,7 @@ of the source transcription prefixed with an injected
 ``[Contexto da Entrevista]…[Transcrição]\\n`` header (the same metadata
 prelude atlas-rag adds at construction time). This module maps each such
 passage back to a ``(start_char, end_char)`` span in the original
-``EnrichedRecord.transcription_text``, so atlas-rag passages can be
+``TranscriptionRecord.transcription_text``, so atlas-rag passages can be
 expressed in the same coordinate space as BM25 / NetworkX chunks.
 
 Atlas-rag does not emit a stable ``passage_id``; this module synthesises one
@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from arandu.shared.config import ResultsConfig
 from arandu.shared.io import resolve_transcription_path
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -42,10 +42,12 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 class PassageOffset(BaseModel):
-    """One atlas-rag passage's location in source ``EnrichedRecord`` space."""
+    """One atlas-rag passage's location in source ``TranscriptionRecord`` space."""
 
     passage_id: str = Field(..., description="Synthesised id: '<source_file_id>:<chunk_index>'.")
-    source_file_id: str = Field(..., description="EnrichedRecord file_id this chunk came from.")
+    source_file_id: str = Field(
+        ..., description="TranscriptionRecord file_id this chunk came from."
+    )
     start_char: int = Field(..., ge=0, description="Inclusive start offset in transcription_text.")
     end_char: int = Field(..., gt=0, description="Exclusive end offset in transcription_text.")
     chunker_id: Literal["atlas_8k"] = Field(
@@ -162,7 +164,7 @@ def build_passage_text_to_atlas_passage_id(
 
 
 def _load_source_text(transcription_dir: Path, file_id: str) -> str | None:
-    """Load ``EnrichedRecord.transcription_text`` for ``file_id`` from disk.
+    """Load ``TranscriptionRecord.transcription_text`` for ``file_id`` from disk.
 
     The filename (``_transcription`` suffix, bare fallback) is resolved by
     :func:`arandu.shared.io.resolve_transcription_path` — the single source of
@@ -176,9 +178,9 @@ def _load_source_text(transcription_dir: Path, file_id: str) -> str | None:
     if candidate is None:
         return None
     try:
-        record = EnrichedRecord.model_validate_json(candidate.read_text())
+        record = TranscriptionRecord.model_validate_json(candidate.read_text())
     except Exception as exc:
-        logger.warning("Skipping invalid EnrichedRecord %s: %s", candidate, exc)
+        logger.warning("Skipping invalid TranscriptionRecord %s: %s", candidate, exc)
         return None
     return record.transcription_text
 
@@ -256,7 +258,7 @@ def link_passages(
     Args:
         pipeline_id: The run identifier. Inputs are resolved to
             ``<base_dir>/<pipeline_id>/transcription/outputs/`` (source
-            ``EnrichedRecord`` files) and
+            ``TranscriptionRecord`` files) and
             ``<base_dir>/<pipeline_id>/kg/outputs/atlas_output/kg_extraction/``
             (atlas-rag JSONL files).
         base_dir: Project ``results/`` root. Defaults to ``ResultsConfig().base_dir``.
@@ -306,7 +308,7 @@ def link_passages(
         source_text = source_text_cache[passage.source_file_id]
         if source_text is None:
             logger.info(
-                "Skipping passage %s — source EnrichedRecord missing",
+                "Skipping passage %s — source TranscriptionRecord missing",
                 passage.passage_id,
             )
             unmatched.append(passage.passage_id)

@@ -24,35 +24,11 @@ from arandu.shared.rag.retrieve.settings import (
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
-from arandu.shared.schemas import EnrichedRecord
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-
-def _write_transcription(outputs_dir: Path, file_id: str, *, suffix: str, text: str) -> None:
-    """Write a minimal valid ``EnrichedRecord`` under ``outputs_dir``.
-
-    ``suffix`` is the on-disk filename stem suffix: ``"_transcription"`` for the
-    real convention the transcription stage emits, or ``""`` for the legacy
-    bare ``<file_id>.json`` form.
-    """
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    record = EnrichedRecord(
-        file_id=file_id,
-        name=f"{file_id}.m4a",
-        mimeType="audio/mpeg",
-        parents=["root"],
-        web_content_link="https://drive.google.com/x",
-        transcription_text=text,
-        detected_language="pt",
-        language_probability=0.9,
-        model_id="openai/whisper-large-v3",
-        compute_device="cuda",
-        processing_duration_sec=1.0,
-        transcription_status="completed",
-    )
-    (outputs_dir / f"{file_id}{suffix}.json").write_text(record.model_dump_json(), encoding="utf-8")
+    from tests.conftest import TranscriptionRecordWriter
 
 
 class TestNullArm:
@@ -221,22 +197,28 @@ class TestChunkResolverFilename:
     suffixed form first, with the bare form as a legacy fallback.
     """
 
-    def test_loads_transcription_suffixed_file(self, tmp_path: Path) -> None:
+    def test_loads_transcription_suffixed_file(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         outputs = tmp_path / "run_x" / "transcription" / "outputs"
-        _write_transcription(outputs, "src_a", suffix="_transcription", text="texto êmico")
+        write_transcription_record(outputs, "src_a", "texto êmico")
         resolver = _build_chunk_resolver(pipeline_id="run_x", base_dir=tmp_path)
         assert resolver._loader("src_a") == "texto êmico"
 
-    def test_loads_legacy_bare_file(self, tmp_path: Path) -> None:
+    def test_loads_legacy_bare_file(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         outputs = tmp_path / "run_x" / "transcription" / "outputs"
-        _write_transcription(outputs, "src_a", suffix="", text="legado")
+        write_transcription_record(outputs, "src_a", "legado", suffix="")
         resolver = _build_chunk_resolver(pipeline_id="run_x", base_dir=tmp_path)
         assert resolver._loader("src_a") == "legado"
 
-    def test_missing_file_error_names_both_candidates(self, tmp_path: Path) -> None:
+    def test_missing_file_error_names_both_candidates(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         outputs = tmp_path / "run_x" / "transcription" / "outputs"
         # Dir exists (so the resolver builds) but the file_id is absent.
-        _write_transcription(outputs, "other", suffix="_transcription", text="x")
+        write_transcription_record(outputs, "other", "x")
         resolver = _build_chunk_resolver(pipeline_id="run_x", base_dir=tmp_path)
         with pytest.raises(FileNotFoundError, match=r"_transcription\.json and src_a\.json"):
             resolver._loader("src_a")

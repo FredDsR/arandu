@@ -144,11 +144,14 @@ class SourceMetadata(BaseModel):
     )
 
 
-class EnrichedRecord(InputRecord, JudgeResultMixin):
-    """Schema for output records containing transcription results and metadata.
+class TranscriptionRecord(InputRecord, JudgeResultMixin):
+    """The ``transcription`` stage's output record.
 
-    This schema defines the format of the final JSON file that will be saved
-    to Google Drive alongside the original media file.
+    Persisted as ``<file_id>_transcription.json`` under
+    ``results/<run-id>/transcription/outputs/``, carrying the transcribed
+    text, the source metadata it came with, and the transcription judge's
+    verdict. Every downstream stage (chunk, qa, kg, retrieve) reads the
+    corpus through this schema.
     """
 
     transcription_text: str = Field(..., description="Full transcription text")
@@ -158,8 +161,18 @@ class EnrichedRecord(InputRecord, JudgeResultMixin):
     compute_device: str = Field(..., description="Device used for computation (cpu/cuda/mps)")
     processing_duration_sec: float = Field(..., description="Processing time in seconds")
     transcription_status: str = Field(..., description="Status of transcription process")
-    created_at_enrichment: datetime = Field(
-        default_factory=datetime.now, description="Timestamp of enrichment"
+    # ``created_at_enrichment`` is the legacy on-disk key, kept as an alias so
+    # the records already written under the old vocabulary keep loading;
+    # ``populate_by_name`` (inherited from InputRecord) accepts both spellings
+    # on read. It behaves exactly as ``file_id`` does against its own
+    # ``gdrive_id`` alias, serialization included: a plain ``model_dump_json``
+    # (``save_transcription_record``) writes the field name, while a
+    # ``by_alias=True`` dump (``arandu judge-transcription``) writes the legacy
+    # key. Both spellings therefore occur on disk, and both load.
+    created_at_transcription: datetime = Field(
+        default_factory=datetime.now,
+        alias="created_at_enrichment",
+        description="Timestamp of when the transcription record was produced",
     )
     segments: list[TranscriptionSegment] | None = Field(
         None, description="Detailed timestamp segments"

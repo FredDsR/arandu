@@ -15,7 +15,7 @@ transcription, and rag at once.
 | `llm_client.py` | Unified OpenAI-SDK client (`build_llm_client_from_settings`, `parse_provider`); provider dispatch + backoff. Never construct `OpenAI()` directly |
 | `results_manager.py` | `ResultsManager`: versioned `results/<id>/<stage>/outputs/`, run metadata, `index.json` |
 | `checkpoint.py` | `CheckpointManager`: batched save-interval state for resume |
-| `schemas.py` | `InputRecord`, `EnrichedRecord`, `SourceMetadata`, `JudgeResultMixin`, run/pipeline metadata |
+| `schemas.py` | `InputRecord`, `TranscriptionRecord`, `SourceMetadata`, `JudgeResultMixin`, run/pipeline metadata |
 | `judge/` | The multi-stage judge: `JudgePipeline` → `JudgeStage` (filter/score/always) → `JudgeStep` → criteria; `LLMCriterion` + factory |
 | `rag/` | Phase C: `retrieve/` (factory over bm25/atlas_rag/khop_passage/khop_triple/null), `answer/`, `judge_answers/`, `analysis/`, `retrievers/` |
 | `agreement/`, `chunking/`, `embeddings/`, `emic/`, `human_eval/` | Krippendorff/Scott/Cohen agreement; chunk registry+chonkie; sentence-transformer wrappers; emic categories; human-eval sampling |

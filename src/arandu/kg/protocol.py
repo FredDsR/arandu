@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from arandu.kg.schemas import KGConstructionResult
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 
 @runtime_checkable
@@ -22,7 +22,7 @@ class KGConstructor(Protocol):
 
     def build_graph(
         self,
-        records: list[EnrichedRecord],
+        records: list[TranscriptionRecord],
         output_dir: Path,
     ) -> KGConstructionResult:
         """Build a knowledge graph from transcription records.

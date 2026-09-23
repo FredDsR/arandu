@@ -40,18 +40,52 @@ class TestPipelineType:
 
 class TestAnnotationTask:
     def test_serializes_exactly_the_blinded_fields(self) -> None:
-        task = AnnotationTask(task_id=0, segment="s", question="q", answer="a")
-        assert set(task.model_dump().keys()) == {"task_id", "segment", "question", "answer"}
+        task = AnnotationTask(
+            task_id=0, metadata="- Local: X", segment="s", question="q", answer="a"
+        )
+        assert set(task.model_dump().keys()) == {
+            "task_id",
+            "metadata",
+            "segment",
+            "question",
+            "answer",
+        }
 
     def test_rejects_unknown_fields(self) -> None:
         """Extra keys are forbidden: a leak must be a crash, not a silent field."""
         with pytest.raises(ValidationError):
-            AnnotationTask(task_id=0, segment="s", question="q", answer="a", bloom_level="analyze")
+            AnnotationTask(
+                task_id=0,
+                metadata="",
+                segment="s",
+                question="q",
+                answer="a",
+                bloom_level="analyze",
+            )
+
+    def test_metadata_is_required(self) -> None:
+        """No default: a task built without it would silently re-blind the annotator.
+
+        The judge reads the same block (issue #173), so a task missing it puts
+        the two instruments back out of step. The builder always has a value,
+        even if it is the "no metadata recorded" text, so the omission can only
+        ever be a bug.
+        """
+        with pytest.raises(ValidationError):
+            AnnotationTask(task_id=0, segment="s", question="q", answer="a")
 
     def test_to_label_studio_wraps_in_data(self) -> None:
-        task = AnnotationTask(task_id=4, segment="s", question="q", answer="a")
+        task = AnnotationTask(
+            task_id=4, metadata="- Local: X", segment="s", question="q", answer="a"
+        )
         assert task.to_label_studio() == {
-            "data": {"task_id": 4, "segment": "s", "question": "q", "answer": "a"}
+            "data": {
+                "task_id": 4,
+                "metadata": "- Local: X",
+                "segment": "s",
+                "question": "q",
+                "answer": "a",
+            }
         }
 
 

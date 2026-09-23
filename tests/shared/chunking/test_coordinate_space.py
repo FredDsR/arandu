@@ -7,9 +7,8 @@ diverge. This file pins the two producers together (issue #166).
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,11 +17,13 @@ from arandu.qa.config import CEPConfig, QAConfig
 from arandu.qa.schemas import QAPairCEP
 from arandu.shared.chunking.batch import run_chunk_batch
 from arandu.shared.chunking.schemas import ChunkSet
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
     from pytest_mock import MockerFixture
+
+    from tests.conftest import TranscriptionRecordWriter
 
 
 # Long enough that cep_4k (RecursiveChunker, chunk_size=4000) emits several
@@ -31,28 +32,6 @@ _BODY = (
     "O pescador contou que quando o rio sobe ele guarda o barco no barranco alto. "
     "Depois falou da prefeitura, do ciclone e da ajuda que veio da universidade. "
 ) * 120
-
-
-def _write_transcription(directory: Path, file_id: str, text: str) -> None:
-    """Write a minimal-but-valid EnrichedRecord transcription JSON."""
-    payload: dict[str, Any] = {
-        "file_id": file_id,
-        "name": f"{file_id}.mp3",
-        "mimeType": "audio/mpeg",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 10.0,
-        "transcription_status": "completed",
-        "validation": {"stage_results": {}, "passed": True, "rejected_at": None},
-    }
-    (directory / f"{file_id}_transcription.json").write_text(json.dumps(payload))
 
 
 @pytest.fixture
@@ -92,11 +71,14 @@ def generator(mocker: MockerFixture) -> CEPQAGenerator:
 
 
 def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
-    tmp_path: Path, monkeypatch: MonkeyPatch, generator: CEPQAGenerator
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    generator: CEPQAGenerator,
+    write_transcription_record: TranscriptionRecordWriter,
 ) -> None:
     """A leading space must not split the two producers into separate namespaces.
 
-    Whisper prefixes transcriptions with a space. Before the EnrichedRecord
+    Whisper prefixes transcriptions with a space. Before the TranscriptionRecord
     validator, the chunk stage chunked that raw text while CEP generation
     chunked it stripped, so 0 of 2670 pairs in thesis-run-01 resolved against
     their persisted ChunkSet.
@@ -110,7 +92,7 @@ def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     # The leading space is the whole point: it is what Whisper emits.
-    _write_transcription(input_dir, "file-1", f" {_BODY}")
+    write_transcription_record(input_dir, "file-1", f" {_BODY}", is_valid=True)
 
     result = run_chunk_batch(
         input_dir=input_dir, views=[CEP_CHUNKER_ID], pipeline_id="invariant-run"
@@ -119,7 +101,7 @@ def test_chunk_stage_and_cep_generation_stamp_the_same_chunk_ids(
     chunk_set = ChunkSet.load(Path(result.run_dir) / "outputs" / CEP_CHUNKER_ID / "file-1.json")
     stage_ids = [c.chunk_id for c in chunk_set.view(CEP_CHUNKER_ID)]
 
-    record = EnrichedRecord.model_validate_json(
+    record = TranscriptionRecord.model_validate_json(
         (input_dir / "file-1_transcription.json").read_text()
     )
     qa_record = generator.generate_qa_pairs(record)

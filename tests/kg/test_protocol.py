@@ -9,7 +9,7 @@ from arandu.kg.protocol import KGConstructor
 from arandu.kg.schemas import KGConstructionResult, KGMetadata
 
 if TYPE_CHECKING:
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 
 class _DummyConstructor:
@@ -17,7 +17,7 @@ class _DummyConstructor:
 
     def build_graph(
         self,
-        records: list[EnrichedRecord],
+        records: list[TranscriptionRecord],
         output_dir: Path,
     ) -> KGConstructionResult:
         return KGConstructionResult(

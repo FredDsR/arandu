@@ -124,7 +124,7 @@ def _ruler_passages(ruler: dict[str, Any]) -> list[tuple[str, str]]:
     ]
     passages += [
         (f"provisions.{key}", provisions[key])
-        for key in ("unit_of_judgment", "question_calibrates", "out_of_scope")
+        for key in ("unit_of_judgment", "question_calibrates", "out_of_scope", "source_metadata")
     ]
     passages += [
         (f"provisions.not_a_loss[{index}]", text)
@@ -138,11 +138,11 @@ class TestStructure:
     def test_is_well_formed_xml_rooted_at_view(self, config: str) -> None:
         assert ET.fromstring(config).tag == "View"
 
-    def test_exposes_the_three_blinded_fields_only(self, config: str) -> None:
+    def test_exposes_the_four_blinded_fields_only(self, config: str) -> None:
         """`Text` is reserved for bound task variables; ruler prose uses `Header`."""
         root = ET.fromstring(config)
         values = {el.get("value") for el in root.iter("Text")}
-        assert values == {"$segment", "$question", "$answer"}
+        assert values == {"$metadata", "$segment", "$question", "$answer"}
 
     def test_no_static_element_binds_a_variable(self, config: str) -> None:
         root = ET.fromstring(config)
@@ -231,14 +231,31 @@ class TestLayout:
         order = [el.get("className") if el.tag == "View" else el.tag for el in root]
         assert order.index("emic-score") == order.index("emic-pair") + 1
 
-    def test_the_pair_block_holds_all_three_bound_fields(self, config: str) -> None:
+    def test_the_pair_block_holds_all_four_bound_fields(self, config: str) -> None:
         pair = ET.fromstring(config).find("./View[@className='emic-pair']")
         assert pair is not None
         assert {el.get("value") for el in pair.iter("Text")} == {
+            "$metadata",
             "$segment",
             "$question",
             "$answer",
         }
+
+    def test_the_metadata_precedes_the_segment(self, config: str) -> None:
+        """Whose words these are, then the words: the grounding reads in order."""
+        pair = ET.fromstring(config).find("./View[@className='emic-pair']")
+        assert pair is not None
+        bound = [el.get("value") for el in pair.iter("Text")]
+        assert bound.index("$metadata") < bound.index("$segment")
+
+    def test_the_metadata_has_its_own_titled_block(self, config: str) -> None:
+        """Header in the config, not in the value: the task carries data only."""
+        root = ET.fromstring(config)
+        box = root.find(".//View[@className='emic-metadata']")
+        assert box is not None
+        assert [el.get("value") for el in box.iter("Text")] == ["$metadata"]
+        titles = [str(el.get("value", "")) for el in root.iter("Header")]
+        assert "Metadados da entrevista" in titles
 
     def test_the_segment_is_wrapped_in_its_own_capped_box(self, config: str) -> None:
         """A 4000-character chunk must scroll inside itself, not push the widget away."""

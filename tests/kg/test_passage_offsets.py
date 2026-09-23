@@ -17,6 +17,8 @@ from arandu.kg.passage_offsets import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import TranscriptionRecordWriter
+
 
 _HEADER = (
     "[Contexto da Entrevista]\n"
@@ -27,27 +29,6 @@ _HEADER = (
 )
 
 
-def _write_enriched_record(out_dir: Path, file_id: str, transcription_text: str) -> None:
-    """Write a minimal EnrichedRecord JSON for the linker to load."""
-    payload = {
-        "gdrive_id": file_id,
-        "name": f"{file_id}.mp4",
-        "mimeType": "video/mp4",
-        "parents": ["folder"],
-        "webContentLink": "https://drive.google.com/test",
-        "size_bytes": 1024,
-        "duration_milliseconds": 60000,
-        "transcription_text": transcription_text,
-        "detected_language": "pt",
-        "language_probability": 0.95,
-        "model_id": "whisper-large-v3",
-        "compute_device": "cpu",
-        "processing_duration_sec": 30.5,
-        "transcription_status": "completed",
-    }
-    (out_dir / f"{file_id}.json").write_text(json.dumps(payload))
-
-
 def _write_kg_extraction_jsonl(out_dir: Path, records: list[dict]) -> None:
     """Write atlas-rag-style JSONL with one record per line."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +37,9 @@ def _write_kg_extraction_jsonl(out_dir: Path, records: list[dict]) -> None:
 
 
 @pytest.fixture
-def kg_run_fixture(tmp_path: Path) -> tuple[Path, str]:
+def kg_run_fixture(
+    tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+) -> tuple[Path, str]:
     """Build a `results/<pipeline_id>/{transcription,kg}/outputs/...` fixture.
 
     Returns:
@@ -65,21 +48,20 @@ def kg_run_fixture(tmp_path: Path) -> tuple[Path, str]:
     pipeline_id = "test_run_001"
     base = tmp_path / "results"
     tr_out = base / pipeline_id / "transcription" / "outputs"
-    tr_out.mkdir(parents=True)
     kg_ext = base / pipeline_id / "kg" / "outputs" / "atlas_output" / "kg_extraction"
 
     # File A — single atlas chunk
     text_a = "Esta é a transcrição A. O rio Uruguai subiu três metros em poucas horas."
-    _write_enriched_record(tr_out, "src_a", text_a)
+    write_transcription_record(tr_out, "src_a", text_a, suffix="")
 
     # File B — split into two atlas chunks; chunk_2 starts mid-text
     text_b_pt1 = "Parte 1 da transcrição B. Contém o primeiro segmento. "
     text_b_pt2 = "Parte 2 da transcrição B. Outro segmento separado."
     text_b = text_b_pt1 + text_b_pt2
-    _write_enriched_record(tr_out, "src_b", text_b)
+    write_transcription_record(tr_out, "src_b", text_b, suffix="")
 
     # File C — included in transcription but missing from kg_extraction (orphan source case)
-    _write_enriched_record(tr_out, "src_c", "Texto solitário sem extração.")
+    write_transcription_record(tr_out, "src_c", "Texto solitário sem extração.", suffix="")
 
     records = [
         {"id": "src_a", "original_text": _HEADER + text_a, "metadata": {"lang": "pt"}},
@@ -160,7 +142,7 @@ class TestLinkPassages:
     ) -> None:
         # The kg_extraction record's `original_text` starts with the atlas-rag
         # `[Contexto da Entrevista]...[Transcrição]\n` header that does NOT exist
-        # in EnrichedRecord.transcription_text. Successful anchoring proves the
+        # in TranscriptionRecord.transcription_text. Successful anchoring proves the
         # linker stripped the header before searching.
         base, pid = kg_run_fixture
         sidecar = link_passages(pipeline_id=pid, base_dir=base)
@@ -169,17 +151,18 @@ class TestLinkPassages:
         assert sidecar.unmatched == []
         assert len(sidecar.offsets) == 3
 
-    def test_unmatched_passages_recorded_for_audit(self, tmp_path: Path) -> None:
+    def test_unmatched_passages_recorded_for_audit(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         # If a passage's chunk text cannot be found in the source transcription,
         # surface the passage_id under `unmatched` instead of silently dropping it.
         pid = "test_run_x"
         base = tmp_path / "results"
         tr_out = base / pid / "transcription" / "outputs"
-        tr_out.mkdir(parents=True)
-        _write_enriched_record(tr_out, "src_a", "Some legitimate transcription.")
+        write_transcription_record(tr_out, "src_a", "Some legitimate transcription.", suffix="")
 
         kg_ext = base / pid / "kg" / "outputs" / "atlas_output" / "kg_extraction"
-        # Passage text doesn't appear in the EnrichedRecord at all.
+        # Passage text doesn't appear in the TranscriptionRecord at all.
         _write_kg_extraction_jsonl(
             kg_ext,
             [
@@ -195,15 +178,16 @@ class TestLinkPassages:
         assert sidecar.unmatched == ["src_a:0"]
         assert sidecar.offsets == []
 
-    def test_whitespace_normalized_fallback(self, tmp_path: Path) -> None:
+    def test_whitespace_normalized_fallback(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         # Atlas-rag occasionally re-flows whitespace. Exact `.find()` would miss
         # such cases; the linker must retry with whitespace-normalised matching
         # (per spec §3.8).
         pid = "test_run_x"
         base = tmp_path / "results"
         tr_out = base / pid / "transcription" / "outputs"
-        tr_out.mkdir(parents=True)
-        _write_enriched_record(tr_out, "src_a", "Linha 1.\nLinha 2.\nLinha 3.")
+        write_transcription_record(tr_out, "src_a", "Linha 1.\nLinha 2.\nLinha 3.", suffix="")
 
         kg_ext = base / pid / "kg" / "outputs" / "atlas_output" / "kg_extraction"
         # Chunk text uses single spaces where the source has newlines — exact find fails,
@@ -234,7 +218,7 @@ class TestLinkPassages:
     def test_orphan_source_file_id_skipped_with_warning(
         self, kg_run_fixture: tuple[Path, str]
     ) -> None:
-        # src_c has an EnrichedRecord but no atlas-rag extraction. That's not
+        # src_c has a TranscriptionRecord but no atlas-rag extraction. That's not
         # an error — the KG simply didn't index it. Sidecar should not contain
         # src_c entries.
         base, pid = kg_run_fixture
@@ -242,33 +226,18 @@ class TestLinkPassages:
         sources = {o.source_file_id for o in sidecar.offsets}
         assert "src_c" not in sources
 
-    def test_handles_production_transcription_suffix(self, tmp_path: Path) -> None:
+    def test_handles_production_transcription_suffix(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         # Production runs (e.g. results/test-kg-04/) name files as
         # `<file_id>_transcription.json` rather than `<file_id>.json`.
         # The linker must accept either form.
         pid = "prod_like_run"
         base = tmp_path / "results"
         tr_out = base / pid / "transcription" / "outputs"
-        tr_out.mkdir(parents=True)
 
         text = "Production-style transcription text."
-        prod_payload = {
-            "gdrive_id": "src_a",
-            "name": "src_a.mp4",
-            "mimeType": "video/mp4",
-            "parents": ["folder"],
-            "webContentLink": "https://drive.google.com/test",
-            "size_bytes": 1024,
-            "duration_milliseconds": 60000,
-            "transcription_text": text,
-            "detected_language": "pt",
-            "language_probability": 0.95,
-            "model_id": "whisper-large-v3",
-            "compute_device": "cpu",
-            "processing_duration_sec": 30.5,
-            "transcription_status": "completed",
-        }
-        (tr_out / "src_a_transcription.json").write_text(json.dumps(prod_payload))
+        write_transcription_record(tr_out, "src_a", text)
 
         kg_ext = base / pid / "kg" / "outputs" / "atlas_output" / "kg_extraction"
         _write_kg_extraction_jsonl(
@@ -286,7 +255,7 @@ class TestLinkPassagesEdgeCases:
     """Regression coverage for Copilot-flagged edge cases (PR #100 review)."""
 
     def test_header_only_chunk_recorded_as_unmatched_not_validation_error(
-        self, tmp_path: Path
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
     ) -> None:
         # An atlas record whose `original_text` is exactly the header (no body)
         # would strip to an empty needle. Old code: `source_text.find("")` → 0,
@@ -295,8 +264,7 @@ class TestLinkPassagesEdgeCases:
         pid = "header_only_run"
         base = tmp_path / "results"
         tr_out = base / pid / "transcription" / "outputs"
-        tr_out.mkdir(parents=True)
-        _write_enriched_record(tr_out, "src_a", "Source text exists.")
+        write_transcription_record(tr_out, "src_a", "Source text exists.", suffix="")
         kg_ext = base / pid / "kg" / "outputs" / "atlas_output" / "kg_extraction"
         _write_kg_extraction_jsonl(
             kg_ext,
@@ -308,14 +276,15 @@ class TestLinkPassagesEdgeCases:
         assert sidecar.offsets == []
         assert sidecar.unmatched == ["src_a:0"]
 
-    def test_missing_kg_extraction_dir_fails_fast_not_silently_empty(self, tmp_path: Path) -> None:
+    def test_missing_kg_extraction_dir_fails_fast_not_silently_empty(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
         # Without this guard, a wrong backend or moved outputs produced a
         # seemingly-valid empty sidecar — a false-success artifact.
         pid = "incomplete_kg_run"
         base = tmp_path / "results"
         tr_out = base / pid / "transcription" / "outputs"
-        tr_out.mkdir(parents=True)
-        _write_enriched_record(tr_out, "src_a", "Source text.")
+        write_transcription_record(tr_out, "src_a", "Source text.", suffix="")
 
         # Create kg/outputs/ but NOT atlas_output/kg_extraction/ underneath it.
         (base / pid / "kg" / "outputs").mkdir(parents=True)

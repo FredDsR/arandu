@@ -11,8 +11,8 @@ from pydantic import ValidationError
 
 from arandu import __version__
 from arandu.shared.config import ResultsConfig
-from arandu.shared.io import save_enriched_record
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.io import save_transcription_record
+from arandu.shared.schemas import TranscriptionRecord
 from arandu.utils.console import console
 from arandu.utils.logger import (
     print_error,
@@ -601,7 +601,7 @@ def enrich_metadata(
 
     for tf in transcription_files:
         try:
-            record = EnrichedRecord.model_validate_json(tf.read_text(encoding="utf-8"))
+            record = TranscriptionRecord.model_validate_json(tf.read_text(encoding="utf-8"))
         except (ValidationError, Exception) as e:
             print_warning(f"Skipping {tf.name}: {e}")
             skipped_count += 1
@@ -614,7 +614,7 @@ def enrich_metadata(
             continue
 
         enrich_with_source_metadata(record, catalog_row, extractor=extractor)
-        save_enriched_record(record, tf)
+        save_transcription_record(record, tf)
         enriched_count += 1
 
     print_success(f"Enriched {enriched_count} transcription(s) (skipped {skipped_count})")

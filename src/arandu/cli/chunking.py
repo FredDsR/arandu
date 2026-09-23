@@ -19,7 +19,7 @@ def chunk(
     input_dir: Annotated[
         Path,
         typer.Argument(
-            help="Directory of EnrichedRecord JSON files (transcriptions).",
+            help="Directory of TranscriptionRecord JSON files (transcriptions).",
             exists=True,
             file_okay=False,
             dir_okay=True,
@@ -62,7 +62,7 @@ def chunk(
 ) -> None:
     """Build ChunkSets across one or more chunker views.
 
-    Reads every ``*.json`` file in ``input_dir`` as an ``EnrichedRecord``,
+    Reads every ``*.json`` file in ``input_dir`` as a ``TranscriptionRecord``,
     slices ``transcription_text`` with each requested chunker view, and writes
     one ``ChunkSet`` per (view, source) pair to
     ``results/<pipeline_id>/chunk/outputs/<chunker_id>/<file_id>.json``.
@@ -94,7 +94,7 @@ def chunk(
         return
 
     if result.skipped:
-        print_warning(f"Skipped {result.skipped} unreadable / non-EnrichedRecord file(s).")
+        print_warning(f"Skipped {result.skipped} unreadable / non-TranscriptionRecord file(s).")
     if result.skipped_invalid:
         print_warning(
             f"Skipped {result.skipped_invalid} transcription(s) rejected by the judge "

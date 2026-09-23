@@ -58,7 +58,7 @@ def create_test_enriched_data(
     name: str = "test.mp3",
     transcription_text: str = _DEFAULT_TRANSCRIPTION_TEXT,
 ) -> dict:
-    """Create a complete EnrichedRecord test data dictionary.
+    """Create a complete TranscriptionRecord test data dictionary.
 
     Args:
         file_id: Unique file identifier.
@@ -68,7 +68,7 @@ def create_test_enriched_data(
             an explicit short string to exercise the defensive skip path).
 
     Returns:
-        Complete EnrichedRecord data dictionary.
+        Complete TranscriptionRecord data dictionary.
     """
     return {
         "file_id": file_id,

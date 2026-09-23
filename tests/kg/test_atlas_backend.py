@@ -11,15 +11,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arandu.kg.config import KGConfig
-from arandu.shared.schemas import EnrichedRecord, SourceMetadata
+from arandu.shared.schemas import SourceMetadata, TranscriptionRecord
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-def _make_record(file_id: str = "test123", text: str = "Test transcription.") -> EnrichedRecord:
-    """Create a minimal EnrichedRecord for testing."""
-    return EnrichedRecord.model_validate(
+def _make_record(
+    file_id: str = "test123", text: str = "Test transcription."
+) -> TranscriptionRecord:
+    """Create a minimal TranscriptionRecord for testing."""
+    return TranscriptionRecord.model_validate(
         {
             "file_id": file_id,
             "name": "test.mp3",

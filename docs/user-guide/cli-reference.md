@@ -373,7 +373,7 @@ These commands implement the Phase C retrieval-augmented-generation evaluation c
 |---------|-------------|
 | `chunk` | Build `ChunkSets` across one or more chunker views |
 | `build-kg` | Build a knowledge graph from transcription records |
-| `kg-link-passages` | Map atlas-rag passages back to char offsets in source `EnrichedRecord` space |
+| `kg-link-passages` | Map atlas-rag passages back to char offsets in source `TranscriptionRecord` space |
 | `kg-build-retriever-index` | Build the atlas-rag retriever's precomputed index for a run |
 | `retrieve` | Run Phase C retrievers over a populated run |
 | `answer` | Run the Answerer LLM over every `RetrievalRecord` in a populated run |
@@ -418,6 +418,19 @@ parameter (it defines the instrument under test), so a run feeding the
 agreement study must pin the model the dissertation describes. See
 [EmicJudgeSettings](configuration.md#emicjudgesettings).
 
+**The judge scores against the pair's own chunk plus the source metadata.**
+`QAPairCEP.context` is the slice generation actually saw, and the metadata block
+(participant, researcher, location, date, event context) is rendered through the
+same shared path the CEP judge uses, under the record's own
+`source_metadata_context_enabled` gate. Both are grounding generation had; a
+judge without them scores a legitimately grounded pair as an addition. Parity
+with the CEP judge is over the metadata block only: this stage reads
+`QAPairCEP.context` directly and never falls back to `transcription_text`, so a
+legacy record whose pairs carry no context is scored against an empty excerpt
+rather than against the whole interview. A record carrying no metadata gets an
+explicit "none recorded" marker in the slot, the same one the annotation canvas
+shows, so neither reader is told it can see a block that was never rendered.
+
 **The ruler is a signed-off single source.** The construct, the 1-5 scale, the
 loss types and the decision guide live in
 `prompts/judge/criteria/emic_validity/ruler.pt.yaml`, and both the judge prompt
@@ -426,7 +439,11 @@ render it. The weighted kappa between the judge and each annotator only measures
 agreement if both score on the same ruler, so `tests/shared/judge/test_emic_ruler.py`
 fails if either artifact drifts. The `signed_off` field records the
 anthropologist gate; the annotation instrument refuses to build while it is
-false.
+false. A change to the ruler that changes what a reader scores (not just how it
+reads) moves `signed_off_on` and is recorded in `method_revision`: emic scores
+from either side of such a revision are not comparable, and human annotation
+collected under the older text cannot be compared against a judge running the
+newer one.
 
 **`emic-judge` options**:
 
@@ -494,7 +511,7 @@ Writes to `results/<id>/annotation/outputs/`:
 | --- | --- |
 | `labeling_config.xml` | The annotation canvas, with the 1-5 anchors rendered verbatim from `prompts/judge/criteria/emic_validity/ruler.pt.yaml`. |
 | `expert_instruction.html` | The full ruler, for the project's instructions modal. Semantic HTML with a scoped `<style>` block, no external resource; still readable if Label Studio strips the block. |
-| `tasks.json` | The blinded tasks. Each carries only `task_id`, `segment`, `question`, `answer`. |
+| `tasks.json` | The blinded tasks. Each carries only `task_id`, `metadata`, `segment`, `question`, `answer`. |
 | `manifest.json` | Seed, provenance hashes, and the `task_id -> pair_id` join. Never uploaded. |
 
 **The ruler reaches the annotator through two surfaces.** Rendering all of it on
@@ -522,6 +539,25 @@ with no way to detect it afterwards. Judge-only material
 (the role framing, the JSON output contract, the rationale rules) appears in
 neither surface: it would prime the annotator with the machine's framing. Both
 are checked verbatim against the ruler by the test suite.
+
+**The annotator sees the interview metadata.** Participant, researcher,
+location, date and event context reach the canvas above the excerpt, as the
+`metadata` task field. They are there because CEP *generation* had them: without
+them a pair whose answer names the participant or the location reads as
+"adds something the person did not say" (a 3 on the scale) when it is correctly
+grounded. The emic judge is given the same block from the same renderer and the
+same gate (`QARecordCEP.source_metadata_context_enabled`), so the two
+instruments cannot drift. A record generated without metadata shows none on
+either side, and the canvas says so rather than showing an empty box.
+
+`metadata` does give grouping power, and that is a decision rather than an
+oversight: its value is identical across an interview's tasks, so sorting on it
+partitions the instrument by interview exactly. What makes it acceptable is that
+the design does not stratify by interview, so knowing which tasks share one says
+nothing about which cell a pair was drawn into. `pair_id` stays out because its
+`pair_index` half is the pair's position in its record, and generation walks the
+Bloom ladder in hierarchy order within a chunk, so that index tracks the Bloom
+level the sample *is* stratified by.
 
 **The sign-off gate is mechanical.** While the ruler carries `signed_off: false`
 the command refuses to run and names the gate. The anchors the annotators read

@@ -90,6 +90,7 @@ def _ruler_texts(ruler: dict[str, Any]) -> list[tuple[str, str]]:
     texts.append(("provisions.unit_of_judgment", provisions["unit_of_judgment"]))
     texts.append(("provisions.question_calibrates", provisions["question_calibrates"]))
     texts.append(("provisions.out_of_scope", provisions["out_of_scope"]))
+    texts.append(("provisions.source_metadata", provisions["source_metadata"]))
     for i, item in enumerate(provisions["not_a_loss"]):
         texts.append((f"provisions.not_a_loss[{i}]", item))
     guide = ruler["guide"]
@@ -151,11 +152,20 @@ class TestConsumersRenderTheRuler:
 
 
 class TestBlinding:
-    def test_prompt_receives_only_the_blinded_fields(self) -> None:
+    def test_prompt_receives_the_grounding_slots(self) -> None:
         raw = PROMPT_PATH.read_text(encoding="utf-8")
         assert "$context" in raw
         assert "$question" in raw
         assert "$answer" in raw
+        # The source-metadata block generation injected. Without it the judge
+        # reads a participant name or a location in the answer as an addition
+        # the person never made (issue #173).
+        assert "$metadata" in raw
+
+    def test_the_metadata_slot_sits_with_the_source_excerpt(self) -> None:
+        """Grounding before the pair: the judge reads the sources, then the pair."""
+        raw = PROMPT_PATH.read_text(encoding="utf-8")
+        assert raw.index("$context") < raw.index("$metadata") < raw.index("$question")
 
     @pytest.mark.parametrize("path", [PROMPT_PATH, SHEET_PATH])
     def test_generator_metadata_is_never_named(self, path: Path) -> None:

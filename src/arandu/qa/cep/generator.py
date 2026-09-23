@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig, QAConfig
     from arandu.shared.chunking.schemas import Chunk
     from arandu.shared.llm_client import LLMClient
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class CEPQAGenerator:
             f"Reasoning={cep_config.enable_reasoning_traces}"
         )
 
-    def generate_qa_pairs(self, transcription: EnrichedRecord) -> QARecordCEP:
+    def generate_qa_pairs(self, transcription: TranscriptionRecord) -> QARecordCEP:
         """Generate CEP-enhanced QA pairs from a transcription.
 
         The caller is responsible for filtering out records that are too
@@ -72,7 +72,7 @@ class CEPQAGenerator:
         ``content_length_floor`` heuristic owns that gate upstream.
 
         Args:
-            transcription: EnrichedRecord containing transcription text.
+            transcription: TranscriptionRecord containing transcription text.
 
         Returns:
             QARecordCEP with cognitive-level QA pairs.
@@ -155,7 +155,7 @@ class CEPQAGenerator:
 
         Args:
             text: Full transcription text.
-            source_file_id: ID of the source ``EnrichedRecord`` (stamped on every Chunk).
+            source_file_id: ID of the source ``TranscriptionRecord`` (stamped on every Chunk).
 
         Returns:
             Offsets-only chunks covering the input text.

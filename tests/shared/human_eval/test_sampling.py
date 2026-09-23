@@ -24,6 +24,7 @@ def _entry(idx: int, bloom: str) -> PoolEntry:
         question=f"q {idx}",
         answer=f"a {idx}",
         bloom_level=bloom,
+        metadata=f"- Participante: P{idx}",
     )
 
 
@@ -157,3 +158,24 @@ class TestBuildSample:
             ("src:14", "evaluate", 0),
             ("src:15", "evaluate", 1),
         ]
+
+
+class TestAnnotationPayloadIsCarried:
+    """The sample is the only thing the annotation build reads.
+
+    A field dropped here is silently unrecoverable downstream: the instrument is
+    built from ``sample.jsonl``, never from the CEP records.
+    """
+
+    def test_metadata_reaches_the_sample_item(self) -> None:
+        items = build_sample(_pool(2), seed=1, per_cell=1)
+
+        assert all(item.metadata.startswith("- Participante: P") for item in items)
+
+    def test_metadata_stays_with_its_own_pair(self) -> None:
+        by_pair = {
+            item.pair_id: item.metadata for item in build_sample(_pool(2), seed=1, per_cell=2)
+        }
+
+        for pair_id, metadata in by_pair.items():
+            assert metadata == f"- Participante: P{pair_id.split(':')[1]}"

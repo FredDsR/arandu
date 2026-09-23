@@ -76,7 +76,7 @@ export PIPELINE_ID
 # -----------------------------------------------------------------------------
 # Assemble the CLI invocation based on the requested subcommand
 # -----------------------------------------------------------------------------
-# The judge CLIs persist verdicts back into each record (EnrichedRecord for
+# The judge CLIs persist verdicts back into each record (TranscriptionRecord for
 # transcriptions, QARecordCEP for QA); they do not emit an aggregate file.
 case "$JUDGE_SUBCOMMAND" in
     judge-transcription)

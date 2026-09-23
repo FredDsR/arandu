@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
 from arandu.shared.drive import DriveClient, NoAudioStreamError
-from arandu.shared.io import create_temp_file, save_enriched_record
+from arandu.shared.io import create_temp_file, save_transcription_record
 from arandu.shared.results_manager import ResultsManager
-from arandu.shared.schemas import EnrichedRecord, PipelineType, TranscriptionSegment
+from arandu.shared.schemas import PipelineType, TranscriptionRecord, TranscriptionSegment
 from arandu.transcription.config import TranscriberConfig
 from arandu.transcription.engine import WhisperEngine
 from arandu.transcription.media import (
@@ -289,10 +289,10 @@ def transcribe_single_file(
             result = _worker_engine.transcribe(transcription_file)
             logger.info(f"Transcribed: {task.name}")
 
-            # Create enriched record
+            # Create transcription record
             segments = _create_segments_from_result(result)
 
-            enriched = EnrichedRecord(
+            enriched = TranscriptionRecord(
                 file_id=task.file_id,
                 name=task.name,
                 mimeType=task.mime_type,
@@ -319,7 +319,7 @@ def transcribe_single_file(
             # Save result
             output_filename = f"{task.file_id}_transcription.json"
             output_path = config.output_dir / output_filename
-            save_enriched_record(enriched, output_path)
+            save_transcription_record(enriched, output_path)
             logger.info(f"Saved transcription: {output_filename}")
 
             return task.file_id, True, "Success"

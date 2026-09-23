@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 from arandu.kg.passage_offsets import PassageOffsetSidecar
 from arandu.shared.chunking.schemas import ChunkSet
-from arandu.shared.schemas import EnrichedRecord
+from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -48,7 +48,7 @@ def build_passage_text_map(
             ``results/<id>/kg/outputs/passage_offsets.json``. ``None``
             (or non-existent) is tolerated when only BM25 arms ran.
         transcription_dir: ``results/<id>/transcription/outputs/`` —
-            holds the source :class:`EnrichedRecord` files whose
+            holds the source :class:`TranscriptionRecord` files whose
             ``transcription_text`` is sliced by both BM25 chunks and
             the atlas-rag sidecar offsets.
 
@@ -89,7 +89,7 @@ def _load_transcriptions(transcription_dir: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     for path in sorted(transcription_dir.glob("*.json")):
         try:
-            record = EnrichedRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            record = TranscriptionRecord.model_validate_json(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             logger.warning("Skipping unreadable transcription %s: %s", path, exc)
             continue

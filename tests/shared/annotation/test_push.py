@@ -56,6 +56,19 @@ class _NoCountClient(FakeClient):
         return None
 
 
+#: One task's ``data``, in the shape the build actually writes.
+#:
+#: Kept as one literal so the fixture and the assertion cannot disagree about
+#: the payload, and so a field added to AnnotationTask is added here once.
+_TASK_DATA = {
+    "task_id": 0,
+    "metadata": "- Participante: Aida",
+    "segment": "s",
+    "question": "q",
+    "answer": "a",
+}
+
+
 @pytest.fixture
 def built(tmp_path: Path) -> Path:
     outputs = tmp_path / "run-a" / "annotation" / "outputs"
@@ -63,7 +76,7 @@ def built(tmp_path: Path) -> Path:
     (outputs / CONFIG_FILENAME).write_text("<View/>", encoding="utf-8")
     (outputs / INSTRUCTION_FILENAME).write_text("<h1>A régua</h1>", encoding="utf-8")
     (outputs / TASKS_FILENAME).write_text(
-        json.dumps([{"data": {"task_id": 0, "segment": "s", "question": "q", "answer": "a"}}]),
+        json.dumps([{"data": dict(_TASK_DATA)}]),
         encoding="utf-8",
     )
     AnnotationManifest(
@@ -88,8 +101,9 @@ class TestPush:
         project_id = run_push_annotation("run-a", client=client, base_dir=built)
         assert project_id == 42
         assert client.created[0][1] == "<View/>"
-        expected_task = {"data": {"task_id": 0, "segment": "s", "question": "q", "answer": "a"}}
-        assert client.imported == [(42, [expected_task])]
+        # Verbatim transport is the contract: what Label Studio receives is the
+        # exact payload the build wrote, metadata field included.
+        assert client.imported == [(42, [{"data": dict(_TASK_DATA)}])]
 
     def test_records_the_project_id_in_the_manifest(self, built: Path) -> None:
         run_push_annotation("run-a", client=FakeClient(), base_dir=built)

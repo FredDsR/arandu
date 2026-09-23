@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Migrate a run's ``chunk_id`` namespace onto the canonical coordinate space.
 
-Before ``EnrichedRecord.transcription_text`` was normalized, the ``chunk`` stage
+Before ``TranscriptionRecord.transcription_text`` was normalized, the ``chunk`` stage
 chunked the raw transcription while CEP generation chunked the same text
 ``.strip()``ed. Whisper prefixes its output with a space, so every stage
 boundary sat one character past generation's and the two produced disjoint
@@ -41,14 +41,14 @@ from arandu.shared.chunking.registry import get_chunker
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.config import get_results_config
 from arandu.shared.io import resolve_transcription_path
-from arandu.shared.schemas import EnrichedRecord, PipelineMetadata
+from arandu.shared.schemas import PipelineMetadata, TranscriptionRecord
 
 
 @dataclass(frozen=True)
 class SourceTexts:
     """The two readings of one transcription file the migration needs.
 
-    After the ``EnrichedRecord`` validator landed, the raw text is no longer
+    After the ``TranscriptionRecord`` validator landed, the raw text is no longer
     observable through the schema: loading a record already returns it stripped.
     The migration still needs the raw lead to shift the atlas passage offsets
     and to assert the rewrite is a pure shift, so it reads the file both ways.
@@ -92,7 +92,7 @@ def load_source_texts(transcription_dir: Path, file_id: str) -> SourceTexts:
 
     payload = path.read_text(encoding="utf-8")
     raw = json.loads(payload)["transcription_text"]
-    record = EnrichedRecord.model_validate_json(payload)
+    record = TranscriptionRecord.model_validate_json(payload)
     return SourceTexts(
         canonical=record.transcription_text,
         raw=raw,
@@ -358,7 +358,7 @@ def _assert_offset_preserved(
 def shift_passage_offsets(run_dir: Path, lead_by_file: dict[str, int], *, dry_run: bool) -> int:
     """Shift the atlas passage-offset sidecar into the canonical space.
 
-    The sidecar's spans are expressed against ``EnrichedRecord.transcription_text``,
+    The sidecar's spans are expressed against ``TranscriptionRecord.transcription_text``,
     which the schema validator just moved by the stripped leading whitespace. The
     synthesized ``passage_id`` is index-based, so ids stay stable and only spans
     move.

@@ -11,7 +11,12 @@ if TYPE_CHECKING:
 
 from arandu.qa.schemas import QARecordCEP
 from arandu.report.collector import ResultsCollector, RunReport
-from arandu.shared.schemas import EnrichedRecord, PipelineMetadata, PipelineType, SourceMetadata
+from arandu.shared.schemas import (
+    PipelineMetadata,
+    PipelineType,
+    SourceMetadata,
+    TranscriptionRecord,
+)
 from tests.report.helpers import make_run_metadata
 
 
@@ -46,7 +51,7 @@ def sample_results_dir(tmp_path: Path) -> Path:
     outputs_dir.mkdir()
 
     # Create a sample transcription record
-    record = EnrichedRecord(
+    record = TranscriptionRecord(
         file_id="test123",
         name="test.mp3",
         mimeType="audio/mpeg",
@@ -145,7 +150,7 @@ class TestRunReport:
             pipeline_id="test_001",
             steps_run=["transcription"],
         )
-        record = EnrichedRecord(
+        record = TranscriptionRecord(
             file_id="test123",
             name="test.mp3",
             mimeType="audio/mpeg",
@@ -208,7 +213,7 @@ def extended_results_dir(tmp_path: Path) -> Path:
     )
     transcription_meta.save(transcription_dir / "run_metadata.json")
 
-    trans_record = EnrichedRecord(
+    trans_record = TranscriptionRecord(
         file_id="test123",
         name="audio_sample.mp3",
         mimeType="audio/mpeg",

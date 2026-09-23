@@ -222,7 +222,7 @@ def test_mark_completed_removes_from_failed(tmp_path: Path) -> None:
 Tests for file operations and temporary file management:
 - Temporary directory creation
 - Temporary file creation
-- EnrichedRecord saving
+- TranscriptionRecord saving
 - MIME type detection
 - Cleanup operations
 
@@ -305,6 +305,34 @@ def test_example(caplog: pytest.LogCaptureFixture) -> None:
     function_that_logs()
     assert "expected message" in caplog.text
 ```
+
+### `transcription_record_payload` / `write_transcription_record` (`tests/conftest.py`)
+
+The single source of truth for a transcription-stage record (`TranscriptionRecord`)
+in tests. Anything that needs one on disk, or as a payload to feed the model,
+goes through these instead of hand-rolling the literal: a new required field on
+the schema is then fixed in one place rather than in every test module.
+
+```python
+def test_reads_a_record(
+    tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+) -> None:
+    # Writes `<file_id>_transcription.json`, the stage's real filename;
+    # pass suffix="" for the legacy bare `<file_id>.json` form.
+    path = write_transcription_record(tmp_path, "src_a", "Texto êmico.")
+
+
+def test_validates_a_payload(
+    transcription_record_payload: TranscriptionRecordPayloadBuilder,
+) -> None:
+    record = TranscriptionRecord(**transcription_record_payload(text=" texto cru"))
+```
+
+`is_valid` stamps the transcription judge's `validation` payload (`True` /
+`False`), and `None` (the default) leaves the record unjudged. Every other
+field is overridable by keyword. The writer dumps the payload verbatim rather
+than round-tripping it through the model, so a test can stage
+pre-normalization text the schema validator would otherwise strip.
 
 ## Continuous Integration
 

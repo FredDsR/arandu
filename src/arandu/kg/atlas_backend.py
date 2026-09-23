@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from arandu.kg.config import KGConfig
-    from arandu.shared.schemas import EnrichedRecord
+    from arandu.shared.schemas import TranscriptionRecord
 
 from arandu.kg.schemas import KGConstructionResult
 from arandu.shared.llm_client import create_llm_client
@@ -249,7 +249,7 @@ class AtlasRagConstructor:
     """KG constructor using atlas-rag (AutoSchemaKG) as the extraction backend.
 
     Implements the ``KGConstructor`` protocol. Receives framework-agnostic
-    ``EnrichedRecord`` objects and orchestrates atlas-rag's 5-step pipeline
+    ``TranscriptionRecord`` objects and orchestrates atlas-rag's 5-step pipeline
     behind a single ``build_graph()`` call.
 
     Args:
@@ -267,7 +267,7 @@ class AtlasRagConstructor:
 
     def build_graph(
         self,
-        records: list[EnrichedRecord],
+        records: list[TranscriptionRecord],
         output_dir: Path,
     ) -> KGConstructionResult:
         """Build a knowledge graph from transcription records.
@@ -323,10 +323,10 @@ class AtlasRagConstructor:
 
     def _prepare_input_data(
         self,
-        records: list[EnrichedRecord],
+        records: list[TranscriptionRecord],
         input_dir: Path,
     ) -> None:
-        """Convert EnrichedRecord list to atlas-rag JSON input format.
+        """Convert TranscriptionRecord list to atlas-rag JSON input format.
 
         Builds a per-document metadata header and stores it in the metadata
         dict under ``_metadata_header``.  The enriched processor subclass
@@ -359,7 +359,7 @@ class AtlasRagConstructor:
 
     @staticmethod
     def _build_metadata_header(
-        record: EnrichedRecord,
+        record: TranscriptionRecord,
         labels: dict[str, str],
     ) -> str:
         """Build a metadata header string for a transcription record.
@@ -1236,7 +1236,7 @@ class AtlasRagConstructor:
 
     def _build_result(
         self,
-        records: list[EnrichedRecord],
+        records: list[TranscriptionRecord],
         output_dir: Path,
     ) -> KGConstructionResult:
         """Load the generated GraphML and construct the result.

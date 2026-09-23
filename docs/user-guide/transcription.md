@@ -223,7 +223,7 @@ Each transcribed file produces a JSON file with this structure:
   "compute_device": "cuda:0",
   "processing_duration_sec": 45.2,
   "transcription_status": "completed",
-  "created_at_enrichment": "2025-12-10T22:30:00",
+  "created_at_transcription": "2025-12-10T22:30:00",
   "segments": [
     {
       "text": "Segment text",

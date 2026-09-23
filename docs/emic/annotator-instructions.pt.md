@@ -74,6 +74,12 @@ dinheiro não é perda, desde que a lógica que a pessoa deu continue inteira; s
 pergunta trata de como se sabe algo, perder quem sabe é perda. A pergunta calibra a
 expectativa de detalhe e nada além disso.
 
+Junto do trecho você vê os metadados da entrevista: participante, pesquisador(a), local,
+data e contexto do registro. Eles estavam disponíveis quando o par foi gerado, então um
+nome, um local ou uma data que consta nos metadados não é informação vinda de fora. O
+trecho continua sendo a fonte do que a pessoa disse; os metadados dizem apenas de quem é
+a fala, onde e quando ela foi dita.
+
 **Não são perda êmica:**
 
 - Generalizar ou abstrair preservando o sentido. Alguma generalização é esperada.
@@ -82,6 +88,8 @@ expectativa de detalhe e nada além disso.
 - Perder um nome próprio ou um objeto específico quando a pergunta não pedia aquele
   detalhe e a lógica que a pessoa enunciou continua inteira.
 - Responder de forma curta, ou menos detalhada que o trecho.
+- Nomear o participante, o local, a data ou o evento quando o dado consta nos
+  metadados da entrevista.
 
 Fora deste escopo: se o par está bem escrito, se a resposta está correta, completa
 ou bem fundamentada no trecho. Aqui se julga apenas se a perspectiva da pessoa foi
@@ -202,7 +210,10 @@ Casos construídos para ilustrar a escala. Nenhum vem de entrevista real.
 
 ## O que você vê e o que você não vê
 
-Cada tarefa mostra apenas três coisas: o trecho da entrevista, a pergunta e a
-resposta. Você não vê o nível cognitivo atribuído ao par, nem as notas dadas pelos
-juízes automáticos, nem qualquer outro dado gerado junto com o par. Isso é
+Cada tarefa mostra apenas quatro coisas: os metadados da entrevista, o trecho, a
+pergunta e a resposta. Você não vê o nível cognitivo atribuído ao par, nem as notas
+dadas pelos juízes automáticos, nem qualquer outro dado gerado junto com o par. Isso é
 proposital: qualquer um desses campos ancoraria a sua leitura.
+
+Os metadados estão aí porque quem gerou o par também os tinha. O juiz automático
+comparado com vocês vê exatamente os mesmos quatro campos, pelo mesmo motivo.

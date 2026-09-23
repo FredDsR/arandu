@@ -22,10 +22,12 @@ the separate ``emic-filter-stage`` task).
 from __future__ import annotations
 
 import logging
+from functools import partial
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
+from arandu.qa.cep.metadata_context import NO_METADATA_TEXT, render_metadata_context
 from arandu.qa.schemas import QARecordCEP
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
@@ -168,13 +170,20 @@ def run_emic_judge_batch(
             stale.unlink()
     checkpoint = CheckpointManager(checkpoint_path)
 
-    def _score_pair(item: tuple[int, QAPairCEP]) -> CriterionScore:
-        """Evaluate one pair. Runs on a worker thread; must not touch state."""
+    def _score_pair(item: tuple[int, QAPairCEP], *, metadata_section: str) -> CriterionScore:
+        """Evaluate one pair. Runs on a worker thread; must not touch state.
+
+        ``metadata_section`` is the record's own block, bound per source by the
+        caller rather than read from a closed-over ``record``: a worker must
+        never see the metadata of whichever source the main thread has moved on
+        to.
+        """
         _, pair = item
         return criterion.evaluate(
             context=pair.context,
             question=pair.question,
             answer=pair.answer,
+            metadata=metadata_section,
         )
 
     checkpoint.set_total_files(len(cep_paths))
@@ -199,6 +208,25 @@ def run_emic_judge_batch(
             checkpoint.mark_failed(ckpt_key, f"load failed: {exc}")
             failed_sources += 1
             continue
+
+        # Same grounding generation had: the chunk on ``QAPairCEP.context``
+        # (already what this judge scores against) plus the source-metadata
+        # block. Rendered through the shared CEP path under the record's own
+        # gate, so the emic judge, the CEP judge and generation cannot drift.
+        # Without it, item 3 of the scale ("adds something the person did not
+        # say") fires on any pair whose answer names the participant or the
+        # location -- grounding the generator was given and the judge was not.
+        # The `or` branch matches the rendered block's shape (it opens with a
+        # newline) so the slot reads the same either way. An empty slot would
+        # leave the prompt claiming metadata the judge does not have.
+        metadata_section = (
+            render_metadata_context(
+                record.source_metadata,
+                enable_metadata=record.source_metadata_context_enabled,
+                language=record.language,
+            )
+            or f"\n{NO_METADATA_TEXT}"
+        )
 
         in_scope: list[tuple[int, QAPairCEP]] = []
         for idx, pair in enumerate(record.qa_pairs):
@@ -241,7 +269,7 @@ def run_emic_judge_batch(
         # `failed_pairs` and warned about, rather than being backed off and
         # retried.
         for (idx, pair), evaluation, error in map_concurrent(
-            _score_pair,
+            partial(_score_pair, metadata_section=metadata_section),
             in_scope,
             workers=resolved.workers,
         ):
