@@ -6,22 +6,23 @@ directory with thin partition-specific scripts that source a shared
 flat working copy with NO `.git`: deploy changes via `rsync` + `md5sum` verify,
 never `git pull`.
 
-## How the layers connect (code ↔ config ↔ compose ↔ image ↔ SLURM)
+## How the layers connect (code ↔ config ↔ Podman pod ↔ image ↔ SLURM)
 
-Every step is the same chain. A SLURM partition script exports env and sources
-its `<step>_common.sh`; the common script runs `docker compose --profile <profile>
-up <service>`; the service (in `docker-compose.yml`) runs `arandu <command>` off
-the image `ENTRYPOINT`; the CLI loads a `*Config` class from `ARANDU_<PREFIX>_*`
-env and writes `results/<id>/<stage>/outputs/`.
+Every step follows the same chain. A SLURM partition script exports env and sources
+its `<step>_common.sh`; the common script uses `container_lib.sh` to initialize an
+isolated Podman pod (`arandu-pod-$SLURM_JOB_ID`), launch an Ollama sidecar if
+needed, and execute the worker container with `arandu <command>` off the image
+`ENTRYPOINT`; the CLI loads a `*Config` class from `ARANDU_<PREFIX>_*` env and
+writes `results/<id>/<stage>/outputs/`.
 
-| Step | `arandu` command(s) | Config class · env prefix | Compose service | Profiles | Image · Dockerfile | SLURM dir |
-| ---- | ------------------- | ------------------------- | --------------- | -------- | ------------------ | --------- |
-| Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | `arandu` / `arandu-cpu` / `arandu-rocm` | (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
-| CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | `arandu-cep` | `cep` / `cep-gpu` | `arandu:latest` · `Dockerfile` | `cep/` |
-| Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | `arandu-judge` | `judge` / `judge-gpu` | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
-| Emic judge (Phase D) | `emic-judge` | `EmicJudgeSettings` · `ARANDU_EMIC_JUDGE_` | `arandu-emic` | `emic` / `emic-gpu` | `arandu:latest` · `Dockerfile` | `emic/` |
-| KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | `arandu-kg` | `kg` / `kg-gpu` | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
-| RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | `arandu-rag` / `arandu-rag-cpu` | `rag` / `rag-gpu` / `rag-cpu` | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
+| Step | `arandu` command(s) | Config class · env prefix | Podman Pod Service | Image · Dockerfile | SLURM dir |
+| ---- | ------------------- | ------------------------- | ------------------ | ------------------ | --------- |
+| Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | worker (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
+| CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | worker + ollama | `arandu:latest` · `Dockerfile` | `cep/` |
+| Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
+| Emic judge (Phase D) | `emic-judge` | `EmicJudgeSettings` · `ARANDU_EMIC_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `emic/` |
+| KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | worker + ollama | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
+| RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | worker (+ ollama for LLM stages) | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
 
 QA generation is the CEP path (`generate-cep-qa`); there is no separate
 `generate-qa`. Evaluation of retrieval is the Phase C `rag-*` chain (there is no
@@ -62,24 +63,13 @@ The `rag/` per-stage scripts set `RAG_CLI_ARGS` (the `arandu` subcommand) and
 `RAG_NEEDS_OLLAMA`, then source `rag_common.sh`. CPU-only stages override
 `RAG_SERVICE=arandu-rag-cpu` / `RAG_PROFILE=rag-cpu` to avoid GPU contention.
 
-**Orphan containers on TIMEOUT.** Containers are owned by the docker daemon,
-not by the job's process tree, so a TIME LIMIT or `scancel` kills the shell and
-leaves them running on the node (observed: judge-answers 799024 on tupi2, which
-needed admin intervention). `scripts/slurm/container_teardown.sh` holds the
-shared fix; it only works when BOTH pieces are present: the stage command runs
-in the background and is `wait`-ed on (bash defers traps during a foreground
-external command), and the partition script carries
-`#SBATCH --signal=B:TERM@60`. Sourced by `rag/` and `emic/`. **`judge/`, `cep/`
-and `kg/` still lack it** and can still orphan. A deploy that ships a
-`<step>_common.sh` without `container_teardown.sh` now aborts the job rather
-than running untrapped.
-
-**Compose project isolation.** Jobs share one compose project (named after the
-deploy directory) unless `COMPOSE_PROJECT_NAME` is set, and the ollama sidecars
-are listed under several profiles. So a `down --profile <x>` can stop a
-co-located job's sidecar, whose calls then fail into null results that its own
-checkpoint records as done. `emic/` scopes the project to the job id; the other
-steps do not yet.
+**Container Lifecycle & Pod Isolation.** All steps now use `scripts/slurm/container_lib.sh`
+with native rootless Podman pods (`arandu-pod-$SLURM_JOB_ID`). Each SLURM job runs in its
+own pod with its own private localhost network, so co-located jobs on the same node cannot
+collide or kill each other's sidecars. Traps for EXIT, SIGINT, and SIGTERM ensure
+`podman pod rm -f` stops both worker and Ollama sidecars cleanly upon completion, timeout,
+or cancellation. Moreover, since rootless Podman runs within the user's cgroup, output files
+in `results/` are user-owned (`fdsreckziegel`), eliminating root-locked results directories.
 
 ## Submitting
 

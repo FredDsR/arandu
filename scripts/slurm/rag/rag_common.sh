@@ -93,88 +93,40 @@ fi
 
 mkdir -p "$OLLAMA_MODELS_DIR" "$ARANDU_HF_CACHE_DIR" logs
 
-# ---------------------------------------------------------------------------
-# Disk preflight + cleanup (mirrors kg_common.sh; cluster nodes fill up)
-# ---------------------------------------------------------------------------
-echo "Pruning unused Docker data to free disk space..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
-docker builder prune -af 2>/dev/null || true
-docker image prune -af 2>/dev/null || true
-find "$OLLAMA_MODELS_DIR" -name "*-partial" -delete 2>/dev/null || true
-find "$OLLAMA_MODELS_DIR" -name "*.tmp" -delete 2>/dev/null || true
-
-MIN_DISK_GB=${MIN_DISK_GB:-15}
-DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
-[ -d "$DOCKER_ROOT" ] || DOCKER_ROOT=/var/lib/docker
-AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || true)
-AVAIL_GB=$(( ${AVAIL_KB:-0} / 1024 / 1024 ))
-echo "Docker storage: $DOCKER_ROOT — ${AVAIL_GB} GB available (min ${MIN_DISK_GB})"
-if [ "${AVAIL_KB:-0}" -gt 0 ] && [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
-    echo "ERROR: not enough disk on $DOCKER_ROOT (${AVAIL_GB} GB < ${MIN_DISK_GB} GB)." >&2
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
     exit 1
 fi
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-echo ""
-echo "Building ${RAG_SERVICE} image (reuses the kg-extra image)..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build "$RAG_SERVICE"
+# Preflight + cleanup
+arandu_preflight_and_clean
 
-# From here on containers get started, so arm the teardown traps. (Kept out of
-# the early-validation/build path above so a pre-container `exit 1` cannot run
-# `docker compose down` when this job has nothing up.)
-arandu_arm_teardown_traps
+# Build image (reuses Dockerfile.kg)
+arandu_build_image "arandu-kg:latest" "Dockerfile.kg"
 
-# ---------------------------------------------------------------------------
+# Initialize isolated pod
+arandu_init_pod
+
 # Ollama sidecar (LLM stages only)
-# ---------------------------------------------------------------------------
 if [ "$RAG_NEEDS_OLLAMA" = "true" ]; then
-    echo ""
-    echo "Starting ${OLLAMA_SERVICE} and pulling ${RAG_OLLAMA_MODEL}..."
-    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE"
-    OLLAMA_READY=false
-    for i in {1..30}; do
-        if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-            OLLAMA_READY=true
-            break
-        fi
-        echo "  Waiting for Ollama... ($i/30)"
-        sleep 5
-    done
-    if [ "$OLLAMA_READY" = false ]; then
-        echo "ERROR: Ollama failed to start after 30 attempts" >&2
-        exit 1
-    fi
-    echo "Pulling model: $RAG_OLLAMA_MODEL"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama pull "$RAG_OLLAMA_MODEL"
+    arandu_start_ollama "$RAG_OLLAMA_MODEL" true "${OLLAMA_NUM_PARALLEL:-3}" "${OLLAMA_CONTEXT_LENGTH:-}"
 fi
 
-# ---------------------------------------------------------------------------
-# Run the stage. `run --rm` overrides the entrypoint args cleanly (the image's
-# ENTRYPOINT is `arandu`), so RAG_CLI_ARGS is the subcommand + flags.
-# ---------------------------------------------------------------------------
-echo ""
-echo "Running: arandu ${RAG_CLI_ARGS}"
-echo "=============================================="
-# set +e: under `set -e` a failing stage aborts the script HERE, skipping
-# the cleanup below and leaking the ollama sidecar on the shared node
-# (observed with judge-answers 795114). Capture the rc instead.
-#
-# Run in the BACKGROUND + `wait` (not foreground): bash defers signal traps
-# until a foreground external command returns, so a foreground run would keep
-# the SIGTERM teardown from firing until the container exits (never, on a real
-# timeout). `wait` is interruptible, so the trap runs immediately; if no signal
-# arrives, `wait` returns the container's real exit code.
-set +e
-# shellcheck disable=SC2086  # intentional word-splitting of the arg string
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" run --rm "$RAG_SERVICE" ${RAG_CLI_ARGS} &
-RUN_PID=$!
-wait "$RUN_PID"
+# RAG GPU: true if stage needs GPU (arandu-rag), false if arandu-rag-cpu
+WORKER_GPU=false
+if [ "$RAG_PROFILE" = "rag-gpu" ] || [ "$RAG_SERVICE" = "arandu-rag" ]; then
+    WORKER_GPU=true
+fi
+
+# Run the stage in the pod
+# shellcheck disable=SC2086
+arandu_run_worker "arandu-kg:latest" "$WORKER_GPU" ${RAG_CLI_ARGS}
 RUN_RC=$?
-set -e
 
 echo "=============================================="
 echo "Stage finished (rc=${RUN_RC}) at $(date)"
 echo "=============================================="
-# Container teardown is handled by the EXIT trap armed above, so it
-# runs here on normal exit AND on a SLURM SIGTERM (timeout/scancel). Do not add
-# a manual `docker compose down`; it would just double-run the trap.
 exit $RUN_RC
