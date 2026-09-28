@@ -75,10 +75,16 @@ k só os três juízes rodam, e as saídas são exportadas antes da rodada segui
 Sem script novo: cada rodada é um bloco copy-paste no login do pcad, a partir de
 `~/etno-kgc-preprocessing/`, que usa os jobs existentes encadeados por
 `--dependency`. O `judge-answers` levou 2 dias e 14 horas no run-02, então os replays
-já entram na fila junto com o primeiro job: cada replay depende de `afternotok` do
-anterior (só roda se o anterior estourou o tempo ou falhou) e é descartado por
-`--kill-on-invalid-dep=yes` quando o anterior termina bem. A etapa seguinte depende
-de `afterok` de qualquer job da etapa (`?` é o OU do SLURM).
+dele já entram na fila junto com o primeiro job. Como `afternotok` também é
+satisfeito por um job CANCELLED (inclusive o descartado por dependência inválida), a
+dependência é **acumulada**: o replay n só roda se todos os anteriores terminaram sem
+sucesso, e é descartado por `--kill-on-invalid-dep=yes` assim que um deles termina bem.
+
+Portão e êmico cabem em 24h e **não** têm replay automático. Um replay pré-agendado
+do êmico poderia rodar depois de um portão que falhou, retomar o checkpoint da rodada
+anterior e terminar como um no-op bem-sucedido; o SLURM não permite combinar E com OU
+para evitar isso. Se um dos dois estourar, resubmeter à mão em resume
+(`JUDGE_REJUDGE=0` ou `EMIC_RERUN=0`) e submeter as etapas seguintes depois.
 
 O resume dos três juízes não funciona igual, e isso define a primeira submissão:
 
@@ -90,7 +96,10 @@ O resume dos três juízes não funciona igual, e isso define a primeira submiss
 - `emic-judge`: `EMIC_RERUN=1` no primeiro job (descarta checkpoint e saídas),
   resume nos replays. Roda depois do portão porque copia o veredito em cada nota.
 - `judge-answers`: `JUDGE_ANSWERS_REJUDGE=1` no primeiro job, variável **ausente** nos
-  replays (o script testa só se ela está definida).
+  replays (o script testa se ela é não vazia, então `=0` também faria rejudge).
+- Vereditos com erro de critério (LLM fora do ar, parse) contam como `failed` no
+  `run_metadata` do `judge-qa` e são re-julgados pelo resume; um resume manual depois
+  de uma queda do Ollama recupera só esses pares.
 
 ```bash
 cd ~/etno-kgc-preprocessing
@@ -110,33 +119,28 @@ for f in sorted(pathlib.Path(sys.argv[1]).glob("*_cep_qa.json")):
     f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 EOF
 
-# 2. Portão: sempre em resume (os vereditos já foram removidos).
+# 2. Portão: em resume (os vereditos já foram removidos), sem replay automático.
 Q1=$(PIPELINE_ID=$ID JUDGE_REJUDGE=0 sbatch --parsable scripts/slurm/judge/qa/tupi.slurm)
-Q2=$(PIPELINE_ID=$ID JUDGE_REJUDGE=0 sbatch --parsable $KILL --dependency=afternotok:$Q1 scripts/slurm/judge/qa/tupi.slurm)
 
-# 3. Êmico: rerun no primeiro job, resume no replay.
-E1=$(PIPELINE_ID=$ID EMIC_RERUN=1 sbatch --parsable $KILL --dependency="afterok:$Q1?afterok:$Q2" scripts/slurm/emic/tupi.slurm)
-E2=$(PIPELINE_ID=$ID EMIC_RERUN=0 sbatch --parsable $KILL --dependency=afternotok:$E1 scripts/slurm/emic/tupi.slurm)
+# 3. Êmico: rerun, depois do portão, sem replay automático.
+E1=$(PIPELINE_ID=$ID EMIC_RERUN=1 sbatch --parsable $KILL --dependency=afterok:$Q1 scripts/slurm/emic/tupi.slurm)
 
-# 4. Respostas: rejudge no primeiro job, três replays em resume.
-A1=$(PIPELINE_ID=$ID JUDGE_ANSWERS_REJUDGE=1 sbatch --parsable $KILL --dependency="afterok:$E1?afterok:$E2" scripts/slurm/rag/judge-answers.slurm)
+# 4. Respostas: rejudge no primeiro job, três replays em resume com dependência acumulada.
+A1=$(PIPELINE_ID=$ID JUDGE_ANSWERS_REJUDGE=1 sbatch --parsable $KILL --dependency=afterok:$E1 scripts/slurm/rag/judge-answers.slurm)
 A2=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A1 scripts/slurm/rag/judge-answers.slurm)
-A3=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A2 scripts/slurm/rag/judge-answers.slurm)
-A4=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A3 scripts/slurm/rag/judge-answers.slurm)
-echo "round $K: qa=$Q1,$Q2 emic=$E1,$E2 answers=$A1,$A2,$A3,$A4"
+A3=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A1:$A2 scripts/slurm/rag/judge-answers.slurm)
+A4=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A1:$A2:$A3 scripts/slurm/rag/judge-answers.slurm)
+echo "round $K: qa=$Q1 emic=$E1 answers=$A1,$A2,$A3,$A4"
 ```
 
-Para rodar só portão e êmico em todas as rodadas antes do juiz de respostas (ordem
-sugerida no cronograma), omitir o passo 4 e submetê-lo depois, sem dependência.
-
-O `judge/` ainda não tem `container_teardown.sh`: um TIMEOUT do portão pode deixar
-containers órfãos no nó. Com cerca de 5 horas por rodada, o replay dele é só uma
-salvaguarda.
+Os jobs do `judge/` carregam o `container_teardown.sh` e `--signal=B:TERM@60`, como
+`rag/` e `emic/`: um TIMEOUT do portão não deixa contêiner órfão reescrevendo os
+registros CEP.
 
 ### Exportação
 
-Também sem script: ao fim de cada rodada, e **antes** da limpeza da rodada seguinte,
-um tar guarda o que a análise lê (vereditos do portão dentro dos registros CEP, notas
+Também sem script: um tar por rodada, tirado depois que as três etapas terminaram e
+**antes** da limpeza da rodada seguinte, guarda o que a análise lê (vereditos do portão dentro dos registros CEP, notas
 êmicas, julgamentos das respostas e os `run_metadata.json` de cada etapa):
 
 ```bash
@@ -178,12 +182,11 @@ A réplica 1 é o mesmo tar tirado do `thesis-run-02` depois do re-julgamento do
 | Data | Passo |
 |---|---|
 | 09-29 a 09-30 | pré-requisitos 1, 2 e 5; re-julgar o portão do run-02 (passo 3) e exportar a réplica 1 |
-| 10-01 | `replicate` → `thesis-run-03`; rodadas 2 e 3 com `STAGES=judge-qa,emic-judge` (cerca de 8h cada) |
-| 10-02 a 10-08 | rodadas 2 e 3 do `judge-answers` (cerca de 62h cada, com replays) |
+| 10-01 a 10-04 | `replicate` → `thesis-run-03`; rodada 2 completa (cerca de 8h de portão e êmico, 62h de respostas) e tar |
+| 10-04 a 10-07 | rodada 3 completa e tar |
 | 10-08 a 10-10 | análise e texto do paper |
 
-Rodar primeiro o portão e o êmico em todas as rodadas deixa a parte do paper que
-depende deles pronta cedo, mesmo que o juiz de respostas atrase.
+As rodadas são completas e sequenciais, para que o tar de cada uma seja coerente.
 
 ## Riscos e efeitos colaterais
 
