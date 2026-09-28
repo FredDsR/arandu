@@ -133,9 +133,9 @@ A4=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --depe
 echo "round $K: qa=$Q1 emic=$E1 answers=$A1,$A2,$A3,$A4"
 ```
 
-Os jobs do `judge/` carregam o `container_teardown.sh` e `--signal=B:TERM@60`, como
-`rag/` e `emic/`: um TIMEOUT do portão não deixa contêiner órfão reescrevendo os
-registros CEP.
+Todos os jobs rodam em pods podman isolados por job (`container_lib.sh`), com traps que
+removem o pod em saída normal, TIMEOUT ou `scancel`: um TIMEOUT do portão não deixa
+contêiner órfão reescrevendo os registros CEP.
 
 ### Exportação
 

@@ -134,98 +134,35 @@ mkdir -p "$OLLAMA_MODELS_DIR" "$ARANDU_HF_CACHE_DIR" logs
 
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 
-if [ "$USE_GPU_OLLAMA" = "true" ]; then
-    DOCKER_PROFILE="emic-gpu"
-    OLLAMA_SERVICE="ollama-gpu"
-else
-    DOCKER_PROFILE="emic"
-    OLLAMA_SERVICE="ollama"
-fi
-
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
-
-
-# Deploy note: rsyncing this file without container_teardown.sh leaves the job
-# unable to start, which is the intended failure. Silently losing the trap would
-# mean orphaned GPU containers on the node.
-TEARDOWN_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_teardown.sh"
-if [ ! -f "$TEARDOWN_LIB" ]; then
-    echo "ERROR: $TEARDOWN_LIB not found; refusing to run without the teardown trap." >&2
-    echo "       Deploy scripts/slurm/container_teardown.sh alongside this script." >&2
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
     exit 1
 fi
-# shellcheck source=scripts/slurm/container_teardown.sh
-source "$TEARDOWN_LIB"
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-# ---------------------------------------------------------------------------
-# Disk preflight + cleanup (mirrors rag_common.sh; cluster nodes fill up)
-# ---------------------------------------------------------------------------
-echo ""
-echo "Pruning unused Docker data to free disk space..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
-docker builder prune -af 2>/dev/null || true
-docker image prune -af 2>/dev/null || true
-find "$OLLAMA_MODELS_DIR" -name "*-partial" -delete 2>/dev/null || true
-find "$OLLAMA_MODELS_DIR" -name "*.tmp" -delete 2>/dev/null || true
+# Preflight + cleanup
+arandu_preflight_and_clean
 
-MIN_DISK_GB=${MIN_DISK_GB:-15}
-DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
-[ -d "$DOCKER_ROOT" ] || DOCKER_ROOT=/var/lib/docker
-AVAIL_KB=$(df --output=avail "$DOCKER_ROOT" 2>/dev/null | tail -1 | tr -d ' ' || true)
-AVAIL_GB=$(( ${AVAIL_KB:-0} / 1024 / 1024 ))
-echo "Docker storage: $DOCKER_ROOT: ${AVAIL_GB} GB available (min ${MIN_DISK_GB})"
-if [ "${AVAIL_KB:-0}" -gt 0 ] && [ "$AVAIL_GB" -lt "$MIN_DISK_GB" ]; then
-    echo "ERROR: not enough disk on $DOCKER_ROOT (${AVAIL_GB} GB < ${MIN_DISK_GB} GB)." >&2
-    exit 1
-fi
+# Build image
+arandu_build_image "arandu:latest" "Dockerfile"
 
-echo ""
-echo "Building arandu-emic image..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-emic
+# Initialize isolated pod
+arandu_init_pod
 
-# From here on containers get started, so arm the teardown traps. (Kept out of
-# the validation/build path above so a pre-container `exit 1` cannot run
-# `docker compose down` when this job has nothing up.)
-arandu_arm_teardown_traps
-
+# Start Ollama sidecar if provider is ollama
 if [ "$ARANDU_EMIC_JUDGE_PROVIDER" = "ollama" ]; then
-    echo ""
-    echo "Starting Ollama sidecar ($OLLAMA_SERVICE)..."
-    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE"
-
-    OLLAMA_READY=false
-    for i in {1..30}; do
-        if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-            OLLAMA_READY=true
-            break
-        fi
-        echo "  Waiting for Ollama... ($i/30)"
-        sleep 5
-    done
-    if [ "$OLLAMA_READY" = false ]; then
-        echo "ERROR: Ollama failed to start after 30 attempts" >&2
-        exit 1
-    fi
-
-    echo "Pulling model: $ARANDU_EMIC_JUDGE_MODEL_ID"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" \
-        ollama pull "$ARANDU_EMIC_JUDGE_MODEL_ID"
+    arandu_start_ollama \
+        "$ARANDU_EMIC_JUDGE_MODEL_ID" \
+        "$USE_GPU_OLLAMA" \
+        "${OLLAMA_NUM_PARALLEL:-$ARANDU_EMIC_JUDGE_WORKERS}" \
+        "${OLLAMA_CONTEXT_LENGTH:-16384}"
 fi
 
-echo ""
-echo "Running: arandu ${EMIC_CMD[*]}"
-echo "=============================================="
-# Background + `wait` (not foreground): bash defers signal traps until a
-# foreground external command returns, so a foreground run would keep the
-# SIGTERM teardown from firing until the container exits (never, on a real
-# timeout). See scripts/slurm/container_teardown.sh.
-set +e
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" \
-    run --rm arandu-emic "${EMIC_CMD[@]}" &
-RUN_PID=$!
-wait "$RUN_PID"
+# Run emic-judge worker in the pod
+arandu_run_worker "arandu:latest" false "${EMIC_CMD[@]}"
 EMIC_EXIT=$?
-set -e
 
 echo "=============================================="
 echo "Arandu Emic Judge Job Completed"
@@ -235,8 +172,5 @@ echo "Scope:          $EMIC_SCOPE"
 echo "Scores in:      $OUTPUT_DIR_HOST"
 echo "Exit Code:      $EMIC_EXIT"
 echo "=============================================="
-# Container teardown is handled by the EXIT trap armed above, so it runs here on
-# normal exit AND on a SLURM SIGTERM (timeout/scancel). Do not add a manual
-# `docker compose down`; it would just double-run the trap.
 
 exit $EMIC_EXIT

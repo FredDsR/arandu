@@ -151,95 +151,31 @@ mkdir -p logs
 
 export SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
 
-# -----------------------------------------------------------------------------
-# Docker profile
-# -----------------------------------------------------------------------------
-if [ "$USE_GPU_OLLAMA" = "true" ]; then
-    DOCKER_PROFILE="judge-gpu"
-    OLLAMA_SERVICE="ollama-gpu"
-else
-    DOCKER_PROFILE="judge"
-    OLLAMA_SERVICE="ollama"
-fi
-
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
-
-# Isolate this job's compose project (see emic_common.sh): the ollama sidecars
-# are listed under several profiles, so a shared project lets another job's
-# `down` stop our sidecar, or ours stop theirs.
-export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-arandu-judge-${SLURM_JOB_ID}}"
-
-# Deploy note: rsyncing this file without container_teardown.sh leaves the job
-# unable to start, which is the intended failure. Silently losing the trap would
-# mean orphaned GPU containers on the node that keep rewriting the CEP records.
-TEARDOWN_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_teardown.sh"
-if [ ! -f "$TEARDOWN_LIB" ]; then
-    echo "ERROR: $TEARDOWN_LIB not found; refusing to run without the teardown trap." >&2
-    echo "       Deploy scripts/slurm/container_teardown.sh alongside this script." >&2
+CONTAINER_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_lib.sh"
+if [ ! -f "$CONTAINER_LIB" ]; then
+    echo "ERROR: $CONTAINER_LIB not found; refusing to run without container_lib.sh." >&2
     exit 1
 fi
-# shellcheck source=scripts/slurm/container_teardown.sh
-source "$TEARDOWN_LIB"
+# shellcheck source=scripts/slurm/container_lib.sh
+source "$CONTAINER_LIB"
 
-# -----------------------------------------------------------------------------
-# Clean up from previous runs
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up any orphan containers from previous runs..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orphans 2>/dev/null || true
+# Preflight + cleanup
+arandu_preflight_and_clean
 
-# -----------------------------------------------------------------------------
-# Build + start ollama, pull model (only when using the ollama provider)
-# -----------------------------------------------------------------------------
-echo ""
-echo "Building arandu-judge image..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-judge
+# Build image
+arandu_build_image "arandu:latest" "Dockerfile"
 
-# From here on containers get started, so arm the teardown traps. (Kept out of
-# the validation/build phase above so an early exit does not run
-# `docker compose down` when this job has nothing up.)
-arandu_arm_teardown_traps
+# Initialize isolated pod
+arandu_init_pod
 
+# Start Ollama sidecar if using ollama provider
 if [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
-    echo ""
-    echo "Starting Ollama sidecar ($OLLAMA_SERVICE)..."
-    docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" up -d "$OLLAMA_SERVICE"
-
-    echo "Waiting for Ollama to be ready..."
-    for i in {1..30}; do
-        if docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" ollama list &>/dev/null; then
-            echo "Ollama is ready."
-            break
-        fi
-        echo "  Waiting... ($i/30)"
-        sleep 5
-    done
-
-    echo ""
-    echo "Pulling model: $ARANDU_JUDGE_VALIDATOR_MODEL"
-    docker compose -f "$COMPOSE_FILE" exec -T "$OLLAMA_SERVICE" \
-        ollama pull "$ARANDU_JUDGE_VALIDATOR_MODEL"
+    arandu_start_ollama "$ARANDU_JUDGE_VALIDATOR_MODEL" "$USE_GPU_OLLAMA" "${ARANDU_JUDGE_WORKERS:-2}"
 fi
 
-# -----------------------------------------------------------------------------
-# Run the judge
-# -----------------------------------------------------------------------------
-echo ""
-echo "Starting judge process..."
-echo "CLI: arandu ${JUDGE_CMD[*]}"
-echo "=============================================="
-
-# Background + `wait` (not foreground): bash defers signal traps until a
-# foreground external command returns, so a foreground run would keep the
-# SIGTERM teardown from firing until the container exits (never, on a real
-# timeout). See scripts/slurm/container_teardown.sh.
-set +e
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" \
-    run --rm arandu-judge "${JUDGE_CMD[@]}" &
-RUN_PID=$!
-wait "$RUN_PID"
+# Run judge worker in the pod
+arandu_run_worker "arandu:latest" false "${JUDGE_CMD[@]}"
 JUDGE_EXIT=$?
-set -e
 
 # -----------------------------------------------------------------------------
 # Summary
@@ -253,8 +189,5 @@ echo "Subcommand:     $JUDGE_SUBCOMMAND"
 echo "Updated records in: $INPUT_DIR_HOST"
 echo "Exit Code:      $JUDGE_EXIT"
 echo "=============================================="
-# Container teardown is handled by the EXIT trap armed above, so it runs here on
-# normal exit AND on a SLURM SIGTERM (timeout/scancel). Do not add a manual
-# `docker compose down`; it would just double-run the trap.
 
 exit $JUDGE_EXIT

@@ -8,8 +8,6 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/judge_qa_tupi_%j.out
 #SBATCH --error=logs/judge_qa_tupi_%j.err
-# Send SIGTERM to the batch shell 60s before the time limit so judge_common.sh's
-# teardown trap can stop the docker containers before SLURM's SIGKILL.
 #SBATCH --signal=B:TERM@60
 
 # =============================================================================
@@ -38,4 +36,5 @@ export JUDGE_SUBCOMMAND=judge-qa
 # Partition-specific settings (validator model default lives in judge_common.sh)
 export USE_GPU_OLLAMA=true
 
-source "${SLURM_SUBMIT_DIR}/scripts/slurm/judge/judge_common.sh"
+PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$HOME/etno-kgc-preprocessing}}"
+source "${PROJECT_DIR}/scripts/slurm/judge/judge_common.sh"
