@@ -575,7 +575,7 @@ def judge_transcription(
             "--validator-temperature",
             help=(
                 "Sampling temperature for LLM criteria. Falls back to "
-                "ARANDU_JUDGE_TEMPERATURE (default 0.3) when not set."
+                "ARANDU_JUDGE_TEMPERATURE (default 0.1) when not set."
             ),
         ),
     ] = None,
@@ -585,7 +585,7 @@ def judge_transcription(
             "--validator-max-tokens",
             help=(
                 "Max tokens for LLM criterion responses. Falls back to "
-                "ARANDU_JUDGE_MAX_TOKENS (default 2048) when not set."
+                "ARANDU_JUDGE_MAX_TOKENS (default 8192) when not set."
             ),
         ),
     ] = None,

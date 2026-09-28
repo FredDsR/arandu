@@ -284,8 +284,8 @@ arandu judge-transcription INPUT_DIR [OPTIONS]
 | `--validator-model` | | str | (none) | Model ID enabling the LLM filter stage. Falls back to `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `--validator-provider` | | str | inferred | `openai`, `ollama`, or `custom`. Falls back to `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
 | `--validator-base-url` | | str | inferred | Validator base URL. Falls back to `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then `ARANDU_LLM_BASE_URL` |
-| `--validator-temperature` | | float | `0.3` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
-| `--validator-max-tokens` | | int | `2048` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
+| `--validator-temperature` | | float | `0.1` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
+| `--validator-max-tokens` | | int | `8192` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
 | `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every record; `--resume` skips already-judged records |
 
 **Examples**:

@@ -242,7 +242,7 @@ Configuration for the composable judge pipeline. Supplies the validator LLM clie
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `language` | `str` | `"pt"` | Language for judge criterion prompts (ISO 639-1: 'pt' or 'en') |
-| `temperature` | `float` | `0.3` | Temperature for judge LLM (low for consistent evaluation, range: 0.0-1.0) |
+| `temperature` | `float` | `0.1` | Temperature for judge LLM (low for consistent evaluation, range: 0.0-1.0) |
 | `max_tokens` | `int` | `8192` | Max tokens for judge responses (min: 128, max: 8192) |
 | `validator_model` | `str \| None` | `None` | Model ID enabling the LLM stage (e.g. `qwen3:14b`, `gemini-2.5-flash`). When unset, `judge-transcription` runs heuristic-only and skips the LLM stage |
 | `validator_provider` | `str \| None` | `None` | Provider: "openai", "ollama", or "custom". Inferred from `ARANDU_LLM_BASE_URL` (custom when set, else ollama) when unspecified |
@@ -484,7 +484,7 @@ export ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze"
 ```bash
 export ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
 export ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
-export ARANDU_JUDGE_TEMPERATURE=0.3
+export ARANDU_JUDGE_TEMPERATURE=0.1
 ```
 
 **KGConfig** (`ARANDU_KG_`):
@@ -687,7 +687,7 @@ ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "e
 # Validator client
 ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
 ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
-ARANDU_JUDGE_TEMPERATURE=0.3
+ARANDU_JUDGE_TEMPERATURE=0.1
 ```
 
 ---
@@ -886,7 +886,7 @@ ARANDU_CEP_LANGUAGE=pt
 ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
 ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama  # openai, ollama, custom
 # ARANDU_JUDGE_VALIDATOR_BASE_URL=  # For custom OpenAI-compatible endpoints
-ARANDU_JUDGE_TEMPERATURE=0.3
+ARANDU_JUDGE_TEMPERATURE=0.1
 ARANDU_JUDGE_LANGUAGE=pt
 
 # ============================================================================

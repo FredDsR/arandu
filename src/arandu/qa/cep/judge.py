@@ -29,6 +29,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Criteria of the CEP gate. Remember pairs are judged on the first two only
+# (see QAJudge._build_pipeline). Single source for the pipeline and for the
+# judge-qa run-metadata snapshot (qa.cep.judge_run).
+GATE_CRITERIA: tuple[str, ...] = (
+    "faithfulness",
+    "bloom_calibration",
+    "informativeness",
+    "self_containedness",
+)
+REMEMBER_CRITERIA: tuple[str, ...] = ("faithfulness", "bloom_calibration")
+
 # Bloom level descriptions fallback file
 _VALIDATION_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep" / "validation"
 
@@ -82,12 +93,7 @@ class QAJudge(BaseJudge):
         Returns:
             Default JudgePipeline with all four criteria.
         """
-        all_criteria = [
-            "faithfulness",
-            "bloom_calibration",
-            "informativeness",
-            "self_containedness",
-        ]
+        all_criteria = list(GATE_CRITERIA)
         # Remember pairs are factual recall by design (the 3/1/1/1 factual base),
         # so informativeness (which scores down trivial/explicit content) is a
         # conceptual mismatch that rejected ~55% of remember pairs. Judge them on
@@ -95,10 +101,7 @@ class QAJudge(BaseJudge):
         # recall is not expected to be fully self-contained); it is simply NOT
         # evaluated for remember pairs -- it is omitted from criterion_scores,
         # not auto-scored 1.0.
-        remember_criteria = [
-            "faithfulness",
-            "bloom_calibration",
-        ]
+        remember_criteria = list(REMEMBER_CRITERIA)
 
         default_step = JudgeStep(criteria=all_criteria, factory=self._factory)
         remember_step = JudgeStep(criteria=remember_criteria, factory=self._factory)

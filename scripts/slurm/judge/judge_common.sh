@@ -14,7 +14,8 @@
 #   ARANDU_JUDGE_VALIDATOR_PROVIDER - Validator provider (default: ollama)
 #   ARANDU_JUDGE_VALIDATOR_BASE_URL - Validator base URL (default: sidecar URL)
 #   ARANDU_JUDGE_LANGUAGE           - Prompt language (default: pt)
-#   ARANDU_JUDGE_TEMPERATURE        - LLM sampling temperature (default: 0.3)
+#   ARANDU_JUDGE_TEMPERATURE        - LLM sampling temperature (default: 0.1)
+#   ARANDU_JUDGE_MAX_TOKENS         - Max response tokens (default: 8192)
 #   USE_GPU_OLLAMA                  - "true" to use ollama-gpu sidecar (default: false)
 # =============================================================================
 
@@ -32,7 +33,8 @@ export ARANDU_JUDGE_VALIDATOR_MODEL="${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}"
 export ARANDU_JUDGE_VALIDATOR_PROVIDER="${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}"
 export ARANDU_JUDGE_VALIDATOR_BASE_URL="${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}"
 export ARANDU_JUDGE_LANGUAGE="${ARANDU_JUDGE_LANGUAGE:-pt}"
-export ARANDU_JUDGE_TEMPERATURE="${ARANDU_JUDGE_TEMPERATURE:-0.3}"
+export ARANDU_JUDGE_TEMPERATURE="${ARANDU_JUDGE_TEMPERATURE:-0.1}"
+export ARANDU_JUDGE_MAX_TOKENS="${ARANDU_JUDGE_MAX_TOKENS:-8192}"
 
 # Which CLI subcommand to run inside the arandu-judge container. Partition
 # wrappers under scripts/slurm/judge/<kind>/ set this explicitly.

@@ -115,8 +115,8 @@ arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
 | `--validator-model` | str | (none) | Model ID enabling the LLM filter stage. Falls back to `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `--validator-provider` | str | inferred | `openai`, `ollama`, or `custom`. Falls back to `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
 | `--validator-base-url` | str | inferred | Base URL for the validator. Falls back to `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then `ARANDU_LLM_BASE_URL` |
-| `--validator-temperature` | float | `0.3` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
-| `--validator-max-tokens` | int | `2048` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
+| `--validator-temperature` | float | `0.1` | Sampling temperature for LLM criteria. Falls back to `ARANDU_JUDGE_TEMPERATURE` |
+| `--validator-max-tokens` | int | `8192` | Max tokens for LLM criterion responses. Falls back to `ARANDU_JUDGE_MAX_TOKENS` |
 | `--rejudge` / `--resume` | flag | `--resume` | `--rejudge` re-evaluates everything; `--resume` skips already-judged records |
 
 **Note**: When `--validator-provider` is unset, the provider is inferred from `ARANDU_LLM_BASE_URL` (`custom` when that variable is set, otherwise `ollama`). An explicit `custom` provider requires a base URL, or the command exits with an error.
@@ -223,8 +223,8 @@ LLM-stage settings use the `ARANDU_JUDGE_` environment variable prefix. They ser
 | `validator_model` | `str \| None` | `None` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `validator_provider` | `str \| None` | inferred | `ARANDU_JUDGE_VALIDATOR_PROVIDER` |
 | `validator_base_url` | `str \| None` | inferred | `ARANDU_JUDGE_VALIDATOR_BASE_URL` |
-| `temperature` | `float` | `0.3` | `ARANDU_JUDGE_TEMPERATURE` |
-| `max_tokens` | `int` | `2048` | `ARANDU_JUDGE_MAX_TOKENS` |
+| `temperature` | `float` | `0.1` | `ARANDU_JUDGE_TEMPERATURE` |
+| `max_tokens` | `int` | `8192` | `ARANDU_JUDGE_MAX_TOKENS` |
 | `language` | `str` | `"pt"` | `ARANDU_JUDGE_LANGUAGE` |
 
 **Note**: The per-criterion thresholds for the heuristics (content length 0.5, script match 0.6, repetition 0.5, content density 0.4, segment quality 0.4) and the LLM criteria (`language_drift` 0.8, `hallucination_loop` 0.7) are defined in code and prompt `config.json` files. They are not exposed as environment variables.
@@ -235,8 +235,8 @@ LLM-stage settings use the `ARANDU_JUDGE_` environment variable prefix. They ser
 # Enable the LLM filter stage against a local Ollama model
 ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
 ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
-ARANDU_JUDGE_TEMPERATURE=0.3
-ARANDU_JUDGE_MAX_TOKENS=2048
+ARANDU_JUDGE_TEMPERATURE=0.1
+ARANDU_JUDGE_MAX_TOKENS=8192
 ```
 
 ## Interpreting Results
