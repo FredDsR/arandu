@@ -162,6 +162,23 @@ fi
 
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
+# Isolate this job's compose project (see emic_common.sh): the ollama sidecars
+# are listed under several profiles, so a shared project lets another job's
+# `down` stop our sidecar, or ours stop theirs.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-arandu-judge-${SLURM_JOB_ID}}"
+
+# Deploy note: rsyncing this file without container_teardown.sh leaves the job
+# unable to start, which is the intended failure. Silently losing the trap would
+# mean orphaned GPU containers on the node that keep rewriting the CEP records.
+TEARDOWN_LIB="${SLURM_SUBMIT_DIR:-$PROJECT_DIR}/scripts/slurm/container_teardown.sh"
+if [ ! -f "$TEARDOWN_LIB" ]; then
+    echo "ERROR: $TEARDOWN_LIB not found; refusing to run without the teardown trap." >&2
+    echo "       Deploy scripts/slurm/container_teardown.sh alongside this script." >&2
+    exit 1
+fi
+# shellcheck source=scripts/slurm/container_teardown.sh
+source "$TEARDOWN_LIB"
+
 # -----------------------------------------------------------------------------
 # Clean up from previous runs
 # -----------------------------------------------------------------------------
@@ -175,6 +192,11 @@ docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down --remove-orph
 echo ""
 echo "Building arandu-judge image..."
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" build arandu-judge
+
+# From here on containers get started, so arm the teardown traps. (Kept out of
+# the validation/build phase above so an early exit does not run
+# `docker compose down` when this job has nothing up.)
+arandu_arm_teardown_traps
 
 if [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
     echo ""
@@ -205,18 +227,17 @@ echo "Starting judge process..."
 echo "CLI: arandu ${JUDGE_CMD[*]}"
 echo "=============================================="
 
+# Background + `wait` (not foreground): bash defers signal traps until a
+# foreground external command returns, so a foreground run would keep the
+# SIGTERM teardown from firing until the container exits (never, on a real
+# timeout). See scripts/slurm/container_teardown.sh.
 set +e
 docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" \
-    run --rm arandu-judge "${JUDGE_CMD[@]}"
+    run --rm arandu-judge "${JUDGE_CMD[@]}" &
+RUN_PID=$!
+wait "$RUN_PID"
 JUDGE_EXIT=$?
 set -e
-
-# -----------------------------------------------------------------------------
-# Cleanup
-# -----------------------------------------------------------------------------
-echo ""
-echo "Cleaning up containers..."
-docker compose -f "$COMPOSE_FILE" --profile "$DOCKER_PROFILE" down
 
 # -----------------------------------------------------------------------------
 # Summary
@@ -230,5 +251,8 @@ echo "Subcommand:     $JUDGE_SUBCOMMAND"
 echo "Updated records in: $INPUT_DIR_HOST"
 echo "Exit Code:      $JUDGE_EXIT"
 echo "=============================================="
+# Container teardown is handled by the EXIT trap armed above, so it runs here on
+# normal exit AND on a SLURM SIGTERM (timeout/scancel). Do not add a manual
+# `docker compose down`; it would just double-run the trap.
 
 exit $JUDGE_EXIT

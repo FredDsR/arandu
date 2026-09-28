@@ -8,6 +8,9 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/judge_transcription_tupi_%j.out
 #SBATCH --error=logs/judge_transcription_tupi_%j.err
+# Send SIGTERM to the batch shell 60s before the time limit so judge_common.sh's
+# teardown trap can stop the docker containers before SLURM's SIGKILL.
+#SBATCH --signal=B:TERM@60
 
 # =============================================================================
 # Arandu Transcription Judge — TUPI Partition

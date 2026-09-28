@@ -69,7 +69,7 @@ needed admin intervention). `scripts/slurm/container_teardown.sh` holds the
 shared fix; it only works when BOTH pieces are present: the stage command runs
 in the background and is `wait`-ed on (bash defers traps during a foreground
 external command), and the partition script carries
-`#SBATCH --signal=B:TERM@60`. Sourced by `rag/` and `emic/`. **`judge/`, `cep/`
+`#SBATCH --signal=B:TERM@60`. Sourced by `rag/`, `emic/` and `judge/`. **`cep/`
 and `kg/` still lack it** and can still orphan. A deploy that ships a
 `<step>_common.sh` without `container_teardown.sh` now aborts the job rather
 than running untrapped.
