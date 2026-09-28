@@ -127,3 +127,70 @@ def test_falls_back_to_the_transcription_for_contextless_pairs(
 
     assert result.exit_code == 0, result.output
     assert judge.calls[1] == ("Q2", "CHUNK_A texto inicial. CHUNK_B texto final.")
+
+
+def _results_layout(tmp_path: Path, pipeline_id: str = "run-x") -> Path:
+    """Create ``<base>/<id>/cep/outputs`` and return it."""
+    outputs = tmp_path / "results" / pipeline_id / "cep" / "outputs"
+    outputs.mkdir(parents=True)
+    return outputs
+
+
+def test_writes_run_metadata_for_a_results_layout(
+    tmp_path: Path,
+    runner: CliRunner,
+    judge: _RecordingJudge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run over results/<id>/cep/outputs records how its verdicts were produced."""
+    monkeypatch.delenv("ARANDU_JUDGE_TEMPERATURE", raising=False)
+    outputs = _results_layout(tmp_path)
+    _write_record(outputs)
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "test-model"])
+
+    assert result.exit_code == 0, result.output
+    pipeline_dir = tmp_path / "results" / "run-x"
+    metadata = json.loads((pipeline_dir / "judge_qa" / "run_metadata.json").read_text())
+    assert metadata["pipeline_type"] == "judge_qa"
+    assert metadata["status"] == "completed"
+    assert metadata["total_items"] == 2
+    values = metadata["config"]["config_values"]
+    assert values["mode"] == "resume"
+    assert values["model_id"] == "test-model"
+    assert values["judge"]["temperature"] == 0.1
+    assert set(values["criteria"]) == {
+        "faithfulness",
+        "bloom_calibration",
+        "informativeness",
+        "self_containedness",
+    }
+    assert all(c["threshold"] == 0.625 for c in values["criteria"].values())
+    assert values["bloom_descriptions_sha256"]
+    steps = json.loads((pipeline_dir / "pipeline.json").read_text())["steps_run"]
+    assert "judge_qa" in steps
+
+
+def test_records_rejudge_mode(tmp_path: Path, runner: CliRunner, judge: _RecordingJudge) -> None:
+    """The mode is a CLI flag, so it must reach the snapshot explicitly."""
+    outputs = _results_layout(tmp_path)
+    _write_record(outputs)
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "test-model", "--rejudge"])
+
+    assert result.exit_code == 0, result.output
+    metadata_path = tmp_path / "results" / "run-x" / "judge_qa" / "run_metadata.json"
+    assert json.loads(metadata_path.read_text())["config"]["config_values"]["mode"] == "rejudge"
+
+
+def test_skips_run_metadata_outside_the_results_layout(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    """An ad hoc dataset directory is judged without creating a step directory."""
+    _write_record(tmp_path)
+
+    result = runner.invoke(app, ["judge-qa", str(tmp_path), "--model", "test-model"])
+
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path.parent / "judge_qa").exists()
+    assert list(tmp_path.glob("**/run_metadata.json")) == []

@@ -862,6 +862,7 @@ class TestPipelineType:
             "kg",
             "retrieve",
             "answers",
+            "judge_qa",
             "judge_answers",
             "analysis",
             "non_answerable",

@@ -84,7 +84,7 @@ Current settings classes:
 | Field | Env var | Default |
 |---|---|---|
 | `language` | `ARANDU_JUDGE_LANGUAGE` | `pt` |
-| `temperature` | `ARANDU_JUDGE_TEMPERATURE` | `0.3` |
+| `temperature` | `ARANDU_JUDGE_TEMPERATURE` | `0.1` |
 | `max_tokens` | `ARANDU_JUDGE_MAX_TOKENS` | `8192` |
 | `validator_model` | `ARANDU_JUDGE_VALIDATOR_MODEL` | `None` |
 | `validator_provider` | `ARANDU_JUDGE_VALIDATOR_PROVIDER` | `None` (inferred) |

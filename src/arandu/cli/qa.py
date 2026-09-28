@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 from rich.table import Table
 
 from arandu.utils.console import console
 from arandu.utils.logger import print_error, print_info, print_success, print_warning
+
+if TYPE_CHECKING:
+    from arandu.qa.cep.judge_run import JudgeQARunConfig
+    from arandu.shared.results_manager import ResultsManager
 
 
 def generate_cep_qa(
@@ -295,6 +299,9 @@ def judge_qa(
     ``validation`` field. ``is_valid`` is derived from
     ``validation.passed`` automatically. No aggregate side-file is
     produced — run a downstream analytics script for cross-record reports.
+    When ``input_dir`` is ``results/<id>/cep/outputs``, the run's settings
+    (model, temperature, thresholds, prompt digests) are snapshotted into
+    ``results/<id>/judge_qa/run_metadata.json``.
 
     Validator model and provider come from ``--model`` / ``--provider`` /
     ``--base-url`` when supplied, otherwise from
@@ -321,6 +328,7 @@ def judge_qa(
         arandu judge-qa cep_dataset/ --rejudge
     """
     from arandu.qa.cep.judge import QAJudge
+    from arandu.qa.cep.judge_run import build_judge_qa_run_config
     from arandu.qa.cep.metadata_context import build_pair_judge_context
     from arandu.qa.config import CEPConfig, get_judge_config
     from arandu.qa.schemas import QAPairCEP, QARecordCEP
@@ -351,7 +359,9 @@ def judge_qa(
         raise typer.Exit(code=1)
 
     cep_config = CEPConfig(language=language)
-    judge = QAJudge(validator_client=client, cep_config=cep_config)
+    # Pass the resolved judge config so the metadata snapshot below describes
+    # the exact settings the judge runs with, not a second env read.
+    judge = QAJudge(validator_client=client, cep_config=cep_config, judge_config=judge_config)
 
     # Find QA files
     qa_files = sorted(input_dir.glob("*_cep_qa.json"))
@@ -363,6 +373,18 @@ def judge_qa(
         qa_files = qa_files[:files]
 
     mode_label = "rejudge" if rejudge else "resume"
+    results_mgr = _start_judge_qa_run(
+        input_dir,
+        build_judge_qa_run_config(
+            mode=mode_label,
+            files=files,
+            pairs=pairs,
+            provider=provider or judge_config.validator_provider,
+            model_id=resolved_model,
+            base_url=base_url or judge_config.validator_base_url,
+            judge=judge_config,
+        ),
+    )
     print_info(
         f"Judging [bold]{len(qa_files)}[/bold] QA files (mode: {mode_label})"
         + (f", up to [bold]{pairs}[/bold] pairs each" if pairs else "")
@@ -372,6 +394,8 @@ def judge_qa(
     total_valid = 0
     total_judged = 0
     total_skipped = 0
+    total_failed = 0
+    total_sampled = 0
 
     for qa_file in qa_files:
         try:
@@ -407,6 +431,7 @@ def judge_qa(
         file_valid = 0
         file_skipped = 0
 
+        total_sampled += len(sampled_indices)
         for idx in sampled_indices:
             qa = updated_pairs[idx]
             if not rejudge and qa.validation is not None:
@@ -441,6 +466,7 @@ def judge_qa(
                 _render_qa_verdict(validated)
             except Exception as e:
                 print_warning(f"Failed to judge pair in {qa_file.name}: {e}")
+                total_failed += 1
                 continue
 
         # Persist updated record back to disk. ``resolved_model`` (not the
@@ -464,12 +490,41 @@ def judge_qa(
         )
         console.print()
 
+    if results_mgr is not None:
+        results_mgr.update_progress(total_judged + total_skipped, total_failed, total_sampled)
+        results_mgr.complete_run(success=True)
+
     console.print(f"[bold]Total pairs judged:[/bold] {total_judged}")
     console.print(f"[green]Valid:[/green] {total_valid}")
     console.print(f"[red]Invalid:[/red] {total_judged + total_skipped - total_valid}")
     if total_skipped:
         console.print(f"[dim]Resumed (already judged, skipped):[/dim] {total_skipped}")
     console.print()
+
+
+def _start_judge_qa_run(input_dir: Path, config: JudgeQARunConfig) -> ResultsManager | None:
+    """Open ``results/<id>/judge_qa/run_metadata.json`` for this judge-qa run.
+
+    The verdicts themselves stay inside the CEP records; this step directory
+    only records how they were produced. Returns ``None`` (with a warning) when
+    ``input_dir`` is not a ``<base>/<id>/cep/outputs`` directory.
+    """
+    from arandu.qa.cep.judge_run import resolve_pipeline_layout
+    from arandu.shared.results_manager import ResultsManager
+    from arandu.shared.schemas import PipelineType
+
+    layout = resolve_pipeline_layout(input_dir)
+    if layout is None:
+        print_warning(
+            f"{input_dir} is not a results/<id>/cep/outputs directory; "
+            "no run_metadata.json will be written for this judge-qa run."
+        )
+        return None
+    base, pipeline_id = layout
+    results_mgr = ResultsManager(base, PipelineType.JUDGE_QA, pipeline_id=pipeline_id)
+    results_mgr.create_run(config, input_source=str(input_dir))
+    print_info(f"Run metadata: {results_mgr.run_dir / 'run_metadata.json'}")
+    return results_mgr
 
 
 def _render_qa_verdict(validated: Any) -> None:
