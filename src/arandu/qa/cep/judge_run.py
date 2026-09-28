@@ -28,6 +28,8 @@ from arandu.utils.paths import get_project_root
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from arandu.shared.judge.schemas import JudgePipelineResult
+
 # Criteria the gate can evaluate; remember pairs use only the first two
 # (see QAJudge._build_pipeline).
 GATE_CRITERIA: tuple[str, ...] = (
@@ -172,4 +174,18 @@ def build_judge_qa_run_config(
         bloom_descriptions_sha256=snapshot_bloom_descriptions(
             bloom_descriptions_dir, judge.language
         ),
+    )
+
+
+def has_judge_error(validation: JudgePipelineResult) -> bool:
+    """Whether any criterion of a verdict failed to run (LLM or parse error).
+
+    Such a verdict reads as a rejection (``CriterionScore.passed`` is False on
+    error) but records an infrastructure failure, not a judgment, so
+    ``judge-qa`` counts it as failed and re-judges it on resume.
+    """
+    return any(
+        score.error is not None
+        for stage in validation.stage_results.values()
+        for score in stage.criterion_scores.values()
     )

@@ -6,9 +6,11 @@ from typing import TYPE_CHECKING
 
 from arandu.qa.cep.judge_run import (
     GATE_CRITERIA,
+    has_judge_error,
     resolve_pipeline_layout,
     snapshot_criteria,
 )
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,3 +63,17 @@ def test_missing_config_yields_no_threshold(tmp_path: Path) -> None:
     (root / "faithfulness" / "config.json").unlink()
 
     assert snapshot_criteria(root, "pt")["faithfulness"].threshold is None
+
+
+def _pipeline(*errors: str | None) -> JudgePipelineResult:
+    scores = {
+        f"c{i}": CriterionScore(score=1.0, threshold=0.625, rationale="r", error=e)
+        for i, e in enumerate(errors)
+    }
+    step = JudgeStepResult(criterion_scores=scores)
+    return JudgePipelineResult(stage_results={"s": step}, passed=step.passed)
+
+
+def test_has_judge_error_detects_any_criterion_error() -> None:
+    assert has_judge_error(_pipeline(None, "timeout"))
+    assert not has_judge_error(_pipeline(None, None))
