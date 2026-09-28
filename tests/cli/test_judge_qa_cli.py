@@ -163,6 +163,9 @@ def _results_layout(tmp_path: Path, pipeline_id: str = "run-x") -> Path:
     """Create ``<base>/<id>/cep/outputs`` and return it."""
     outputs = tmp_path / "results" / pipeline_id / "cep" / "outputs"
     outputs.mkdir(parents=True)
+    (tmp_path / "results" / pipeline_id / "pipeline.json").write_text(
+        json.dumps({"pipeline_id": pipeline_id, "steps_run": ["cep"]})
+    )
     return outputs
 
 
@@ -325,3 +328,65 @@ def test_aborted_run_is_marked_failed(
     metadata = _metadata(tmp_path)
     assert metadata["status"] == "failed"
     assert "KeyboardInterrupt" in metadata["error_message"]
+
+
+def test_resume_archives_the_previous_run_metadata(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    """A resume must not erase the snapshot of the run whose verdicts it skips."""
+    outputs = _results_layout(tmp_path)
+    _write_record(outputs)
+    assert (
+        runner.invoke(app, ["judge-qa", str(outputs), "--model", "m", "--rejudge"]).exit_code == 0
+    )
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "m"])
+
+    assert result.exit_code == 0, result.output
+    history = list((tmp_path / "results" / "run-x" / "judge_qa" / "history").glob("*.json"))
+    assert len(history) == 1
+    assert json.loads(history[0].read_text())["config"]["config_values"]["mode"] == "rejudge"
+    assert _metadata(tmp_path)["config"]["config_values"]["mode"] == "resume"
+
+
+def test_unreadable_file_fails_the_run(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    outputs = _results_layout(tmp_path)
+    _write_record(outputs)
+    (outputs / "broken_cep_qa.json").write_text("{not json")
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "m"])
+
+    assert result.exit_code == 0, result.output
+    metadata = _metadata(tmp_path)
+    assert metadata["status"] == "failed"
+    assert "broken_cep_qa.json" in metadata["error_message"]
+    assert metadata["completed_items"] == 2
+
+
+def test_language_option_reaches_the_criteria(
+    tmp_path: Path,
+    runner: CliRunner,
+    judge: _RecordingJudge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--language must change the prompts the criteria load, not only CEPConfig."""
+    import arandu.qa.cep.judge as judge_module
+
+    seen: dict[str, str] = {}
+
+    def factory(**kwargs: Any) -> _RecordingJudge:
+        seen["language"] = kwargs["judge_config"].language
+        return judge
+
+    monkeypatch.setattr(judge_module, "QAJudge", factory)
+    monkeypatch.delenv("ARANDU_JUDGE_LANGUAGE", raising=False)
+    outputs = _results_layout(tmp_path)
+    _write_record(outputs)
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "m", "--language", "en"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["language"] == "en"
+    assert _metadata(tmp_path)["config"]["config_values"]["language"] == "en"

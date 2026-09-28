@@ -267,9 +267,16 @@ def judge_qa(
         ),
     ] = None,
     language: Annotated[
-        str,
-        typer.Option("--language", "-l", help="Language for judge prompts (pt or en)."),
-    ] = "pt",
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help=(
+                "Language of the judge criterion prompts (pt or en). Falls back "
+                "to ARANDU_JUDGE_LANGUAGE (default pt)."
+            ),
+        ),
+    ] = None,
     files: Annotated[
         int | None,
         typer.Option("--files", help="Maximum number of QA files to sample."),
@@ -354,11 +361,15 @@ def judge_qa(
         raise typer.Exit(code=1) from exc
 
     valid_languages = {"en", "pt"}
-    if language not in valid_languages:
+    if language is not None and language not in valid_languages:
         print_error(f"Invalid language: {language!r}. Must be one of {sorted(valid_languages)}")
         raise typer.Exit(code=1)
+    if language is not None:
+        # The criteria load their prompts in judge_config.language; the option
+        # must reach it, not only CEPConfig, or it silently has no effect.
+        judge_config = judge_config.model_copy(update={"language": language})
 
-    cep_config = CEPConfig(language=language)
+    cep_config = CEPConfig(language=judge_config.language)
     # Pass the resolved judge config so the metadata snapshot below describes
     # the exact settings the judge runs with, not a second env read.
     judge = QAJudge(validator_client=client, cep_config=cep_config, judge_config=judge_config)
@@ -402,6 +413,7 @@ def judge_qa(
     total_skipped = 0
     total_failed = 0
     total_sampled = 0
+    unreadable_files: list[str] = []
 
     try:
         for qa_file in qa_files:
@@ -409,6 +421,7 @@ def judge_qa(
                 record = QARecordCEP.model_validate_json(qa_file.read_text())
             except Exception as e:
                 print_error(f"Failed to read {qa_file.name}: {e}")
+                unreadable_files.append(qa_file.name)
                 continue
 
             all_pairs = record.qa_pairs
@@ -519,7 +532,16 @@ def judge_qa(
         # completed counts only pairs judged by THIS run; pairs skipped on
         # resume keep the verdict (and configuration) of the run that made them.
         results_mgr.update_progress(total_judged, total_failed, total_sampled)
-        results_mgr.complete_run(success=total_failed == 0)
+        # Unreadable files have no pair count to add to failed_items, so they
+        # fail the run and are named in its error message instead.
+        results_mgr.complete_run(
+            success=total_failed == 0 and not unreadable_files,
+            error=(
+                f"{len(unreadable_files)} unreadable CEP file(s): {', '.join(unreadable_files)}"
+                if unreadable_files
+                else None
+            ),
+        )
 
     console.print(f"[bold]Total pairs judged:[/bold] {total_judged}")
     console.print(f"[green]Valid:[/green] {total_valid}")
@@ -528,6 +550,8 @@ def judge_qa(
         console.print(f"[dim]Resumed (already judged, skipped):[/dim] {total_skipped}")
     if total_failed:
         console.print(f"[yellow]Judge errors (retried on resume):[/yellow] {total_failed}")
+    if unreadable_files:
+        console.print(f"[red]Unreadable files (not judged):[/red] {len(unreadable_files)}")
     console.print()
 
 
@@ -544,7 +568,7 @@ def _start_judge_qa_run(input_dir: Path, config: JudgeQARunConfig) -> ResultsMan
     only records how they were produced. Returns ``None`` (with a warning) when
     ``input_dir`` is not a ``<base>/<id>/cep/outputs`` directory.
     """
-    from arandu.qa.cep.judge_run import resolve_pipeline_layout
+    from arandu.qa.cep.judge_run import archive_previous_snapshot, resolve_pipeline_layout
     from arandu.shared.results_manager import ResultsManager
     from arandu.shared.schemas import PipelineType
 
@@ -556,6 +580,9 @@ def _start_judge_qa_run(input_dir: Path, config: JudgeQARunConfig) -> ResultsMan
         )
         return None
     base, pipeline_id = layout
+    archived = archive_previous_snapshot(base / pipeline_id / PipelineType.JUDGE_QA.value)
+    if archived is not None:
+        print_info(f"Previous run metadata archived to {archived}")
     results_mgr = ResultsManager(base, PipelineType.JUDGE_QA, pipeline_id=pipeline_id)
     results_mgr.create_run(config, input_source=str(input_dir))
     print_info(f"Run metadata: {results_mgr.run_dir / 'run_metadata.json'}")

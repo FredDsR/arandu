@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
+from arandu.qa.cep.judge import GATE_CRITERIA
 from arandu.qa.config import JudgeConfig  # noqa: TC001 (pydantic needs runtime access)
 from arandu.shared.judge.factory import DEFAULT_JUDGE_PROMPTS_DIR
 from arandu.utils.paths import get_project_root
@@ -29,15 +31,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from arandu.shared.judge.schemas import JudgePipelineResult
-
-# Criteria the gate can evaluate; remember pairs use only the first two
-# (see QAJudge._build_pipeline).
-GATE_CRITERIA: tuple[str, ...] = (
-    "faithfulness",
-    "bloom_calibration",
-    "informativeness",
-    "self_containedness",
-)
 
 # Bloom level descriptions fed to bloom_calibration (mirrors qa.cep.judge).
 BLOOM_DESCRIPTIONS_DIR = get_project_root() / "prompts" / "qa" / "cep" / "validation"
@@ -49,12 +42,18 @@ class CriterionPromptSnapshot(BaseModel):
     Attributes:
         threshold: Pass threshold read from the criterion's ``config.json``
             (``None`` when absent).
+        temperature: Effective sampling temperature of the criterion: the
+            ``temperature`` override in its ``config.json`` when present,
+            otherwise the judge-wide temperature.
         sha256: Digest over the criterion's ``config.json`` and its prompt
             for the run language, so a prompt edit changes the digest.
+            ``None`` when either file is missing, so two runs without prompts
+            never compare as identical.
     """
 
     threshold: float | None
-    sha256: str
+    temperature: float
+    sha256: str | None
 
 
 class JudgeQARunConfig(BaseModel):
@@ -96,31 +95,74 @@ def resolve_pipeline_layout(input_dir: Path) -> tuple[Path, str] | None:
     Returns:
         The results base directory and pipeline id, or ``None`` when the
         directory does not follow the results layout (an ad hoc dataset), in
-        which case there is no step directory to write metadata into.
+        which case there is no step directory to write metadata into. The
+        layout is recognised by the pipeline's ``pipeline.json``, not by the
+        path shape alone: ``~/datasets/cep/outputs`` must not create
+        ``~/datasets/judge_qa/`` and a stray ``~/index.json``.
     """
     resolved = input_dir.resolve()
     if resolved.name != "outputs" or resolved.parent.name != "cep":
         return None
     pipeline_dir = resolved.parent.parent
+    if not (pipeline_dir / "pipeline.json").is_file():
+        return None
     return pipeline_dir.parent, pipeline_dir.name
 
 
-def _digest(paths: list[Path]) -> str:
-    """SHA-256 over the (name, content) of each existing path, in order."""
+def archive_previous_snapshot(step_dir: Path) -> Path | None:
+    """Move an existing ``run_metadata.json`` into ``history/`` before a new run.
+
+    ``create_run`` rewrites the snapshot from scratch, so a resume would erase
+    the record of the run that produced the verdicts it skips. Archiving keeps
+    an append-only history: every run that wrote verdicts leaves its snapshot.
+
+    Args:
+        step_dir: ``results/<id>/judge_qa``.
+
+    Returns:
+        Path of the archived snapshot, or ``None`` when there was none.
+    """
+    current = step_dir / "run_metadata.json"
+    if not current.is_file():
+        return None
+    try:
+        started = json.loads(current.read_text(encoding="utf-8")).get("started_at")
+    except (OSError, ValueError):
+        started = None
+    stamp = started or datetime.fromtimestamp(current.stat().st_mtime).isoformat()
+    stamp = stamp.replace(":", "").replace("+", "_")
+    history = step_dir / "history"
+    history.mkdir(exist_ok=True)
+    target = history / f"run_metadata.{stamp}.json"
+    suffix = 1
+    while target.exists():
+        target = history / f"run_metadata.{stamp}.{suffix}.json"
+        suffix += 1
+    current.rename(target)
+    return target
+
+
+def _digest(paths: list[Path]) -> str | None:
+    """SHA-256 over the (name, content) of each path, or ``None`` if any is missing."""
+    if not all(path.is_file() for path in paths):
+        return None
     h = hashlib.sha256()
     for path in paths:
-        if path.is_file():
-            h.update(path.name.encode("utf-8"))
-            h.update(path.read_bytes())
+        h.update(path.name.encode("utf-8"))
+        h.update(path.read_bytes())
     return h.hexdigest()
 
 
-def snapshot_criteria(criteria_dir: Path, language: str) -> dict[str, CriterionPromptSnapshot]:
-    """Read threshold and prompt digest for every gate criterion.
+def snapshot_criteria(
+    criteria_dir: Path, language: str, judge_temperature: float
+) -> dict[str, CriterionPromptSnapshot]:
+    """Read threshold, effective temperature and prompt digest for every gate criterion.
 
     Args:
         criteria_dir: ``prompts/judge/criteria``.
         language: Prompt language (``pt`` or ``en``).
+        judge_temperature: Judge-wide temperature, which a criterion's
+            ``config.json`` may override (see ``LLMCriterion`` loading).
 
     Returns:
         Mapping from criterion name to its snapshot.
@@ -128,11 +170,13 @@ def snapshot_criteria(criteria_dir: Path, language: str) -> dict[str, CriterionP
     out: dict[str, CriterionPromptSnapshot] = {}
     for name in GATE_CRITERIA:
         config_path = criteria_dir / name / "config.json"
-        threshold: float | None = None
+        config: dict = {}
         if config_path.is_file():
-            threshold = json.loads(config_path.read_text(encoding="utf-8")).get("threshold")
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        override = config.get("temperature")
         out[name] = CriterionPromptSnapshot(
-            threshold=threshold,
+            threshold=config.get("threshold"),
+            temperature=override if override is not None else judge_temperature,
             sha256=_digest([config_path, criteria_dir / name / language / "prompt.md"]),
         )
     return out
@@ -159,7 +203,7 @@ def build_judge_qa_run_config(
     """Assemble the snapshot for a judge-qa run, digesting the prompts on disk.
 
     The criterion prompts are resolved in ``judge.language``, the language the
-    criteria actually load (the CLI ``--language`` only reaches ``CEPConfig``).
+    criteria actually load (``judge-qa --language`` overrides it before this call).
     """
     return JudgeQARunConfig(
         mode=mode,
@@ -170,7 +214,7 @@ def build_judge_qa_run_config(
         base_url=base_url,
         language=judge.language,
         judge=judge,
-        criteria=snapshot_criteria(criteria_dir, judge.language),
+        criteria=snapshot_criteria(criteria_dir, judge.language, judge.temperature),
         bloom_descriptions_sha256=snapshot_bloom_descriptions(
             bloom_descriptions_dir, judge.language
         ),
