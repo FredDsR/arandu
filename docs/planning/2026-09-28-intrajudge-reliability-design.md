@@ -54,7 +54,7 @@ só os juízes.
 2. **Padronizar T = 0,1** no compose, em `judge_common.sh` e no `.env.example`.
 3. **Re-julgar o portão do `thesis-run-02`** com o código acima. Esse passa a ser o
    canônico e a réplica 1 do portão.
-4. **Exportador de rodada** (ver abaixo).
+4. **Blocos copy-paste** de rodada e exportação (ver abaixo), sem script novo.
 5. **Script de análise** reutilizando `shared/agreement/coefficients.py`
    (`krippendorff_alpha`, `gwet_ac2`, `cohen_kappa_weighted`, com escala fixa).
 
@@ -72,45 +72,81 @@ k só os três juízes rodam, e as saídas são exportadas antes da rodada segui
 
 ### Encadeamento no SLURM com replay
 
-Um job único por rodada (`scripts/slurm/intrajudge/round.slurm`) executa as etapas
-em sequência: `judge-qa` → `emic-judge` → `judge-answers` → exportação. O
-`judge-answers` levou 2 dias e 14 horas no run-02, então o job passa do teto de 24h
-e precisa de replay. O job é idempotente e guiado por um arquivo de estado
-`results/thesis-run-03/intrajudge/round-<k>/state.json`:
+Sem script novo: cada rodada é um bloco copy-paste no login do pcad, a partir de
+`~/etno-kgc-preprocessing/`, que usa os jobs existentes encadeados por
+`--dependency`. O `judge-answers` levou 2 dias e 14 horas no run-02, então os replays
+já entram na fila junto com o primeiro job: cada replay depende de `afternotok` do
+anterior (só roda se o anterior estourou o tempo ou falhou) e é descartado por
+`--kill-on-invalid-dep=yes` quando o anterior termina bem. A etapa seguinte depende
+de `afterok` de qualquer job da etapa (`?` é o OU do SLURM).
 
-- Cada etapa tem os estados `pending`, `started` e `done`.
-- Na **primeira** entrada de uma etapa, o job limpa o resultado anterior e marca
-  `started`. Nos replays ele entra em modo resume.
-- A limpeza é específica para cada juiz, porque o resume dos três não funciona igual:
-  - `judge-qa` não tem checkpoint; o resume pula pares que já carregam `validation`.
-    Um `--rejudge` interrompido deixaria pares com o veredito da rodada anterior e o
-    replay os pularia, misturando rodadas em silêncio. Por isso a primeira entrada
-    **remove o campo `validation` de todos os pares** (depois da exportação da
-    rodada anterior) e roda sempre em resume.
-  - `emic-judge`: `--rerun` na primeira entrada (descarta o checkpoint), `--resume`
-    nos replays.
-  - `judge-answers`: `--rejudge` na primeira entrada, resume nos replays.
-- `emic-judge` roda depois de `judge-qa` porque copia o veredito do portão em cada nota.
-- A etapa só vira `done` com exit 0 e checagem de completude (número de itens julgados
-  igual ao esperado, falhas contadas à parte).
-- Replay: `ROUND=<k> sbatch scripts/slurm/intrajudge/round.slurm`, o mesmo comando
-  até o estado final. `STAGES` permite restringir as etapas (ver ordem sugerida).
-- Segue `container_teardown.sh` e `#SBATCH --signal=B:TERM@60`, como `rag/` e `emic/`.
+O resume dos três juízes não funciona igual, e isso define a primeira submissão:
+
+- `judge-qa` não tem checkpoint; o resume pula pares que já carregam `validation`.
+  Um `--rejudge` interrompido deixaria pares com o veredito da rodada anterior, e o
+  replay os pularia, misturando rodadas em silêncio. Por isso a rodada começa
+  **removendo o `validation` de todos os pares** (depois da exportação da rodada
+  anterior), e todos os jobs do portão rodam em resume.
+- `emic-judge`: `EMIC_RERUN=1` no primeiro job (descarta checkpoint e saídas),
+  resume nos replays. Roda depois do portão porque copia o veredito em cada nota.
+- `judge-answers`: `JUDGE_ANSWERS_REJUDGE=1` no primeiro job, variável **ausente** nos
+  replays (o script testa só se ela está definida).
+
+```bash
+cd ~/etno-kgc-preprocessing
+ID=thesis-run-03; K=2            # rodada
+R=results/$ID
+KILL=--kill-on-invalid-dep=yes
+
+# 1. Limpar os vereditos do portão (só na primeira submissão da rodada).
+python3 - "$R/cep/outputs" <<'EOF'
+import json, pathlib, sys
+for f in sorted(pathlib.Path(sys.argv[1]).glob("*_cep_qa.json")):
+    d = json.loads(f.read_text(encoding="utf-8"))
+    for p in d["qa_pairs"]:
+        p["validation"] = None
+        p.pop("is_valid", None)
+    d["validated_pairs"] = 0
+    f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+EOF
+
+# 2. Portão: sempre em resume (os vereditos já foram removidos).
+Q1=$(PIPELINE_ID=$ID JUDGE_REJUDGE=0 sbatch --parsable scripts/slurm/judge/qa/tupi.slurm)
+Q2=$(PIPELINE_ID=$ID JUDGE_REJUDGE=0 sbatch --parsable $KILL --dependency=afternotok:$Q1 scripts/slurm/judge/qa/tupi.slurm)
+
+# 3. Êmico: rerun no primeiro job, resume no replay.
+E1=$(PIPELINE_ID=$ID EMIC_RERUN=1 sbatch --parsable $KILL --dependency="afterok:$Q1?afterok:$Q2" scripts/slurm/emic/tupi.slurm)
+E2=$(PIPELINE_ID=$ID EMIC_RERUN=0 sbatch --parsable $KILL --dependency=afternotok:$E1 scripts/slurm/emic/tupi.slurm)
+
+# 4. Respostas: rejudge no primeiro job, três replays em resume.
+A1=$(PIPELINE_ID=$ID JUDGE_ANSWERS_REJUDGE=1 sbatch --parsable $KILL --dependency="afterok:$E1?afterok:$E2" scripts/slurm/rag/judge-answers.slurm)
+A2=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A1 scripts/slurm/rag/judge-answers.slurm)
+A3=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A2 scripts/slurm/rag/judge-answers.slurm)
+A4=$(env -u JUDGE_ANSWERS_REJUDGE PIPELINE_ID=$ID sbatch --parsable $KILL --dependency=afternotok:$A3 scripts/slurm/rag/judge-answers.slurm)
+echo "round $K: qa=$Q1,$Q2 emic=$E1,$E2 answers=$A1,$A2,$A3,$A4"
+```
+
+Para rodar só portão e êmico em todas as rodadas antes do juiz de respostas (ordem
+sugerida no cronograma), omitir o passo 4 e submetê-lo depois, sem dependência.
+
+O `judge/` ainda não tem `container_teardown.sh`: um TIMEOUT do portão pode deixar
+containers órfãos no nó. Com cerca de 5 horas por rodada, o replay dele é só uma
+salvaguarda.
 
 ### Exportação
 
-`results/thesis-run-03/intrajudge/round-<k>/` guarda apenas o necessário para a
-análise, em formato compacto:
+Também sem script: ao fim de cada rodada, e **antes** da limpeza da rodada seguinte,
+um tar guarda o que a análise lê (vereditos do portão dentro dos registros CEP, notas
+êmicas, julgamentos das respostas e os `run_metadata.json` de cada etapa):
 
-- `gate.jsonl`: `qa_pair_id`, nível Bloom, nota por critério, `passed`, `rejected_at`,
-  erro de parse;
-- `emic.jsonl`: `qa_pair_id`, nota, erro;
-- `answers.jsonl`: braço, `qa_pair_id`, `is_answerable`, `abstained` do respondedor,
-  nota por critério;
-- `manifest.json`: modelo, digest da imagem, versão do Ollama, temperatura,
-  thresholds, hash dos prompts, commit, horários, contagens.
+```bash
+mkdir -p results/intrajudge
+tar czf results/intrajudge/$ID-round-$K.tar.gz -C results/$ID \
+    cep/outputs judge_qa emic_judge judge_answers
+```
 
-A réplica 1 é exportada do `thesis-run-02` no mesmo formato.
+A réplica 1 é o mesmo tar tirado do `thesis-run-02` depois do re-julgamento do portão
+(`ID=thesis-run-02; K=1`). A análise lê os tars diretamente.
 
 ## Métricas
 
@@ -141,7 +177,7 @@ A réplica 1 é exportada do `thesis-run-02` no mesmo formato.
 
 | Data | Passo |
 |---|---|
-| 09-29 a 09-30 | pré-requisitos 1, 2, 4 e 5; re-julgar o portão do run-02 (passo 3) |
+| 09-29 a 09-30 | pré-requisitos 1, 2 e 5; re-julgar o portão do run-02 (passo 3) e exportar a réplica 1 |
 | 10-01 | `replicate` → `thesis-run-03`; rodadas 2 e 3 com `STAGES=judge-qa,emic-judge` (cerca de 8h cada) |
 | 10-02 a 10-08 | rodadas 2 e 3 do `judge-answers` (cerca de 62h cada, com replays) |
 | 10-08 a 10-10 | análise e texto do paper |
