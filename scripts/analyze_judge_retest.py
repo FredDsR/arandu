@@ -10,7 +10,10 @@ abstention tau read from the criterion) and are never tuned here.
 
 Each ``--replica`` is the directory a round's export tar was extracted to, i.e.
 it holds ``cep/outputs``, ``judge_qa``, ``emic_judge`` and ``judge_answers``.
-The first ``--replica`` is the canonical one.
+The first ``--replica`` is the canonical one. ``--gate-from N=DIR`` reads
+replica N's gate verdicts from another export of the same round (used when the
+round's final tar was taken after its CEP verdicts were cleared for the next
+round); the replica's own export is still checked against it.
 
 What it computes (sections of the JSON / Markdown output):
 
@@ -21,20 +24,29 @@ What it computes (sections of the JSON / Markdown output):
    is detected from its checkpoint: only records listed as completed in that
    round's checkpoint count as re-judged; the rest are carried over from the
    previous round and are treated as missing.
+1b. ``completeness``: item counts per judge and replica against replica 1,
+   duplicates, and records whose judge output repeats an earlier replica's.
+1c. ``provenance``: prompt digests at the analysed commit against the gate's
+   recorded ones, last prompt change against each replica's start, and any
+   recorded Ollama or image version.
 2. ``sanity``: the published canonical numbers, recomputed on replica 1.
 3. ``gate``: Krippendorff's alpha (ordinal, scale 0..4) and Gwet's AC2
    (quadratic) per criterion, nominal alpha / AC2 / pairwise Cohen kappa for the
    binary verdict, item instability D_i = 2 k_i (R - k_i) / (R (R - 1)), score
-   amplitude, mean signed and absolute differences, margin dependence; all
-   stratified by Bloom level.
+   amplitude, mean signed and absolute differences, margin dependence; over the
+   total dataset, the useful candidates (every pair above Remember) and each
+   Bloom level.
 4. ``emic``: the same for the 1..5 emic score and the binary EV >= 4 filter.
-5. ``answers``: the same per answer-judge criterion and for the TC/FC/FA/TA
-   cell, by arm, over all records (R = replicas with complete data) and over the
-   records every replica re-judged.
-6. ``aggregates``: every published aggregate per replica under three sources
-   of variation (answer judge with the canonical useful set; gate with the
-   canonical answers; both), the qualitative conclusions (a) to (e), and a
-   paired bootstrap over items x replicas for the BM25-vs-graph differences.
+5. ``answers``: the same per answer-judge criterion, for the evidence-support
+   pass cut (``passage_coverage >= tau``, nominal) and for the TC/FC/FA/TA
+   cell, in the total, candidates and useful record strata, by arm and level.
+5b. ``rejection_emic``: emic score of gate-rejected pairs by failing criterion.
+6. ``aggregates``: every published aggregate per replica in the total and
+   candidates strata (answer-judge noise only) and in the useful stratum under
+   three sources of variation (answer judge with the canonical useful set; gate
+   with the canonical answers; both), the qualitative conclusions (a) to (e),
+   and paired bootstraps over items x replicas for the BM25-vs-graph
+   differences, overall and per level.
 
 Krippendorff's alpha, AC2 and weighted kappa come from
 ``arandu.shared.agreement.coefficients`` (first-principles implementations with
@@ -42,12 +54,13 @@ a fixed scale). If the ``krippendorff`` package is importable its alpha is
 reported alongside as a cross-check. Alpha CIs use a vectorised item bootstrap
 whose point estimate is asserted equal to the arandu one.
 
-Run from the repo root (the scratchpad paths are where the tars were
-extracted):
+Run from the repo root (``results/judge-retest`` holds the extracted tars):
 
+    R=results/judge-retest
     uv run --with krippendorff python -m scripts.analyze_judge_retest \\
-        --replica <dir>/r1 --replica <dir>/r2 --replica <dir>/r3 \\
-        --out-json retest.json --out-md retest.md
+        --replica $R/r1 --replica $R/r2 --replica $R/r3 --gate-from 3=$R/r3-gate \\
+        --out-json $R/out/retest.json --out-md $R/out/retest.md \\
+        --n-boot 2000 --seed 20261005
 """
 
 from __future__ import annotations
@@ -60,7 +73,9 @@ import json
 import math
 import pickle
 import platform
+import subprocess
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -118,19 +133,44 @@ def load_cep(cep_dir: Path) -> dict[str, dict[str, Any]]:
                 "chunk": pair.chunk_id,
                 "ctx_len": len(pair.context or ""),
                 "content_sha": _sha([pair.question, pair.answer, pair.context, pair.bloom_level]),
+                "validation_sha": None if v is None else _sha(v.model_dump()),
             }
     return out
 
 
-def load_emic(emic_dir: Path, cep: dict[str, dict[str, Any]]) -> dict[str, int | None]:
-    """``qa_pair_id -> emic score`` joined through (source_file_id, pair_index)."""
+def load_emic(
+    emic_dir: Path, cep: dict[str, dict[str, Any]]
+) -> tuple[dict[str, int | None], dict[str, int]]:
+    """``qa_pair_id -> emic score`` joined through (source_file_id, pair_index).
+
+    Also returns the raw entry count and how many entries repeat a pair, so the
+    completeness check can flag duplicated or missing scores.
+    """
     by_file_idx = {(m["file"], m["idx"]): pid for pid, m in cep.items()}
     out: dict[str, int | None] = {}
+    shas: dict[str, str] = {}
+    entries = dups = 0
     for path in sorted(emic_dir.glob("*.json")):
         rec = EmicSourceScores.model_validate_json(path.read_text(encoding="utf-8"))
         for s in rec.scores:
-            out[by_file_idx[(rec.source_file_id, s.pair_index)]] = s.emic_score
-    return out
+            pid = by_file_idx[(rec.source_file_id, s.pair_index)]
+            entries += 1
+            dups += pid in out
+            out[pid] = s.emic_score
+            shas[pid] = _sha(s.model_dump())
+    counts = {"entries": entries, "duplicates": dups, "files": len(list(emic_dir.glob("*.json")))}
+    return out, counts | {"entry_sha": shas}
+
+
+def _tree_sha(root: Path) -> str | None:
+    """Digest of every file under ``root`` (relative name + bytes), or None if absent."""
+    if not root.exists():
+        return None
+    h = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        h.update(str(path.relative_to(root)).encode())
+        h.update(path.read_bytes())
+    return h.hexdigest()
 
 
 def _criterion(rec: AnswerRecord, name: str) -> float | None:
@@ -146,13 +186,18 @@ def _criterion(rec: AnswerRecord, name: str) -> float | None:
 def load_answers(root: Path) -> dict[str, Any]:
     """Judged AnswerRecords keyed by (arm, qa_pair_id), plus checkpoint membership."""
     ckpt_path = root / "judge_answers_checkpoint.json"
-    ckpt = set(json.loads(ckpt_path.read_text())["completed_files"]) if ckpt_path.exists() else None
+    ckpt_raw = json.loads(ckpt_path.read_text()) if ckpt_path.exists() else None
+    ckpt = set(ckpt_raw["completed_files"]) if ckpt_raw is not None else None
     recs: dict[tuple[str, str], AnswerRecord] = {}
     facts: dict[tuple[str, str], dict[str, Any]] = {}
+    files_by_arm_kind: Counter[str] = Counter()
+    dup_keys = 0
     for path in sorted((root / "outputs").glob("*/*/*.json")):
         arm, kind = path.parts[-3], path.parts[-2]
         rec = AnswerRecord.load(path)
         key = (arm, rec.qa_pair_id)
+        files_by_arm_kind[f"{arm}/{kind}"] += 1
+        dup_keys += key in recs
         recs[key] = rec
         facts[key] = {
             "kind": kind,
@@ -164,30 +209,77 @@ def load_answers(root: Path) -> dict[str, Any]:
             "answer_sha": _sha([rec.answer_text, rec.abstained, rec.is_answerable]),
             **{c: _criterion(rec, c) for c in ANS_CRITERIA},
         }
-    return {"records": recs, "facts": facts, "checkpoint_size": None if ckpt is None else len(ckpt)}
+        pc = facts[key]["passage_coverage"]
+        # Evidence support pass cut (the paper's pass rate): score >= tau.
+        facts[key]["passage_coverage_pass"] = None if pc is None else int(pc >= TAU)
+    return {
+        "records": recs,
+        "facts": facts,
+        "checkpoint_size": None if ckpt is None else len(ckpt),
+        "checkpoint_failed": None if ckpt_raw is None else len(ckpt_raw.get("failed_files") or {}),
+        "checkpoint_total": None if ckpt_raw is None else ckpt_raw.get("total_files"),
+        "checkpoint_started_at": None if ckpt_raw is None else ckpt_raw.get("started_at"),
+        "files_by_arm_kind": dict(sorted(files_by_arm_kind.items())),
+        "duplicate_keys": dup_keys,
+    }
 
 
-def load_replica(path: Path, cache_dir: Path | None) -> dict[str, Any]:
-    """Load one replica directory (optionally pickled to ``cache_dir``)."""
+def load_replica(path: Path, cache_dir: Path | None, gate_from: Path | None) -> dict[str, Any]:
+    """Load one replica directory (optionally pickled to ``cache_dir``).
+
+    ``gate_from`` is an alternative export of the same round from which the gate
+    verdicts (``cep/outputs``) and the ``judge_qa`` metadata are read, for a round
+    whose final tar was taken after its CEP verdicts had already been cleared for
+    the next round. The replica's own ``cep/outputs`` is still loaded, to verify
+    that only the verdicts differ and that the emic outputs of both exports match.
+    """
+    gate_root = gate_from if gate_from is not None else path
     cache = None
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache = cache_dir / f"{hashlib.sha1(str(path.resolve()).encode()).hexdigest()}.pkl"
+        tag = f"{path.resolve()}|{gate_root.resolve()}|v2"
+        cache = cache_dir / f"{hashlib.sha1(tag.encode()).hexdigest()}.pkl"
         if cache.exists():
             return pickle.loads(cache.read_bytes())
-    cep = load_cep(path / "cep" / "outputs")
+    cep = load_cep(gate_root / "cep" / "outputs")
+    emic, emic_counts = load_emic(path / "emic_judge" / "outputs", cep)
+    meta = {
+        stage: json.loads((root / stage / "run_metadata.json").read_text())
+        for stage, root in (
+            ("judge_qa", gate_root),
+            ("emic_judge", path),
+            ("judge_answers", path),
+        )
+        if (root / stage / "run_metadata.json").exists()
+    }
+    gate_source: dict[str, Any] = {"cep_dir": str(gate_root / "cep" / "outputs")}
+    if gate_from is not None:
+        own = load_cep(path / "cep" / "outputs")
+        gate_source |= {
+            "overridden": True,
+            "own_cep_pairs": len(own),
+            "own_cep_pairs_with_verdict": sum(m["passed"] is not None for m in own.values()),
+            "same_ids_as_override": set(own) == set(cep),
+            "content_mismatches_vs_override": sum(
+                1 for p in own if p in cep and own[p]["content_sha"] != cep[p]["content_sha"]
+            ),
+            "emic_outputs_identical": _tree_sha(path / "emic_judge")
+            == _tree_sha(gate_root / "emic_judge"),
+            "judge_qa_dir_identical": _tree_sha(path / "judge_qa")
+            == _tree_sha(gate_root / "judge_qa"),
+        }
+    else:
+        gate_source["overridden"] = False
     rep = {
         "path": str(path),
         "cep": cep,
-        "emic": load_emic(path / "emic_judge" / "outputs", cep),
+        "emic": emic,
+        "emic_counts": emic_counts,
         "answers": load_answers(path / "judge_answers"),
-        "meta": {
-            stage: json.loads((path / stage / "run_metadata.json").read_text())
-            for stage in ("judge_qa", "emic_judge", "judge_answers")
-            if (path / stage / "run_metadata.json").exists()
-        },
-        "history": sorted(p.name for p in (path / "judge_qa" / "history").glob("*.json"))
-        if (path / "judge_qa" / "history").exists()
+        "meta": meta,
+        "gate_source": gate_source,
+        "history": sorted(p.name for p in (gate_root / "judge_qa" / "history").glob("*.json"))
+        if (gate_root / "judge_qa" / "history").exists()
         else [],
     }
     if cache is not None:
@@ -455,14 +547,36 @@ def _pm(m: Any) -> float | None:
     return getattr(m, "value", None) if hasattr(m, "value") else getattr(m, "mean", None)
 
 
+def _pass_rate(recs: list[AnswerRecord]) -> tuple[float | None, int]:
+    """Evidence-support pass rate (score >= tau) over classified records with a score.
+
+    Same base as ``analyze_conditional_overcaution.py`` (the paper's Pass column):
+    answerable records whose cell is known and whose passage coverage was scored.
+    """
+    vals = [
+        c
+        for r in recs
+        if classify_record(r) != "unknown" and (c := _criterion(r, "passage_coverage")) is not None
+    ]
+    return (sum(c >= TAU for c in vals) / len(vals) if vals else None), len(vals)
+
+
 def arm_aggregates(
     records: dict[tuple[str, str], AnswerRecord],
     cep: dict[str, dict[str, Any]],
     useful: set[str],
     restrict: set[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Published retrieval table over ``useful`` (+ nonans probes with a useful seed)."""
+    """Published retrieval table over ``useful`` (+ nonans probes with a seed in it).
+
+    ``useful`` is any pair set: the gate-approved higher-order pairs (the
+    paper's table), every candidate above Remember, or the whole dataset. Each
+    Bloom level present in the set gets KC, evidence support (mean and pass
+    rate), OC, conditional OC and, from the probes whose seed is at that level,
+    hallucination.
+    """
     out = {}
+    levels = [lvl for lvl in BLOOM if any(cep[p]["bloom"] == lvl for p in useful)]
     for arm in ARMS:
         ans = []
         non = []
@@ -479,15 +593,31 @@ def arm_aggregates(
             arm,
             [r for r in ans if (_criterion(r, "passage_coverage") or -1) >= TAU],
         )
-        levels = {}
-        for lvl in HIGHER:
-            m = aggregate_arm(arm, [r for r in ans if cep[r.qa_pair_id]["bloom"] == lvl])
-            levels[lvl] = {
+        by_level = {}
+        for lvl in levels:
+            la = [r for r in ans if cep[r.qa_pair_id]["bloom"] == lvl]
+            ln = [r for r in non if cep[r.qa_pair_id.removesuffix(":nonans")]["bloom"] == lvl]
+            m = aggregate_arm(arm, la)
+            mn = aggregate_arm(arm, ln)
+            mc = aggregate_arm(
+                arm, [r for r in la if (_criterion(r, "passage_coverage") or -1) >= TAU]
+            )
+            pp, ppn = _pass_rate(la)
+            by_level[lvl] = {
+                "n_answerable": len(la),
+                "n_nonans": len(ln),
                 "kc": m.knowledge_coverage.mean,
                 "kc_n": m.knowledge_coverage.n,
                 "tc": m.confusion["TC"],
                 "pc": m.passage_coverage.mean,
+                "pc_pass": pp,
+                "pc_pass_n": ppn,
+                "oc": m.over_cautiousness_rate.value,
+                "cond_oc": mc.over_cautiousness_rate.value,
+                "cond_oc_n": mc.over_cautiousness_rate.denominator,
+                "hall": mn.hallucination_rate.value,
             }
+        pp, ppn = _pass_rate(ans)
         out[arm] = {
             "n_answerable": len(ans),
             "n_nonans": len(non),
@@ -495,13 +625,15 @@ def arm_aggregates(
             "kc_n": a_only.knowledge_coverage.n,
             "oc": a_only.over_cautiousness_rate.value,
             "pc": a_only.passage_coverage.mean,
+            "pc_pass": pp,
+            "pc_pass_n": ppn,
             "hall": joint.hallucination_rate.value,
             "hall_ci": [joint.hallucination_rate.ci_lower, joint.hallucination_rate.ci_upper],
             "f1_abs": joint.abstention_f1,
             "cond_oc": cond.over_cautiousness_rate.value,
             "cond_oc_n": cond.over_cautiousness_rate.denominator,
             "confusion": joint.confusion,
-            "by_level": levels,
+            "by_level": by_level,
         }
     return out
 
@@ -519,11 +651,12 @@ def _all(vals: list[bool | None]) -> bool | None:
 def conclusions(
     arms: dict[str, Any] | None, emic: dict[str, Any] | None, gate: dict[str, Any] | None
 ) -> dict[str, Any]:
-    """Qualitative conclusions (a)-(e) evaluated on one scenario."""
+    """Qualitative conclusions (a)-(e) evaluated on one scenario (point estimates)."""
     out: dict[str, Any] = {}
     if arms is not None:
         b = arms["bm25"]
         lv = {a: arms[a]["by_level"] for a in ["bm25", *GRAPH_ARMS]}
+        levels = list(lv["bm25"])
         out["a_bm25_highest_kc"] = _all([_gt(b["kc"], arms[g]["kc"]) for g in GRAPH_ARMS])
         beats_all = [
             _all([_gt(lv[g][lvl]["kc"], lv["bm25"][lvl]["kc"]) for lvl in HIGHER])
@@ -532,13 +665,22 @@ def conclusions(
         out["a_no_graph_arm_beats_bm25_at_all_levels"] = (
             None if any(x is None for x in beats_all) else not any(beats_all)
         )
-        out["a_level_leaders"] = {
-            lvl: max(
-                [a for a in lv if lv[a][lvl]["kc"] is not None], key=lambda x: lv[x][lvl]["kc"]
-            )
-            for lvl in HIGHER
-        }
+        for metric in ("kc", "pc", "pc_pass"):
+            out[f"a_level_leaders_{metric}"] = {
+                lvl: max(
+                    [a for a in lv if lv[a][lvl][metric] is not None],
+                    key=lambda x, m=metric, lv_=lvl: lv[x][lv_][m],
+                )
+                for lvl in levels
+            }
+            out[f"a_graph_arms_above_bm25_{metric}"] = {
+                lvl: [g for g in GRAPH_ARMS if _gt(lv[g][lvl][metric], lv["bm25"][lvl][metric])]
+                for lvl in levels
+            }
         out["a_bm25_highest_pc"] = _all([_gt(b["pc"], arms[g]["pc"]) for g in GRAPH_ARMS])
+        out["a_bm25_highest_pc_pass"] = _all(
+            [_gt(b["pc_pass"], arms[g]["pc_pass"]) for g in GRAPH_ARMS]
+        )
         out["b_graph_lower_hall"] = _all([_gt(b["hall"], arms[g]["hall"]) for g in GRAPH_ARMS])
         out["c_graph_higher_oc"] = _all([_gt(arms[g]["oc"], b["oc"]) for g in GRAPH_ARMS])
         out["c_graph_higher_cond_oc"] = _all(
@@ -557,22 +699,37 @@ def conclusions(
 # Paired bootstrap over items x replicas (pre-registered metric 5)
 # --------------------------------------------------------------------------- #
 
+BOOT_METRICS = ["kc", "kc_joint", "pc", "pc_pass", "hall", "oc", "cond_oc"]
+
 
 def paired_bootstrap(
     reps: list[dict[str, Any]],
     useful_by_rep: list[set[str]],
     n_boot: int,
-    rng: np.random.Generator,
+    seed: int,
 ) -> dict[str, Any]:
-    """CI of bm25 - graph arm for KC, OC, cond OC, pass. cov. and Hall.
+    """CI of bm25 - graph arm for every table metric, overall and per Bloom level.
 
     Items are resampled with replacement and, for each drawn item, one replica
     is drawn uniformly; the same replica serves every arm of that item (paired).
-    ``useful_by_rep[r]`` is the useful set under replica ``r``: passing the same
+    ``useful_by_rep[r]`` is the pair set under replica ``r``: passing the same
     set for every replica isolates answer-judge noise, passing each replica's
-    own set adds gate noise (a drawn item only counts if replica ``r`` admits it).
+    own gate-approved set adds gate noise (a drawn item only counts if replica
+    ``r`` admits it). Answerable items and unanswerable probes (keyed by their
+    seed pair) are resampled independently. Per-level values are computed on the
+    same draws, restricted to the items of that level (probes by seed level).
+
+    KC is a mean over the items an arm committed to (TC), so the two sides of
+    ``kc`` are averaged over different item sets: only the item draw and the
+    replica draw are shared. ``kc_joint`` is the strictly paired version, the
+    mean of the per-item difference over the items both arms committed to under
+    the same replica. Evidence support (``pc`` mean, ``pc_pass`` share >= tau) is
+    defined on every classified answerable item and is paired in the strict
+    sense too. Every resample starts from ``seed``.
     """
+    rng = np.random.default_rng(seed)
     code = {lab: i for i, lab in enumerate(LABELS)}
+    c0 = reps[0]["cep"]
 
     def arrays(pids: list[str], suffix: str) -> dict[str, dict[str, np.ndarray]]:
         out: dict[str, dict[str, np.ndarray]] = {}
@@ -607,11 +764,17 @@ def paired_bootstrap(
     N = arrays(non_ids, ":nonans")
     mask_a = np.array([[p in u for p in ans_ids] for u in useful_by_rep])
     mask_n = np.array([[p in u for p in non_ids] for u in useful_by_rep])
+    lvl_a = np.array([c0[p]["bloom"] for p in ans_ids])
+    lvl_n = np.array([c0[p]["bloom"] for p in non_ids])
+    levels = ["all", *(lvl for lvl in BLOOM if (lvl_a == lvl).any())]
+
+    def nanmean(x: np.ndarray) -> float:
+        return float(np.nanmean(x)) if np.isfinite(x).any() else math.nan
 
     def metrics(
-        arm: str, ia: np.ndarray, ra: np.ndarray, ineg: np.ndarray, rn: np.ndarray
+        arm: str, ia: np.ndarray, ra: np.ndarray, ineg: np.ndarray, rn: np.ndarray, lvl: str
     ) -> dict[str, float]:
-        keep = mask_a[ra, ia]
+        keep = mask_a[ra, ia] & ((lvl_a[ia] == lvl) if lvl != "all" else True)
         lab = A[arm]["lab"][ra, ia][keep]
         kc = A[arm]["kc"][ra, ia][keep]
         pc = A[arm]["pc"][ra, ia][keep]
@@ -620,16 +783,25 @@ def paired_bootstrap(
         cond = pc >= TAU
         ctc = ((lab == code["TC"]) & cond).sum()
         cfa = ((lab == code["FA"]) & cond).sum()
-        nl = N[arm]["lab"][rn, ineg][mask_n[rn, ineg]]
+        keep_n = mask_n[rn, ineg] & ((lvl_n[ineg] == lvl) if lvl != "all" else True)
+        nl = N[arm]["lab"][rn, ineg][keep_n]
         fc = (nl == code["FC"]).sum()
         ta = (nl == code["TA"]).sum()
+        fin = np.isfinite(pc)
         return {
-            "kc": float(np.nanmean(kc)) if np.isfinite(kc).any() else math.nan,
+            "kc": nanmean(kc),
+            "pc": nanmean(pc),
+            "pc_pass": float((pc[fin] >= TAU).mean()) if fin.any() else math.nan,
+            "hall": fc / (fc + ta) if fc + ta else math.nan,
             "oc": fa / (fa + tc) if fa + tc else math.nan,
             "cond_oc": cfa / (cfa + ctc) if cfa + ctc else math.nan,
-            "pc": float(np.nanmean(pc)),
-            "hall": fc / (fc + ta) if fc + ta else math.nan,
         }
+
+    def joint_kc(g: str, ia: np.ndarray, ra: np.ndarray, lvl: str) -> tuple[float, int]:
+        keep = mask_a[ra, ia] & ((lvl_a[ia] == lvl) if lvl != "all" else True)
+        d = A["bm25"]["kc"][ra, ia][keep] - A[g]["kc"][ra, ia][keep]
+        fin = np.isfinite(d)
+        return (float(d[fin].mean()) if fin.any() else math.nan), int(fin.sum())
 
     na, nn, r = len(ans_ids), len(non_ids), len(reps)
     # Point estimate: pooled over all replicas (every item x every replica).
@@ -637,36 +809,63 @@ def paired_bootstrap(
     ra_all = np.repeat(np.arange(r), na)
     in_all = np.tile(np.arange(nn), r)
     rn_all = np.repeat(np.arange(r), nn)
-    point = {arm: metrics(arm, ia_all, ra_all, in_all, rn_all) for arm in ["bm25", *GRAPH_ARMS]}
-    diffs: dict[str, dict[str, list[float]]] = {g: defaultdict(list) for g in GRAPH_ARMS}
+    point = {
+        lvl: {
+            arm: metrics(arm, ia_all, ra_all, in_all, rn_all, lvl) for arm in ["bm25", *GRAPH_ARMS]
+        }
+        for lvl in levels
+    }
+    joint_point = {lvl: {g: joint_kc(g, ia_all, ra_all, lvl) for g in GRAPH_ARMS} for lvl in levels}
+    diffs: dict[str, dict[str, dict[str, list[float]]]] = {
+        lvl: {g: defaultdict(list) for g in GRAPH_ARMS} for lvl in levels
+    }
     for _ in range(n_boot):
         ia = rng.integers(0, na, na)
         ra = rng.integers(0, r, na)
         ineg = rng.integers(0, nn, nn)
         rn = rng.integers(0, r, nn)
-        mb = metrics("bm25", ia, ra, ineg, rn)
-        for g in GRAPH_ARMS:
-            mg = metrics(g, ia, ra, ineg, rn)
-            for k in mb:
-                diffs[g][k].append(mb[k] - mg[k])
-    out = {
+        for lvl in levels:
+            mb = metrics("bm25", ia, ra, ineg, rn, lvl)
+            for g in GRAPH_ARMS:
+                mg = metrics(g, ia, ra, ineg, rn, lvl)
+                for k in mb:
+                    diffs[lvl][g][k].append(mb[k] - mg[k])
+                diffs[lvl][g]["kc_joint"].append(joint_kc(g, ia, ra, lvl)[0])
+    out: dict[str, Any] = {
         "n_answerable_universe": na,
         "n_nonans_universe": nn,
         "R": r,
+        "seed": seed,
+        "levels": levels,
+        "n_answerable_by_level": {lvl: int((lvl_a == lvl).sum()) for lvl in levels[1:]},
+        "n_nonans_by_level": {lvl: int((lvl_n == lvl).sum()) for lvl in levels[1:]},
         "pooled_point": point,
         "bm25_minus": {},
     }
-    for g in GRAPH_ARMS:
-        out["bm25_minus"][g] = {}
-        for k, vals in diffs[g].items():
-            v = np.array(vals)
-            v = v[np.isfinite(v)]
-            lo, hi = np.percentile(v, [2.5, 97.5])
-            out["bm25_minus"][g][k] = {
-                "point": point["bm25"][k] - point[g][k],
-                "ci": [float(lo), float(hi)],
-                "excludes_zero": bool(lo > 0 or hi < 0),
-            }
+    for lvl in levels:
+        out["bm25_minus"][lvl] = {}
+        for g in GRAPH_ARMS:
+            out["bm25_minus"][lvl][g] = {}
+            for k in BOOT_METRICS:
+                v = np.array(diffs[lvl][g][k])
+                v = v[np.isfinite(v)]
+                if k == "kc_joint":
+                    pt, n_joint = joint_point[lvl][g]
+                else:
+                    pt, n_joint = point[lvl]["bm25"][k] - point[lvl][g][k], None
+                lo = hi = None
+                if len(v) >= 0.95 * n_boot and len(v) > 0:
+                    lo, hi = (float(x) for x in np.percentile(v, [2.5, 97.5]))
+                out["bm25_minus"][lvl][g][k] = {
+                    "point": pt,
+                    "ci": [lo, hi],
+                    "n_finite_boot": len(v),
+                    "n_joint_tc_pooled": n_joint,
+                    "excludes_zero": None if lo is None else bool(lo > 0 or hi < 0),
+                    "graph_better": None
+                    if lo is None
+                    else bool((hi < 0) if k in ("kc", "kc_joint", "pc", "pc_pass") else (lo > 0)),
+                }
     return out
 
 
@@ -829,6 +1028,208 @@ def config_section(reps: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def completeness_section(reps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Item counts per judge and replica against replica 1, duplicates and carried copies.
+
+    A record whose full judge output (scores and rationales) is byte-identical to
+    an earlier replica's was most likely carried over instead of re-judged; the
+    counts below expose that per judge and per arm.
+    """
+    r1 = reps[0]
+    pids1 = set(r1["cep"])
+    keys1 = set(r1["answers"]["facts"])
+    rows = []
+    for i, rep in enumerate(reps):
+        ans = rep["answers"]
+        facts = ans["facts"]
+        meta = rep["meta"]
+        row: dict[str, Any] = {
+            "replica": i + 1,
+            "gate_source": rep["gate_source"],
+            "gate_status": meta.get("judge_qa", {}).get("status"),
+            "gate_completed_items": meta.get("judge_qa", {}).get("completed_items"),
+            "gate_failed_items": meta.get("judge_qa", {}).get("failed_items"),
+            "cep_pairs": len(rep["cep"]),
+            "cep_pairs_with_verdict": sum(m["passed"] is not None for m in rep["cep"].values()),
+            "cep_missing_vs_r1": len(pids1 - set(rep["cep"])),
+            "cep_extra_vs_r1": len(set(rep["cep"]) - pids1),
+            "emic_status": meta.get("emic_judge", {}).get("status"),
+            "emic_files": rep["emic_counts"]["files"],
+            "emic_entries": rep["emic_counts"]["entries"],
+            "emic_duplicates": rep["emic_counts"]["duplicates"],
+            "emic_scored": sum(v is not None for v in rep["emic"].values()),
+            "emic_missing_vs_r1": len(pids1 - set(rep["emic"])),
+            "answers_status": meta.get("judge_answers", {}).get("status"),
+            "answers_completed_items": meta.get("judge_answers", {}).get("completed_items"),
+            "answers_failed_items": meta.get("judge_answers", {}).get("failed_items"),
+            "answers_records": len(facts),
+            "answers_files_by_arm_kind": ans["files_by_arm_kind"],
+            "answers_files_by_arm_kind_equal_r1": ans["files_by_arm_kind"]
+            == r1["answers"]["files_by_arm_kind"],
+            "answers_duplicate_keys": ans["duplicate_keys"],
+            "answers_missing_vs_r1": len(keys1 - set(facts)),
+            "answers_extra_vs_r1": len(set(facts) - keys1),
+            "answers_unclassified": sum(f["label"] == "unknown" for f in facts.values()),
+            "checkpoint_completed": ans["checkpoint_size"],
+            "checkpoint_failed": ans["checkpoint_failed"],
+            "checkpoint_total": ans["checkpoint_total"],
+            "checkpoint_started_at": ans["checkpoint_started_at"],
+            "answers_not_in_checkpoint": sum(f["in_checkpoint"] is False for f in facts.values()),
+        }
+        for j in range(i):
+            prev = reps[j]
+            pf = prev["answers"]["facts"]
+            same = [
+                k
+                for k, f in facts.items()
+                if k in pf and f["validation_sha"] == pf[k]["validation_sha"]
+            ]
+            row[f"answers_identical_to_r{j + 1}"] = len(same)
+            row[f"answers_identical_to_r{j + 1}_by_arm"] = dict(
+                sorted(Counter(k[0] for k in same).items())
+            )
+            row[f"gate_verdicts_identical_to_r{j + 1}"] = sum(
+                1
+                for p, m in rep["cep"].items()
+                if m["validation_sha"] is not None
+                and p in prev["cep"]
+                and m["validation_sha"] == prev["cep"][p]["validation_sha"]
+            )
+            es, eprev = rep["emic_counts"]["entry_sha"], prev["emic_counts"]["entry_sha"]
+            row[f"emic_entries_identical_to_r{j + 1}"] = sum(
+                1 for p, h in es.items() if eprev.get(p) == h
+            )
+        rows.append(row)
+    return {"rows": rows}
+
+
+PROMPT_FILES = {
+    "judge_qa": {
+        c: [f"prompts/judge/criteria/{c}/config.json", f"prompts/judge/criteria/{c}/pt/prompt.md"]
+        for c in GATE_CRITERIA
+    },
+    "emic_judge": {
+        "emic_validity": [
+            "prompts/judge/criteria/emic_validity/config.json",
+            "prompts/judge/criteria/emic_validity/pt/prompt.md",
+        ]
+    },
+    "judge_answers": {
+        c: [f"prompts/judge/criteria/{c}/config.json", f"prompts/judge/criteria/{c}/pt/prompt.md"]
+        for c in ANS_CRITERIA
+    },
+}
+
+
+JUDGE_CODE_PATHS = {
+    "judge_qa": ["src/arandu/qa/cep", "src/arandu/shared/judge"],
+    "emic_judge": ["src/arandu/shared/emic", "src/arandu/shared/judge"],
+    "judge_answers": ["src/arandu/shared/rag/judge_answers", "src/arandu/shared/judge"],
+}
+
+
+def _prompt_digest(paths: list[Path]) -> str | None:
+    """Same digest the gate writes to its run_metadata (name + bytes of each file)."""
+    if not all(p.is_file() for p in paths):
+        return None
+    h = hashlib.sha256()
+    for p in paths:
+        h.update(p.name.encode("utf-8"))
+        h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def _git(repo: Path, *args: str) -> str | None:
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return res.stdout.strip()
+
+
+def provenance_section(reps: list[dict[str, Any]], repo: Path) -> dict[str, Any]:
+    """Prompt identity and runtime versions that the exports record (or do not).
+
+    The gate records a digest per criterion; the emic and answer judges record
+    none. For every judge this recomputes the digest of the prompts at the
+    analysed commit, checks it against the gate's recorded digests, and gives the
+    date of the last commit touching each prompt so it can be compared with the
+    start of each replica. Any metadata key naming an Ollama or image version is
+    collected; an empty list means the exports do not record it.
+    """
+
+    def keys_matching(obj: Any, prefix: str = "") -> list[str]:
+        found: list[str] = []
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                name = f"{prefix}.{k}" if prefix else k
+                low = k.lower()
+                if ("ollama" in low and "version" in low) or low in ("image", "image_digest"):
+                    found.append(name)
+                found += keys_matching(v, name)
+        return found
+
+    out: dict[str, Any] = {
+        "head": _git(repo, "rev-parse", "--short=8", "HEAD"),
+        "stages": {},
+        "runtime_version_keys": {
+            f"r{i + 1}": {stage: keys_matching(m) for stage, m in rep["meta"].items()}
+            for i, rep in enumerate(reps)
+        },
+    }
+    for stage, crits in PROMPT_FILES.items():
+        starts = [rep["meta"].get(stage, {}).get("started_at") for rep in reps]
+        rows = {}
+        for c, rel in crits.items():
+            paths = [repo / r for r in rel]
+            last = _git(repo, "log", "-1", "--format=%cI", "--", *rel)
+            dirty = _git(repo, "status", "--porcelain", "--", *rel)
+            recorded = (
+                [
+                    rep["meta"]["judge_qa"]["config"]["config_values"]["criteria"][c]["sha256"]
+                    for rep in reps
+                ]
+                if stage == "judge_qa"
+                else None
+            )
+            head = _prompt_digest(paths)
+            last_dt = datetime.fromisoformat(last) if last else None
+            rows[c] = {
+                "head_sha256": head,
+                "recorded_sha256": recorded,
+                "head_equals_recorded": None
+                if recorded is None
+                else all(x == head for x in recorded),
+                "last_commit": _git(repo, "log", "-1", "--format=%h", "--", *rel),
+                "last_commit_date": last,
+                "working_tree_clean": dirty == "",
+                "unchanged_since_before_each_replica": [
+                    None
+                    if st is None or last_dt is None
+                    else last_dt < datetime.fromisoformat(st.replace("Z", "+00:00"))
+                    for st in starts
+                ],
+            }
+        code = {}
+        for rel in JUDGE_CODE_PATHS[stage]:
+            last = _git(repo, "log", "-1", "--format=%cI", "--", rel)
+            last_dt = datetime.fromisoformat(last) if last else None
+            code[rel] = {
+                "last_commit": _git(repo, "log", "-1", "--format=%h", "--", rel),
+                "last_commit_date": last,
+                "unchanged_since_before_each_replica": [
+                    None
+                    if st is None or last_dt is None
+                    else last_dt < datetime.fromisoformat(st.replace("Z", "+00:00"))
+                    for st in starts
+                ],
+            }
+        out["stages"][stage] = {"replica_started_at": starts, "prompts": rows, "code": code}
+    return out
+
+
 def complete_answer_replicas(reps: list[dict[str, Any]]) -> list[int]:
     """Indices of replicas whose judge_answers round finished (all records re-judged)."""
     out = []
@@ -849,14 +1250,23 @@ def answer_value(
     return f[field]
 
 
+def pair_strata(c0: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
+    """Total dataset, useful candidates (every pair above Remember) and each level."""
+    pids = sorted(c0)
+    return {
+        "total": pids,
+        "candidates": [p for p in pids if c0[p]["bloom"] != "remember"],
+        **{lvl: [p for p in pids if c0[p]["bloom"] == lvl] for lvl in BLOOM},
+    }
+
+
 def gate_section(
     reps: list[dict[str, Any]], n_boot: int, rng: np.random.Generator
 ) -> dict[str, Any]:
     """Gate judge reliability per criterion and for the verdict, by Bloom level."""
     c0 = reps[0]["cep"]
     pids = sorted(c0)
-    strata = {"all": pids, **{lvl: [p for p in pids if c0[p]["bloom"] == lvl] for lvl in BLOOM}}
-    strata["higher"] = [p for p in pids if c0[p]["bloom"] != "remember"]
+    strata = pair_strata(c0)
     out: dict[str, Any] = {
         "criteria": {},
         "verdict": {},
@@ -923,7 +1333,7 @@ def emic_section(
     """Emic judge reliability (1..5) and EV >= 4 filter stability, by level."""
     c0 = reps[0]["cep"]
     pids = sorted(c0)
-    strata = {"all": pids, **{lvl: [p for p in pids if c0[p]["bloom"] == lvl] for lvl in BLOOM}}
+    strata = pair_strata(c0)
     out: dict[str, Any] = {
         "ordinal": {},
         "binary": {},
@@ -970,25 +1380,43 @@ def emic_section(
 def answers_section(
     reps: list[dict[str, Any]], n_boot: int, rng: np.random.Generator
 ) -> dict[str, Any]:
-    """Answer judge reliability per criterion and cell, by arm; two record scopes."""
+    """Answer judge reliability per criterion, pass cut and cell, in three record strata.
+
+    Strata over records: ``total`` (every probe: the answerable probe of each of
+    the 2,670 pairs plus the 334 unanswerable probes), ``candidates`` (probes
+    whose pair, or seed pair for an unanswerable probe, is above Remember,
+    whatever the gate said) and ``useful`` (canonical useful set of replica 1,
+    secondary). Each is pooled over the retrieval arms and split by arm; the
+    total and candidates strata are also split by Bloom level. Only replicas
+    whose round finished enter; a partial round adds a scope restricted to the
+    records every replica re-judged.
+    """
     done = set(complete_answer_replicas(reps))
     keys = sorted(reps[0]["answers"]["facts"])
-    useful0 = useful_set(reps[0]["cep"], {p for p, m in reps[0]["cep"].items() if m["approved"]})
+    c0 = reps[0]["cep"]
+    useful0 = useful_set(c0, {p for p, m in c0.items() if m["approved"]})
 
-    def in_scope(k: tuple[str, str]) -> bool:
-        return k[1].removesuffix(":nonans") in useful0
+    def level(k: tuple[str, str]) -> str:
+        return c0[k[1].removesuffix(":nonans")]["bloom"]
 
-    scopes: dict[str, tuple[list[int], list[tuple[str, str]]]] = {}
-    scopes["complete_replicas_all_records"] = (sorted(done), keys)
-    scopes["complete_replicas_benchmark_scope"] = (sorted(done), [k for k in keys if in_scope(k)])
+    preds = {
+        "total": lambda k: True,
+        "candidates": lambda k: level(k) != "remember",
+        "useful": lambda k: k[1].removesuffix(":nonans") in useful0,
+    }
+    scopes: dict[str, tuple[list[int], list[tuple[str, str]]]] = {
+        "complete_replicas": (sorted(done), keys)
+    }
     every = list(range(len(reps)))
-    rejudged_all = [
-        k
-        for k in keys
-        if all(i in done or reps[i]["answers"]["facts"][k]["in_checkpoint"] for i in every)
-    ]
     if len(done) < len(reps):
-        scopes["all_replicas_rejudged_records"] = (every, rejudged_all)
+        scopes["all_replicas_rejudged_records"] = (
+            every,
+            [
+                k
+                for k in keys
+                if all(i in done or reps[i]["answers"]["facts"][k]["in_checkpoint"] for i in every)
+            ],
+        )
     out: dict[str, Any] = {"scopes": {}}
     for sname, (ridx, sk) in scopes.items():
         block: dict[str, Any] = {
@@ -997,23 +1425,42 @@ def answers_section(
             "criteria": {},
             "cell": {},
             "abstain_decision": {},
+            "transitions": {},
         }
         # The null arm is constant (always abstains, coverage 0) and would inflate a
-        # pooled coefficient, so the pooled stratum covers the retrieval arms only.
-        strata = {
-            "all_retrieval_arms": [k for k in sk if k[0] != "null"],
-            **{arm: [k for k in sk if k[0] == arm] for arm in ARMS},
-        }
-        for crit in ANS_CRITERIA:
+        # pooled coefficient, so the pooled strata cover the retrieval arms only.
+        strata: dict[str, list[tuple[str, str]]] = {}
+        for stratum, pred in preds.items():
+            ks = [k for k in sk if pred(k)]
+            strata[stratum] = [k for k in ks if k[0] != "null"]
+            for arm in ARMS:
+                strata[f"{stratum}.{arm}"] = [k for k in ks if k[0] == arm]
+            if stratum != "useful":
+                for lvl in BLOOM if stratum == "total" else HIGHER:
+                    strata[f"{stratum}.{lvl}"] = [
+                        k for k in ks if k[0] != "null" and level(k) == lvl
+                    ]
+        for crit in [*ANS_CRITERIA, "passage_coverage_pass"]:
+            nominal = crit == "passage_coverage_pass"
             block["criteria"][crit] = {}
             for name, ks in strata.items():
                 units = [
-                    [to_ord(answer_value(reps[i], k, crit, done, i)) for i in ridx] for k in ks
+                    [
+                        (lambda v: v if nominal else to_ord(v))(
+                            answer_value(reps[i], k, crit, done, i)
+                        )
+                        for i in ridx
+                    ]
+                    for k in ks
                 ]
                 if sum(1 for u in units if sum(x is not None for x in u) >= 2) < 2:
                     continue
                 block["criteria"][crit][name] = reliability_block(
-                    units, (0, 4), "ordinal", n_boot, rng
+                    units,
+                    (0, 1) if nominal else (0, 4),
+                    "nominal" if nominal else "ordinal",
+                    n_boot,
+                    rng,
                 )
         for name, ks in strata.items():
             lab_units = []
@@ -1032,60 +1479,112 @@ def answers_section(
             stable = sum(1 for u in lab_units if None not in u and len(set(u)) == 1)
             complete = sum(1 for u in lab_units if None not in u)
             block["cell"][name]["frac_cell_stable"] = stable / complete if complete else None
+            block["cell"][name]["n_cell_unstable"] = complete - stable
             block["abstain_decision"][name] = reliability_block(
-                dec_units, (0, 1), "nominal", n_boot if name == "all_retrieval_arms" else 0, rng
+                dec_units, (0, 1), "nominal", n_boot, rng
             )
-        # Transition matrix between the first two replicas of this scope.
-        a, b = ridx[0], ridx[1]
-        trans = Counter()
-        for k in sk:
-            trans[
-                (
-                    answer_value(reps[a], k, "label", done, a),
-                    answer_value(reps[b], k, "label", done, b),
-                )
-            ] += 1
-        block["transitions"] = {
-            f"{x}->{y}": n
-            for (x, y), n in sorted(trans.items(), key=lambda t: (str(t[0][0]), str(t[0][1])))
-        }
+        # Cell transitions between every pair of replicas of this scope, per stratum.
+        for stratum, pred in preds.items():
+            block["transitions"][stratum] = {}
+            for a, b in itertools.combinations(ridx, 2):
+                trans: Counter[str] = Counter()
+                for k in sk:
+                    if not pred(k):
+                        continue
+                    x = answer_value(reps[a], k, "label", done, a)
+                    y = answer_value(reps[b], k, "label", done, b)
+                    if x != y:
+                        trans[f"{x}->{y}"] += 1
+                block["transitions"][stratum][f"r{a + 1}->r{b + 1}"] = dict(sorted(trans.items()))
         out["scopes"][sname] = block
     return out
 
 
-def robustness(ag: dict[str, Any], done: list[int]) -> dict[str, Any]:
-    """Each published aggregate across scenarios: values, min, max and range.
+def rejection_emic_section(reps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Emic score of gate-rejected pairs by the criterion that failed, per replica.
 
-    Arm metrics are collected over the scenarios with complete data (A: answer
-    judge replicas on the canonical useful set; B: each replica's useful set with
-    the canonical answers; C: own useful set and own answers). Gate and emic
-    aggregates are collected over the three replicas.
+    For each replica, with its own gate verdicts and its own emic scores, a pair
+    fails a criterion when that criterion's score is missing (errored) or below
+    tau. ``any`` counts every rejected pair failing the criterion (a pair can
+    fail several); ``only`` counts the pairs for which it is the sole failure.
+    Approved pairs of the same stratum are the reference.
     """
-    scen: dict[str, dict[str, Any]] = {}
-    for i in done:
-        scen[f"A r{i + 1}"] = ag["A_answers_fixed_useful"][f"r{i + 1}"]
-    for key, arms in ag["B_gate_useful_canonical_answers"].items():
-        scen[f"B {key}"] = arms
-    for i in done:
-        if i != 0:
-            scen[f"C r{i + 1}"] = ag["C_own_useful_own_answers"][f"r{i + 1}"]
-    rows: dict[str, dict[str, Any]] = {}
 
-    def add(name: str, values: dict[str, float | None]) -> None:
-        vals = [v for v in values.values() if v is not None]
-        rows[name] = {
-            "values": values,
-            "min": min(vals) if vals else None,
-            "max": max(vals) if vals else None,
-            "range": (max(vals) - min(vals)) if vals else None,
+    def dist(vals: list[int]) -> dict[str, Any]:
+        if not vals:
+            return {"n": 0, "mean": None, "pct_ge4": None}
+        return {
+            "n": len(vals),
+            "mean": float(np.mean(vals)),
+            "pct_ge4": 100 * sum(v >= TAU_EMIC for v in vals) / len(vals),
         }
 
+    out: dict[str, Any] = {}
+    for i, rep in enumerate(reps):
+        cep, emic = rep["cep"], rep["emic"]
+        strata = pair_strata(reps[0]["cep"])
+        res: dict[str, Any] = {}
+        for name, ids in strata.items():
+            ids = [p for p in ids if emic.get(p) is not None]
+            fails = {
+                p: {c for c, v in cep[p]["scores"].items() if v is None or v < TAU}
+                for p in ids
+                if not cep[p]["approved"]
+            }
+            row: dict[str, Any] = {
+                "approved": dist([emic[p] for p in ids if cep[p]["approved"]]),
+                "rejected": dist([emic[p] for p in fails]),
+                "rejected_without_scores": sum(1 for p in fails if not cep[p]["scores"]),
+                "by_criterion": {},
+            }
+            for c in GATE_CRITERIA:
+                anyc = [emic[p] for p, f in fails.items() if c in f]
+                only = [emic[p] for p, f in fails.items() if f == {c}]
+                if not anyc and not only:
+                    continue
+                row["by_criterion"][c] = {"any": dist(anyc), "only": dist(only)}
+            res[name] = row
+        out[f"r{i + 1}"] = res
+    return out
+
+
+ARM_METRICS = ["kc", "pc", "pc_pass", "hall", "oc", "cond_oc", "f1_abs"]
+LEVEL_METRICS = ["kc", "pc", "pc_pass", "hall", "oc", "cond_oc"]
+
+
+def _range_row(values: dict[str, float | None]) -> dict[str, Any]:
+    vals = [v for v in values.values() if v is not None]
+    return {
+        "values": values,
+        "min": min(vals) if vals else None,
+        "max": max(vals) if vals else None,
+        "range": (max(vals) - min(vals)) if vals else None,
+    }
+
+
+def arm_robustness(scen: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Each retrieval-table aggregate across scenarios: values, min, max and range."""
+    rows: dict[str, dict[str, Any]] = {}
+    first = next(iter(scen.values()))
     for arm in ["bm25", *GRAPH_ARMS]:
-        for metric in ("kc", "oc", "pc", "hall", "cond_oc", "f1_abs"):
-            add(f"{arm}.{metric}", {k: v[arm][metric] for k, v in scen.items()})
-        for lvl in HIGHER:
-            add(f"{arm}.kc.{lvl}", {k: v[arm]["by_level"][lvl]["kc"] for k, v in scen.items()})
+        for metric in ARM_METRICS:
+            rows[f"{arm}.{metric}"] = _range_row({k: v[arm][metric] for k, v in scen.items()})
+        for lvl in first[arm]["by_level"]:
+            for metric in LEVEL_METRICS:
+                rows[f"{arm}.{metric}.{lvl}"] = _range_row(
+                    {k: v[arm]["by_level"][lvl][metric] for k, v in scen.items()}
+                )
+    return rows
+
+
+def judge_robustness(ag: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Gate and emic aggregates across the replicas."""
+    rows: dict[str, dict[str, Any]] = {}
     reps = {f"r{i + 1}": i for i in range(len(ag["gate"]))}
+
+    def add(name: str, values: dict[str, float | None]) -> None:
+        rows[name] = _range_row(values)
+
     add("gate.approved_all", {k: ag["gate"][i]["approved_all"] for k, i in reps.items()})
     add("gate.useful", {k: ag["gate"][i]["useful_all"] for k, i in reps.items()})
     add("gate.useful_yield", {k: ag["gate"][i]["useful_yield"] for k, i in reps.items()})
@@ -1110,17 +1609,37 @@ def robustness(ag: dict[str, Any], done: list[int]) -> dict[str, Any]:
             f"emic.mean.{verdict}",
             {k: ag["emic"][i]["by_verdict"][verdict]["mean"] for k, i in reps.items()},
         )
+        add(
+            f"emic.pct_ge4.{verdict}",
+            {k: ag["emic"][i]["by_verdict"][verdict]["pct_ge4"] for k, i in reps.items()},
+        )
+        for lvl in BLOOM:
+            add(
+                f"emic.mean.{verdict}.{lvl}",
+                {
+                    k: ag["emic"][i]["by_level_verdict"][lvl][verdict]["mean"]
+                    for k, i in reps.items()
+                },
+            )
     return rows
 
 
-def aggregates_section(
-    reps: list[dict[str, Any]], n_boot: int, rng: np.random.Generator
-) -> dict[str, Any]:
-    """Published aggregates per replica under the three sources of variation."""
+def aggregates_section(reps: list[dict[str, Any]], n_boot: int, seed: int) -> dict[str, Any]:
+    """Published aggregates per replica, in the three strata, and the paired bootstraps.
+
+    ``total`` (all 2,670 pairs and the 334 probes) and ``candidates`` (the 1,335
+    pairs above Remember and the probes seeded by them) do not depend on the gate,
+    so their only source of variation is the answer judge (scenario A). The
+    ``useful`` stratum, the paper's table, has three: A (answer judge replicas on
+    the canonical useful set U1), B (each replica's useful set with the canonical
+    answers) and C (own useful set and own answers).
+    """
     done = complete_answer_replicas(reps)
     approved = [{p for p, m in rep["cep"].items() if m["approved"]} for rep in reps]
     useful = [useful_set(rep["cep"], a) for rep, a in zip(reps, approved, strict=True)]
     c0 = reps[0]["cep"]
+    strata = pair_strata(c0)
+    fixed = {"total": set(strata["total"]), "candidates": set(strata["candidates"])}
     out: dict[str, Any] = {}
     out["gate"] = [gate_aggregates(rep["cep"], a) for rep, a in zip(reps, approved, strict=True)]
     maj = {p for p in c0 if sum(p in a for a in approved) * 2 > len(reps)}
@@ -1137,11 +1656,16 @@ def aggregates_section(
         vals = [v for v in vals if v is not None]
         med[p] = int(np.median(vals)) if len(vals) % 2 == 1 else None
     out["emic_median"] = emic_aggregates(med, c0, approved[0])
+    # Gate-free strata: answer judge noise only.
+    out["fixed_strata"] = {
+        name: {f"A r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, ids) for i in done}
+        for name, ids in fixed.items()
+    }
     # A: answer judge noise, canonical useful set.
     out["A_answers_fixed_useful"] = {
         f"r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, useful[0]) for i in done
     }
-    # A (subset): records re-judged by every replica.
+    # A (subset): records re-judged by every replica (only when a round is partial).
     partial = [i for i in range(len(reps)) if i not in done]
     if partial:
         sub = {
@@ -1170,15 +1694,23 @@ def aggregates_section(
     out["C_own_useful_own_answers"] = {
         f"r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, useful[i]) for i in done
     }
-    # Conclusions per scenario.
-    concl: dict[str, Any] = {}
+    useful_scen: dict[str, dict[str, Any]] = {}
     for i in done:
-        concl[f"A r{i + 1}"] = conclusions(out["A_answers_fixed_useful"][f"r{i + 1}"], None, None)
-        concl[f"C r{i + 1}"] = conclusions(out["C_own_useful_own_answers"][f"r{i + 1}"], None, None)
+        useful_scen[f"A r{i + 1}"] = out["A_answers_fixed_useful"][f"r{i + 1}"]
+    for key, arms in out["B_gate_useful_canonical_answers"].items():
+        if key != "U1":
+            useful_scen[f"B {key}"] = arms
+    for i in done:
+        if i != 0:
+            useful_scen[f"C r{i + 1}"] = out["C_own_useful_own_answers"][f"r{i + 1}"]
+    scen_by_stratum = {**out["fixed_strata"], "useful": useful_scen}
+    out["robustness"] = {name: arm_robustness(sc) for name, sc in scen_by_stratum.items()}
+    out["robustness"]["judges"] = judge_robustness(out)
+    concl: dict[str, Any] = {}
+    for name, sc in scen_by_stratum.items():
+        for k, arms in sc.items():
+            concl[f"{name} | {k}"] = conclusions(arms, None, None)
     for i in range(len(reps)):
-        concl[f"B U{i + 1}"] = conclusions(
-            out["B_gate_useful_canonical_answers"][f"U{i + 1}"], None, None
-        )
         concl[f"gate/emic r{i + 1}"] = conclusions(None, out["emic"][i], out["gate"][i])
     if partial:
         for i in range(len(reps)):
@@ -1186,14 +1718,17 @@ def aggregates_section(
                 out["A_subset_rejudged_by_all"][f"r{i + 1}"], None, None
             )
     out["conclusions"] = concl
-    out["robustness"] = robustness(out, done)
     done_reps = [reps[i] for i in done]
     out["paired_bootstrap"] = {
-        "answers_noise_fixed_useful": paired_bootstrap(
-            done_reps, [useful[0]] * len(done), n_boot, rng
+        **{
+            f"{name}_answers_noise": paired_bootstrap(done_reps, [ids] * len(done), n_boot, seed)
+            for name, ids in fixed.items()
+        },
+        "useful_answers_noise_fixed_U1": paired_bootstrap(
+            done_reps, [useful[0]] * len(done), n_boot, seed
         ),
-        "gate_and_answers_noise_own_useful": paired_bootstrap(
-            done_reps, [useful[i] for i in done], n_boot, rng
+        "useful_gate_and_answers_noise_own_U": paired_bootstrap(
+            done_reps, [useful[i] for i in done], n_boot, seed
         ),
     }
     return out
@@ -1283,7 +1818,9 @@ def _arm_table(arms: dict[str, Any]) -> str:
         "OC",
         "OC cond (n)",
         "F1abs",
-        "pass cov",
+        "ES média",
+        "ES pass",
+        "Eva ES pass",
         "n resp",
         "n sem resp",
     ]
@@ -1306,11 +1843,51 @@ def _arm_table(arms: dict[str, Any]) -> str:
                 f"{_f(m['cond_oc'])} ({m['cond_oc_n']})",
                 m["f1_abs"],
                 m["pc"],
+                m["pc_pass"],
+                lv["evaluate"]["pc_pass"],
                 m["n_answerable"],
                 m["n_nonans"],
             ]
         )
     return _table(header, rows)
+
+
+def _level_table(arms: dict[str, Any]) -> str:
+    """Per-level block of the retrieval table: every metric, one row per arm x level."""
+    rows = []
+    for a, m in arms.items():
+        for lvl, d in m["by_level"].items():
+            rows.append(
+                [
+                    a,
+                    lvl,
+                    d["n_answerable"],
+                    d["n_nonans"],
+                    d["kc"],
+                    d["tc"],
+                    d["pc"],
+                    d["pc_pass"],
+                    d["hall"],
+                    d["oc"],
+                    f"{_f(d['cond_oc'])} ({d['cond_oc_n']})",
+                ]
+            )
+    return _table(
+        [
+            "braço",
+            "nível",
+            "n resp",
+            "n sem resp",
+            "KC",
+            "TC",
+            "ES média",
+            "ES pass",
+            "Hall",
+            "OC",
+            "OC cond (n)",
+        ],
+        rows,
+    )
 
 
 def render_md(res: dict[str, Any]) -> str:
@@ -1345,6 +1922,28 @@ def render_md(res: dict[str, Any]) -> str:
         + "\n```"
     )
     md.append("\n```json\n" + json.dumps(res["config"]["gate_errors"], indent=1) + "\n```")
+    md.append("\n## 1b. Completude por juiz e réplica\n")
+    rows = res["completeness"]["rows"]
+    ckeys = list(dict.fromkeys(k for r in rows for k in r))
+    md.append(
+        _table(
+            ["campo", *[f"r{r['replica']}" for r in rows]],
+            [
+                [
+                    k,
+                    *(
+                        json.dumps(r.get(k), ensure_ascii=False)
+                        if isinstance(r.get(k), dict)
+                        else r.get(k)
+                        for r in rows
+                    ),
+                ]
+                for k in ckeys
+            ],
+        )
+    )
+    md.append("\n## 1c. Proveniência dos prompts e versões\n")
+    md.append("```json\n" + json.dumps(res["provenance"], indent=1, ensure_ascii=False) + "\n```")
     s = res["sanity"]
     md.append("\n## 2. Sanidade (réplica 1)\n")
     md.append("```json\n" + json.dumps(s["gate"], indent=1) + "\n```")
@@ -1447,6 +2046,35 @@ def render_md(res: dict[str, Any]) -> str:
             )
         )
         md.append("\nTransições: " + json.dumps(blk["transitions"]))
+    md.append("\n## 5b. EV dos rejeitados pelo critério que reprovou (L4)\n")
+    rej_rows = []
+    for rk, res_r in res["rejection_emic"].items():
+        for stratum, row in res_r.items():
+            base = [rk, stratum]
+            rej_rows.append(
+                [
+                    *base,
+                    "aprovados",
+                    row["approved"]["n"],
+                    row["approved"]["mean"],
+                    row["approved"]["pct_ge4"],
+                ]
+            )
+            rej_rows.append(
+                [
+                    *base,
+                    "rejeitados",
+                    row["rejected"]["n"],
+                    row["rejected"]["mean"],
+                    row["rejected"]["pct_ge4"],
+                ]
+            )
+            for c, d in row["by_criterion"].items():
+                for kind in ("any", "only"):
+                    rej_rows.append(
+                        [*base, f"{c} ({kind})", d[kind]["n"], d[kind]["mean"], d[kind]["pct_ge4"]]
+                    )
+    md.append(_table(["réplica", "estrato", "grupo", "n", "EV média", "% EV>=4"], rej_rows))
     ag = res["aggregates"]
     md.append("\n## 6. Agregados publicados\n")
     md.append(
@@ -1550,6 +2178,12 @@ def render_md(res: dict[str, Any]) -> str:
             ],
         )
     )
+    for name, scen in ag["fixed_strata"].items():
+        md.append(f"\n### estrato {name} (sem portão; só ruído do juiz de respostas)\n")
+        for k, arms in scen.items():
+            md.append(f"\n{k}\n")
+            md.append(_arm_table(arms))
+            md.append("\n" + _level_table(arms))
     for key in (
         "A_answers_fixed_useful",
         "A_subset_rejudged_by_all",
@@ -1565,25 +2199,26 @@ def render_md(res: dict[str, Any]) -> str:
                 continue
             md.append(f"\n{scen}\n")
             md.append(_arm_table(arms))
+            md.append("\n" + _level_table(arms))
     md.append("\n### B maioria\n")
     md.append(_arm_table(ag["B_majority_useful_canonical_answers"]))
-    md.append("\n### robustez (valores por cenário, mínimo, máximo, amplitude)\n")
-    rob = ag["robustness"]
-    md.append(
-        _table(
-            ["agregado", "valores", "mín", "máx", "amplitude"],
-            [
+    for name, rob in ag["robustness"].items():
+        md.append(f"\n### robustez, {name} (valores por cenário, mínimo, máximo, amplitude)\n")
+        md.append(
+            _table(
+                ["agregado", "valores", "mín", "máx", "amplitude"],
                 [
-                    k,
-                    "; ".join(f"{s}={_f(x)}" for s, x in v["values"].items()),
-                    v["min"],
-                    v["max"],
-                    v["range"],
-                ]
-                for k, v in rob.items()
-            ],
+                    [
+                        k,
+                        "; ".join(f"{s}={_f(x)}" for s, x in v["values"].items()),
+                        v["min"],
+                        v["max"],
+                        v["range"],
+                    ]
+                    for k, v in rob.items()
+                ],
+            )
         )
-    )
     md.append("\n### conclusões\n")
     keys = sorted({k for v in ag["conclusions"].values() for k in v})
     md.append(
@@ -1605,20 +2240,38 @@ def render_md(res: dict[str, Any]) -> str:
         md.append(
             f"\n### bootstrap pareado itens x réplicas: {variant} (R={pb['R']}, "
             f"universo {pb['n_answerable_universe']} pares, {pb['n_nonans_universe']} sondas, "
-            f"B={res['n_boot']}, seed={res['seed']})\n"
+            f"por nível {json.dumps(pb['n_answerable_by_level'])} / "
+            f"{json.dumps(pb['n_nonans_by_level'])}, B={res['n_boot']}, seed={pb['seed']})\n"
         )
         md.append(
             _table(
-                ["contraste", "métrica", "diferença (pooled)", "IC95", "exclui zero"],
+                [
+                    "nível",
+                    "contraste",
+                    "métrica",
+                    "bm25",
+                    "braço",
+                    "diferença",
+                    "IC95",
+                    "exclui zero",
+                    "grafo melhor",
+                    "n TC conjunto",
+                ],
                 [
                     [
+                        lvl,
                         f"bm25 - {g}",
                         k,
+                        pb["pooled_point"][lvl]["bm25"].get(k),
+                        pb["pooled_point"][lvl][g].get(k),
                         v["point"],
                         f"[{_f(v['ci'][0])}, {_f(v['ci'][1])}]",
                         v["excludes_zero"],
+                        v["graph_better"],
+                        v["n_joint_tc_pooled"],
                     ]
-                    for g, d in pb["bm25_minus"].items()
+                    for lvl, by_g in pb["bm25_minus"].items()
+                    for g, d in by_g.items()
                     for k, v in d.items()
                 ],
             )
@@ -1645,13 +2298,28 @@ def main() -> None:
     parser.add_argument(
         "--cache-dir", type=Path, default=None, help="Optional pickle cache of loaded replicas."
     )
+    parser.add_argument(
+        "--gate-from",
+        action="append",
+        default=[],
+        metavar="N=DIR",
+        help="Read replica N's gate verdicts (cep/outputs, judge_qa) from DIR (repeatable).",
+    )
+    parser.add_argument(
+        "--repo", type=Path, default=Path("."), help="arandu checkout whose prompts are digested."
+    )
     args = parser.parse_args()
     if len(args.replica) < 2:
         parser.error("need at least two replicas")
-    reps = [load_replica(p, args.cache_dir) for p in args.replica]
+    gate_from: dict[int, Path] = {}
+    for item in args.gate_from:
+        n, _, d = item.partition("=")
+        gate_from[int(n) - 1] = Path(d)
+    reps = [load_replica(p, args.cache_dir, gate_from.get(i)) for i, p in enumerate(args.replica)]
     rng = np.random.default_rng(args.seed)
     res: dict[str, Any] = {
         "replicas": [str(p) for p in args.replica],
+        "gate_from": {f"r{i + 1}": str(d) for i, d in gate_from.items()},
         "n_boot": args.n_boot,
         "seed": args.seed,
         "environment": {
@@ -1662,11 +2330,16 @@ def main() -> None:
         },
     }
     res["config"] = config_section(reps)
+    res["completeness"] = completeness_section(reps)
+    res["provenance"] = provenance_section(reps, args.repo)
     res["sanity"] = sanity_section(reps)
     res["gate"] = gate_section(reps, args.n_boot, rng)
     res["emic"] = emic_section(reps, args.n_boot, rng)
     res["answers"] = answers_section(reps, args.n_boot, rng)
-    res["aggregates"] = aggregates_section(reps, args.n_boot, rng)
+    res["rejection_emic"] = rejection_emic_section(reps)
+    res["aggregates"] = aggregates_section(reps, args.n_boot, args.seed)
+    for out_path in (args.out_json, args.out_md):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
     args.out_json.write_text(
         json.dumps(res, indent=1, ensure_ascii=False, default=str), encoding="utf-8"
     )
