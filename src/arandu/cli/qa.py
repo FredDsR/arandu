@@ -489,6 +489,10 @@ def judge_qa(
     unreadable_files: list[str] = []
 
     try:
+        if not rejudge:
+            # Check every file before judging or writing any, so a mismatch in a
+            # later file cannot leave earlier files already rewritten.
+            _require_gate_validator_match(qa_files, resolved_model)
         for qa_file in qa_files:
             try:
                 record = QARecordCEP.model_validate_json(qa_file.read_text())
@@ -496,20 +500,6 @@ def judge_qa(
                 print_error(f"Failed to read {qa_file.name}: {e}")
                 unreadable_files.append(qa_file.name)
                 continue
-
-            if (
-                not rejudge
-                and record.scaffolding_gate_enabled
-                and record.validator_model_id
-                and record.validator_model_id != resolved_model
-            ):
-                print_error(
-                    f"{qa_file.name} was gated by validator model "
-                    f"{record.validator_model_id!r}, but this run uses {resolved_model!r}; "
-                    "resuming would mix validator models. Run judge-qa with the gate's "
-                    "validator model or pass --rejudge."
-                )
-                raise typer.Exit(code=1)
 
             all_pairs = record.qa_pairs
 
@@ -535,6 +525,7 @@ def judge_qa(
 
             updated_pairs: list[QAPairCEP] = list(all_pairs)
             file_judged = 0
+            file_persisted = 0
             file_valid = 0
             file_skipped = 0
 
@@ -576,10 +567,12 @@ def judge_qa(
                 if validated.validation is None or has_judge_error(validated.validation):
                     # Persisted so the failure is visible; resume re-judges it.
                     updated_pairs[idx] = validated
+                    file_persisted += 1
                     print_warning(f"Judge error on a pair in {qa_file.name}; it will be retried.")
                     total_failed += 1
                     continue
                 updated_pairs[idx] = validated
+                file_persisted += 1
                 file_judged += 1
                 total_judged += 1
                 if validated.is_valid:
@@ -593,7 +586,8 @@ def judge_qa(
             # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
             # existing validator_model_id on the record.
             record.qa_pairs = updated_pairs
-            if file_judged > 0:
+            if file_persisted > 0:
+                # Errored verdicts count: they replaced the earlier model's verdicts.
                 record.validator_model_id = resolved_model
             # Count pairs that *passed* validation, not just pairs that have a
             # verdict — the schema field is documented as "Number of pairs
@@ -640,6 +634,37 @@ def judge_qa(
     if unreadable_files:
         console.print(f"[red]Unreadable files (not judged):[/red] {len(unreadable_files)}")
     console.print()
+
+
+def _require_gate_validator_match(qa_files: list[Path], resolved_model: str) -> None:
+    """Refuse to resume gate verdicts under a different validator model.
+
+    Args:
+        qa_files: The CEP QA files this run will process.
+        resolved_model: Validator model this run judges with.
+
+    Raises:
+        typer.Exit: With code 1 when a gated file carries another model's verdicts.
+    """
+    from arandu.qa.schemas import QARecordCEP
+
+    for qa_file in qa_files:
+        try:
+            record = QARecordCEP.model_validate_json(qa_file.read_text())
+        except Exception:
+            continue  # unreadable files are reported by the judging loop
+        if (
+            record.scaffolding_gate_enabled
+            and record.validator_model_id
+            and record.validator_model_id != resolved_model
+        ):
+            print_error(
+                f"{qa_file.name} was gated by validator model "
+                f"{record.validator_model_id!r}, but this run uses {resolved_model!r}; "
+                "resuming would mix validator models. Run judge-qa with the gate's "
+                "validator model or pass --rejudge."
+            )
+            raise typer.Exit(code=1)
 
 
 def _client_provider(client: object, fallback: str | None) -> str | None:

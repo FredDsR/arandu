@@ -466,3 +466,39 @@ def test_resume_that_judges_nothing_keeps_the_validator_model(
     assert result.exit_code == 0, result.output
     assert judge.calls == []
     assert _validator_model(path) == "gate-model"
+
+
+def test_validator_mismatch_is_checked_before_any_file_is_written(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    """A later mismatching file must not leave earlier files already rewritten."""
+    outputs = _results_layout(tmp_path)
+    first = outputs / "a_cep_qa.json"
+    second = outputs / "b_cep_qa.json"
+    # Ungated, unjudged: judging it would rewrite the file.
+    first.write_text(_write_record(outputs).read_text(), encoding="utf-8")
+    second.write_text(_gate_judged_record(outputs).read_text(), encoding="utf-8")
+    (outputs / "file-1_cep_qa.json").unlink()
+    before = first.read_text()
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "other-model"])
+
+    assert result.exit_code == 1
+    assert "gate-model" in result.output
+    assert judge.calls == []
+    assert first.read_text() == before
+    assert _metadata(tmp_path)["status"] == "failed"
+
+
+def test_rejudge_with_only_errored_verdicts_still_stamps_the_new_model(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    outputs = _results_layout(tmp_path)
+    path = _gate_judged_record(outputs)
+    judge.outcome = "error"
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "other-model", "--rejudge"])
+
+    assert result.exit_code == 0, result.output
+    assert len(judge.calls) == 2
+    assert _validator_model(path) == "other-model"
