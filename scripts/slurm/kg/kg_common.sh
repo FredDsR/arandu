@@ -13,6 +13,8 @@
 #   ARANDU_KG_TEMPERATURE - LLM temperature (default: 0.5)
 #   ARANDU_KG_LANGUAGE - Language for KG extraction (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
+#   OLLAMA_NUM_PARALLEL - Ollama slots (default: 3)
+#   OLLAMA_CONTEXT_LENGTH - Ollama context per slot (default: 32768)
 # =============================================================================
 
 set -euo pipefail
@@ -29,6 +31,13 @@ export ARANDU_KG_OLLAMA_URL="${ARANDU_KG_OLLAMA_URL:-http://ollama:11434/v1}"
 export ARANDU_KG_BACKEND="${ARANDU_KG_BACKEND:-atlas}"
 export ARANDU_KG_TEMPERATURE="${ARANDU_KG_TEMPERATURE:-0.5}"
 export ARANDU_KG_LANGUAGE="${ARANDU_KG_LANGUAGE:-pt}"
+
+# Ollama sidecar sizing, passed to arandu_start_ollama. Matches the measured
+# setup in src/arandu/kg/AGENTS.md (qwen3:14b, RTX 4090: 3 slots x 32k ctx,
+# ~25 GB, ~4% CPU spill). atlas-rag extraction sends chunk_size=8192 plus an
+# 8192-token output budget, so the Ollama default context truncates it.
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-3}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-32768}"
 
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
@@ -55,6 +64,7 @@ echo "=============================================="
 echo "KG Provider:   $ARANDU_KG_PROVIDER"
 echo "KG Model:      $ARANDU_KG_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
+echo "Ollama slots/ctx: $OLLAMA_NUM_PARALLEL / $OLLAMA_CONTEXT_LENGTH"
 echo "Backend:       $ARANDU_KG_BACKEND"
 echo "Temperature:   $ARANDU_KG_TEMPERATURE"
 echo "Language:      $ARANDU_KG_LANGUAGE"
@@ -115,7 +125,8 @@ arandu_init_pod
 
 # Start Ollama sidecar if using ollama provider
 if [ "$ARANDU_KG_PROVIDER" = "ollama" ]; then
-    arandu_start_ollama "$ARANDU_KG_MODEL_ID" "$USE_GPU_OLLAMA" 3
+    arandu_start_ollama "$ARANDU_KG_MODEL_ID" "$USE_GPU_OLLAMA" \
+        "$OLLAMA_NUM_PARALLEL" "$OLLAMA_CONTEXT_LENGTH"
 fi
 
 echo "Starting KG construction process..."
