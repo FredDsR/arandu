@@ -1,9 +1,11 @@
 # QA / CEP Module: Agent Guide
 
 Cognitive Elicitation Pipeline: generate Bloom-scaffolded QA pairs from
-transcriptions, then validate them with LLM-as-a-Judge. **Generation and
-validation are separate steps** — `arandu generate-cep-qa` (`cli/qa.py` →
-`batch.run_batch_cep_generation`) only generates; `arandu judge-qa` only judges.
+transcriptions, then validate them with LLM-as-a-Judge. `arandu generate-cep-qa`
+(`cli/qa.py` → `batch.run_batch_cep_generation`) generates pairs and, with the
+scaffolding gate on (default), judges each one before it can scaffold later pairs,
+persisting the verdict; `arandu judge-qa` judges whatever has no clean verdict (or
+everything with `--rejudge`).
 Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
 `results/<id>/cep/outputs/*_cep_qa.json`.
 
@@ -28,7 +30,11 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   truth — there is no `bloom_levels` field.
 - **Scaffolding context**: with `enable_scaffolding_context`, levels run in Bloom
   order and each level's prompt receives prior pairs (capped at
-  `max_scaffolding_pairs`), so higher levels build on lower ones.
+  `max_scaffolding_pairs`), so higher levels build on lower ones. With
+  `enable_scaffolding_gate` (default on, needs `ARANDU_JUDGE_VALIDATOR_MODEL`),
+  only pairs with `is_valid is True` are eligible; rejected pairs stay in the
+  output. The validator is injected as a `PairValidator` built in
+  `batch._build_cep_generator`.
 - **Judge composition**: `QAJudge` runs one `cep_validation` filter stage with
   four `LLMCriterion`s — faithfulness, bloom_calibration, informativeness,
   self_containedness — at temp 0.3. A separate remember-only pipeline drops
@@ -57,6 +63,8 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   score and no criterion weights; zeroing a criterion is not possible from config.
 - `MAX_BLOOM_PAIRS_PER_CHUNK = 50` caps the distribution sum (typo guard against
   runaway cost like `remember:9999`).
+- `ReasoningEnricher.enrich` must `model_copy` the pair; rebuilding it drops the
+  gate verdict.
 - `extra="ignore"` on the configs silently drops unknown/misspelled env vars.
 - `chunk_id` is stamped after enrichment; changing the chunker view between
   generations breaks provenance.

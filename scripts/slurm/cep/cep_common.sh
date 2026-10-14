@@ -16,8 +16,11 @@
 #   ARANDU_CEP_LANGUAGE - Language for prompts (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
 #
-# NOTE: This job only generates CEP pairs. Validation is a separate step run by
-# the judge-qa SLURM job (scripts/slurm/judge/), configured via ARANDU_JUDGE_*.
+# Scaffolding gate (default on): every generated pair is judged by QAJudge
+# before it can scaffold later pairs, and its verdict is persisted so a later
+# judge-qa run (resume) skips it. The validator is configured via ARANDU_JUDGE_*
+# exactly like the judge-qa job. Set ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=false to
+# generate without the gate.
 # =============================================================================
 
 set -euo pipefail
@@ -40,6 +43,16 @@ export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
 DEFAULT_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
 export ARANDU_CEP_BLOOM_DISTRIBUTION="${ARANDU_CEP_BLOOM_DISTRIBUTION:-$DEFAULT_BLOOM_DISTRIBUTION}"
 export ARANDU_CEP_LANGUAGE="${ARANDU_CEP_LANGUAGE:-pt}"
+export ARANDU_CEP_ENABLE_SCAFFOLDING_GATE="${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE:-true}"
+
+# Gate validator: same defaults as scripts/slurm/judge/judge_common.sh, which also
+# shields the job from cloud settings that may live in the repo's .env.
+export ARANDU_JUDGE_VALIDATOR_MODEL="${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}"
+export ARANDU_JUDGE_VALIDATOR_PROVIDER="${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}"
+export ARANDU_JUDGE_VALIDATOR_BASE_URL="${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}"
+export ARANDU_JUDGE_LANGUAGE="${ARANDU_JUDGE_LANGUAGE:-pt}"
+export ARANDU_JUDGE_TEMPERATURE="${ARANDU_JUDGE_TEMPERATURE:-0.1}"
+export ARANDU_JUDGE_MAX_TOKENS="${ARANDU_JUDGE_MAX_TOKENS:-8192}"
 
 # GPU mode for Ollama (partition scripts set this)
 USE_GPU_OLLAMA="${USE_GPU_OLLAMA:-false}"
@@ -71,7 +84,7 @@ echo "Workers:       $ARANDU_QA_WORKERS"
 echo "Results Dir:   $ARANDU_RESULTS_DIR"
 echo "=============================================="
 echo "CEP Language:  $ARANDU_CEP_LANGUAGE"
-echo "(validation runs separately via the judge-qa job)"
+echo "Scaffolding gate: ${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE} (validator: ${ARANDU_JUDGE_VALIDATOR_MODEL})"
 echo "=============================================="
 
 # -----------------------------------------------------------------------------
@@ -136,9 +149,29 @@ arandu_build_image "arandu:latest" "Dockerfile"
 # Initialize isolated pod
 arandu_init_pod
 
-# Start Ollama sidecar if using ollama provider
+# Start the Ollama sidecar when generation or the scaffolding gate uses it, and
+# make sure the gate's validator model is pulled when it differs from the
+# generation model.
+GATE_ON=false
+if [ "${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE,,}" = "true" ] \
+    && [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
+    GATE_ON=true
+fi
+
+OLLAMA_MODEL=""
 if [ "$ARANDU_QA_PROVIDER" = "ollama" ]; then
-    arandu_start_ollama "$ARANDU_QA_MODEL_ID" "$USE_GPU_OLLAMA" "${ARANDU_QA_WORKERS:-2}"
+    OLLAMA_MODEL="$ARANDU_QA_MODEL_ID"
+elif [ "$GATE_ON" = "true" ]; then
+    OLLAMA_MODEL="$ARANDU_JUDGE_VALIDATOR_MODEL"
+fi
+
+if [ -n "$OLLAMA_MODEL" ]; then
+    arandu_start_ollama "$OLLAMA_MODEL" "$USE_GPU_OLLAMA" "${ARANDU_QA_WORKERS:-2}"
+fi
+
+if [ "$GATE_ON" = "true" ] && [ "$ARANDU_JUDGE_VALIDATOR_MODEL" != "$OLLAMA_MODEL" ]; then
+    echo "Pulling scaffolding-gate validator model: ${ARANDU_JUDGE_VALIDATOR_MODEL}..."
+    podman exec "${OLLAMA_CONTAINER_NAME}" ollama pull "$ARANDU_JUDGE_VALIDATOR_MODEL"
 fi
 
 CEP_CMD=(

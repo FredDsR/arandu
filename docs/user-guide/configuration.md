@@ -188,6 +188,7 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 |---------|------|---------|-------------|
 | `enable_reasoning_traces` | `bool` | `True` | Enable reasoning trace generation for answers |
 | `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
+| `enable_scaffolding_gate` | `bool` | `True` | Judge each pair before it can scaffold later pairs (needs a validator model) |
 | `enable_source_metadata_context` | `bool` | `True` | Include extracted source metadata (participant name, location, date) in CEP prompt context |
 
 ### Module I - Bloom Scaffolding Settings
@@ -676,6 +677,7 @@ services:
 # CEP Settings
 ARANDU_CEP_ENABLE_REASONING_TRACES=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
 
 # Bloom distribution (integer pair counts per level; single source of truth)
@@ -864,6 +866,7 @@ ARANDU_QA_WORKERS=2
 # Module toggles
 ARANDU_CEP_ENABLE_REASONING_TRACES=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
 
 # Bloom scaffolding (integer pair counts per level; single source of truth)

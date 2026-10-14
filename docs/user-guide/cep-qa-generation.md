@@ -8,7 +8,7 @@ The CEP pipeline generates QA pairs through two specialized modules, then valida
 
 1. **Module I: Bloom Scaffolding** - Generates questions distributed across Bloom's taxonomy levels
 2. **Module II: Reasoning & Grounding** - Enriches higher-level questions with reasoning traces
-3. **LLM-as-a-Judge (separate `judge-qa` step)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
+3. **LLM-as-a-Judge (scaffolding gate during generation, plus the `judge-qa` step for anything left unjudged)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ### Key Features
 
@@ -81,11 +81,12 @@ arandu generate-cep-qa results/ --id etno-project-001
 |----------|---------|-------------|
 | `ARANDU_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
 | `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
+| `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` | `true` | Judge each pair before it can scaffold later pairs; needs `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
 
-### Judge Variables (used by `judge-qa`)
+### Judge Variables (used by the scaffolding gate and `judge-qa`)
 
-Validation is a separate command; its validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`). There is no `ARANDU_CEP_ENABLE_VALIDATION` switch.
+The validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`), both for the scaffolding gate inside `generate-cep-qa` and for `judge-qa`. There is no `ARANDU_CEP_ENABLE_VALIDATION` switch.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
