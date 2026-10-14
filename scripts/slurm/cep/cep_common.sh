@@ -153,9 +153,11 @@ arandu_init_pod
 # make sure the gate's validator model is pulled when it differs from the
 # generation model.
 GATE_ON=false
-if [ "${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE,,}" = "true" ] \
-    && [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
-    GATE_ON=true
+if [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
+    case "${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE,,}" in
+        true|1|yes|on) GATE_ON=true ;;
+        *) ;;
+    esac
 fi
 
 OLLAMA_MODEL=""

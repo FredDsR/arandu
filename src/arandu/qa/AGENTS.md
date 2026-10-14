@@ -57,7 +57,8 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
 
 ## Gotchas
 
-- `CEPConfig` carries no validation gate. A pair passes when **every** criterion
+- `CEPConfig` has no thresholds or weights; the only gate setting is
+  `enable_scaffolding_gate`. A pair passes when **every** criterion
   passes (`JudgeStepResult.passed` is an `all()`), each against the `threshold`
   in `prompts/judge/criteria/<criterion>/config.json`. There is no aggregate
   score and no criterion weights; zeroing a criterion is not possible from config.
@@ -70,5 +71,6 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   generations breaks provenance.
 
 **Deployment surface**: `arandu:latest` (`Dockerfile`); `arandu-cep` service
-under `cep`/`cep-gpu`, validation via the `arandu-judge` service. Full map:
+under `cep`/`cep-gpu` (the scaffolding gate runs inside it with
+`ARANDU_JUDGE_*`); the `arandu-judge` service runs `judge-qa`. Full map:
 [scripts/slurm/AGENTS.md](../../../scripts/slurm/AGENTS.md).

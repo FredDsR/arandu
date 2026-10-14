@@ -178,7 +178,7 @@ config = QAConfig(
 
 ## CEPConfig
 
-Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. Generation and validation are separate steps: `generate-cep-qa` only generates pairs; `judge-qa` validates them using the scoring weights and threshold defined here.
+Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair while generating; `judge-qa` covers pairs without a clean verdict (or everything with `--rejudge`), using the scoring weights and threshold defined here.
 
 **Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_CEP_`
 
@@ -564,7 +564,7 @@ ARANDU_KG_LANGUAGE=pt
 # QA generation (uses .env settings)
 arandu generate-cep-qa results/
 
-# Validate the generated pairs (separate step)
+# Judge pairs without a clean verdict (--rejudge redoes all)
 arandu judge-qa qa_dataset/
 
 # Override specific settings
