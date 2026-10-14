@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from string import Template
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import ValidationError
 from tenacity import (
@@ -21,7 +21,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from arandu.qa.cep.metadata_context import render_metadata_context
+from arandu.qa.cep.metadata_context import build_pair_judge_context, render_metadata_context
 from arandu.qa.schemas import QAPairCEP
 from arandu.utils.paths import get_project_root
 
@@ -48,6 +48,19 @@ class LLMResponseError(Exception):
     """Recoverable LLM response error (JSON parse, format, or validation failure)."""
 
 
+class PairValidator(Protocol):
+    """Judge a generated pair against its grounding context.
+
+    ``arandu.qa.cep.judge.QAJudge`` satisfies this contract. The returned pair
+    carries the verdict in ``validation``; ``validation is None`` means the
+    pair could not be judged.
+    """
+
+    def validate(self, qa_pair: QAPairCEP, context: str) -> QAPairCEP:
+        """Return ``qa_pair`` with its ``validation`` populated."""
+        ...
+
+
 class BloomScaffoldingGenerator:
     """Generate QA pairs calibrated to Bloom's taxonomy levels.
 
@@ -61,6 +74,7 @@ class BloomScaffoldingGenerator:
         llm_client: LLMClient,
         qa_config: QAConfig,
         cep_config: CEPConfig,
+        validator: PairValidator | None = None,
     ) -> None:
         """Initialize the Bloom scaffolding generator.
 
@@ -68,14 +82,18 @@ class BloomScaffoldingGenerator:
             llm_client: LLM client for generation.
             qa_config: QA configuration.
             cep_config: CEP configuration.
+            validator: Scaffolding gate. When set, every generated pair is judged
+                right after generation and only approved pairs are shown to later
+                prompts. ``None`` keeps every generated pair as scaffolding.
         """
         self.llm_client = llm_client
         self.qa_config = qa_config
         self.cep_config = cep_config
+        self.validator = validator
         self._prompts = self._load_prompts()
         logger.info(
             "BloomScaffoldingGenerator initialized with levels: "
-            f"{list(cep_config.bloom_distribution.keys())}"
+            f"{list(cep_config.bloom_distribution.keys())}, gate={validator is not None}"
         )
 
     def _load_prompts(self) -> dict[str, Any]:
@@ -127,6 +145,47 @@ class BloomScaffoldingGenerator:
         ]
         return "\n".join(lines)
 
+    def _scaffolding_pool(self, pairs: list[QAPairCEP]) -> list[QAPairCEP]:
+        """Select the prior pairs allowed to scaffold the next prompt.
+
+        Without a validator every pair is eligible (legacy behavior). With one,
+        only approved pairs are: an unjudged pair (``is_valid is None``) or a
+        verdict with a criterion error (the ``cep_validation`` filter stage turns
+        it into ``passed=False``) stays out.
+
+        Args:
+            pairs: Pairs generated so far for this chunk, in generation order.
+
+        Returns:
+            The eligible pairs, in the same order.
+        """
+        if self.validator is None:
+            return pairs
+        return [pair for pair in pairs if pair.is_valid is True]
+
+    def _judge(self, pair: QAPairCEP, judge_context: str) -> QAPairCEP:
+        """Run the scaffolding gate on one pair.
+
+        Args:
+            pair: Freshly generated pair (no verdict).
+            judge_context: Grounding built by ``build_pair_judge_context``.
+
+        Returns:
+            The judged pair, or the pair unchanged when there is no validator or
+            the validator raised (it then stays unjudged and is not admitted).
+        """
+        if self.validator is None:
+            return pair
+        try:
+            return self.validator.validate(pair, judge_context)
+        except Exception:
+            logger.warning(
+                "Scaffolding gate failed on a %s pair; keeping it unjudged",
+                pair.bloom_level,
+                exc_info=True,
+            )
+            return pair
+
     def generate(
         self,
         context: str,
@@ -148,6 +207,17 @@ class BloomScaffoldingGenerator:
         """
         pairs: list[QAPairCEP] = []
 
+        # Same grounding judge-qa uses: the chunk plus the gated metadata block.
+        judge_context = ""
+        if self.validator is not None:
+            judge_context = build_pair_judge_context(
+                context,
+                context,
+                source_metadata,
+                enable_metadata=self.cep_config.enable_source_metadata_context,
+                language=self.cep_config.language,
+            )
+
         # Pairs per Bloom level come straight from the configured counts
         level_counts = self._calculate_level_distribution()
 
@@ -163,13 +233,24 @@ class BloomScaffoldingGenerator:
             if count == 0:
                 continue
 
-            prior = pairs if self.cep_config.enable_scaffolding_context else []
+            prior: list[QAPairCEP] = []
+            if self.cep_config.enable_scaffolding_context:
+                prior = self._scaffolding_pool(pairs)
+                if pairs and not prior:
+                    logger.warning(
+                        "No pair admitted to scaffolding before %s level (%d generated); "
+                        "generating without scaffolding context",
+                        level,
+                        len(pairs),
+                    )
+
             level_pairs = self._generate_for_level(
                 context,
                 level,
                 count,
                 prior_pairs=prior,
                 source_metadata=source_metadata,
+                judge_context=judge_context,
             )
             pairs.extend(level_pairs)
 
@@ -197,21 +278,24 @@ class BloomScaffoldingGenerator:
         *,
         prior_pairs: list[QAPairCEP] | None = None,
         source_metadata: SourceMetadata | None = None,
+        judge_context: str = "",
     ) -> list[QAPairCEP]:
         """Generate QA pairs for a specific Bloom level.
 
         Generates one QA pair per LLM call to ensure consistent quality and
-        clean attribution of model thinking traces to individual pairs.
+        clean attribution of model thinking traces to individual pairs. Each
+        pair goes through the scaffolding gate before a sibling can see it.
 
         Args:
             context: Source text context.
             bloom_level: Bloom taxonomy level.
             num_questions: Number of questions to generate.
-            prior_pairs: Previously generated QA pairs for scaffolding context.
+            prior_pairs: Admitted pairs from lower levels for scaffolding context.
             source_metadata: Optional source metadata for prompt enrichment.
+            judge_context: Grounding passed to the validator (unused without one).
 
         Returns:
-            List of QAPairCEP objects.
+            List of QAPairCEP objects, judged when a validator is set.
         """
         pairs: list[QAPairCEP] = []
         all_prior_pairs = prior_pairs if prior_pairs else []
@@ -219,7 +303,7 @@ class BloomScaffoldingGenerator:
         for pair_index in range(num_questions):
             # Build scaffolding context from prior pairs (including current level);
             # downstream formatting may truncate to max_scaffolding_pairs.
-            current_prior = all_prior_pairs + pairs
+            current_prior = all_prior_pairs + self._scaffolding_pool(pairs)
 
             prompt = self._build_prompt(
                 context,
@@ -233,13 +317,6 @@ class BloomScaffoldingGenerator:
                     prompt=prompt,
                     context=context,
                     bloom_level=bloom_level,
-                )
-                pairs.append(pair)
-                logger.debug(
-                    "Generated pair %d/%d at %s level",
-                    pair_index + 1,
-                    num_questions,
-                    bloom_level,
                 )
             except LLMResponseError:
                 logger.warning(
@@ -259,6 +336,14 @@ class BloomScaffoldingGenerator:
                     e,
                 )
                 continue
+
+            pairs.append(self._judge(pair, judge_context))
+            logger.debug(
+                "Generated pair %d/%d at %s level",
+                pair_index + 1,
+                num_questions,
+                bloom_level,
+            )
 
         if len(pairs) < num_questions:
             logger.warning(
@@ -452,6 +537,8 @@ class BloomScaffoldingGenerator:
                     "bloom_level": bloom_level,
                     "generation_prompt": generation_prompt,
                     "generation_thinking": generation_thinking,
+                    # A verdict only comes from the judge, never from the generator.
+                    "validation": None,
                 },
             )
         except (ValidationError, TypeError) as e:
