@@ -12,11 +12,11 @@ import re
 from string import Template
 from typing import TYPE_CHECKING, Any
 
+from arandu.qa.schemas import QAPairCEP
 from arandu.utils.paths import get_project_root
 
 if TYPE_CHECKING:
     from arandu.qa.config import CEPConfig
-    from arandu.qa.schemas import QAPairCEP
     from arandu.shared.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -128,17 +128,14 @@ class ReasoningEnricher:
 
             # Copy, not rebuild: the pair may carry the scaffolding-gate verdict,
             # rationale, thinking trace and chunk provenance, none of which this
-            # module owns.
-            return qa_pair.model_copy(
-                update={
-                    "reasoning_trace": enriched_data.get("reasoning_trace")
-                    or qa_pair.reasoning_trace,
-                    "is_multi_hop": enriched_data.get("is_multi_hop", qa_pair.is_multi_hop),
-                    "hop_count": enriched_data.get("hop_count") or qa_pair.hop_count,
-                    "tacit_inference": enriched_data.get("tacit_inference")
-                    or qa_pair.tacit_inference,
-                }
-            )
+            # module owns. Re-validate so the multi-hop normalizer still runs.
+            update = {
+                "reasoning_trace": enriched_data.get("reasoning_trace") or qa_pair.reasoning_trace,
+                "is_multi_hop": enriched_data.get("is_multi_hop", qa_pair.is_multi_hop),
+                "hop_count": enriched_data.get("hop_count") or qa_pair.hop_count,
+                "tacit_inference": enriched_data.get("tacit_inference") or qa_pair.tacit_inference,
+            }
+            return QAPairCEP.model_validate({**qa_pair.model_dump(), **update})
 
         except Exception as e:
             logger.warning(f"Failed to enrich QA pair: {e}", exc_info=True)
