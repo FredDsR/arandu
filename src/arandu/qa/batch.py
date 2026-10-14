@@ -13,15 +13,19 @@ import multiprocessing as mp
 import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from arandu.qa.config import CEPConfig, QAConfig
+from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig, require_gate_validator
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
 from arandu.shared.llm_client import LLMClient, parse_provider
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType, TranscriptionRecord
+
+if TYPE_CHECKING:
+    from arandu.qa.cep import CEPQAGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -215,54 +219,94 @@ def load_transcription_tasks(
 _worker_cep_generator = None
 
 
+def _build_cep_generator(
+    qa_config: QAConfig,
+    cep_config: CEPConfig,
+    judge_config: JudgeConfig,
+) -> CEPQAGenerator:
+    """Build the CEP generator, wiring the scaffolding gate when it is active.
+
+    Single construction path for both the parallel worker initializer and the
+    sequential path.
+
+    Args:
+        qa_config: QA configuration (generation provider, model, endpoints).
+        cep_config: CEP configuration (decides whether the gate is active).
+        judge_config: Judge configuration for the gate's validator client.
+
+    Returns:
+        A ready ``CEPQAGenerator``.
+
+    Raises:
+        ValueError: If the gate is active and no validator model is configured.
+    """
+    from arandu.qa.cep import CEPQAGenerator
+
+    # Only fall back to ollama_url when provider is ollama
+    base_url = qa_config.base_url
+    if not base_url and qa_config.provider == "ollama":
+        base_url = qa_config.ollama_url
+
+    llm_client = LLMClient(
+        provider=parse_provider(qa_config.provider),
+        model_id=qa_config.model_id,
+        base_url=base_url,
+    )
+
+    validator = None
+    if cep_config.scaffolding_gate_active:
+        require_gate_validator(cep_config, judge_config)
+        from arandu.qa.cep import judge as cep_judge
+        from arandu.transcription import judge as transcription_judge
+
+        validator_client = transcription_judge.build_validator_client(
+            judge_config.validator_model,
+            provider=judge_config.validator_provider,
+            base_url=judge_config.validator_base_url,
+        )
+        validator = cep_judge.QAJudge(
+            validator_client=validator_client,
+            cep_config=cep_config,
+            judge_config=judge_config,
+        )
+
+    return CEPQAGenerator(
+        llm_client=llm_client,
+        qa_config=qa_config,
+        cep_config=cep_config,
+        validator=validator,
+    )
+
+
 def _init_cep_worker(
-    provider: str,
-    model_id: str,
     qa_config_dict: dict,
     cep_config_dict: dict,
+    judge_config_dict: dict,
 ) -> None:
     """Initialize CEP worker process with generator instance.
 
     Args:
-        provider: LLM provider name.
-        model_id: Model identifier.
         qa_config_dict: QAConfig as dictionary.
         cep_config_dict: CEPConfig as dictionary.
+        judge_config_dict: JudgeConfig as dictionary (scaffolding gate validator).
     """
     global _worker_cep_generator
 
-    from arandu.qa.cep import CEPQAGenerator
-
-    # Reconstruct configs
     qa_config = QAConfig(**qa_config_dict)
-    cep_config = CEPConfig(**cep_config_dict)
-
-    # Determine base URL
-    base_url = qa_config.base_url
-    if not base_url and provider == "ollama":
-        base_url = qa_config.ollama_url
-
-    # Create main LLM client
-    llm_client = LLMClient(
-        provider=parse_provider(provider),
-        model_id=model_id,
-        base_url=base_url,
+    _worker_cep_generator = _build_cep_generator(
+        qa_config,
+        CEPConfig(**cep_config_dict),
+        JudgeConfig(**judge_config_dict),
     )
 
-    # Create CEP generator
-    _worker_cep_generator = CEPQAGenerator(
-        llm_client=llm_client,
-        qa_config=qa_config,
-        cep_config=cep_config,
-    )
-
-    logger.info(f"CEP worker initialized with {provider}/{model_id}")
+    logger.info(f"CEP worker initialized with {qa_config.provider}/{qa_config.model_id}")
 
 
 def generate_cep_qa_for_transcription(
     task: QAGenerationTask,
     qa_config_dict: dict,
     cep_config_dict: dict,
+    judge_config_dict: dict,
 ) -> tuple[str, bool, str]:
     """Generate CEP QA pairs for a single transcription (worker function).
 
@@ -270,6 +314,7 @@ def generate_cep_qa_for_transcription(
         task: QAGenerationTask with file information.
         qa_config_dict: QAConfig as dictionary.
         cep_config_dict: CEPConfig as dictionary.
+        judge_config_dict: JudgeConfig as dictionary (scaffolding gate validator).
 
     Returns:
         Tuple of (file_id, success, message).
@@ -281,27 +326,10 @@ def generate_cep_qa_for_transcription(
 
         # For sequential processing, initialize on first use
         if _worker_cep_generator is None:
-            from arandu.qa.cep import CEPQAGenerator
-
-            qa_config = QAConfig(**qa_config_dict)
-            cep_config = CEPConfig(**cep_config_dict)
-            provider = qa_config.provider
-            model_id = qa_config.model_id
-            # Only fall back to ollama_url when provider is ollama
-            base_url = qa_config.base_url
-            if not base_url and provider == "ollama":
-                base_url = qa_config.ollama_url
-
-            llm_client = LLMClient(
-                provider=parse_provider(provider),
-                model_id=model_id,
-                base_url=base_url,
-            )
-
-            _worker_cep_generator = CEPQAGenerator(
-                llm_client=llm_client,
-                qa_config=qa_config,
-                cep_config=cep_config,
+            _worker_cep_generator = _build_cep_generator(
+                QAConfig(**qa_config_dict),
+                CEPConfig(**cep_config_dict),
+                JudgeConfig(**judge_config_dict),
             )
 
         # Load transcription
@@ -311,6 +339,8 @@ def generate_cep_qa_for_transcription(
 
         # Generate CEP QA pairs
         qa_record = _worker_cep_generator.generate_qa_pairs(enriched)
+        if qa_record.scaffolding_gate_enabled:
+            qa_record.validator_model_id = judge_config_dict.get("validator_model")
 
         # Save result
         task.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -328,6 +358,43 @@ def generate_cep_qa_for_transcription(
         return task.file_id, False, str(e)
 
 
+def _scaffolding_gate_snapshot(cep_config: CEPConfig, judge_config: JudgeConfig) -> dict:
+    """Describe the scaffolding gate for the ``cep`` run metadata.
+
+    Mirrors what ``judge-qa`` snapshots (judge settings, per-criterion threshold
+    and prompt digest, Bloom descriptions digest), because verdicts written at
+    generation time have no ``judge_qa/run_metadata.json`` of their own.
+
+    Args:
+        cep_config: CEP configuration.
+        judge_config: Judge configuration used by the gate.
+
+    Returns:
+        ``{"enabled": False}`` when the gate is inactive, else the snapshot.
+    """
+    if not cep_config.scaffolding_gate_active:
+        return {"enabled": False}
+
+    from arandu.qa.cep.judge_run import (
+        BLOOM_DESCRIPTIONS_DIR,
+        snapshot_bloom_descriptions,
+        snapshot_criteria,
+    )
+    from arandu.shared.judge.factory import DEFAULT_JUDGE_PROMPTS_DIR
+
+    criteria = snapshot_criteria(
+        DEFAULT_JUDGE_PROMPTS_DIR, judge_config.language, judge_config.temperature
+    )
+    return {
+        "enabled": True,
+        "judge": judge_config.model_dump(mode="json"),
+        "criteria": {name: snap.model_dump(mode="json") for name, snap in criteria.items()},
+        "bloom_descriptions_sha256": snapshot_bloom_descriptions(
+            BLOOM_DESCRIPTIONS_DIR, judge_config.language
+        ),
+    }
+
+
 def run_batch_cep_generation(
     input_dir: Path,
     output_dir: Path,
@@ -336,6 +403,7 @@ def run_batch_cep_generation(
     num_workers: int = 2,
     pipeline_id: str | None = None,
     rebuild: bool = False,
+    judge_config: JudgeConfig | None = None,
 ) -> None:
     """Run batch CEP QA generation with parallel processing and checkpointing.
 
@@ -352,6 +420,8 @@ def run_batch_cep_generation(
         pipeline_id: Optional pipeline ID for the ID-first results layout.
         rebuild: When ``True``, clear any existing CEP outputs and reset the
             checkpoint before processing, so a re-run yields a clean dataset.
+        judge_config: Judge configuration for the scaffolding gate; ``None`` loads it
+            from ``ARANDU_JUDGE_*``.
 
     Note:
         Without ``rebuild``, resuming an existing ``pipeline_id`` skips sources
@@ -362,6 +432,8 @@ def run_batch_cep_generation(
         count. Pass ``rebuild`` (or ``CEP_REBUILD=1`` via the SLURM script) to
         start clean. This mirrors the chunk stage's ``rebuild``.
     """
+    judge_config = judge_config or JudgeConfig()
+
     # Load results configuration
     results_config = ResultsConfig()
     results_mgr: ResultsManager | None = None
@@ -382,6 +454,9 @@ def run_batch_cep_generation(
         if results_mgr.metadata.config:
             results_mgr.metadata.config.config_values["cep_config"] = cep_config.model_dump(
                 mode="json"
+            )
+            results_mgr.metadata.config.config_values["scaffolding_gate"] = (
+                _scaffolding_gate_snapshot(cep_config, judge_config)
             )
             results_mgr.metadata.config.config_type = "QAConfig+CEPConfig"
             results_mgr.metadata.save(results_mgr.run_dir / "run_metadata.json")
@@ -452,6 +527,7 @@ def run_batch_cep_generation(
     # Convert configs to dict for pickling
     qa_config_dict = qa_config.model_dump()
     cep_config_dict = cep_config.model_dump()
+    judge_config_dict = judge_config.model_dump()
 
     error_message: str | None = None
     try:
@@ -460,7 +536,7 @@ def run_batch_cep_generation(
             # Sequential processing
             for task in remaining_tasks:
                 file_id, success, message = generate_cep_qa_for_transcription(
-                    task, qa_config_dict, cep_config_dict
+                    task, qa_config_dict, cep_config_dict, judge_config_dict
                 )
 
                 if success:
@@ -484,12 +560,7 @@ def run_batch_cep_generation(
                 max_workers=num_workers,
                 mp_context=mp.get_context("forkserver"),
                 initializer=_init_cep_worker,
-                initargs=(
-                    qa_config.provider,
-                    qa_config.model_id,
-                    qa_config_dict,
-                    cep_config_dict,
-                ),
+                initargs=(qa_config_dict, cep_config_dict, judge_config_dict),
             ) as executor:
                 # Batched submission
                 batch_size = max(num_workers * 2, 10)
@@ -505,6 +576,7 @@ def run_batch_cep_generation(
                             task,
                             qa_config_dict,
                             cep_config_dict,
+                            judge_config_dict,
                         )
                         pending_futures[future] = task
                     except StopIteration:
@@ -545,6 +617,7 @@ def run_batch_cep_generation(
                             next_task,
                             qa_config_dict,
                             cep_config_dict,
+                            judge_config_dict,
                         )
                         pending_futures[next_future] = next_task
                     except StopIteration:

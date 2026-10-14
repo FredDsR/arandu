@@ -21,8 +21,14 @@ from arandu.qa.batch import (
     load_transcription_tasks,
     run_batch_cep_generation,
 )
-from arandu.qa.config import CEPConfig, QAConfig
+from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig
 from arandu.shared.results_manager import ResultsManager
+
+
+@pytest.fixture(autouse=True)
+def _gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing batch tests predate the scaffolding gate; gate tests opt back in."""
+    monkeypatch.setenv("ARANDU_CEP_ENABLE_SCAFFOLDING_GATE", "false")
 
 
 class _ThreadPoolCompat(ThreadPoolExecutor):
@@ -429,10 +435,9 @@ class TestInitCEPWorker:
         cep_config = CEPConfig()
 
         _init_cep_worker(
-            provider="ollama",
-            model_id="llama3.1:8b",
             qa_config_dict=qa_config.model_dump(),
             cep_config_dict=cep_config.model_dump(),
+            judge_config_dict=JudgeConfig().model_dump(),
         )
 
         assert qa_batch_module._worker_cep_generator is not None
@@ -496,7 +501,7 @@ class TestGenerateCEPQAForTranscription:
         cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, message = generate_cep_qa_for_transcription(
-            task, qa_config_dict, cep_config_dict
+            task, qa_config_dict, cep_config_dict, JudgeConfig().model_dump()
         )
 
         assert file_id == "cep_test123"
@@ -528,7 +533,7 @@ class TestGenerateCEPQAForTranscription:
         cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, message = generate_cep_qa_for_transcription(
-            task, qa_config_dict, cep_config_dict
+            task, qa_config_dict, cep_config_dict, JudgeConfig().model_dump()
         )
 
         assert file_id == "test_cep"
@@ -595,7 +600,7 @@ class TestGenerateCEPQAForTranscription:
         cep_config_dict = CEPConfig().model_dump()
 
         file_id, success, _ = generate_cep_qa_for_transcription(
-            task, qa_config_dict, cep_config_dict
+            task, qa_config_dict, cep_config_dict, JudgeConfig().model_dump()
         )
 
         assert file_id == "cep_validated"
@@ -625,6 +630,54 @@ class TestRunBatchCEPGeneration:
         self.run_dir = self.results_dir / "test_run" / "cep"
         self.outputs_dir = self.run_dir / "outputs"
         self.versioned_checkpoint = self.run_dir / "cep_checkpoint.json"
+
+    def test_run_metadata_records_disabled_gate(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        run_batch_cep_generation(
+            input_dir,
+            tmp_path / "out",
+            QAConfig(provider="ollama", model_id="llama3.1:8b"),
+            CEPConfig(),
+            num_workers=1,
+        )
+
+        metadata = json.loads((self.run_dir / "run_metadata.json").read_text())
+        assert metadata["config"]["config_values"]["scaffolding_gate"] == {"enabled": False}
+
+    def test_run_metadata_snapshots_active_gate(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        run_batch_cep_generation(
+            input_dir,
+            tmp_path / "out",
+            QAConfig(provider="ollama", model_id="llama3.1:8b"),
+            CEPConfig(enable_scaffolding_gate=True),
+            num_workers=1,
+            judge_config=JudgeConfig(validator_model="judge-model", temperature=0.1),
+        )
+
+        metadata = json.loads((self.run_dir / "run_metadata.json").read_text())
+        gate = metadata["config"]["config_values"]["scaffolding_gate"]
+        assert gate["enabled"] is True
+        assert gate["judge"]["validator_model"] == "judge-model"
+        assert gate["judge"]["temperature"] == 0.1
+        assert set(gate["criteria"]) == {
+            "faithfulness",
+            "bloom_calibration",
+            "informativeness",
+            "self_containedness",
+        }
+        assert all(c["sha256"] for c in gate["criteria"].values())
+        assert gate["bloom_descriptions_sha256"]
 
     def test_run_batch_cep_creates_output_dir(self, tmp_path: Path, mocker: MockerFixture) -> None:
         """Test that output directory is created for CEP batch."""
@@ -1090,3 +1143,96 @@ class TestRunBatchCEPGeneration:
         run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
 
         assert "Skipped invalid transcriptions: 1" in caplog.text
+
+
+class TestBuildCEPGenerator:
+    """_build_cep_generator wires the scaffolding gate from JudgeConfig."""
+
+    def test_builds_qajudge_when_gate_active(self, mocker: MockerFixture) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        build_client = mocker.patch("arandu.transcription.judge.build_validator_client")
+        judge_cls = mocker.patch("arandu.qa.cep.judge.QAJudge")
+        cep = CEPConfig(enable_scaffolding_gate=True, enable_scaffolding_context=True)
+        judge = JudgeConfig(
+            validator_model="judge-model",
+            validator_provider="ollama",
+            validator_base_url="http://judge:11434/v1",
+        )
+
+        generator = _build_cep_generator(QAConfig(provider="ollama"), cep, judge)
+
+        build_client.assert_called_once_with(
+            "judge-model", provider="ollama", base_url="http://judge:11434/v1"
+        )
+        judge_cls.assert_called_once_with(
+            validator_client=build_client.return_value, cep_config=cep, judge_config=judge
+        )
+        assert generator._bloom_generator.validator is judge_cls.return_value
+
+    def test_build_cep_generator_skips_validator_without_scaffolding(
+        self, mocker: MockerFixture
+    ) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        build_client = mocker.patch("arandu.transcription.judge.build_validator_client")
+        cep = CEPConfig(enable_scaffolding_gate=True, enable_scaffolding_context=False)
+
+        generator = _build_cep_generator(
+            QAConfig(provider="ollama"), cep, JudgeConfig(validator_model=None)
+        )
+
+        build_client.assert_not_called()
+        assert generator._bloom_generator.validator is None
+
+    def test_raises_when_gate_active_without_model(self, mocker: MockerFixture) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        cep = CEPConfig(enable_scaffolding_gate=True, enable_scaffolding_context=True)
+
+        with pytest.raises(ValueError, match="ARANDU_JUDGE_VALIDATOR_MODEL"):
+            _build_cep_generator(
+                QAConfig(provider="ollama"), cep, JudgeConfig(validator_model=None)
+            )
+
+
+class TestScaffoldingGateRecordAndMetadata:
+    """The worker stamps the validator model; the run snapshots the gate."""
+
+    def test_worker_stamps_validator_model_when_gated(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        import arandu.qa.batch as qa_batch_module
+
+        record = mocker.Mock()
+        record.scaffolding_gate_enabled = True
+        record.qa_pairs = []
+        generator = mocker.Mock()
+        generator.generate_qa_pairs.return_value = record
+        qa_batch_module._worker_cep_generator = generator
+        mocker.patch("arandu.qa.batch.TranscriptionRecord")
+        input_file = tmp_path / "t.json"
+        input_file.write_text("{}")
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="f1",
+            filename="t.mp3",
+            output_file=tmp_path / "out" / "f1_cep_qa.json",
+        )
+
+        try:
+            _, success, _ = generate_cep_qa_for_transcription(
+                task,
+                QAConfig().model_dump(),
+                CEPConfig().model_dump(),
+                JudgeConfig(validator_model="judge-model").model_dump(),
+            )
+        finally:
+            qa_batch_module._worker_cep_generator = None
+
+        assert success is True
+        assert record.validator_model_id == "judge-model"
+        record.save.assert_called_once_with(task.output_file)
