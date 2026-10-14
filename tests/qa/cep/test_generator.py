@@ -10,6 +10,7 @@ import pytest
 from arandu.qa.cep.generator import CEPQAGenerator
 from arandu.qa.config import CEPConfig, QAConfig
 from arandu.qa.schemas import QARecordCEP
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
 from arandu.shared.schemas import TranscriptionRecord
 from arandu.utils.text import GenerateResult
 
@@ -466,6 +467,83 @@ class TestCEPGenerationPromptIntegration:
             data = json.loads(line)
             assert "generation_prompt" in data
             assert data["generation_prompt"] is not None
+
+    def test_gate_state_and_validated_pairs_on_record(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        sample_transcription: TranscriptionRecord,
+    ) -> None:
+        """A gated generator stamps the gate flag and counts approved pairs."""
+
+        class _ApproveFirstOnly:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def validate(self, qa_pair: Any, context: str) -> Any:
+                self.calls += 1
+                score = 1.0 if self.calls == 1 else 0.0
+                step = JudgeStepResult(
+                    criterion_scores={
+                        "faithfulness": CriterionScore(score=score, threshold=0.5, rationale="r")
+                    }
+                )
+                verdict = JudgePipelineResult(
+                    stage_results={"cep_validation": step}, passed=step.passed
+                )
+                return qa_pair.model_copy(update={"validation": verdict})
+
+        cep_config = CEPConfig(bloom_distribution={"remember": 2}, language="pt")
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+            validator=_ApproveFirstOnly(),
+        )
+        chunks = generator._chunk_with_offsets(
+            sample_transcription.transcription_text, sample_transcription.file_id
+        )
+
+        record = generator.generate_qa_pairs(sample_transcription)
+
+        assert record.scaffolding_gate_enabled is True
+        assert record.total_pairs == 2 * len(chunks)
+        assert record.validated_pairs == 1
+
+    def test_ungated_record_reports_gate_disabled(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        sample_transcription: TranscriptionRecord,
+    ) -> None:
+        """Without a validator the record reports the gate as disabled."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client, qa_config=qa_config, cep_config=cep_config
+        )
+
+        record = generator.generate_qa_pairs(sample_transcription)
+
+        assert record.scaffolding_gate_enabled is False
+        assert record.validated_pairs == 0
+
+    def test_legacy_record_without_gate_field_loads_as_disabled(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        sample_transcription: TranscriptionRecord,
+    ) -> None:
+        """Records written before the gate existed load with the gate disabled."""
+        generator = CEPQAGenerator(
+            llm_client=mock_llm_client, qa_config=qa_config, cep_config=cep_config
+        )
+        payload = generator.generate_qa_pairs(sample_transcription).model_dump(
+            mode="json", by_alias=True
+        )
+        payload.pop("scaffolding_gate_enabled")
+
+        assert QARecordCEP.model_validate(payload).scaffolding_gate_enabled is False
 
 
 class TestQARecordCEP:

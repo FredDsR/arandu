@@ -570,3 +570,39 @@ class TestReasoningEnricher:
         assert result["is_multi_hop"] is True
         # hop_count should be None due to invalid type
         assert result["hop_count"] is None
+
+
+def test_enrich_preserves_validation_and_rationale(
+    mock_llm_client: Any,
+    cep_config: CEPConfig,
+    sample_qa_pair_analyze: QAPairCEP,
+    mocker: MockerFixture,
+) -> None:
+    """Enrichment adds reasoning fields without dropping the gate verdict."""
+    from arandu.shared.judge.schemas import (
+        CriterionScore,
+        JudgePipelineResult,
+        JudgeStepResult,
+    )
+
+    step = JudgeStepResult(
+        criterion_scores={"faithfulness": CriterionScore(score=1.0, threshold=0.5, rationale="ok")}
+    )
+    verdict = JudgePipelineResult(stage_results={"cep_validation": step}, passed=True)
+    pair = sample_qa_pair_analyze.model_copy(
+        update={"validation": verdict, "rationale": "plan", "generation_thinking": "t"}
+    )
+    enricher = ReasoningEnricher(mock_llm_client, cep_config)
+    mocker.patch.object(
+        enricher,
+        "_generate_reasoning",
+        return_value={"reasoning_trace": "trace", "is_multi_hop": True, "hop_count": 2},
+    )
+
+    enriched = enricher.enrich(pair, pair.context)
+
+    assert enriched.reasoning_trace == "trace"
+    assert enriched.hop_count == 2
+    assert enriched.validation == verdict
+    assert enriched.rationale == "plan"
+    assert enriched.generation_thinking == "t"
