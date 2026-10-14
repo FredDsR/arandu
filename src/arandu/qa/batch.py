@@ -26,6 +26,7 @@ from arandu.shared.schemas import PipelineType, TranscriptionRecord
 
 if TYPE_CHECKING:
     from arandu.qa.cep import CEPQAGenerator
+    from arandu.qa.schemas import QAPairCEP
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +303,36 @@ def _init_cep_worker(
     logger.info(f"CEP worker initialized with {qa_config.provider}/{qa_config.model_id}")
 
 
+def _gate_degradation_message(pairs: list[QAPairCEP], filename: str) -> str | None:
+    """Check that a gated record carries real verdicts, not just judge errors.
+
+    Args:
+        pairs: The generated pairs of a record produced with the gate active.
+        filename: Source filename, used in log and error messages.
+
+    Returns:
+        A failure message when pairs exist but none has a clean verdict (the
+        gate degraded silently, e.g. validator endpoint down); ``None`` otherwise.
+        A partial degradation only logs a warning.
+    """
+    from arandu.qa.cep.judge_run import has_judge_error
+
+    if not pairs:
+        return None
+    unclean = sum(1 for p in pairs if p.validation is None or has_judge_error(p.validation))
+    if unclean == len(pairs):
+        return (
+            f"Scaffolding gate produced no clean verdict for {unclean} pairs of {filename}; "
+            "check the validator model and endpoint"
+        )
+    if unclean:
+        logger.warning(
+            f"Scaffolding gate left {unclean} of {len(pairs)} pairs without a clean verdict "
+            f"for {filename}"
+        )
+    return None
+
+
 def generate_cep_qa_for_transcription(
     task: QAGenerationTask,
     qa_config_dict: dict,
@@ -341,6 +372,10 @@ def generate_cep_qa_for_transcription(
         qa_record = _worker_cep_generator.generate_qa_pairs(enriched)
         if qa_record.scaffolding_gate_enabled:
             qa_record.validator_model_id = judge_config_dict.get("validator_model")
+            gate_failure = _gate_degradation_message(qa_record.qa_pairs, task.filename)
+            if gate_failure is not None:
+                logger.error(gate_failure)
+                return task.file_id, False, gate_failure
 
         # Save result
         task.output_file.parent.mkdir(parents=True, exist_ok=True)

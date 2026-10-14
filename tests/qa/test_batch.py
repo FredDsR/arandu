@@ -22,6 +22,8 @@ from arandu.qa.batch import (
     run_batch_cep_generation,
 )
 from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig
+from arandu.qa.schemas import QAPairCEP
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
 from arandu.shared.results_manager import ResultsManager
 
 
@@ -1252,3 +1254,81 @@ class TestScaffoldingGateRecordAndMetadata:
         assert success is True
         assert record.validator_model_id == "judge-model"
         record.save.assert_called_once_with(task.output_file)
+
+    @staticmethod
+    def _pair(question: str, *, verdict: str | None) -> QAPairCEP:
+        validation = None
+        if verdict is not None:
+            error = "llm down" if verdict == "error" else None
+            criterion = CriterionScore(score=1.0, threshold=0.5, rationale="r", error=error)
+            step = JudgeStepResult(criterion_scores={"faithfulness": criterion})
+            validation = JudgePipelineResult(stage_results={"cep_validation": step}, passed=True)
+        return QAPairCEP(
+            question=question,
+            answer="a",
+            context="c",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+            validation=validation,
+        )
+
+    def _run_worker(
+        self, tmp_path: Path, mocker: MockerFixture, *, gated: bool, verdicts: list[str | None]
+    ) -> tuple[bool, str, Path]:
+        import arandu.qa.batch as qa_batch_module
+
+        record = mocker.Mock()
+        record.scaffolding_gate_enabled = gated
+        record.qa_pairs = [self._pair(f"q{i}", verdict=v) for i, v in enumerate(verdicts)]
+        generator = mocker.Mock()
+        generator.generate_qa_pairs.return_value = record
+        qa_batch_module._worker_cep_generator = generator
+        mocker.patch("arandu.qa.batch.TranscriptionRecord")
+        input_file = tmp_path / "t.json"
+        input_file.write_text("{}")
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="f1",
+            filename="t.mp3",
+            output_file=tmp_path / "out" / "f1_cep_qa.json",
+        )
+        try:
+            _, success, message = generate_cep_qa_for_transcription(
+                task,
+                QAConfig().model_dump(),
+                CEPConfig().model_dump(),
+                JudgeConfig(validator_model="judge-model").model_dump(),
+            )
+        finally:
+            qa_batch_module._worker_cep_generator = None
+        self.record = record
+        return success, message, task.output_file
+
+    def test_gated_record_without_any_clean_verdict_fails_and_is_not_saved(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        success, message, _ = self._run_worker(
+            tmp_path, mocker, gated=True, verdicts=[None, "error"]
+        )
+
+        assert success is False
+        assert "no clean verdict for 2 pairs" in message
+        assert "validator model" in message
+        self.record.save.assert_not_called()
+
+    def test_gated_record_with_one_clean_verdict_is_saved(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        success, _, _ = self._run_worker(tmp_path, mocker, gated=True, verdicts=["ok", "error"])
+
+        assert success is True
+        self.record.save.assert_called_once()
+
+    def test_ungated_record_with_unjudged_pairs_is_saved(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        success, _, _ = self._run_worker(tmp_path, mocker, gated=False, verdicts=[None, None])
+
+        assert success is True
+        self.record.save.assert_called_once()
