@@ -433,6 +433,8 @@ def run_batch_cep_generation(
         start clean. This mirrors the chunk stage's ``rebuild``.
     """
     judge_config = judge_config or JudgeConfig()
+    # Fail before any results-manager side effect when the gate has no validator.
+    require_gate_validator(cep_config, judge_config)
 
     # Load results configuration
     results_config = ResultsConfig()

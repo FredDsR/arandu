@@ -649,6 +649,22 @@ class TestRunBatchCEPGeneration:
         metadata = json.loads((self.run_dir / "run_metadata.json").read_text())
         assert metadata["config"]["config_values"]["scaffolding_gate"] == {"enabled": False}
 
+    def test_active_gate_without_validator_fails_before_any_run_dir(self, tmp_path: Path) -> None:
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        with pytest.raises(ValueError, match="ARANDU_JUDGE_VALIDATOR_MODEL"):
+            run_batch_cep_generation(
+                input_dir,
+                tmp_path / "out",
+                QAConfig(provider="ollama", model_id="llama3.1:8b"),
+                CEPConfig(enable_scaffolding_gate=True),
+                num_workers=1,
+                judge_config=JudgeConfig(validator_model=None),
+            )
+
+        assert not self.results_dir.exists()
+
     def test_run_metadata_snapshots_active_gate(
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:

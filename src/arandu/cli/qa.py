@@ -200,7 +200,6 @@ def generate_cep_qa(
             raise typer.Exit(code=1) from e
 
     # Judge config for the scaffolding gate (same cascade: env, then CLI)
-    judge_config = JudgeConfig()
     judge_overrides = {
         key: value
         for key, value in {
@@ -210,8 +209,15 @@ def generate_cep_qa(
         }.items()
         if value is not None
     }
-    if judge_overrides:
-        judge_config = JudgeConfig.model_validate({**judge_config.model_dump(), **judge_overrides})
+    try:
+        judge_config = JudgeConfig()
+        if judge_overrides:
+            judge_config = JudgeConfig.model_validate(
+                {**judge_config.model_dump(), **judge_overrides}
+            )
+    except ValueError as e:
+        print_error(f"Invalid judge configuration: {e}")
+        raise typer.Exit(code=1) from e
 
     try:
         require_gate_validator(cep_config, judge_config)
@@ -484,6 +490,20 @@ def judge_qa(
                 unreadable_files.append(qa_file.name)
                 continue
 
+            if (
+                not rejudge
+                and record.scaffolding_gate_enabled
+                and record.validator_model_id
+                and record.validator_model_id != resolved_model
+            ):
+                print_error(
+                    f"{qa_file.name} was gated by validator model "
+                    f"{record.validator_model_id!r}, but this run uses {resolved_model!r}; "
+                    "resuming would mix validator models. Run judge-qa with the gate's "
+                    "validator model or pass --rejudge."
+                )
+                raise typer.Exit(code=1)
+
             all_pairs = record.qa_pairs
 
             # Sample diverse pairs by Bloom level first, then fill remaining slots
@@ -566,7 +586,7 @@ def judge_qa(
             # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
             # existing validator_model_id on the record.
             record.qa_pairs = updated_pairs
-            if resolved_model is not None:
+            if file_judged > 0:
                 record.validator_model_id = resolved_model
             # Count pairs that *passed* validation, not just pairs that have a
             # verdict — the schema field is documented as "Number of pairs

@@ -101,3 +101,18 @@ def test_validator_model_from_env_is_enough(
 
     assert result.exit_code == 0, result.output
     assert batch.call_args.kwargs["judge_config"].validator_model == "env-judge"
+
+
+def test_invalid_judge_config_is_a_clean_error(
+    runner: CliRunner, clean_env: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    monkeypatch.setenv("ARANDU_JUDGE_LANGUAGE", "xx")
+    batch = mocker.patch("arandu.qa.batch.run_batch_cep_generation")
+
+    result = runner.invoke(app, ["generate-cep-qa", str(clean_env), "--validator-model", "m"])
+
+    assert result.exit_code == 1
+    assert "Invalid judge configuration" in result.output
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+    batch.assert_not_called()

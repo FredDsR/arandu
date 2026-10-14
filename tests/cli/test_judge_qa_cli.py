@@ -390,3 +390,79 @@ def test_language_option_reaches_the_criteria(
     assert result.exit_code == 0, result.output
     assert seen["language"] == "en"
     assert _metadata(tmp_path)["config"]["config_values"]["language"] == "en"
+
+
+def _gate_judged_record(outputs: Path, model: str = "gate-model") -> Path:
+    """Write a record whose pairs were judged by the scaffolding gate with ``model``."""
+    path = _write_record(outputs)
+    payload = json.loads(path.read_text())
+    payload["scaffolding_gate_enabled"] = True
+    payload["validator_model_id"] = model
+    for pair in payload["qa_pairs"]:
+        pair["validation"] = _verdict().model_dump(mode="json")
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _validator_model(path: Path) -> str | None:
+    return json.loads(path.read_text()).get("validator_model_id")
+
+
+def test_resume_refuses_to_mix_validator_models(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    """Gate verdicts from model A must not be skipped and re-stamped as model B."""
+    outputs = _results_layout(tmp_path)
+    path = _gate_judged_record(outputs)
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "other-model"])
+
+    assert result.exit_code == 1
+    assert "gate-model" in result.output
+    assert "other-model" in result.output
+    assert judge.calls == []
+    assert _validator_model(path) == "gate-model"
+    assert _metadata(tmp_path)["status"] == "failed"
+
+
+def test_resume_with_the_gate_model_proceeds(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    outputs = _results_layout(tmp_path)
+    path = _gate_judged_record(outputs)
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "gate-model"])
+
+    assert result.exit_code == 0, result.output
+    assert judge.calls == []
+    assert _validator_model(path) == "gate-model"
+
+
+def test_rejudge_with_another_model_proceeds_and_stamps_it(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    outputs = _results_layout(tmp_path)
+    path = _gate_judged_record(outputs)
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "other-model", "--rejudge"])
+
+    assert result.exit_code == 0, result.output
+    assert len(judge.calls) == 2
+    assert _validator_model(path) == "other-model"
+
+
+def test_resume_that_judges_nothing_keeps_the_validator_model(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    """A record the gate never stamped keeps its model when every pair is skipped."""
+    outputs = _results_layout(tmp_path)
+    path = _gate_judged_record(outputs)
+    payload = json.loads(path.read_text())
+    payload["scaffolding_gate_enabled"] = False
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "other-model"])
+
+    assert result.exit_code == 0, result.output
+    assert judge.calls == []
+    assert _validator_model(path) == "gate-model"
