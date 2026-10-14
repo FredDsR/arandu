@@ -88,6 +88,35 @@ def generate_cep_qa(
             "re-run on a changed source set (e.g. after a corpus dedup) starts clean.",
         ),
     ] = False,
+    scaffolding_gate: Annotated[
+        bool | None,
+        typer.Option(
+            "--scaffolding-gate/--no-scaffolding-gate",
+            help="Judge each pair before it can scaffold later pairs (default: on, "
+            "ARANDU_CEP_ENABLE_SCAFFOLDING_GATE). Needs a validator model.",
+        ),
+    ] = None,
+    validator_model: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-model",
+            help="Judge model for the scaffolding gate (else ARANDU_JUDGE_VALIDATOR_MODEL).",
+        ),
+    ] = None,
+    validator_provider: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-provider",
+            help="Judge provider: openai, ollama, custom (else ARANDU_JUDGE_VALIDATOR_PROVIDER).",
+        ),
+    ] = None,
+    validator_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-base-url",
+            help="Judge endpoint (else ARANDU_JUDGE_VALIDATOR_BASE_URL).",
+        ),
+    ] = None,
 ) -> None:
     """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
 
@@ -98,7 +127,9 @@ def generate_cep_qa(
     Questions are distributed across Bloom taxonomy levels (remember, understand,
     analyze, evaluate) to create cognitively scaffolded QA datasets.
 
-    Use ``arandu judge-qa`` to evaluate generated pairs with LLM-as-a-Judge.
+    With the scaffolding gate on (default), each pair is judged during generation and
+    its verdict is persisted, so ``arandu judge-qa`` (resume) only re-judges pairs
+    without a clean verdict.
 
     Examples:
         # Basic CEP generation (default: Portuguese)
@@ -110,9 +141,12 @@ def generate_cep_qa(
 
         # Export to JSONL for KGQA training
         arandu generate-cep-qa results/ --jsonl
+
+        # Gate scaffolding with a separate judge model
+        arandu generate-cep-qa results/ --validator-model qwen3:14b
     """
     from arandu.qa.batch import run_batch_cep_generation
-    from arandu.qa.config import CEPConfig, QAConfig
+    from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig, require_gate_validator
 
     # Load configs with defaults from environment variables
     qa_config = QAConfig()
@@ -142,6 +176,8 @@ def generate_cep_qa(
     cep_overrides: dict[str, Any] = {}
     if language is not None:
         cep_overrides["language"] = language
+    if scaffolding_gate is not None:
+        cep_overrides["enable_scaffolding_gate"] = scaffolding_gate
 
     # Parse Bloom distribution if provided
     if bloom_dist is not None:
@@ -162,6 +198,26 @@ def generate_cep_qa(
         except ValueError as e:
             print_error(f"Invalid CEP configuration: {e}")
             raise typer.Exit(code=1) from e
+
+    # Judge config for the scaffolding gate (same cascade: env, then CLI)
+    judge_config = JudgeConfig()
+    judge_overrides = {
+        key: value
+        for key, value in {
+            "validator_model": validator_model,
+            "validator_provider": validator_provider,
+            "validator_base_url": validator_base_url,
+        }.items()
+        if value is not None
+    }
+    if judge_overrides:
+        judge_config = JudgeConfig.model_validate({**judge_config.model_dump(), **judge_overrides})
+
+    try:
+        require_gate_validator(cep_config, judge_config)
+    except ValueError as e:
+        print_error(str(e))
+        raise typer.Exit(code=1) from e
 
     # Validate configs
     if qa_config.workers < 1:
@@ -187,6 +243,9 @@ def generate_cep_qa(
     console.print(f"[cyan]Bloom Distribution (pairs/level):[/cyan] {cep_config.bloom_distribution}")
     console.print(f"[cyan]Pairs per chunk:[/cyan] {cep_config.pairs_per_chunk}")
     console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
+    console.print(f"[cyan]Scaffolding Gate:[/cyan] {cep_config.scaffolding_gate_active}")
+    if cep_config.scaffolding_gate_active:
+        console.print(f"[cyan]Gate Validator:[/cyan] {judge_config.validator_model}")
     console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
     if qa_config.provider == "ollama":
         console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
@@ -201,6 +260,7 @@ def generate_cep_qa(
             qa_config.workers,
             pipeline_id=pipeline_id,
             rebuild=rebuild,
+            judge_config=judge_config,
         )
 
         # Export to JSONL if requested
