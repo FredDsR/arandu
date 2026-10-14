@@ -50,17 +50,17 @@ sbatch scripts/slurm/cep/sirius.slurm
 ### Using CLI
 
 ```bash
-# Generate CEP QA pairs
-arandu generate-cep-qa results/ --output-dir cep_dataset/
+# Generate CEP QA pairs (the gate needs a validator model; use --no-scaffolding-gate to skip it)
+arandu generate-cep-qa results/ --output-dir cep_dataset/ --validator-model qwen3:14b
 
 # Validate the generated pairs with LLM-as-a-Judge (covers pairs without a clean verdict; `--rejudge` redoes all)
 arandu judge-qa cep_dataset/ --model qwen3:14b
 
 # Export to JSONL format
-arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/ --validator-model qwen3:14b
 
 # With pipeline ID for tracking
-arandu generate-cep-qa results/ --id etno-project-001
+arandu generate-cep-qa results/ --id etno-project-001 --validator-model qwen3:14b
 ```
 
 ## Configuration
@@ -86,7 +86,7 @@ arandu generate-cep-qa results/ --id etno-project-001
 
 ### Judge Variables (used by the scaffolding gate and `judge-qa`)
 
-The validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`), both for the scaffolding gate inside `generate-cep-qa` and for `judge-qa`. There is no `ARANDU_CEP_ENABLE_VALIDATION` switch.
+The validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`), both for the scaffolding gate inside `generate-cep-qa` and for `judge-qa`. There is no `ARANDU_CEP_ENABLE_VALIDATION` switch. In resume mode, a file whose pairs were gated by a different validator model is refused (exit 1) instead of mixing models; run `judge-qa` with the gate's validator model or pass `--rejudge`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -109,7 +109,8 @@ cognitive level, per chunk. The per-chunk ladder size is their sum.
 Customize via CLI (integer counts, not weights):
 ```bash
 arandu generate-cep-qa results/ \
-  --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
+  --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" \
+  --validator-model qwen3:14b
 ```
 
 ### Example .env Configuration
@@ -170,7 +171,7 @@ ARANDU_CEP_LANGUAGE=en docker compose --profile cep up
 
 ```bash
 # Generate and export to JSONL format for training
-arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/ --validator-model qwen3:14b
 ```
 
 ## Output Format

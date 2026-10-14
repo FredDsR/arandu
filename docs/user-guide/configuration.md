@@ -561,14 +561,14 @@ ARANDU_KG_LANGUAGE=pt
 
 **CLI Usage**:
 ```bash
-# QA generation (uses .env settings)
+# QA generation (uses .env settings; set ARANDU_JUDGE_VALIDATOR_MODEL or pass --validator-model)
 arandu generate-cep-qa results/
 
 # Judge pairs without a clean verdict (--rejudge redoes all)
 arandu judge-qa qa_dataset/
 
 # Override specific settings
-arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --provider ollama
+arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --provider ollama --validator-model qwen3:14b
 ```
 
 ### Example 2: Production with OpenAI API
@@ -740,7 +740,7 @@ Pydantic Settings loads configuration in the following priority order (highest t
 
 1. **Command-line arguments** (highest priority):
    ```bash
-   arandu generate-cep-qa results/ --provider ollama --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
+   arandu generate-cep-qa results/ --provider ollama --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --validator-model qwen3:14b
    ```
 
 2. **Environment variables**:

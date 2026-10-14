@@ -37,7 +37,8 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   `batch._build_cep_generator`.
 - **Judge composition**: `QAJudge` runs one `cep_validation` filter stage with
   four `LLMCriterion`s — faithfulness, bloom_calibration, informativeness,
-  self_containedness — at temp 0.3. A separate remember-only pipeline drops
+  self_containedness — at temp 0.1 (the
+  `JudgeConfig.temperature` default). A separate remember-only pipeline drops
   self_containedness (remember pairs are extractive).
 - **Config cascade** (`cli/qa.py`): each config loads env defaults, then merges
   CLI overrides via `model_validate({**dump(), **overrides})`. `judge-qa`'s

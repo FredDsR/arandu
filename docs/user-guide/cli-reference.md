@@ -315,7 +315,7 @@ arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
 
 ### `judge-qa`
 
-Judge CEP QA pairs with LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, self-containedness). Each judged pair is persisted back into its `*_cep_qa.json` file via the pair's `validation` field; `is_valid` is derived from `validation.passed`. There is no aggregate side-file. This is the validation step that used to be folded into `generate-cep-qa`.
+Judge CEP QA pairs with LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, self-containedness). Each judged pair is persisted back into its `*_cep_qa.json` file via the pair's `validation` field; `is_valid` is derived from `validation.passed`. There is no aggregate side-file. This is the validation step that used to be folded into `generate-cep-qa`. In resume mode, a file whose pairs were gated by a different validator model is refused (exit 1) instead of mixing models; run `judge-qa` with the gate's validator model or pass `--rejudge`.
 
 **Usage**:
 ```bash
