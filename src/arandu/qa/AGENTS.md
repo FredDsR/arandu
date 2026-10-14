@@ -36,9 +36,8 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   output. The validator is injected as a `PairValidator` built in
   `batch._build_cep_generator`.
 - **Judge composition**: `QAJudge` runs one `cep_validation` filter stage with
-  four `LLMCriterion`s — faithfulness, bloom_calibration, informativeness,
-  self_containedness — at temp 0.1 (the
-  `JudgeConfig.temperature` default). A separate remember-only pipeline drops
+  four `LLMCriterion`s (faithfulness, bloom_calibration, informativeness,
+  self_containedness) at temp 0.1, the `JudgeConfig.temperature` default. A separate remember-only pipeline drops
   self_containedness (remember pairs are extractive).
 - **Config cascade** (`cli/qa.py`): each config loads env defaults, then merges
   CLI overrides via `model_validate({**dump(), **overrides})`. `judge-qa`'s
@@ -67,6 +66,9 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   runaway cost like `remember:9999`).
 - `ReasoningEnricher.enrich` must `model_copy` the pair; rebuilding it drops the
   gate verdict.
+- When generation and the gate's validator use different Ollama models in the same
+  sidecar, both weights must fit in VRAM alongside the KV cache; otherwise Ollama
+  swaps models between every generate and judge call.
 - `extra="ignore"` on the configs silently drops unknown/misspelled env vars.
 - `chunk_id` is stamped after enrichment; changing the chunker view between
   generations breaks provenance.
