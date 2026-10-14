@@ -430,6 +430,34 @@ def _scaffolding_gate_snapshot(cep_config: CEPConfig, judge_config: JudgeConfig)
     }
 
 
+def _refuse_gate_regime_change(existing_outputs_dir: Path, cep_config: CEPConfig) -> None:
+    """Refuse to resume outputs written under a different scaffolding-gate regime.
+
+    Mixing gated and ungated pair files in one dataset would make the verdicts
+    and scaffolding of the files incomparable, so resume must use one regime.
+
+    Args:
+        existing_outputs_dir: Directory holding earlier ``*_cep_qa.json`` files.
+        cep_config: Requested CEP configuration.
+
+    Raises:
+        ValueError: If any existing file was written under a different regime.
+    """
+    requested = cep_config.scaffolding_gate_active
+    mismatching = 0
+    for path in existing_outputs_dir.glob("*_cep_qa.json"):
+        with open(path, encoding="utf-8") as f:
+            existing = bool(json.load(f).get("scaffolding_gate_enabled", False))
+        if existing != requested:
+            mismatching += 1
+    if mismatching:
+        raise ValueError(
+            f"{mismatching} existing CEP file(s) in {existing_outputs_dir} were written with "
+            f"scaffolding gate {'off' if requested else 'on'}, but this run requests it "
+            f"{'on' if requested else 'off'}. Use --rebuild to start clean, or a new --id."
+        )
+
+
 def run_batch_cep_generation(
     input_dir: Path,
     output_dir: Path,
@@ -474,6 +502,20 @@ def run_batch_cep_generation(
     # Load results configuration
     results_config = ResultsConfig()
     results_mgr: ResultsManager | None = None
+
+    # Check the regime before create_run rewrites run_metadata.json. A new
+    # (auto-generated) pipeline id has no earlier outputs to conflict with.
+    if not rebuild:
+        if not results_config.enable_versioning:
+            existing_dir: Path | None = output_dir
+        elif pipeline_id is not None:
+            existing_dir = (
+                results_config.base_dir.resolve() / pipeline_id / PipelineType.CEP.value / "outputs"
+            )
+        else:
+            existing_dir = None
+        if existing_dir is not None and existing_dir.is_dir():
+            _refuse_gate_regime_change(existing_dir, cep_config)
 
     # Initialize versioned results if enabled
     if results_config.enable_versioning:

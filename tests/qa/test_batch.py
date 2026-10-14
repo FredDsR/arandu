@@ -667,6 +667,71 @@ class TestRunBatchCEPGeneration:
 
         assert not self.results_dir.exists()
 
+    def _seed_output(self, *, gated: bool | None) -> Path:
+        """Write a prior CEP output (and run_metadata.json) under the versioned run."""
+        self.outputs_dir.mkdir(parents=True)
+        body: dict = {"qa_pairs": []}
+        if gated is not None:
+            body["scaffolding_gate_enabled"] = gated
+        (self.outputs_dir / "a_cep_qa.json").write_text(json.dumps(body))
+        metadata = self.run_dir / "run_metadata.json"
+        metadata.write_text('{"sentinel": true}')
+        return metadata
+
+    def _resume(self, tmp_path: Path, *, gate: bool, rebuild: bool = False) -> None:
+        input_dir = tmp_path / "input"
+        input_dir.mkdir(exist_ok=True)
+        run_batch_cep_generation(
+            input_dir,
+            tmp_path / "out",
+            QAConfig(provider="ollama", model_id="llama3.1:8b"),
+            CEPConfig(enable_scaffolding_gate=gate),
+            num_workers=1,
+            pipeline_id="test_run",
+            rebuild=rebuild,
+            judge_config=JudgeConfig(validator_model="judge-model"),
+        )
+
+    def test_resume_under_different_gate_regime_is_refused(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        metadata = self._seed_output(gated=True)
+
+        with pytest.raises(ValueError, match=r"1 existing.*--rebuild.*--id"):
+            self._resume(tmp_path, gate=False)
+
+        assert metadata.read_text() == '{"sentinel": true}'
+
+    def test_missing_gate_key_counts_as_gate_off(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=None)
+
+        with pytest.raises(ValueError, match="gate"):
+            self._resume(tmp_path, gate=True)
+
+    def test_resume_under_same_gate_regime_proceeds(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        metadata = self._seed_output(gated=True)
+
+        self._resume(tmp_path, gate=True)
+
+        assert metadata.read_text() != '{"sentinel": true}'
+
+    def test_rebuild_ignores_gate_regime_mismatch_and_clears(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+
+        self._resume(tmp_path, gate=False, rebuild=True)
+
+        assert not (self.outputs_dir / "a_cep_qa.json").exists()
+
     def test_run_metadata_snapshots_active_gate(
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:
