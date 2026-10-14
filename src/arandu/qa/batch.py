@@ -220,6 +220,31 @@ def load_transcription_tasks(
 _worker_cep_generator = None
 
 
+def build_gate_validator_client(judge_config: JudgeConfig) -> LLMClient:
+    """Build the scaffolding gate's validator client from the judge settings.
+
+    Constructing the client makes no network call, so the CLI uses this to
+    reject an unusable validator endpoint before any run starts.
+
+    Args:
+        judge_config: Judge configuration naming the validator model, provider
+            and base URL.
+
+    Returns:
+        The validator ``LLMClient``.
+
+    Raises:
+        ValueError: If the provider is unknown or ``custom`` has no base URL.
+    """
+    from arandu.transcription import judge as transcription_judge
+
+    return transcription_judge.build_validator_client(
+        judge_config.validator_model,
+        provider=judge_config.validator_provider,
+        base_url=judge_config.validator_base_url,
+    )
+
+
 def _build_cep_generator(
     qa_config: QAConfig,
     cep_config: CEPConfig,
@@ -258,15 +283,9 @@ def _build_cep_generator(
     if cep_config.scaffolding_gate_active:
         require_gate_validator(cep_config, judge_config)
         from arandu.qa.cep import judge as cep_judge
-        from arandu.transcription import judge as transcription_judge
 
-        validator_client = transcription_judge.build_validator_client(
-            judge_config.validator_model,
-            provider=judge_config.validator_provider,
-            base_url=judge_config.validator_base_url,
-        )
         validator = cep_judge.QAJudge(
-            validator_client=validator_client,
+            validator_client=build_gate_validator_client(judge_config),
             cep_config=cep_config,
             judge_config=judge_config,
         )

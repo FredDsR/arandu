@@ -145,7 +145,7 @@ def generate_cep_qa(
         # Gate scaffolding with a separate judge model
         arandu generate-cep-qa results/ --validator-model qwen3:14b
     """
-    from arandu.qa.batch import run_batch_cep_generation
+    from arandu.qa.batch import build_gate_validator_client, run_batch_cep_generation
     from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig, require_gate_validator
 
     # Load configs with defaults from environment variables
@@ -224,6 +224,13 @@ def generate_cep_qa(
     except ValueError as e:
         print_error(str(e))
         raise typer.Exit(code=1) from e
+
+    if cep_config.scaffolding_gate_active:
+        try:
+            build_gate_validator_client(judge_config)
+        except Exception as e:  # ValueError, or the SDK's error for a missing API key
+            print_error(f"Invalid scaffolding gate validator: {e}")
+            raise typer.Exit(code=1) from e
 
     # Validate configs
     if qa_config.workers < 1:

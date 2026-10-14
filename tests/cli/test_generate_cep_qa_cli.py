@@ -62,8 +62,9 @@ def test_no_scaffolding_gate_needs_no_validator(
 
 
 def test_validator_options_reach_the_batch(
-    runner: CliRunner, clean_env: Path, mocker: MockerFixture
+    runner: CliRunner, clean_env: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
 ) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     batch = mocker.patch("arandu.qa.batch.run_batch_cep_generation")
 
     result = runner.invoke(
@@ -115,4 +116,27 @@ def test_invalid_judge_config_is_a_clean_error(
     assert "Invalid judge configuration" in result.output
     assert "Traceback" not in result.output
     assert isinstance(result.exception, SystemExit)
+    batch.assert_not_called()
+
+
+def test_unbuildable_validator_client_exits_before_batch(
+    runner: CliRunner, clean_env: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    monkeypatch.delenv("ARANDU_LLM_BASE_URL", raising=False)
+    batch = mocker.patch("arandu.qa.batch.run_batch_cep_generation")
+
+    result = runner.invoke(
+        app,
+        [
+            "generate-cep-qa",
+            str(clean_env),
+            "--validator-model",
+            "judge-model",
+            "--validator-provider",
+            "custom",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "requires a base" in result.output
     batch.assert_not_called()
