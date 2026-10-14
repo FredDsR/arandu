@@ -502,3 +502,22 @@ def test_rejudge_with_only_errored_verdicts_still_stamps_the_new_model(
     assert result.exit_code == 0, result.output
     assert len(judge.calls) == 2
     assert _validator_model(path) == "other-model"
+
+
+def test_resume_where_every_retried_pair_errors_keeps_the_validator_model(
+    tmp_path: Path, runner: CliRunner, judge: _RecordingJudge
+) -> None:
+    outputs = _results_layout(tmp_path)
+    path = _write_record(outputs)
+    payload = json.loads(path.read_text())
+    payload["validator_model_id"] = "model-x"
+    for pair in payload["qa_pairs"]:
+        pair["validation"] = _verdict(error="llm down").model_dump(mode="json")
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    judge.outcome = "error"
+
+    result = runner.invoke(app, ["judge-qa", str(outputs), "--model", "model-y"])
+
+    assert result.exit_code == 0, result.output
+    assert len(judge.calls) == 2
+    assert _validator_model(path) == "model-x"

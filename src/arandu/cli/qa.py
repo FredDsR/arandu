@@ -586,8 +586,9 @@ def judge_qa(
             # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
             # existing validator_model_id on the record.
             record.qa_pairs = updated_pairs
-            if file_persisted > 0:
-                # Errored verdicts count: they replaced the earlier model's verdicts.
+            if file_judged > 0 or (rejudge and file_persisted > 0):
+                # Under --rejudge errored verdicts count too: they replaced the earlier
+                # model's verdicts. On resume only a clean verdict relabels the record.
                 record.validator_model_id = resolved_model
             # Count pairs that *passed* validation, not just pairs that have a
             # verdict — the schema field is documented as "Number of pairs

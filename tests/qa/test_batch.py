@@ -722,6 +722,44 @@ class TestRunBatchCEPGeneration:
 
         assert metadata.read_text() != '{"sentinel": true}'
 
+    def test_truncated_file_is_skipped_and_same_regime_proceeds(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+        (self.outputs_dir / "b_cep_qa.json").write_text('{"qa_pairs": [')
+
+        self._resume(tmp_path, gate=True)
+
+    def test_truncated_file_does_not_hide_a_mismatching_one(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+        (self.outputs_dir / "b_cep_qa.json").write_text('{"qa_pairs": [')
+
+        with pytest.raises(ValueError, match="1 existing"):
+            self._resume(tmp_path, gate=False)
+
+    def test_non_dict_file_is_skipped(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+        (self.outputs_dir / "b_cep_qa.json").write_text("[]")
+
+        self._resume(tmp_path, gate=True)
+
+    def test_unversioned_resume_under_different_gate_regime_is_refused(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        mocker.patch("arandu.qa.batch.ResultsConfig").return_value.enable_versioning = False
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "a_cep_qa.json").write_text(json.dumps({"scaffolding_gate_enabled": True}))
+
+        with pytest.raises(ValueError, match="--rebuild"):
+            self._resume(tmp_path, gate=False)
+
     def test_rebuild_ignores_gate_regime_mismatch_and_clears(
         self, tmp_path: Path, mocker: MockerFixture
     ) -> None:

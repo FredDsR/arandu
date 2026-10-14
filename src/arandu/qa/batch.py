@@ -472,8 +472,16 @@ def _refuse_gate_regime_change(existing_outputs_dir: Path, cep_config: CEPConfig
     requested = cep_config.scaffolding_gate_active
     mismatching = 0
     for path in existing_outputs_dir.glob("*_cep_qa.json"):
-        with open(path, encoding="utf-8") as f:
-            existing = bool(json.load(f).get("scaffolding_gate_enabled", False))
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(f"Skipping unreadable CEP file {path.name} in regime check: {e}")
+            continue
+        if not isinstance(data, dict):
+            logger.warning(f"Skipping CEP file {path.name} in regime check: not a JSON object")
+            continue
+        existing = bool(data.get("scaffolding_gate_enabled", False))
         if existing != requested:
             mismatching += 1
     if mismatching:
