@@ -753,6 +753,8 @@ class TestRunBatchCEPGeneration:
         assert gate["enabled"] is True
         assert gate["judge"]["validator_model"] == "judge-model"
         assert gate["judge"]["temperature"] == 0.1
+        assert gate["resolved_provider"] == "ollama"
+        assert gate["resolved_base_url"] == "http://localhost:11434/v1"
         assert set(gate["criteria"]) == {
             "faithfulness",
             "bloom_calibration",

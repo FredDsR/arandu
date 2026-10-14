@@ -424,7 +424,9 @@ def _scaffolding_gate_snapshot(cep_config: CEPConfig, judge_config: JudgeConfig)
         judge_config: Judge configuration used by the gate.
 
     Returns:
-        ``{"enabled": False}`` when the gate is inactive, else the snapshot.
+        ``{"enabled": False}`` when the gate is inactive, else the snapshot,
+        including the validator provider and base URL as resolved from the
+        environment.
     """
     if not cep_config.scaffolding_gate_active:
         return {"enabled": False}
@@ -439,9 +441,14 @@ def _scaffolding_gate_snapshot(cep_config: CEPConfig, judge_config: JudgeConfig)
     criteria = snapshot_criteria(
         DEFAULT_JUDGE_PROMPTS_DIR, judge_config.language, judge_config.temperature
     )
+    validator_client = build_gate_validator_client(judge_config)
     return {
         "enabled": True,
         "judge": judge_config.model_dump(mode="json"),
+        "resolved_provider": validator_client.provider.value,
+        "resolved_base_url": (
+            str(validator_client.base_url) if validator_client.base_url is not None else None
+        ),
         "criteria": {name: snap.model_dump(mode="json") for name, snap in criteria.items()},
         "bloom_descriptions_sha256": snapshot_bloom_descriptions(
             BLOOM_DESCRIPTIONS_DIR, judge_config.language
