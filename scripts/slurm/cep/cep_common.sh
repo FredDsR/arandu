@@ -169,6 +169,11 @@ if [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
         true|1|yes|on) GATE_ON=true ;;
         *) ;;
     esac
+    # The gate only runs with scaffolding context (CEPConfig default: on when unset).
+    case "${ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT:-true}" in
+        [Ff][Aa][Ll][Ss][Ee]|0|[Nn][Oo]|[Oo][Ff][Ff]) GATE_ON=false ;;
+        *) ;;
+    esac
 fi
 
 OLLAMA_MODEL=""
