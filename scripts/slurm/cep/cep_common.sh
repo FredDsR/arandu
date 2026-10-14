@@ -15,6 +15,8 @@
 #   ARANDU_CEP_BLOOM_DISTRIBUTION - JSON pairs/level (default: 3/1/1/1)
 #   ARANDU_CEP_LANGUAGE - Language for prompts (default: pt)
 #   USE_GPU_OLLAMA - Set to "true" to use GPU-accelerated Ollama (default: false)
+#   OLLAMA_NUM_PARALLEL - Ollama slots (default: ARANDU_QA_WORKERS)
+#   OLLAMA_CONTEXT_LENGTH - Ollama context per slot (default: 16384)
 #
 # Scaffolding gate (default on): every generated pair is judged by QAJudge
 # before it can scaffold later pairs, and its verdict is persisted so a later
@@ -35,6 +37,14 @@ export ARANDU_QA_PROVIDER="${ARANDU_QA_PROVIDER:-ollama}"
 export ARANDU_QA_MODEL_ID="${ARANDU_QA_MODEL_ID:-qwen3:14b}"
 export ARANDU_QA_OLLAMA_URL="${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}"
 export ARANDU_QA_WORKERS="${ARANDU_QA_WORKERS:-4}"
+
+# Ollama sidecar sizing, passed to arandu_start_ollama. One slot per worker.
+# 16384 ctx covers a cep_4k chunk prompt plus scaffolding pairs plus the
+# 8192-token reasoning budget, for both generation and scaffolding-gate judge
+# calls (judge prompts are chunk-sized too). KV cache on the 24 GB tupi node:
+# 4 x 16384 x ~0.15 MB/token ~= 10 GB + ~9 GB weights for qwen3:14b.
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-$ARANDU_QA_WORKERS}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
 
 # CEP-specific settings
 # Bloom pairs/level as JSON integer counts. The per-chunk ladder size is the
@@ -79,6 +89,7 @@ echo "=============================================="
 echo "QA Provider:   $ARANDU_QA_PROVIDER"
 echo "QA Model:      $ARANDU_QA_MODEL_ID"
 echo "Ollama GPU:    $USE_GPU_OLLAMA"
+echo "Ollama slots/ctx: $OLLAMA_NUM_PARALLEL / $OLLAMA_CONTEXT_LENGTH"
 echo "Bloom dist:    $ARANDU_CEP_BLOOM_DISTRIBUTION"
 echo "Workers:       $ARANDU_QA_WORKERS"
 echo "Results Dir:   $ARANDU_RESULTS_DIR"
@@ -168,7 +179,8 @@ elif [ "$GATE_ON" = "true" ]; then
 fi
 
 if [ -n "$OLLAMA_MODEL" ]; then
-    arandu_start_ollama "$OLLAMA_MODEL" "$USE_GPU_OLLAMA" "${ARANDU_QA_WORKERS:-2}"
+    arandu_start_ollama "$OLLAMA_MODEL" "$USE_GPU_OLLAMA" \
+        "$OLLAMA_NUM_PARALLEL" "$OLLAMA_CONTEXT_LENGTH"
 fi
 
 if [ "$GATE_ON" = "true" ] && [ "$ARANDU_JUDGE_VALIDATOR_MODEL" != "$OLLAMA_MODEL" ]; then

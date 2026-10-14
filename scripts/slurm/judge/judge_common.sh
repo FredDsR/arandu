@@ -132,6 +132,7 @@ echo "Validator Provider:$ARANDU_JUDGE_VALIDATOR_PROVIDER"
 echo "Validator URL:     $ARANDU_JUDGE_VALIDATOR_BASE_URL"
 echo "Language:          $ARANDU_JUDGE_LANGUAGE"
 echo "Ollama GPU:        $USE_GPU_OLLAMA"
+echo "Ollama slots/ctx:  $OLLAMA_NUM_PARALLEL / $OLLAMA_CONTEXT_LENGTH"
 echo "Input Dir:         $INPUT_DIR_HOST"
 echo "=============================================="
 
@@ -170,7 +171,8 @@ arandu_init_pod
 
 # Start Ollama sidecar if using ollama provider
 if [ "$ARANDU_JUDGE_VALIDATOR_PROVIDER" = "ollama" ]; then
-    arandu_start_ollama "$ARANDU_JUDGE_VALIDATOR_MODEL" "$USE_GPU_OLLAMA" "${ARANDU_JUDGE_WORKERS:-2}"
+    arandu_start_ollama "$ARANDU_JUDGE_VALIDATOR_MODEL" "$USE_GPU_OLLAMA" \
+        "$OLLAMA_NUM_PARALLEL" "$OLLAMA_CONTEXT_LENGTH"
 fi
 
 # Run judge worker in the pod
