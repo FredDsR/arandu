@@ -425,6 +425,7 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 - [Configuration](docs/guide/configuration.md)
 - [Methodology](docs/research/methodology.md)
 - [Canonical results: thesis-run-02](docs/research/results/thesis-run-02.md)
+- [Analyses of finished runs](analysis/README.md)
 
 ## License
 
