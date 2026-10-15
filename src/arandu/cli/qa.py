@@ -88,6 +88,35 @@ def generate_cep_qa(
             "re-run on a changed source set (e.g. after a corpus dedup) starts clean.",
         ),
     ] = False,
+    scaffolding_gate: Annotated[
+        bool | None,
+        typer.Option(
+            "--scaffolding-gate/--no-scaffolding-gate",
+            help="Judge each pair before it can scaffold later pairs (default: on, "
+            "ARANDU_CEP_ENABLE_SCAFFOLDING_GATE). Needs a validator model.",
+        ),
+    ] = None,
+    validator_model: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-model",
+            help="Judge model for the scaffolding gate (else ARANDU_JUDGE_VALIDATOR_MODEL).",
+        ),
+    ] = None,
+    validator_provider: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-provider",
+            help="Judge provider: openai, ollama, custom (else ARANDU_JUDGE_VALIDATOR_PROVIDER).",
+        ),
+    ] = None,
+    validator_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-base-url",
+            help="Judge endpoint (else ARANDU_JUDGE_VALIDATOR_BASE_URL).",
+        ),
+    ] = None,
 ) -> None:
     """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
 
@@ -98,7 +127,9 @@ def generate_cep_qa(
     Questions are distributed across Bloom taxonomy levels (remember, understand,
     analyze, evaluate) to create cognitively scaffolded QA datasets.
 
-    Use ``arandu judge-qa`` to evaluate generated pairs with LLM-as-a-Judge.
+    With the scaffolding gate on (default), each pair is judged during generation and
+    its verdict is persisted, so ``arandu judge-qa`` (resume) only re-judges pairs
+    without a clean verdict.
 
     Examples:
         # Basic CEP generation (default: Portuguese)
@@ -110,9 +141,12 @@ def generate_cep_qa(
 
         # Export to JSONL for KGQA training
         arandu generate-cep-qa results/ --jsonl
+
+        # Gate scaffolding with a separate judge model
+        arandu generate-cep-qa results/ --validator-model qwen3:14b
     """
-    from arandu.qa.batch import run_batch_cep_generation
-    from arandu.qa.config import CEPConfig, QAConfig
+    from arandu.qa.batch import build_gate_validator_client, run_batch_cep_generation
+    from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig, require_gate_validator
 
     # Load configs with defaults from environment variables
     qa_config = QAConfig()
@@ -142,6 +176,8 @@ def generate_cep_qa(
     cep_overrides: dict[str, Any] = {}
     if language is not None:
         cep_overrides["language"] = language
+    if scaffolding_gate is not None:
+        cep_overrides["enable_scaffolding_gate"] = scaffolding_gate
 
     # Parse Bloom distribution if provided
     if bloom_dist is not None:
@@ -161,6 +197,39 @@ def generate_cep_qa(
             cep_config = CEPConfig.model_validate({**cep_config.model_dump(), **cep_overrides})
         except ValueError as e:
             print_error(f"Invalid CEP configuration: {e}")
+            raise typer.Exit(code=1) from e
+
+    # Judge config for the scaffolding gate (same cascade: env, then CLI)
+    judge_overrides = {
+        key: value
+        for key, value in {
+            "validator_model": validator_model,
+            "validator_provider": validator_provider,
+            "validator_base_url": validator_base_url,
+        }.items()
+        if value is not None
+    }
+    try:
+        judge_config = JudgeConfig()
+        if judge_overrides:
+            judge_config = JudgeConfig.model_validate(
+                {**judge_config.model_dump(), **judge_overrides}
+            )
+    except ValueError as e:
+        print_error(f"Invalid judge configuration: {e}")
+        raise typer.Exit(code=1) from e
+
+    try:
+        require_gate_validator(cep_config, judge_config)
+    except ValueError as e:
+        print_error(str(e))
+        raise typer.Exit(code=1) from e
+
+    if cep_config.scaffolding_gate_active:
+        try:
+            build_gate_validator_client(judge_config)
+        except Exception as e:  # ValueError, or the SDK's error for a missing API key
+            print_error(f"Invalid scaffolding gate validator: {e}")
             raise typer.Exit(code=1) from e
 
     # Validate configs
@@ -187,6 +256,9 @@ def generate_cep_qa(
     console.print(f"[cyan]Bloom Distribution (pairs/level):[/cyan] {cep_config.bloom_distribution}")
     console.print(f"[cyan]Pairs per chunk:[/cyan] {cep_config.pairs_per_chunk}")
     console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
+    console.print(f"[cyan]Scaffolding Gate:[/cyan] {cep_config.scaffolding_gate_active}")
+    if cep_config.scaffolding_gate_active:
+        console.print(f"[cyan]Gate Validator:[/cyan] {judge_config.validator_model}")
     console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
     if qa_config.provider == "ollama":
         console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
@@ -201,6 +273,7 @@ def generate_cep_qa(
             qa_config.workers,
             pipeline_id=pipeline_id,
             rebuild=rebuild,
+            judge_config=judge_config,
         )
 
         # Export to JSONL if requested
@@ -416,6 +489,10 @@ def judge_qa(
     unreadable_files: list[str] = []
 
     try:
+        if not rejudge:
+            # Check every file before judging or writing any, so a mismatch in a
+            # later file cannot leave earlier files already rewritten.
+            _require_gate_validator_match(qa_files, resolved_model)
         for qa_file in qa_files:
             try:
                 record = QARecordCEP.model_validate_json(qa_file.read_text())
@@ -448,6 +525,7 @@ def judge_qa(
 
             updated_pairs: list[QAPairCEP] = list(all_pairs)
             file_judged = 0
+            file_persisted = 0
             file_valid = 0
             file_skipped = 0
 
@@ -489,10 +567,12 @@ def judge_qa(
                 if validated.validation is None or has_judge_error(validated.validation):
                     # Persisted so the failure is visible; resume re-judges it.
                     updated_pairs[idx] = validated
+                    file_persisted += 1
                     print_warning(f"Judge error on a pair in {qa_file.name}; it will be retried.")
                     total_failed += 1
                     continue
                 updated_pairs[idx] = validated
+                file_persisted += 1
                 file_judged += 1
                 total_judged += 1
                 if validated.is_valid:
@@ -506,7 +586,9 @@ def judge_qa(
             # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
             # existing validator_model_id on the record.
             record.qa_pairs = updated_pairs
-            if resolved_model is not None:
+            if file_judged > 0 or (rejudge and file_persisted > 0):
+                # Under --rejudge errored verdicts count too: they replaced the earlier
+                # model's verdicts. On resume only a clean verdict relabels the record.
                 record.validator_model_id = resolved_model
             # Count pairs that *passed* validation, not just pairs that have a
             # verdict — the schema field is documented as "Number of pairs
@@ -553,6 +635,37 @@ def judge_qa(
     if unreadable_files:
         console.print(f"[red]Unreadable files (not judged):[/red] {len(unreadable_files)}")
     console.print()
+
+
+def _require_gate_validator_match(qa_files: list[Path], resolved_model: str) -> None:
+    """Refuse to resume gate verdicts under a different validator model.
+
+    Args:
+        qa_files: The CEP QA files this run will process.
+        resolved_model: Validator model this run judges with.
+
+    Raises:
+        typer.Exit: With code 1 when a gated file carries another model's verdicts.
+    """
+    from arandu.qa.schemas import QARecordCEP
+
+    for qa_file in qa_files:
+        try:
+            record = QARecordCEP.model_validate_json(qa_file.read_text())
+        except Exception:
+            continue  # unreadable files are reported by the judging loop
+        if (
+            record.scaffolding_gate_enabled
+            and record.validator_model_id
+            and record.validator_model_id != resolved_model
+        ):
+            print_error(
+                f"{qa_file.name} was gated by validator model "
+                f"{record.validator_model_id!r}, but this run uses {resolved_model!r}; "
+                "resuming would mix validator models. Run judge-qa with the gate's "
+                "validator model or pass --rejudge."
+            )
+            raise typer.Exit(code=1)
 
 
 def _client_provider(client: object, fallback: str | None) -> str | None:

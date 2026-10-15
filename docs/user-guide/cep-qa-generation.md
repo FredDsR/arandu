@@ -1,14 +1,14 @@
 # CEP QA Generation Guide
 
-Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding. Validation is a separate step: `generate-cep-qa` generates pairs, and the [`judge-qa`](cli-reference.md#judge-qa) command validates them with LLM-as-a-Judge.
+Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair with LLM-as-a-Judge while generating; the [`judge-qa`](cli-reference.md#judge-qa) command covers pairs without a clean verdict (or everything with `--rejudge`).
 
 ## Overview
 
-The CEP pipeline generates QA pairs through two specialized modules, then validation runs as a separate command:
+The CEP pipeline generates QA pairs through two specialized modules, then the scaffolding gate judges each pair inside `generate-cep-qa` (default on), and `judge-qa` covers pairs without a clean verdict:
 
 1. **Module I: Bloom Scaffolding** - Generates questions distributed across Bloom's taxonomy levels
 2. **Module II: Reasoning & Grounding** - Enriches higher-level questions with reasoning traces
-3. **LLM-as-a-Judge (separate `judge-qa` step)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
+3. **LLM-as-a-Judge (scaffolding gate during generation, plus the `judge-qa` step for anything left unjudged)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ### Key Features
 
@@ -17,7 +17,7 @@ The CEP pipeline generates QA pairs through two specialized modules, then valida
 - **Reasoning Traces**: Explicit logical connections for complex questions
 - **Multi-hop Detection**: Identifies questions requiring distant information connection
 - **Tacit Knowledge Extraction**: Surfaces implicit domain knowledge
-- **Quality Validation** (via `judge-qa`): LLM-based scoring for faithfulness, Bloom calibration, informativeness, and self-containedness
+- **Quality Validation** (scaffolding gate in `generate-cep-qa`, plus `judge-qa` for pairs without a clean verdict or with `--rejudge`): LLM-based scoring for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ## Prerequisites
 
@@ -50,17 +50,17 @@ sbatch scripts/slurm/cep/sirius.slurm
 ### Using CLI
 
 ```bash
-# Generate CEP QA pairs
-arandu generate-cep-qa results/ --output-dir cep_dataset/
+# Generate CEP QA pairs (the gate needs a validator model; use --no-scaffolding-gate to skip it)
+arandu generate-cep-qa results/ --output-dir cep_dataset/ --validator-model qwen3:14b
 
-# Validate the generated pairs with LLM-as-a-Judge (separate step)
+# Validate the generated pairs with LLM-as-a-Judge (covers pairs without a clean verdict; `--rejudge` redoes all)
 arandu judge-qa cep_dataset/ --model qwen3:14b
 
 # Export to JSONL format
-arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/ --validator-model qwen3:14b
 
 # With pipeline ID for tracking
-arandu generate-cep-qa results/ --id etno-project-001
+arandu generate-cep-qa results/ --id etno-project-001 --validator-model qwen3:14b
 ```
 
 ## Configuration
@@ -81,15 +81,16 @@ arandu generate-cep-qa results/ --id etno-project-001
 |----------|---------|-------------|
 | `ARANDU_CEP_LANGUAGE` | `pt` | Prompt language (`pt` or `en`) |
 | `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` | `true` | Pass prior QA pairs to higher Bloom levels |
+| `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` | `true` | Judge each pair before it can scaffold later pairs; needs `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` | `10` | Max prior QA pairs to include as context |
 
-### Judge Variables (used by `judge-qa`)
+### Judge Variables (used by the scaffolding gate and `judge-qa`)
 
-Validation is a separate command; its validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`). There is no `ARANDU_CEP_ENABLE_VALIDATION` switch.
+The validator client is configured with the `ARANDU_JUDGE_` prefix (shared with `judge-transcription`), both for the scaffolding gate inside `generate-cep-qa` and for `judge-qa`. There is no `ARANDU_CEP_ENABLE_VALIDATION` switch. In resume mode, a file whose pairs were gated by a different validator model is refused (exit 1) instead of mixing models; run `judge-qa` with the gate's validator model or pass `--rejudge`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ARANDU_JUDGE_VALIDATOR_MODEL` | (none) | Judge model. Required via this var or `judge-qa --model` |
+| `ARANDU_JUDGE_VALIDATOR_MODEL` | (none) | Judge model. Required by the scaffolding gate (default on, via this var or `--validator-model`) and by `judge-qa` (via this var or `--model`). The SLURM cep and judge jobs default it to `qwen3:14b` |
 | `ARANDU_JUDGE_VALIDATOR_PROVIDER` | inferred | `openai`, `ollama`, or `custom` |
 | `ARANDU_JUDGE_VALIDATOR_BASE_URL` | inferred | Validator base URL (falls back to `ARANDU_LLM_BASE_URL`) |
 
@@ -108,7 +109,8 @@ cognitive level, per chunk. The per-chunk ladder size is their sum.
 Customize via CLI (integer counts, not weights):
 ```bash
 arandu generate-cep-qa results/ \
-  --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
+  --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" \
+  --validator-model qwen3:14b
 ```
 
 ### Example .env Configuration
@@ -169,7 +171,7 @@ ARANDU_CEP_LANGUAGE=en docker compose --profile cep up
 
 ```bash
 # Generate and export to JSONL format for training
-arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/
+arandu generate-cep-qa results/ --jsonl --output-dir cep_dataset/ --validator-model qwen3:14b
 ```
 
 ## Output Format
@@ -415,7 +417,7 @@ The checkpoint file (`cep_dataset/cep_checkpoint.json`) tracks:
 - **llama3.3:70b**: Highest quality for final production runs (48GB+ GPU)
 
 ### Validation Strategy
-1. Generate first, then validate with `judge-qa` as a separate step
+1. Generate with the scaffolding gate on, then run `judge-qa` for pairs without a clean verdict
 2. During development, sample with `judge-qa --files N --pairs M` for faster iteration
 3. To move the bar, edit the per-criterion `threshold` in `prompts/judge/criteria/<criterion>/config.json`; there is no environment variable for it
 4. Re-run with `judge-qa --rejudge` after changing the validator model or a gate

@@ -126,22 +126,16 @@ class ReasoningEnricher:
         try:
             enriched_data = self._generate_reasoning(qa_pair, context)
 
-            # Create new pair with enriched data
-            return QAPairCEP(
-                question=qa_pair.question,
-                answer=qa_pair.answer,
-                context=qa_pair.context,
-                question_type=qa_pair.question_type,
-                confidence=qa_pair.confidence,
-                start_time=qa_pair.start_time,
-                end_time=qa_pair.end_time,
-                bloom_level=qa_pair.bloom_level,
-                reasoning_trace=enriched_data.get("reasoning_trace") or qa_pair.reasoning_trace,
-                is_multi_hop=enriched_data.get("is_multi_hop", qa_pair.is_multi_hop),
-                hop_count=enriched_data.get("hop_count") or qa_pair.hop_count,
-                tacit_inference=enriched_data.get("tacit_inference") or qa_pair.tacit_inference,
-                generation_prompt=qa_pair.generation_prompt,
-            )
+            # Copy, not rebuild: the pair may carry the scaffolding-gate verdict,
+            # rationale, thinking trace and chunk provenance, none of which this
+            # module owns. Re-validate so the multi-hop normalizer still runs.
+            update = {
+                "reasoning_trace": enriched_data.get("reasoning_trace") or qa_pair.reasoning_trace,
+                "is_multi_hop": enriched_data.get("is_multi_hop", qa_pair.is_multi_hop),
+                "hop_count": enriched_data.get("hop_count") or qa_pair.hop_count,
+                "tacit_inference": enriched_data.get("tacit_inference") or qa_pair.tacit_inference,
+            }
+            return QAPairCEP.model_validate({**qa_pair.model_dump(), **update})
 
         except Exception as e:
             logger.warning(f"Failed to enrich QA pair: {e}", exc_info=True)

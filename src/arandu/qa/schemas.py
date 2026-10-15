@@ -146,6 +146,15 @@ class QARecordCEP(BaseModel):
             "regardless of judge-time config."
         ),
     )
+    scaffolding_gate_enabled: bool = Field(
+        default=False,
+        description=(
+            "Whether every pair of this record was judged before it could scaffold "
+            "later pairs (CEP scaffolding gate). When True, pair verdicts in "
+            "``validation`` were produced at generation time. Defaults to False so "
+            "records written before the gate existed load correctly."
+        ),
+    )
     transcription_text: str = Field(..., description="Full transcription text")
     qa_pairs: list[QAPairCEP] = Field(..., description="List of CEP-enhanced QA pairs")
     chunker_id: str = Field(

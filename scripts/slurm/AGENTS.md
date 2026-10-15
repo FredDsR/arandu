@@ -18,7 +18,7 @@ writes `results/<id>/<stage>/outputs/`.
 | Step | `arandu` command(s) | Config class · env prefix | Podman Pod Service | Image · Dockerfile | SLURM dir |
 | ---- | ------------------- | ------------------------- | ------------------ | ------------------ | --------- |
 | Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | worker (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
-| CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` · `ARANDU_QA_`, `ARANDU_CEP_` | worker + ollama | `arandu:latest` · `Dockerfile` | `cep/` |
+| CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` + `JudgeConfig` (gate) · `ARANDU_QA_`, `ARANDU_CEP_`, `ARANDU_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `cep/` |
 | Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
 | Emic judge (Phase D) | `emic-judge` | `EmicJudgeSettings` · `ARANDU_EMIC_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `emic/` |
 | KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | worker + ollama | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
@@ -43,8 +43,10 @@ step's `*Config` class, (2) `docker-compose.yml` forwards it in the service's
 `environment:`, and (3) the SLURM script exports it. Break any link and the var is
 silently ignored (`*Config` uses `extra="ignore"`). This has bitten us: a stale
 `ARANDU_CEP_VALIDATOR_*` once lingered in the CEP script + compose with no matching
-config field, so it did nothing — CEP-pair validation lives in the separate
-`judge-qa` step under `ARANDU_JUDGE_*`, not in `generate-cep-qa`.
+config field, so it did nothing. Since the scaffolding gate, `generate-cep-qa`
+judges pairs during generation through `ARANDU_JUDGE_*` (the same variables the
+`judge-qa` step reads) and persists the verdicts; `judge-qa` in resume mode then
+only re-judges pairs without a clean verdict.
 
 ## Layout
 
@@ -86,6 +88,7 @@ PIPELINE_ID=<run-id> [overrides] sbatch [--exclude=<nodes>] scripts/slurm/<step>
 | `EMIC_SCOPE` | `all` | `all` scores every CEP pair and records its judge-qa verdict; `approved` scores only approved ones |
 | `EMIC_RERUN` | `0` | Discard the emic checkpoint and re-score every source |
 | `ARANDU_EMIC_JUDGE_WORKERS` | 4 (tupi script) | Client-side concurrency; `OLLAMA_NUM_PARALLEL` follows it unless overridden |
+| `OLLAMA_NUM_PARALLEL`, `OLLAMA_CONTEXT_LENGTH` | per step script | Ollama sidecar slots and per-slot context, passed to `arandu_start_ollama` (3rd and 4th args). Exporting them is not enough: the sidecar only sees what the call passes. cep: workers / 16384; judge: 2 / 32768; kg: 3 / 32768 |
 | `MIN_DISK_GB` | 15 | Disk-floor preflight on the Docker root partition |
 | `USE_GPU_OLLAMA` | set by partition script | Selects `kg-gpu` vs `kg` compose profile |
 

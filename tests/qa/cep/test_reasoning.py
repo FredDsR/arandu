@@ -570,3 +570,80 @@ class TestReasoningEnricher:
         assert result["is_multi_hop"] is True
         # hop_count should be None due to invalid type
         assert result["hop_count"] is None
+
+
+def test_enrich_preserves_validation_and_rationale(
+    mock_llm_client: Any,
+    cep_config: CEPConfig,
+    sample_qa_pair_analyze: QAPairCEP,
+    mocker: MockerFixture,
+) -> None:
+    """Enrichment adds reasoning fields without dropping the gate verdict."""
+    from arandu.shared.judge.schemas import (
+        CriterionScore,
+        JudgePipelineResult,
+        JudgeStepResult,
+    )
+
+    step = JudgeStepResult(
+        criterion_scores={"faithfulness": CriterionScore(score=1.0, threshold=0.5, rationale="ok")}
+    )
+    verdict = JudgePipelineResult(stage_results={"cep_validation": step}, passed=True)
+    pair = sample_qa_pair_analyze.model_copy(
+        update={"validation": verdict, "rationale": "plan", "generation_thinking": "t"}
+    )
+    enricher = ReasoningEnricher(mock_llm_client, cep_config)
+    mocker.patch.object(
+        enricher,
+        "_generate_reasoning",
+        return_value={"reasoning_trace": "trace", "is_multi_hop": True, "hop_count": 2},
+    )
+
+    enriched = enricher.enrich(pair, pair.context)
+
+    assert enriched.reasoning_trace == "trace"
+    assert enriched.hop_count == 2
+    assert enriched.validation == verdict
+    assert enriched.rationale == "plan"
+    assert enriched.generation_thinking == "t"
+
+
+def test_enrich_multi_hop_without_hop_count_gets_validator_default(
+    mock_llm_client: Any,
+    cep_config: CEPConfig,
+    sample_qa_pair_analyze: QAPairCEP,
+    mocker: MockerFixture,
+) -> None:
+    """Enrichment keeps the validate_multi_hop normalization (default of 2 hops)."""
+    enricher = ReasoningEnricher(mock_llm_client, cep_config)
+    mocker.patch.object(
+        enricher,
+        "_generate_reasoning",
+        return_value={"reasoning_trace": "trace", "is_multi_hop": True, "hop_count": None},
+    )
+
+    enriched = enricher.enrich(sample_qa_pair_analyze, sample_qa_pair_analyze.context)
+
+    assert enriched.is_multi_hop is True
+    assert enriched.hop_count == 2
+
+
+def test_enrich_not_multi_hop_resets_hop_count(
+    mock_llm_client: Any,
+    cep_config: CEPConfig,
+    sample_qa_pair_analyze: QAPairCEP,
+    mocker: MockerFixture,
+) -> None:
+    """A pair that stops being multi-hop must not keep a stale hop_count."""
+    pair = sample_qa_pair_analyze.model_copy(update={"is_multi_hop": True, "hop_count": 3})
+    enricher = ReasoningEnricher(mock_llm_client, cep_config)
+    mocker.patch.object(
+        enricher,
+        "_generate_reasoning",
+        return_value={"reasoning_trace": "trace", "is_multi_hop": False, "hop_count": None},
+    )
+
+    enriched = enricher.enrich(pair, pair.context)
+
+    assert enriched.is_multi_hop is False
+    assert enriched.hop_count is None

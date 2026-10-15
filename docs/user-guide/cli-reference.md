@@ -180,7 +180,7 @@ arandu batch-transcribe input/catalog.csv --id my-project-001
 
 ### `generate-cep-qa`
 
-Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with Bloom-level scaffolding. Generation and validation are now separate steps: this command only generates pairs. Run [`judge-qa`](#judge-qa) afterwards to evaluate them with LLM-as-a-Judge.
+Generate CEP (Cognitive Elicitation Pipeline) QA pairs from transcriptions with Bloom-level scaffolding. With the scaffolding gate on (default), each pair is judged before it can scaffold later pairs and its verdict is saved on the pair, so a later [`judge-qa`](#judge-qa) run (resume) skips it.
 
 **Usage**:
 ```bash
@@ -205,6 +205,10 @@ arandu generate-cep-qa INPUT_DIR [OPTIONS]
 | `--bloom-dist` | | str | `None` | Bloom level pair counts (e.g., 'remember:3,understand:1,analyze:1,evaluate:1') |
 | `--jsonl/--no-jsonl` | | flag | `False` | Export QA pairs to JSONL format for training |
 | `--id` | | str | Auto-resolved | Pipeline ID (auto-resolves transcription outputs) |
+| `--scaffolding-gate/--no-scaffolding-gate` | | flag | `True` | Judge each pair before it can scaffold later pairs (env `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE`); needs a validator model |
+| `--validator-model` | | str | `None` | Judge model for the scaffolding gate (else `ARANDU_JUDGE_VALIDATOR_MODEL`) |
+| `--validator-provider` | | str | `None` | Judge provider: openai, ollama, custom (else `ARANDU_JUDGE_VALIDATOR_PROVIDER`) |
+| `--validator-base-url` | | str | `None` | Judge endpoint (else `ARANDU_JUDGE_VALIDATOR_BASE_URL`) |
 
 **Examples**:
 ```bash
@@ -311,7 +315,7 @@ arandu judge-transcription results/ --validator-model qwen3:14b --rejudge
 
 ### `judge-qa`
 
-Judge CEP QA pairs with LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, self-containedness). Each judged pair is persisted back into its `*_cep_qa.json` file via the pair's `validation` field; `is_valid` is derived from `validation.passed`. There is no aggregate side-file. This is the validation step that used to be folded into `generate-cep-qa`.
+Judge CEP QA pairs with LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, self-containedness). Each judged pair is persisted back into its `*_cep_qa.json` file via the pair's `validation` field; `is_valid` is derived from `validation.passed`. There is no aggregate side-file. This is the validation step that used to be folded into `generate-cep-qa`. In resume mode, a file whose pairs were gated by a different validator model is refused (exit 1) instead of mixing models; run `judge-qa` with the gate's validator model or pass `--rejudge`.
 
 **Usage**:
 ```bash

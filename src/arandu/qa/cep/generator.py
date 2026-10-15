@@ -17,6 +17,7 @@ from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.chunking.registry import get_chunker
 
 if TYPE_CHECKING:
+    from arandu.qa.cep.bloom_scaffolding import PairValidator
     from arandu.qa.config import CEPConfig, QAConfig
     from arandu.shared.chunking.schemas import Chunk
     from arandu.shared.llm_client import LLMClient
@@ -40,6 +41,7 @@ class CEPQAGenerator:
         llm_client: LLMClient,
         qa_config: QAConfig,
         cep_config: CEPConfig,
+        validator: PairValidator | None = None,
     ) -> None:
         """Initialize CEP QA generator.
 
@@ -47,13 +49,18 @@ class CEPQAGenerator:
             llm_client: Main LLM client for generation.
             qa_config: QA configuration.
             cep_config: CEP configuration.
+            validator: Scaffolding gate forwarded to Module I; ``None`` disables it.
         """
         self.llm_client = llm_client
         self.qa_config = qa_config
         self.cep_config = cep_config
 
+        self._gate_enabled = validator is not None
+
         # Initialize Module I: Bloom Scaffolding
-        self._bloom_generator = BloomScaffoldingGenerator(llm_client, qa_config, cep_config)
+        self._bloom_generator = BloomScaffoldingGenerator(
+            llm_client, qa_config, cep_config, validator=validator
+        )
 
         # Initialize Module II: Reasoning Enrichment
         self._reasoning_enricher = ReasoningEnricher(llm_client, cep_config)
@@ -61,7 +68,8 @@ class CEPQAGenerator:
         logger.info(
             f"CEPQAGenerator initialized - "
             f"ScaffoldingContext={cep_config.enable_scaffolding_context}, "
-            f"Reasoning={cep_config.enable_reasoning_traces}"
+            f"Reasoning={cep_config.enable_reasoning_traces}, "
+            f"ScaffoldingGate={self._gate_enabled}"
         )
 
     def generate_qa_pairs(self, transcription: TranscriptionRecord) -> QARecordCEP:
@@ -90,6 +98,7 @@ class CEPQAGenerator:
                 source_filename=transcription.name,
                 source_metadata=transcription.source_metadata,
                 source_metadata_context_enabled=self.cep_config.enable_source_metadata_context,
+                scaffolding_gate_enabled=self._gate_enabled,
                 transcription_text=text,
                 qa_pairs=[],
                 chunker_id=CEP_CHUNKER_ID,
@@ -140,6 +149,7 @@ class CEPQAGenerator:
             source_filename=transcription.name,
             source_metadata=transcription.source_metadata,
             source_metadata_context_enabled=self.cep_config.enable_source_metadata_context,
+            scaffolding_gate_enabled=self._gate_enabled,
             transcription_text=text,
             qa_pairs=all_pairs,
             chunker_id=CEP_CHUNKER_ID,
@@ -147,6 +157,7 @@ class CEPQAGenerator:
             provider=self.llm_client.provider.value,  # type: ignore[arg-type]
             language=self.cep_config.language,
             total_pairs=len(all_pairs),
+            validated_pairs=sum(1 for pair in all_pairs if pair.is_valid is True),
             bloom_distribution=bloom_dist,
         )
 

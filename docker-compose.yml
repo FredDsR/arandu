@@ -434,8 +434,16 @@ services:
       # Bloom pairs/level as JSON int counts; forwarded from the host when set
       # (defaults to the 3/1/1/1 split baked into CEPConfig when unset).
       - ARANDU_CEP_BLOOM_DISTRIBUTION
-      # Validation is a separate step (judge-qa); generate-cep-qa does not validate.
       - ARANDU_CEP_LANGUAGE=${ARANDU_CEP_LANGUAGE:-pt}
+      # Scaffolding gate: each pair is judged before it can scaffold later pairs.
+      # Validator settings mirror arandu-judge (local Ollama sidecar by default).
+      - ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE:-true}
+      - ARANDU_JUDGE_VALIDATOR_MODEL=${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}
+      - ARANDU_JUDGE_VALIDATOR_PROVIDER=${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}
+      - ARANDU_JUDGE_VALIDATOR_BASE_URL=${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_JUDGE_LANGUAGE=${ARANDU_JUDGE_LANGUAGE:-pt}
+      - ARANDU_JUDGE_TEMPERATURE=${ARANDU_JUDGE_TEMPERATURE:-0.1}
+      - ARANDU_JUDGE_MAX_TOKENS=${ARANDU_JUDGE_MAX_TOKENS:-8192}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 

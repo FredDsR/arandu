@@ -154,6 +154,16 @@ class CEPConfig(BaseSettings):
         le=50,
         description="Maximum number of prior QA pairs to include as scaffolding context",
     )
+    enable_scaffolding_gate: bool = Field(
+        default=True,
+        description=(
+            "Judge each generated pair with QAJudge before it can enter the "
+            "scaffolding context of later pairs. Rejected pairs stay in the output "
+            "with their verdict but are never shown to the generator, and the "
+            "verdict is persisted so judge-qa --resume skips the pair. Requires "
+            "ARANDU_JUDGE_VALIDATOR_MODEL. No effect without enable_scaffolding_context."
+        ),
+    )
 
     # Module II - Reasoning settings
     max_hop_count: int = Field(
@@ -239,6 +249,16 @@ class CEPConfig(BaseSettings):
         """
         return sum(self.bloom_distribution.values())
 
+    @property
+    def scaffolding_gate_active(self) -> bool:
+        """Whether generated pairs are judged before they can scaffold later pairs.
+
+        The gate only matters when scaffolding context is on: without it no pair
+        is ever shown to the generator, so judging at generation time would only
+        move the ``judge-qa`` cost earlier.
+        """
+        return self.enable_scaffolding_context and self.enable_scaffolding_gate
+
 
 class JudgeConfig(BaseSettings):
     """Configuration settings for the composable judge pipeline.
@@ -315,6 +335,24 @@ class JudgeConfig(BaseSettings):
                 f"Invalid judge language: {v!r}. Must be one of {sorted(valid_languages)}"
             )
         return v
+
+
+def require_gate_validator(cep_config: CEPConfig, judge_config: JudgeConfig) -> None:
+    """Fail fast when the scaffolding gate is active without a validator model.
+
+    Args:
+        cep_config: CEP configuration (decides whether the gate is active).
+        judge_config: Judge configuration carrying the validator model.
+
+    Raises:
+        ValueError: If the gate is active and no validator model is configured.
+    """
+    if cep_config.scaffolding_gate_active and not judge_config.validator_model:
+        raise ValueError(
+            "The CEP scaffolding gate is enabled but no validator model is set. "
+            "Set ARANDU_JUDGE_VALIDATOR_MODEL (or --validator-model), or disable the "
+            "gate with ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=false (--no-scaffolding-gate)."
+        )
 
 
 def get_qa_config() -> QAConfig:

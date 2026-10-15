@@ -178,7 +178,7 @@ config = QAConfig(
 
 ## CEPConfig
 
-Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. Generation and validation are separate steps: `generate-cep-qa` only generates pairs; `judge-qa` validates them using the scoring weights and threshold defined here.
+Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair while generating; `judge-qa` covers pairs without a clean verdict (or everything with `--rejudge`), using the scoring weights and threshold defined here.
 
 **Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_CEP_`
 
@@ -188,6 +188,7 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 |---------|------|---------|-------------|
 | `enable_reasoning_traces` | `bool` | `True` | Enable reasoning trace generation for answers |
 | `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
+| `enable_scaffolding_gate` | `bool` | `True` | Judge each pair before it can scaffold later pairs (needs a validator model) |
 | `enable_source_metadata_context` | `bool` | `True` | Include extracted source metadata (participant name, location, date) in CEP prompt context |
 
 ### Module I - Bloom Scaffolding Settings
@@ -560,14 +561,14 @@ ARANDU_KG_LANGUAGE=pt
 
 **CLI Usage**:
 ```bash
-# QA generation (uses .env settings)
+# QA generation (uses .env settings; set ARANDU_JUDGE_VALIDATOR_MODEL or pass --validator-model)
 arandu generate-cep-qa results/
 
-# Validate the generated pairs (separate step)
+# Judge pairs without a clean verdict (--rejudge redoes all)
 arandu judge-qa qa_dataset/
 
 # Override specific settings
-arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --provider ollama
+arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --provider ollama --validator-model qwen3:14b
 ```
 
 ### Example 2: Production with OpenAI API
@@ -676,6 +677,7 @@ services:
 # CEP Settings
 ARANDU_CEP_ENABLE_REASONING_TRACES=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
 
 # Bloom distribution (integer pair counts per level; single source of truth)
@@ -738,7 +740,7 @@ Pydantic Settings loads configuration in the following priority order (highest t
 
 1. **Command-line arguments** (highest priority):
    ```bash
-   arandu generate-cep-qa results/ --provider ollama --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
+   arandu generate-cep-qa results/ --provider ollama --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1" --validator-model qwen3:14b
    ```
 
 2. **Environment variables**:
@@ -864,6 +866,7 @@ ARANDU_QA_WORKERS=2
 # Module toggles
 ARANDU_CEP_ENABLE_REASONING_TRACES=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
+ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
 
 # Bloom scaffolding (integer pair counts per level; single source of truth)

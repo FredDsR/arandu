@@ -13,8 +13,11 @@ from arandu.qa.cep.bloom_scaffolding import (
     BloomScaffoldingGenerator,
     LLMResponseError,
 )
+from arandu.qa.cep.metadata_context import build_pair_judge_context
 from arandu.qa.config import CEPConfig, QAConfig
 from arandu.qa.schemas import QAPairCEP
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
+from arandu.shared.schemas import SourceMetadata
 from arandu.utils.text import GenerateResult
 
 if TYPE_CHECKING:
@@ -298,6 +301,27 @@ class TestBloomScaffoldingGenerator:
         assert generator._bloom_to_question_type("evaluate") == "conceptual"
         assert generator._bloom_to_question_type("create") == "conceptual"
         assert generator._bloom_to_question_type("unknown") == "factual"
+
+    def test_parse_response_ignores_echoed_validation(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+    ) -> None:
+        """A 'validation' key echoed by the generation LLM never becomes a verdict."""
+        generator = BloomScaffoldingGenerator(
+            llm_client=mock_llm_client,
+            qa_config=qa_config,
+            cep_config=cep_config,
+        )
+        response = _valid_pair_json(
+            validation={"stage_results": {}, "passed": True, "rejected_at": None}
+        )
+
+        pair = generator._parse_response(response, "Context.", "remember")
+
+        assert pair.validation is None
+        assert pair.is_valid is None
 
     def test_parse_response_with_cep_fields(
         self,
@@ -1038,3 +1062,227 @@ class TestDefaultThesisDistribution:
         )
         dist = generator._calculate_level_distribution()
         assert dist == {"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}
+
+
+SCAFFOLDING_HEADER = "Pares QA gerados anteriormente"
+
+
+def _verdict(*, passed: bool, error: str | None = None) -> JudgePipelineResult:
+    """One-criterion CEP verdict; a criterion error makes it fail like the real pipeline."""
+    criterion = CriterionScore(
+        score=1.0 if passed else 0.0, threshold=0.5, rationale="r", error=error
+    )
+    step = JudgeStepResult(criterion_scores={"faithfulness": criterion})
+    return JudgePipelineResult(stage_results={"cep_validation": step}, passed=step.passed)
+
+
+class _GateByQuestion:
+    """PairValidator double that rejects the questions listed in ``reject``.
+
+    ``outcome`` switches every call to an errored verdict (``"error"``), no
+    verdict (``"none"``, mirrors QAJudge swallowing an exception) or a raise
+    (``"raise"``).
+    """
+
+    def __init__(self, reject: set[str] | None = None, outcome: str = "verdict") -> None:
+        self.reject = reject or set()
+        self.outcome = outcome
+        self.calls: list[tuple[QAPairCEP, str]] = []
+
+    def validate(self, qa_pair: QAPairCEP, context: str) -> QAPairCEP:
+        self.calls.append((qa_pair, context))
+        if self.outcome == "raise":
+            raise RuntimeError("judge down")
+        if self.outcome == "none":
+            return qa_pair
+        error = "llm down" if self.outcome == "error" else None
+        passed = qa_pair.question not in self.reject
+        return qa_pair.model_copy(update={"validation": _verdict(passed=passed, error=error)})
+
+
+def _numbered_llm(mock_llm_client: Any) -> list[str]:
+    """Make the mock LLM answer "Question n?" / "Answer n." and capture prompts."""
+    prompts: list[str] = []
+
+    def generate(prompt: str, **kwargs: Any) -> GenerateResult:
+        prompts.append(prompt)
+        n = len(prompts)
+        return GenerateResult(
+            content=_valid_pair_json(question=f"Question {n}?", answer=f"Answer {n}.")
+        )
+
+    mock_llm_client.generate.side_effect = generate
+    return prompts
+
+
+def _gated(
+    mock_llm_client: Any,
+    qa_config: QAConfig,
+    distribution: dict[str, int],
+    validator: Any,
+    **cep_overrides: Any,
+) -> BloomScaffoldingGenerator:
+    cep_config = CEPConfig(
+        bloom_distribution=distribution,
+        enable_scaffolding_context=True,
+        language="pt",
+        **cep_overrides,
+    )
+    return BloomScaffoldingGenerator(
+        llm_client=mock_llm_client,
+        qa_config=qa_config,
+        cep_config=cep_config,
+        validator=validator,
+    )
+
+
+class TestScaffoldingGate:
+    """Pairs reach later prompts only after the validator approves them."""
+
+    def test_rejected_pair_excluded_from_next_level_but_kept_in_output(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion(reject={"Question 1?"})
+        generator = _gated(mock_llm_client, qa_config, {"remember": 1, "understand": 1}, gate)
+
+        pairs = generator.generate("Context.")
+
+        assert "Question 1?" not in prompts[1]
+        assert [p.question for p in pairs] == ["Question 1?", "Question 2?"]
+        assert pairs[0].is_valid is False
+        assert pairs[1].is_valid is True
+
+    def test_approved_pair_reaches_next_level(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        generator = _gated(
+            mock_llm_client, qa_config, {"remember": 1, "understand": 1}, _GateByQuestion()
+        )
+
+        generator.generate("Context.")
+
+        assert "Question 1?" in prompts[1]
+
+    def test_rejected_sibling_excluded_within_level(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion(reject={"Question 1?"})
+        generator = _gated(mock_llm_client, qa_config, {"remember": 3}, gate)
+
+        generator.generate("Context.")
+
+        assert "Question 1?" not in prompts[2]
+        assert "Question 2?" in prompts[2]
+
+    @pytest.mark.parametrize("outcome", ["none", "error"])
+    def test_missing_or_errored_verdict_not_admitted(
+        self, mock_llm_client: Any, qa_config: QAConfig, outcome: str
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion(outcome=outcome)
+        generator = _gated(mock_llm_client, qa_config, {"remember": 1, "understand": 1}, gate)
+
+        pairs = generator.generate("Context.")
+
+        assert "Question 1?" not in prompts[1]
+        assert len(pairs) == 2
+
+    def test_gate_exception_keeps_pair_unjudged(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion(outcome="raise")
+        generator = _gated(mock_llm_client, qa_config, {"remember": 1, "understand": 1}, gate)
+
+        pairs = generator.generate("Context.")
+
+        assert [p.question for p in pairs] == ["Question 1?", "Question 2?"]
+        assert all(p.validation is None for p in pairs)
+        assert "Question 1?" not in prompts[1]
+
+    def test_max_scaffolding_pairs_applies_after_filter(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion(reject={"Question 2?"})
+        generator = _gated(
+            mock_llm_client,
+            qa_config,
+            {"remember": 2, "understand": 1},
+            gate,
+            max_scaffolding_pairs=1,
+        )
+
+        generator.generate("Context.")
+
+        # Cutting before filtering would keep only the rejected Question 2.
+        assert "Question 1?" in prompts[2]
+        assert "Question 2?" not in prompts[2]
+
+    def test_validator_gets_the_judge_qa_grounding(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion()
+        generator = _gated(mock_llm_client, qa_config, {"remember": 1}, gate)
+        metadata = SourceMetadata(participant_name="Dona Maria", location="Barra de Pelotas")
+
+        generator.generate("Chunk text.", source_metadata=metadata)
+
+        expected = build_pair_judge_context(
+            "Chunk text.", "Chunk text.", metadata, enable_metadata=True, language="pt"
+        )
+        assert gate.calls[0][1] == expected
+        assert "Dona Maria" in expected
+
+    def test_validator_receives_unjudged_pair(
+        self, mock_llm_client: Any, qa_config: QAConfig
+    ) -> None:
+        _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion()
+        generator = _gated(mock_llm_client, qa_config, {"remember": 2}, gate)
+
+        generator.generate("Context.")
+
+        assert [pair.validation for pair, _ in gate.calls] == [None, None]
+
+    def test_approve_all_gate_matches_ungated_prompts(
+        self, mocker: MockerFixture, qa_config: QAConfig
+    ) -> None:
+        distribution = {"remember": 2, "understand": 1, "analyze": 1}
+        ungated_client = mocker.MagicMock()
+        ungated_prompts = _numbered_llm(ungated_client)
+        _gated(ungated_client, qa_config, distribution, None).generate("Context.")
+
+        gated_client = mocker.MagicMock()
+        gated_prompts = _numbered_llm(gated_client)
+        _gated(gated_client, qa_config, distribution, _GateByQuestion()).generate("Context.")
+
+        assert gated_prompts == ungated_prompts
+
+    def test_empty_pool_warns_and_drops_scaffolding_section(
+        self,
+        mock_llm_client: Any,
+        qa_config: QAConfig,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        prompts = _numbered_llm(mock_llm_client)
+        gate = _GateByQuestion(reject={"Question 1?"})
+        generator = _gated(mock_llm_client, qa_config, {"remember": 1, "understand": 1}, gate)
+
+        with caplog.at_level("WARNING", logger="arandu.qa.cep.bloom_scaffolding"):
+            generator.generate("Context.")
+
+        assert SCAFFOLDING_HEADER not in prompts[1]
+        assert "No pair admitted to scaffolding before understand" in caplog.text
+
+    def test_no_validator_means_no_judging(self, mock_llm_client: Any, qa_config: QAConfig) -> None:
+        _numbered_llm(mock_llm_client)
+        generator = _gated(mock_llm_client, qa_config, {"remember": 2}, None)
+
+        pairs = generator.generate("Context.")
+
+        assert all(p.validation is None for p in pairs)
