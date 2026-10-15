@@ -14,13 +14,14 @@ index that maps each question to its module or notebook.
 ## Rules for a module
 
 1. **Read-only.** Never write into a stage's `outputs/` or touch checkpoints.
-   Default output goes to `results/<run-id>/analysis/`; an explicit `--out`,
-   `--out-json` or `--out-md` may override it.
+   When a module writes files, new modules default to
+   `results/<run-id>/analysis/`; explicit `--out`, `--out-json` or `--out-md`
+   flags (several existing modules require them) are fine.
 2. **No LLM calls.** Analyses recompute from stored verdicts and scores. Anything
    that re-judges or regenerates is a pipeline step and goes through the CLI.
-3. **Run as a module from the repo root:**
-   `uv run python -m analysis.<module> --id <run-id>`. Take the run through
-   `--id`; do not hardcode a run id or an absolute path.
+3. **Run as a module from the repo root:** `uv run python -m analysis.<module>`.
+   Do not hardcode a run id or an absolute path. New modules that analyse one
+   run take it through `--id <run-id>`.
 4. **The module docstring states the question** it answers and shows the exact
    command above. Reuse production aggregators from `arandu.*` instead of
    reimplementing metrics.

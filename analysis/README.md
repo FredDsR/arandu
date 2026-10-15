@@ -1,8 +1,8 @@
 # Analyses
 
 Read-only analyses of finished runs. Run each one from the repo root with
-`uv run python -m analysis.<module> --id <run-id>`; outputs default to
-`results/<run-id>/analysis/`. Rules for adding one are in [AGENTS.md](AGENTS.md).
+`uv run python -m analysis.<module>`; see `--help` for its arguments, most of
+which take `--id <run-id>`. Rules for adding one are in [AGENTS.md](AGENTS.md).
 
 | Question | Module or notebook | Cited in |
 |---|---|---|
