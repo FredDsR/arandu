@@ -8,9 +8,9 @@ Welcome to the Arandu documentation. This guide will help you find the informati
 
 Start here if you're new to Arandu:
 
-1. **[Getting Started](user-guide/getting-started.md)** - Installation and first steps
-2. **[Transcription Guide](user-guide/transcription.md)** - Process audio/video files
-3. **[Configuration Reference](user-guide/configuration.md)** - Environment variables and settings
+1. **[Getting Started](guide/getting-started.md)** - Installation and first steps
+2. **[Transcription Guide](guide/pipelines/transcription.md)** - Process audio/video files
+3. **[Configuration Reference](guide/configuration.md)** - Environment variables and settings
 
 ### Pipeline Users
 
@@ -18,18 +18,18 @@ Guides for each processing pipeline:
 
 | Pipeline | Guide | Description |
 |----------|-------|-------------|
-| Transcription | [transcription.md](user-guide/transcription.md) | Audio/video to text |
-| CEP QA Generation | [cep-qa-generation.md](user-guide/cep-qa-generation.md) | Cognitive scaffolding with Bloom's Taxonomy |
-| KG Construction | [kg-construction.md](user-guide/kg-construction.md) | Build knowledge graphs |
-| RAG Analysis | [rag-analysis.md](user-guide/rag-analysis.md) | Cross-arm retrieval evaluation (Phase C) |
+| Transcription | [transcription.md](guide/pipelines/transcription.md) | Audio/video to text |
+| CEP QA Generation | [cep-qa-generation.md](guide/pipelines/cep-qa-generation.md) | Cognitive scaffolding with Bloom's Taxonomy |
+| KG Construction | [kg-construction.md](guide/pipelines/kg-construction.md) | Build knowledge graphs |
+| RAG Analysis | [rag-analysis.md](guide/pipelines/rag-analysis.md) | Cross-arm retrieval evaluation (Phase C) |
 
 ### Operators & DevOps
 
 Deployment guides for different environments:
 
-- **[Docker Deployment](deployment/docker.md)** - Local Docker setup (GPU/CPU/ROCm)
-- **[PCAD Cluster](deployment/pcad.md)** - PCAD HPC cluster deployment
-- **[SLURM Guide](deployment/slurm.md)** - Generic SLURM job configuration
+- **[Docker Deployment](operations/docker.md)** - Local Docker setup (GPU/CPU/ROCm)
+- **[PCAD Cluster](operations/pcad.md)** - PCAD HPC cluster deployment
+- **[SLURM Guide](operations/slurm.md)** - Generic SLURM job configuration
 
 ### Developers
 

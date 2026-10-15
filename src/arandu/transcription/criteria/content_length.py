@@ -6,7 +6,7 @@ records short-circuit the pipeline before any other criterion or LLM
 call.
 
 Closes the silence-filler calibration gap documented in
-``docs/research/judge-pipeline-calibration.md`` §4.5: ``content_density``
+``docs/research/notes/judge-pipeline-calibration.md`` §4.5: ``content_density``
 scales linearly and admits records like 8.4 s / "Thank you." (14 wpm,
 score 0.475 vs threshold 0.40); a non-scaled length floor catches them
 deterministically.

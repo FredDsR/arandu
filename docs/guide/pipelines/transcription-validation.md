@@ -285,7 +285,7 @@ result = judge.evaluate_transcription(text=record.transcription_text)
 
 ---
 
-**See also**: [Transcription](transcription.md) | [Configuration](configuration.md) | [Getting Started](getting-started.md)
+**See also**: [Transcription](transcription.md) | [Configuration](../configuration.md) | [Getting Started](../getting-started.md)
 
 **Document Version**: 2.0
 **Last Updated**: 2026-06-16

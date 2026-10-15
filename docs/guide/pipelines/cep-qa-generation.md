@@ -1,6 +1,6 @@
 # CEP QA Generation Guide
 
-Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair with LLM-as-a-Judge while generating; the [`judge-qa`](cli-reference.md#judge-qa) command covers pairs without a clean verdict (or everything with `--rejudge`).
+Generate cognitively-calibrated question-answer pairs using the **Cognitive Elicitation Pipeline (CEP)** with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair with LLM-as-a-Judge while generating; the [`judge-qa`](../cli-reference.md#judge-qa) command covers pairs without a clean verdict (or everything with `--rejudge`).
 
 ## Overview
 
@@ -286,7 +286,7 @@ Each line contains one QA pair:
 
 ## Validation Criteria
 
-Validation runs via the separate [`judge-qa`](cli-reference.md#judge-qa) command. Each criterion is an independent gate: the pair passes only if **every** criterion evaluated for it clears its own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights. Non-remember pairs are scored on all four criteria below; `remember` pairs are scored on **faithfulness** and **bloom calibration** only, since factual recall is neither expected to reveal tacit knowledge nor to be fully self-contained (the other two are omitted, not auto-passed).
+Validation runs via the separate [`judge-qa`](../cli-reference.md#judge-qa) command. Each criterion is an independent gate: the pair passes only if **every** criterion evaluated for it clears its own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights. Non-remember pairs are scored on all four criteria below; `remember` pairs are scored on **faithfulness** and **bloom calibration** only, since factual recall is neither expected to reveal tacit knowledge nor to be fully self-contained (the other two are omitted, not auto-passed).
 
 ### Faithfulness
 Is the answer grounded in the provided context?
@@ -474,4 +474,4 @@ docker compose --profile cep exec ollama ollama pull qwen3:14b
 
 ---
 
-**See also**: [Configuration](configuration.md) | [SLURM Deployment](../deployment/slurm.md)
+**See also**: [Configuration](../configuration.md) | [SLURM Deployment](../../operations/slurm.md)

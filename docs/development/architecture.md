@@ -168,7 +168,7 @@ The `results/` root itself carries a single aggregate file, `index.json`, which 
 
 ### Extensions
 
-Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieve`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`. See `docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md` §11 for the binding spec, in particular §11.0 which restates this convention for Phase C.
+Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieve`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`.
 
 #### The `retrieve` stage
 

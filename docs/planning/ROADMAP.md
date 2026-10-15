@@ -11,7 +11,7 @@
 - **Phases A, B, C and C′ are closed.** Issues [#78](https://github.com/FredDsR/arandu/issues/78), [#79](https://github.com/FredDsR/arandu/issues/79) and [#80](https://github.com/FredDsR/arandu/issues/80) were closed on 2026-09-09 with the evidence summarised in each phase section below.
 - **Canonical thesis dataset: `thesis-run-01`.** A single end-to-end run on the updated Drive corpus, from transcription (2026-06-23) to RAG analysis (2026-07-07). Stage tally: 455/456 transcriptions, 214 records through chunking and CEP, a Portuguese KG of 18,454 nodes / 76,919 edges, 334 non-answerable questions, 9,012 retrievals across 5 arms, 15,020 answers generated and judged. The Results chapter draws from this run and no other.
 - **Phase A (Unblock KG)**: done. The `test-kg-04` graph proved the pipeline; `thesis-run-01` produced the canonical graph. Five atlas-rag failure modes were shimmed locally and fixed upstream on `release/v0.0.6`.
-- **Phase B (Judge Refactor)**: done. Shared multi-stage judge in `shared/judge/`, heuristic and LLM criteria behind one protocol, standalone CLI commands, and the calibration audit that gated the phase (documented in `docs/research/judge-pipeline-calibration.md`).
+- **Phase B (Judge Refactor)**: done. Shared multi-stage judge in `shared/judge/`, heuristic and LLM criteria behind one protocol, standalone CLI commands, and the calibration audit that gated the phase (documented in `docs/research/notes/judge-pipeline-calibration.md`).
 - **Phase C (RAG Evaluation)**: done. Five arms compared on a joint answerable/non-answerable benchmark, results in `results/thesis-run-01/analysis/outputs/`.
 - **Phase C′ (Fresh-Corpus Rerun)**: done. It *is* `thesis-run-01`.
 - **Current front: Phase D.** The emic evaluation stack is built (`arandu emic-judge`, the signed-off emic-validity ruler, the Label Studio annotation instrument, the Bloom-stratified sample builder, and the agreement coefficients module). Open work is the specialist sessions, the agreement analysis on their returns, and the writing.
@@ -193,7 +193,7 @@ A judge isn't usable until we know how often its decisions agree with a human re
 
 - **Dual notebooks** (transcription + QA) covering per-criterion distributions, inter-criterion correlation, stage attribution, failure co-occurrence, and threshold proximity.
 - **Audit protocol**: dual-class proportional sampling at 30% of rejected + 15% of admitted, sample sizes set so Clopper-Pearson 95% CIs land inside ±10pp of the observed rate.
-- **Audit complete and written up** in [`docs/research/judge-pipeline-calibration.md`](../research/judge-pipeline-calibration.md): 353 records evaluated, 43 rejected + 31 admitted audited (seed=42, 21% of the corpus). No unambiguous false positives; sample false-negative rate 3.2%. The two stages contribute complementary coverage (58% of rejections heuristic, 42% LLM), which is the evidence for keeping both.
+- **Audit complete and written up** in [`docs/research/notes/judge-pipeline-calibration.md`](../research/notes/judge-pipeline-calibration.md): 353 records evaluated, 43 rejected + 31 admitted audited (seed=42, 21% of the corpus). No unambiguous false positives; sample false-negative rate 3.2%. The two stages contribute complementary coverage (58% of rejections heuristic, 42% LLM), which is the evidence for keeping both.
 - **Remediation applied**: the single false negative motivated the `content_length_floor` heuristic now sitting at the head of the heuristic stage, subsuming the legacy 200-character filter that used to live inside QA generation.
 - **Transcription-side audit complete**; silence-filler gap closed in `e1a091c`.
 
@@ -307,15 +307,15 @@ Problem statement, objectives, justification. Frames the evidence gap at the int
 | What exists | What's needed |
 |-------------|---------------|
 | SLR findings (Reckziegel & Costa, 2025b) documenting the evidence gap | Write the problem statement connecting the SLR gap to the Arandu pipeline |
-| `docs/related-works.md` §10 (Ethnographic Knowledge, AI, Climate Resilience) | Frame the research questions and objectives |
-| `docs/related-works.md` §11 (Positioning: What This Work Adds) | Justification — why this integration is novel |
+| `docs/research/related-works.md` §10 (Ethnographic Knowledge, AI, Climate Resilience) | Frame the research questions and objectives |
+| `docs/research/related-works.md` §11 (Positioning: What This Work Adds) | Justification — why this integration is novel |
 | CARE Principles / decolonial frameworks (Carroll et al., BlackDeer, Tapu & Fa'agau) | Ethical grounding section |
 
 **Can start**: now
 
 #### Chapter 2 — Referencial Teórico / Trabalhos Relacionados
 
-Literature review organized by thematic axes. `docs/related-works.md` (45+ references, 11 sections) is the primary source — needs consolidation into a cohesive narrative.
+Literature review organized by thematic axes. `docs/research/related-works.md` (45+ references, 11 sections) is the primary source — needs consolidation into a cohesive narrative.
 
 | Thematic Axis | Source | Pipeline Phase |
 |---------------|--------|----------------|
@@ -337,7 +337,7 @@ Literature review organized by thematic axes. `docs/related-works.md` (45+ refer
 
 #### Chapter 3 — Metodologia
 
-Pipeline design, each phase's approach and rationale. `docs/methodology.md` (62K chars, 9 sections) is nearly a complete draft.
+Pipeline design, each phase's approach and rationale. `docs/research/methodology.md` (62K chars, 9 sections) is nearly a complete draft.
 
 | Section | Source | Status |
 |---------|--------|--------|

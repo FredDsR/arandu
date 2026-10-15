@@ -127,11 +127,11 @@ export OPENAI_API_KEY=sk-...
 
 | Task | Guide |
 |------|-------|
-| Process multiple files | [Transcription Guide](transcription.md) |
-| Validate transcriptions | [Transcription Validation Guide](transcription-validation.md) |
-| Generate QA pairs | [CEP QA Generation Guide](cep-qa-generation.md) |
-| Build knowledge graphs | [KG Construction Guide](kg-construction.md) |
-| Compare retrieval arms | [RAG Analysis Guide](rag-analysis.md) |
+| Process multiple files | [Transcription Guide](pipelines/transcription.md) |
+| Validate transcriptions | [Transcription Validation Guide](pipelines/transcription-validation.md) |
+| Generate QA pairs | [CEP QA Generation Guide](pipelines/cep-qa-generation.md) |
+| Build knowledge graphs | [KG Construction Guide](pipelines/kg-construction.md) |
+| Compare retrieval arms | [RAG Analysis Guide](pipelines/rag-analysis.md) |
 | Configure settings | [Configuration Reference](configuration.md) |
 
 ## Pipeline Overview
@@ -182,4 +182,4 @@ arandu transcribe audio.mp3 --cpu
 
 ---
 
-**See also**: [Transcription](transcription.md) | [Transcription Validation](transcription-validation.md) | [Configuration](configuration.md) | [CLI Reference](cli-reference.md)
+**See also**: [Transcription](pipelines/transcription.md) | [Transcription Validation](pipelines/transcription-validation.md) | [Configuration](configuration.md) | [CLI Reference](cli-reference.md)

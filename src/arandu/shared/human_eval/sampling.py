@@ -9,8 +9,7 @@ Revised 2026-08-19: stratification was 4 Bloom levels x 2 emic bands,
 defaulting to 10 pairs per cell (the agreed protocol asked for 15 per cell,
 but the CLI had no ``--per-cell`` flag yet to set it). The band came from the
 emic judge's score, which put that run on the annotation critical path; it
-was removed and the sample is now built from the CEP records alone. See
-``docs/superpowers/specs/2026-08-19-bloom-only-sampling-design.md``.
+was removed and the sample is now built from the CEP records alone. See PR #161.
 """
 
 from __future__ import annotations

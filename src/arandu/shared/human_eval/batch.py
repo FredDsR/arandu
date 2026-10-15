@@ -7,8 +7,7 @@ manifest under ``results/<id>/human_eval/outputs/``.
 
 Revised 2026-08-19: the pool used to be built from the emic-judge scores, which
 put that run on the annotation critical path. Only the emic band needed it, and
-the band is gone. See
-``docs/superpowers/specs/2026-08-19-bloom-only-sampling-design.md``.
+the band is gone. See PR #161.
 """
 
 from __future__ import annotations

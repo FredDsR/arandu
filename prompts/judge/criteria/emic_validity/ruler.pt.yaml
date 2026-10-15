@@ -8,7 +8,7 @@
 #
 # Consumidores:
 #   - prompts/judge/criteria/emic_validity/pt/prompt.md  (juiz LLM)
-#   - docs/emic/annotator-instructions.pt.md             (anotadores humanos)
+#   - docs/research/instruments/annotator-instructions.pt.md             (anotadores humanos)
 #   - labeling_config.xml do Label Studio                (canvas do anotador)
 #   - expert_instruction.html do Label Studio            (modal de instruções)
 #

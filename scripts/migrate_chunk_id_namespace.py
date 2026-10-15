@@ -10,8 +10,7 @@ their persisted ``ChunkSet``.
 
 This rewrites a run's ``chunk`` stage in the canonical space, by re-chunking the
 canonical text with the real chunker rather than shifting offsets
-arithmetically, and remaps every consumer that referenced the old ids. Design:
-``docs/superpowers/specs/2026-09-09-chunk-id-coordinate-space-normalization-design.md``.
+arithmetically, and remaps every consumer that referenced the old ids. Design: PR #172.
 
 Usage:
     uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-02 --dry-run

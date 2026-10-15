@@ -236,7 +236,7 @@ print(config.pairs_per_chunk)  # 6
 
 ## JudgeConfig
 
-Configuration for the composable judge pipeline. Supplies the validator LLM client settings shared by the `judge-transcription` LLM filter stage and the `judge-qa` command. Replaces the removed `TranscriptionQualityConfig` (transcription validation is now a filter pipeline, not a weighted-score config; see the [Transcription Validation guide](transcription-validation.md)).
+Configuration for the composable judge pipeline. Supplies the validator LLM client settings shared by the `judge-transcription` LLM filter stage and the `judge-qa` command. Replaces the removed `TranscriptionQualityConfig` (transcription validation is now a filter pipeline, not a weighted-score config; see the [Transcription Validation guide](pipelines/transcription-validation.md)).
 
 **Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_JUDGE_`
 

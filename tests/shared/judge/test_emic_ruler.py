@@ -27,7 +27,9 @@ if TYPE_CHECKING:
 EMIC_DIR = get_project_root() / "prompts" / "judge" / "criteria" / "emic_validity"
 RULER_PATH = EMIC_DIR / "ruler.pt.yaml"
 PROMPT_PATH = EMIC_DIR / "pt" / "prompt.md"
-SHEET_PATH = get_project_root() / "docs" / "emic" / "annotator-instructions.pt.md"
+SHEET_PATH = (
+    get_project_root() / "docs" / "research" / "instruments" / "annotator-instructions.pt.md"
+)
 
 # Fragments of real corpus pairs that earlier drafts of the prompt used as
 # illustrations. They must not reappear: see TestNoRealPairLeaked.

@@ -270,7 +270,7 @@ The judging commands share the `ARANDU_JUDGE_VALIDATOR_*` environment fallbacks 
 
 ### `judge-transcription`
 
-Judge transcription quality with a two-stage filter pipeline: pure-Python heuristics (always) plus optional LLM criteria. A record passes only when it clears every criterion in each filter stage; there is no aggregate score. See the [Transcription Validation guide](transcription-validation.md) for the full model.
+Judge transcription quality with a two-stage filter pipeline: pure-Python heuristics (always) plus optional LLM criteria. A record passes only when it clears every criterion in each filter stage; there is no aggregate score. See the [Transcription Validation guide](pipelines/transcription-validation.md) for the full model.
 
 **Usage**:
 ```bash
@@ -358,7 +358,7 @@ arandu judge-qa qa_dataset/ --rejudge
 
 ### `judge-answers`
 
-Run the gated answer judge over every `AnswerRecord` in a populated Phase C run, scoring generated RAG answers. See the [RAG evaluation docs](rag-analysis.md) for the scoring model.
+Run the gated answer judge over every `AnswerRecord` in a populated Phase C run, scoring generated RAG answers. See the [RAG evaluation docs](pipelines/rag-analysis.md) for the scoring model.
 
 **Usage**:
 ```bash
@@ -438,7 +438,7 @@ shows, so neither reader is told it can see a block that was never rendered.
 **The ruler is a signed-off single source.** The construct, the 1-5 scale, the
 loss types and the decision guide live in
 `prompts/judge/criteria/emic_validity/ruler.pt.yaml`, and both the judge prompt
-and the annotator sheet ([docs/emic/annotator-instructions.pt.md](../emic/annotator-instructions.pt.md))
+and the annotator sheet ([docs/research/instruments/annotator-instructions.pt.md](../research/instruments/annotator-instructions.pt.md))
 render it. The weighted kappa between the judge and each annotator only measures
 agreement if both score on the same ruler, so `tests/shared/judge/test_emic_ruler.py`
 fails if either artifact drifts. The `signed_off` field records the

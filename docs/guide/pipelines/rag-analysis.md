@@ -225,4 +225,4 @@ These are intentional first-cut scope - tracked for follow-up PRs:
 
 ## Related
 
-- [CLI reference](cli-reference.md) - full command list.
+- [CLI reference](../cli-reference.md) - full command list.

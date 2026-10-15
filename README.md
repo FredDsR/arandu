@@ -361,7 +361,7 @@ The system can be configured via:
 | `ARANDU_QUALITY_ENABLED` | `true` | Enable transcription quality validation |
 | `ARANDU_QUALITY_QUALITY_THRESHOLD` | `0.5` | Minimum quality score (0.0-1.0) |
 
-See [Configuration Guide](docs/user-guide/configuration.md) for complete reference.
+See [Configuration Guide](docs/guide/configuration.md) for complete reference.
 
 ## Output Format
 
@@ -489,13 +489,13 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 ## Documentation
 
 - [Documentation Index](docs/README.md)
-- [Getting Started](docs/user-guide/getting-started.md)
-- [CLI Reference](docs/user-guide/cli-reference.md)
-- [Transcription Guide](docs/user-guide/transcription.md)
-- [Transcription Validation Guide](docs/user-guide/transcription-validation.md)
-- [CEP QA Generation Guide](docs/user-guide/cep-qa-generation.md)
-- [KG Construction Guide](docs/user-guide/kg-construction.md) (Planned)
-- [Configuration Reference](docs/user-guide/configuration.md)
+- [Getting Started](docs/guide/getting-started.md)
+- [CLI Reference](docs/guide/cli-reference.md)
+- [Transcription Guide](docs/guide/pipelines/transcription.md)
+- [Transcription Validation Guide](docs/guide/pipelines/transcription-validation.md)
+- [CEP QA Generation Guide](docs/guide/pipelines/cep-qa-generation.md)
+- [KG Construction Guide](docs/guide/pipelines/kg-construction.md) (Planned)
+- [Configuration Reference](docs/guide/configuration.md)
 - [Architecture](docs/development/architecture.md)
 - [Schemas Reference](docs/development/schemas.md)
 
