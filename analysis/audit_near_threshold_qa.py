@@ -34,7 +34,7 @@ one criterion gate-keeping most near-misses) are evidence the threshold or that
 criterion's rubric may be mis-calibrated.
 
 Usage:
-    python scripts/audit_near_threshold_qa.py <cep_outputs_dir> [--top N] \
+    python analysis/audit_near_threshold_qa.py <cep_outputs_dir> [--top N] \
         [--out report.md]
 """
 

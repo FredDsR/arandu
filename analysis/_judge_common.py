@@ -10,7 +10,7 @@ carries.
 
 Used by ``analyze_judge_thresholds``, ``analyze_qa_cohort_rag_outcome`` and
 ``plot_judge_score_distributions``. Run those as modules from the repo root so
-this import resolves, e.g. ``uv run python -m scripts.analyze_judge_thresholds``.
+this import resolves, e.g. ``uv run python -m analysis.analyze_judge_thresholds``.
 """
 
 from __future__ import annotations

@@ -84,9 +84,7 @@ target/
 
 # Figuras exportadas pelos notebooks: sao regeneradas ao executar o notebook,
 # que ja carrega as mesmas figuras nos seus outputs.
-notebooks/figures/
-# Markdown exportado pelos notebooks: regenerado ao executar, nao versionado
-notebooks/*.md
+analysis/figures/
 
 # IPython
 profile_default/

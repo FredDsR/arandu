@@ -7,10 +7,10 @@ coefficients, and (with --full) shortest-path metrics on the largest
 weakly connected component.
 
 Usage:
-    uv run python scripts/kg_structural_metrics.py <graphml_path> [--full] [--json]
+    uv run python analysis/kg_structural_metrics.py <graphml_path> [--full] [--json]
 
 Examples:
-    uv run python scripts/kg_structural_metrics.py \\
+    uv run python analysis/kg_structural_metrics.py \\
         results/test-kg-04/kg/outputs/atlas_output/kg_graphml/transcriptions.json_graph.graphml
 
 Notes:

@@ -57,7 +57,7 @@ whose point estimate is asserted equal to the arandu one.
 Run from the repo root (``results/judge-retest`` holds the extracted tars):
 
     R=results/judge-retest
-    uv run --with krippendorff python -m scripts.analyze_judge_retest \\
+    uv run --with krippendorff python -m analysis.analyze_judge_retest \\
         --replica $R/r1 --replica $R/r2 --replica $R/r3 --gate-from 3=$R/r3-gate \\
         --out-json $R/out/retest.json --out-md $R/out/retest.md \\
         --n-boot 2000 --seed 20261005
@@ -91,7 +91,7 @@ from arandu.shared.emic.schemas import EmicSourceScores
 from arandu.shared.rag.analysis.classifier import classify_record
 from arandu.shared.rag.analysis.metrics import aggregate_arm
 from arandu.shared.rag.schemas import AnswerRecord
-from scripts._judge_analysis_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
+from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
 
 TAU = DEFAULT_THRESHOLD
 TAU_EMIC = 4

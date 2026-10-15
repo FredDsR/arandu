@@ -14,8 +14,8 @@ sidecar reads as a failure rather than as low emic validity.
 
 Run from the repo root:
 
-    uv run python -m scripts.analyze_emic_scores --id thesis-run-01
-    uv run python -m scripts.analyze_emic_scores --id thesis-run-01 --out emic.md
+    uv run python -m analysis.analyze_emic_scores --id thesis-run-01
+    uv run python -m analysis.analyze_emic_scores --id thesis-run-01 --out emic.md
 """
 
 from __future__ import annotations

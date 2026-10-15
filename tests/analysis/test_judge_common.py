@@ -7,7 +7,7 @@ errored / criterion-less pair never passes.
 
 from __future__ import annotations
 
-from scripts._judge_analysis_common import ANCHORS, approved_ids, snap_to_anchor
+from analysis._judge_common import ANCHORS, approved_ids, snap_to_anchor
 
 
 def test_approved_requires_all_criteria_at_threshold() -> None:

@@ -5,7 +5,7 @@ Reads atlas-rag output artifacts (extraction JSONLs, triple CSVs, concept
 CSVs, GraphML metadata) and prints a structured summary with Rich tables.
 
 Usage:
-    uv run python scripts/kg_report.py <run_dir> [--json]
+    uv run python analysis/kg_report.py <run_dir> [--json]
 
 Arguments:
     run_dir     Path to a pipeline run directory (e.g. results/test-kg-02).
@@ -18,14 +18,14 @@ Options:
 
 Examples:
     # Pretty-print report with Rich tables
-    uv run python scripts/kg_report.py results/test-kg-02
+    uv run python analysis/kg_report.py results/test-kg-02
 
     # Export as JSON
-    uv run python scripts/kg_report.py results/test-kg-02 --json
+    uv run python analysis/kg_report.py results/test-kg-02 --json
 
     # Compare two runs
-    diff <(uv run python scripts/kg_report.py results/test-kg-02 --json) \\
-         <(uv run python scripts/kg_report.py results/test-kg-03 --json)
+    diff <(uv run python analysis/kg_report.py results/test-kg-02 --json) \\
+         <(uv run python analysis/kg_report.py results/test-kg-03 --json)
 
 Expected directory layout inside <run_dir>::
 

@@ -15,7 +15,7 @@ arms emit synthetic ids and are reported as ``n/a``.
 
 Run from the repo root:
 
-    uv run python -m scripts.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
+    uv run python -m analysis.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 from arandu.shared.rag.analysis.batch import _group_by_arm
 from arandu.shared.rag.analysis.metrics import aggregate_arm
-from scripts._judge_analysis_common import (
+from analysis._judge_common import (
     CRITERIA,
     DEFAULT_THRESHOLD,
     PairScores,

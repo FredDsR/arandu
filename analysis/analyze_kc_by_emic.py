@@ -8,7 +8,7 @@ judge scores as preserving the speaker's frame (EV >= 4) and pairs it scores as
 having lost it (EV <= 3).
 
 The emic judge is only tentatively reliable (test-retest alpha 0.681 overall,
-0.554 above Remember, ``scripts/analyze_judge_retest.py``), so the strata are
+0.554 above Remember, ``analysis/analyze_judge_retest.py``), so the strata are
 built three ways:
 
 * ``canonical``: EV of replica 1 (the published scores);
@@ -34,7 +34,7 @@ characters, the base of the paper's RQ1 counts).
 Run from the repo root:
 
     R=results/judge-retest
-    uv run python -m scripts.analyze_kc_by_emic \\
+    uv run python -m analysis.analyze_kc_by_emic \\
         --replica $R/r1 --replica $R/r2 --replica $R/r3 --gate-from 3=$R/r3-gate \\
         --out-json $R/out/kc_by_emic.json --out-md $R/out/kc_by_emic.md \\
         --n-boot 2000 --seed 20261005
@@ -51,7 +51,7 @@ from typing import Any
 
 import numpy as np
 
-from scripts.analyze_judge_retest import (
+from analysis.analyze_judge_retest import (
     GRAPH_ARMS,
     HIGHER,
     TAU,

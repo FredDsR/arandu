@@ -131,9 +131,8 @@ uv sync --all-extras --all-groups
 uv run arandu --version
 ```
 
-Todos os comandos deste documento rodam da raiz do repositório. Os scripts de
-`scripts/` precisam ser chamados como módulo (`python -m scripts.<nome>`), senão
-o import de `scripts._judge_analysis_common` falha.
+Todos os comandos deste documento rodam da raiz do repositório. As análises de
+`analysis/` rodam como módulo a partir da raiz (`uv run python -m analysis.<nome>`).
 
 ## 3. Mapa de artefatos
 
@@ -148,10 +147,10 @@ o import de `scripts._judge_analysis_common` falha.
 | `results/thesis-run-02/human_eval/outputs/sample.jsonl` | amostra de 120 pares para anotação humana |
 | `results/thesis-run-02/annotation/outputs/tasks.json` | as mesmas 120 tarefas em formato Label Studio |
 | `results/thesis-run-02/analysis/kg_structure_profile.json` | perfil estrutural do grafo (seção 4.9) |
-| `notebooks/bloom-thesis-run-02.ipynb` | notebook do funil CEP executado sobre o run-02 |
+| `analysis/notebooks/bloom-thesis-run-02.ipynb` | notebook do funil CEP executado sobre o run-02 |
 | `notebooks/figures/*-thesis-run-02.{pdf,png}` | figuras do notebook, em versão de artigo |
 
-O `notebooks/bloom.ipynb` continua apontando para o `thesis-run-01` e guarda as
+O `analysis/notebooks/bloom.ipynb` continua apontando para o `thesis-run-01` e guarda as
 saídas antigas. Ele é histórico; não use seus números.
 
 **Duas bases de contagem.** Os comandos `arandu` e os scripts de `scripts/`
@@ -234,7 +233,7 @@ Cenários de remoção de critério (total aprovado, inclui `remember`):
 (cenários) e 16 (decomposição). A contagem equivalente sobre os 2670 pares sai de:
 
 ```bash
-uv run python -m scripts.analyze_judge_thresholds --id thesis-run-02
+uv run python -m analysis.analyze_judge_thresholds --id thesis-run-02
 ```
 
 ### 4.3 Rendimento por chunk e por documento
@@ -293,10 +292,10 @@ sobe para 2394.
 *Como reproduzir:*
 
 ```bash
-uv run python -m scripts.analyze_judge_thresholds --id thesis-run-02
-uv run python -m scripts.plot_judge_score_distributions --id thesis-run-02 --style bars
-uv run python -m scripts.plot_judge_score_distributions --id thesis-run-02 --style density
-uv run python -m scripts.plot_judge_score_distributions --id thesis-run-02 --style hist
+uv run python -m analysis.analyze_judge_thresholds --id thesis-run-02
+uv run python -m analysis.plot_judge_score_distributions --id thesis-run-02 --style bars
+uv run python -m analysis.plot_judge_score_distributions --id thesis-run-02 --style density
+uv run python -m analysis.plot_judge_score_distributions --id thesis-run-02 --style hist
 ```
 
 As figuras vão para `results/thesis-run-02/analysis/judge_score_*.png`.
@@ -359,7 +358,7 @@ genéricas são mais fáceis de responder.
 *Como reproduzir:*
 
 ```bash
-uv run python -m scripts.analyze_qa_cohort_rag_outcome --id thesis-run-02
+uv run python -m analysis.analyze_qa_cohort_rag_outcome --id thesis-run-02
 ```
 
 ### 4.7 Juiz de validade êmica
@@ -401,12 +400,9 @@ aprovados e reprovados do portão CEP, em compensação, ficou nítida (4,52 con
 *Como reproduzir:*
 
 ```bash
-uv run python scripts/analyze_emic_scores.py --id thesis-run-02 \
+uv run python -m analysis.analyze_emic_scores --id thesis-run-02 \
   --out results/thesis-run-02/analysis/outputs/emic_scores.md
 ```
-
-Este script roda direto (não como módulo) porque não importa
-`scripts._judge_analysis_common`.
 
 ### 4.8 Amostras para anotação humana
 
@@ -430,7 +426,7 @@ resolveu isso, e o arquivo vigente traz a versão acima.
 ### 4.9 Estrutura do grafo
 
 Perfil do grafo de `kg/outputs/atlas_output/kg_graphml/transcriptions.json_graph.graphml`,
-computado por `scripts/kg_structure_profile.py` (seed 0). O subgrafo de relações
+computado por `analysis/kg_structure_profile.py` (seed 0). O subgrafo de relações
 é o grafo não-direcionado formado só pelas arestas `Relation` (inclui as arestas
 de participação sintetizadas pelo atlas-rag, `envolve`, 34,7% delas); a
 procedência de um nó é a passagem a que ele tem aresta `Source` (quase sempre
@@ -468,7 +464,7 @@ quando o primeiro salto cai num conceito genérico.
 *Como reproduzir:*
 
 ```bash
-uv run python -m scripts.kg_structure_profile --id thesis-run-02
+uv run python -m analysis.kg_structure_profile --id thesis-run-02
 ```
 
 ## 5. Estabilidade do juiz (thesis-run-01 vs thesis-run-02)
@@ -539,7 +535,7 @@ tácito**, e que a confiabilidade do juiz, não o contexto, é o fator dominante
 *Como reproduzir:*
 
 ```bash
-uv run python -m scripts.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
+uv run python -m analysis.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
 ```
 
 **Limitação.** A comparação confunde a mudança de contexto com o
@@ -550,7 +546,7 @@ configuração idêntica à do run-02.
 ```bash
 uv run arandu replicate thesis-run-02 --id teste-reteste
 uv run arandu judge-qa results/teste-reteste/cep/outputs --files 50 --pairs 6 --rejudge
-uv run python -m scripts.analyze_cep_gate_flip --old thesis-run-02 --new teste-reteste
+uv run python -m analysis.analyze_cep_gate_flip --old thesis-run-02 --new teste-reteste
 ```
 
 Se a taxa de troca sob repetição pura ficar perto dos 16% observados, todo o
@@ -626,23 +622,23 @@ cd notebooks && uv run jupyter nbconvert --to notebook --execute --inplace \
   --ExecutePreprocessor.timeout=1200 bloom-thesis-run-02.ipynb && cd ..
 
 # secao 4.4
-uv run python -m scripts.analyze_judge_thresholds --id thesis-run-02
+uv run python -m analysis.analyze_judge_thresholds --id thesis-run-02
 for style in bars density hist; do
-  uv run python -m scripts.plot_judge_score_distributions --id thesis-run-02 --style $style
+  uv run python -m analysis.plot_judge_score_distributions --id thesis-run-02 --style $style
 done
 
 # secao 4.5
 uv run arandu rag-analysis --id thesis-run-02
 
 # secao 4.6
-uv run python -m scripts.analyze_qa_cohort_rag_outcome --id thesis-run-02
+uv run python -m analysis.analyze_qa_cohort_rag_outcome --id thesis-run-02
 
 # secao 4.7
-uv run python scripts/analyze_emic_scores.py --id thesis-run-02 \
+uv run python -m analysis.analyze_emic_scores --id thesis-run-02 \
   --out results/thesis-run-02/analysis/outputs/emic_scores.md
 
 # secao 5 (precisa tambem do thesis-run-01 extraido em results/)
-uv run python -m scripts.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
+uv run python -m analysis.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
 ```
 
 Nenhum desses comandos chama LLM: todos são releitura e agregação de artefatos
@@ -663,7 +659,7 @@ Os tarballs publicados no Drive foram regerados da árvore local e republicados
 em 2026-09-24, e conferidos por md5 depois do upload (seção 1.1).
 
 Um script foi acrescentado ao repositório para que a análise da seção 5 seja
-refazível: `scripts/analyze_cep_gate_flip.py`, em 2026-09-21. Ele passa
+refazível: `analysis/analyze_cep_gate_flip.py`, em 2026-09-21. Ele passa
 `ruff check` e `ruff format`.
 
 Uma armadilha encontrada no caminho, que vale para quem for revisar: o `diff`

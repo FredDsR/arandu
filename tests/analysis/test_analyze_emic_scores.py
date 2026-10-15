@@ -12,14 +12,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from arandu.shared.emic.schemas import EmicScore, EmicSourceScores
-from scripts.analyze_emic_scores import (
+from analysis.analyze_emic_scores import (
     build_analysis,
     distribution,
     load_source_scores,
     render_markdown,
     resolve_scope,
 )
+from arandu.shared.emic.schemas import EmicScore, EmicSourceScores
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -11,7 +11,7 @@ Two styles:
 
 Requires the ``report`` extra (plotly + kaleido). Run from the repo root:
 
-    uv run --extra report python -m scripts.plot_judge_score_distributions \
+    uv run --extra report python -m analysis.plot_judge_score_distributions \
         --id thesis-run-01 --style density
 """
 
@@ -25,7 +25,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from scripts._judge_analysis_common import (
+from analysis._judge_common import (
     ANCHORS,
     CRITERIA,
     DEFAULT_THRESHOLD,

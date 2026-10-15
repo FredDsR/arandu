@@ -15,7 +15,7 @@ questions the paper actually asks of the graph:
 Every number printed is also written to
 ``results/<id>/analysis/kg_structure_profile.json``. Run from the repo root:
 
-    uv run python -m scripts.kg_structure_profile --id thesis-run-02
+    uv run python -m analysis.kg_structure_profile --id thesis-run-02
 
 Notes:
     - Locale comes from the ``Local:`` line of the passage metadata block; a

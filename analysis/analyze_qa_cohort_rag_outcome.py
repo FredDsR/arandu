@@ -16,7 +16,7 @@ confirm the exclusions are well-motivated rather than mistaken.
 
 Run from the repo root:
 
-    uv run python -m scripts.analyze_qa_cohort_rag_outcome --id thesis-run-01
+    uv run python -m analysis.analyze_qa_cohort_rag_outcome --id thesis-run-01
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 
 from arandu.shared.rag.analysis.batch import _group_by_arm
 from arandu.shared.rag.analysis.metrics import aggregate_arm
-from scripts._judge_analysis_common import DEFAULT_THRESHOLD, load_pair_scores
+from analysis._judge_common import DEFAULT_THRESHOLD, load_pair_scores
 
 if TYPE_CHECKING:
     from arandu.shared.rag.schemas import AnswerRecord

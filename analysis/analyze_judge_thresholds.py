@@ -12,7 +12,7 @@ results chapter:
 
 Run from the repo root:
 
-    uv run python -m scripts.analyze_judge_thresholds --id thesis-run-01
+    uv run python -m analysis.analyze_judge_thresholds --id thesis-run-01
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from arandu.shared.rag.analysis.batch import _group_by_arm
 from arandu.shared.rag.analysis.metrics import aggregate_arm
-from scripts._judge_analysis_common import (
+from analysis._judge_common import (
     ANCHORS,
     CRITERIA,
     DEFAULT_THRESHOLD,

@@ -19,7 +19,7 @@ Two sources of variation are kept apart, as in ``analyze_judge_retest.py``:
 Run from the repo root:
 
     R=results/judge-retest
-    uv run python -m scripts.analyze_emic_gate \\
+    uv run python -m analysis.analyze_emic_gate \\
         --replica $R/r1 --replica $R/r2 --replica $R/r3 --gate-from 3=$R/r3-gate \\
         --cache-dir $R/cache --out-json $R/out/emic_gate.json \\
         --out-md $R/out/emic_gate.md --n-boot 2000 --seed 20261005
@@ -32,7 +32,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from scripts.analyze_judge_retest import (
+from analysis.analyze_judge_retest import (
     ARMS,
     GRAPH_ARMS,
     HIGHER,
