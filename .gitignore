@@ -85,6 +85,8 @@ target/
 # Figuras exportadas pelos notebooks: sao regeneradas ao executar o notebook,
 # que ja carrega as mesmas figuras nos seus outputs.
 notebooks/figures/
+# Markdown exportado pelos notebooks: regenerado ao executar, nao versionado
+notebooks/*.md
 
 # IPython
 profile_default/
@@ -229,3 +231,5 @@ test_report_manual.py
 docs-site/node_modules/
 docs-site/.astro/
 docs-site/dist/
+# Specs e planos de trabalho locais (superpowers): nao versionados
+docs/superpowers/
