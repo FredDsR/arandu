@@ -227,9 +227,5 @@ test_report_manual.py
 .claude/
 .agents/
 
-# Astro docs site build artifacts
-docs-site/node_modules/
-docs-site/.astro/
-docs-site/dist/
 # Specs e planos de trabalho locais (superpowers): nao versionados
 docs/superpowers/
