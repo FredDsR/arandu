@@ -6,13 +6,13 @@ pipeline works end-to-end with a real provider.
 
 Usage:
     # With Gemini (OpenAI-compatible)
-    GEMINI_API_KEY=your-key uv run python scripts/test_qa_judge.py
+    GEMINI_API_KEY=your-key uv run python scripts/smoke/smoke_qa_judge.py
 
     # With Ollama
-    uv run python scripts/test_qa_judge.py --provider ollama --model qwen3:14b
+    uv run python scripts/smoke/smoke_qa_judge.py --provider ollama --model qwen3:14b
 
     # Custom sample size
-    uv run python scripts/test_qa_judge.py --files 2 --pairs 2
+    uv run python scripts/smoke/smoke_qa_judge.py --files 2 --pairs 2
 """
 
 from __future__ import annotations

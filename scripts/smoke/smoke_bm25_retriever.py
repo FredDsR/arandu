@@ -7,9 +7,9 @@ afterwards. Useful for sanity-checking the index layout, the manifest schema,
 and the SHA-256 integrity field on a real Portuguese fixture.
 
 Usage:
-    uv run python scripts/test_bm25_retriever.py
-    uv run python scripts/test_bm25_retriever.py --out /tmp/bm25_demo
-    uv run python scripts/test_bm25_retriever.py --language en
+    uv run python scripts/smoke/smoke_bm25_retriever.py
+    uv run python scripts/smoke/smoke_bm25_retriever.py --out /tmp/bm25_demo
+    uv run python scripts/smoke/smoke_bm25_retriever.py --language en
 """
 
 from __future__ import annotations

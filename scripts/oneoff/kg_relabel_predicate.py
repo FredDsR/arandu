@@ -7,7 +7,7 @@ applied directly to an already-built GraphML file. Use this on graphs
 produced before the in-pipeline relabel landed.
 
 Usage:
-    uv run python scripts/kg_relabel_predicate.py <graphml> [--lang pt] [--dry-run]
+    uv run python scripts/oneoff/kg_relabel_predicate.py <graphml> [--lang pt] [--dry-run]
 
 The original file is moved to ``<graphml>.bak`` before the rewrite. Pass
 ``--dry-run`` to count occurrences without modifying anything.

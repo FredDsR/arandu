@@ -15,7 +15,7 @@ thesis corpus. ``ResultsManager.replicate`` copies the entire source run and is
 therefore unsafe here.
 
 Example:
-    uv run python scripts/seed_thesis_transcripts.py \
+    uv run python scripts/oneoff/seed_thesis_transcripts.py \
         --source-run test-kg-04 --catalog input/catalog-final-run.csv \
         --target-id thesis-run-01 --dry-run
 """

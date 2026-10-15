@@ -10,14 +10,14 @@ Heuristics run by default (no LLM needed). Pass ``--validator-model`` to
 enable the LLM filter stage.
 
 Usage:
-    uv run python scripts/test_transcription_judge.py
-    uv run python scripts/test_transcription_judge.py \\
+    uv run python scripts/smoke/smoke_transcription_judge.py
+    uv run python scripts/smoke/smoke_transcription_judge.py \\
         --input-dir results/test-kg-03/transcription/outputs
-    uv run python scripts/test_transcription_judge.py --files 5 --language pt
-    uv run python scripts/test_transcription_judge.py --output judgements.json
-    uv run python scripts/test_transcription_judge.py \\
+    uv run python scripts/smoke/smoke_transcription_judge.py --files 5 --language pt
+    uv run python scripts/smoke/smoke_transcription_judge.py --output judgements.json
+    uv run python scripts/smoke/smoke_transcription_judge.py \\
         --validator-model qwen3:14b
-    uv run python scripts/test_transcription_judge.py \\
+    uv run python scripts/smoke/smoke_transcription_judge.py \\
         --validator-provider openai --validator-model gpt-4o-mini
 """
 

@@ -7,7 +7,7 @@ check runs after any cap/restore to guarantee the judge will see all files.
 Exits non-zero when any file fails.
 
 Usage:
-    python3 scripts/verify_cep_load.py <pipeline_id>
+    python3 scripts/oneoff/verify_cep_load.py <pipeline_id>
 """
 
 from __future__ import annotations

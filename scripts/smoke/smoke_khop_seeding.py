@@ -5,7 +5,7 @@ Isolates the linker change: this PR altered ONLY the entity link, so we hold the
 retriever's ego-graph + scoring fixed and swap just the seeding to compare OLD
 (bare-whitespace tokens + hard max_postings=200 cap) vs NEW (lemmatized +
 IDF-weighted top-K) on the test-kg-04 CEP questions. Pure lexical + graph — runs
-locally, no GPU/LLM. Usage:  uv run python scripts/test_khop_seeding.py
+locally, no GPU/LLM. Usage:  uv run python scripts/smoke/smoke_khop_seeding.py
 """
 
 from __future__ import annotations

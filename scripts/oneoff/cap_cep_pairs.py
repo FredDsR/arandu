@@ -8,7 +8,7 @@ the dry-run stays a fast plumbing shakeout. The full 670-pair set is backed up t
 `cep/outputs_full670/` so it can be restored for the real test-kg-04 run.
 
 Usage:
-    python3 scripts/cap_cep_pairs.py <pipeline_id> [cap_per_file]
+    python3 scripts/oneoff/cap_cep_pairs.py <pipeline_id> [cap_per_file]
 """
 
 from __future__ import annotations

@@ -17,15 +17,15 @@ produced by a prior `arandu build-kg`). If the `precompute/` subdir is missing
 
 Usage:
     # Gemini (default; both LLM + embeddings via Gemini)
-    GEMINI_API_KEY=... uv run --extra kg python scripts/test_atlas_rag_retriever.py
-    GEMINI_API_KEY=... uv run --extra kg python scripts/test_atlas_rag_retriever.py \\
+    GEMINI_API_KEY=... uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py
+    GEMINI_API_KEY=... uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py \\
         --kg-dir results/test-kg-04/kg/outputs/atlas_output \\
         --llm-model gemini-2.5-flash \\
         --embedding-model text-embedding-004 \\
         --rebuild-index
 
     # Ollama (intended for PCAD)
-    uv run --extra kg python scripts/test_atlas_rag_retriever.py \\
+    uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py \\
         --provider ollama \\
         --llm-base-url http://localhost:11434/v1 \\
         --llm-model qwen3:14b \\

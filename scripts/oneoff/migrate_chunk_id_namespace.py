@@ -13,9 +13,9 @@ canonical text with the real chunker rather than shifting offsets
 arithmetically, and remaps every consumer that referenced the old ids. Design: PR #172.
 
 Usage:
-    uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-02 --dry-run
-    uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-02
-    uv run python scripts/migrate_chunk_id_namespace.py --id thesis-run-02 --verify
+    uv run python scripts/oneoff/migrate_chunk_id_namespace.py --id thesis-run-02 --dry-run
+    uv run python scripts/oneoff/migrate_chunk_id_namespace.py --id thesis-run-02
+    uv run python scripts/oneoff/migrate_chunk_id_namespace.py --id thesis-run-02 --verify
 
 Writing requires the run to be a clone (``arandu replicate`` provenance in its
 ``pipeline.json``); ``--dry-run`` and ``--verify`` are read-only and are not
