@@ -21,8 +21,6 @@ import argparse
 from collections import Counter
 from pathlib import Path
 
-from arandu.shared.rag.analysis.batch import _group_by_arm
-from arandu.shared.rag.analysis.metrics import aggregate_arm
 from analysis._judge_common import (
     ANCHORS,
     CRITERIA,
@@ -31,6 +29,8 @@ from analysis._judge_common import (
     load_pair_scores,
     snap_to_anchor,
 )
+from arandu.shared.rag.analysis.batch import _group_by_arm
+from arandu.shared.rag.analysis.metrics import aggregate_arm
 
 
 def _fmt(x: float | None) -> str:

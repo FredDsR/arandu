@@ -81,6 +81,7 @@ from typing import Any
 
 import numpy as np
 
+from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
 from arandu.qa.schemas import QARecordCEP
 from arandu.shared.agreement.coefficients import (
     cohen_kappa_weighted,
@@ -91,7 +92,6 @@ from arandu.shared.emic.schemas import EmicSourceScores
 from arandu.shared.rag.analysis.classifier import classify_record
 from arandu.shared.rag.analysis.metrics import aggregate_arm
 from arandu.shared.rag.schemas import AnswerRecord
-from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
 
 TAU = DEFAULT_THRESHOLD
 TAU_EMIC = 4

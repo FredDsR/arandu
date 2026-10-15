@@ -3,7 +3,8 @@
 Code that operates the pipeline. Analyses of finished runs live in
 [`analysis/`](../analysis/README.md). Rules for adding a script are in
 [AGENTS.md](AGENTS.md). Run from the repo root with
-`uv run python -m scripts.<name>`.
+`uv run python -m scripts.<package>.<name>` or `uv run python scripts/<path>.py`;
+a script that imports from `scripts.*` or `analysis.*` needs `-m`.
 
 ## Tools
 

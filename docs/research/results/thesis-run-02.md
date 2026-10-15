@@ -153,7 +153,7 @@ Todos os comandos deste documento rodam da raiz do repositório. As análises de
 O `analysis/notebooks/bloom.ipynb` continua apontando para o `thesis-run-01` e guarda as
 saídas antigas. Ele é histórico; não use seus números.
 
-**Duas bases de contagem.** Os comandos `arandu` e os scripts de `scripts/`
+**Duas bases de contagem.** Os comandos `arandu` e os scripts de `analysis/`
 contam sobre os **2670 pares** do corpus bruto. O notebook aplica um piso de 100
 caracteres de chunk, que descarta 3 chunks (18 pares) que são sobras da última
 janela do chunker, e conta sobre **2652 pares / 442 chunks**. As duas bases estão

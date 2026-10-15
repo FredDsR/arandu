@@ -107,7 +107,7 @@ The module lives in
 #### ResultsCollector
 
 ```python
-from arandu.core.report import ResultsCollector
+from arandu.report import ResultsCollector
 
 collector = ResultsCollector("results/")
 runs = collector.discover_runs()           # List all pipeline IDs
@@ -119,8 +119,8 @@ reports = collector.load_all_runs()        # Load all runs
 
 ```python
 from pathlib import Path
-from arandu.core.report import build_dataset, generate_html_report
-from arandu.core.report.exporter import export_charts_as_png
+from arandu.report import build_dataset, generate_html_report
+from arandu.report.exporter import export_charts_as_png
 
 # Generate HTML report
 generate_html_report(reports, Path("report.html"))
@@ -154,7 +154,7 @@ export_charts_as_png(dataset, Path("figures/"))
 ### Color Palette
 
 ```python
-from arandu.core.report.style import (
+from arandu.report.charts.style import (
     WONG_PALETTE,
     CATEGORICAL_COLORS,
     get_color_palette,
@@ -172,14 +172,14 @@ colors = get_color_palette(5)  # First 5 colorblind-friendly colors
 ### Running Tests
 
 ```bash
-pytest tests/core/report/ -v
+pytest tests/report/ -v
 ```
 
 ### Linting
 
 ```bash
-ruff check src/arandu/core/report/
-ruff format src/arandu/core/report/
+ruff check src/arandu/report/
+ruff format src/arandu/report/
 ```
 
 ## Troubleshooting

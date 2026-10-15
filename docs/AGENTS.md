@@ -20,6 +20,7 @@ Place a page by the kind of content it carries:
 | Running the pipeline on Docker or the pcad cluster | `operations/` |
 | Internals for contributors: architecture, schemas, tests, CI | `development/` |
 | Roadmap and design records that must outlive a branch | `planning/` |
+| Local scratch data for research notes (gitignored, only `.gitkeep` is tracked) | `research/data/` |
 | Mermaid sources referenced by the pages | `assets/diagrams/` |
 
 If a new page fits none of these, ask before creating a new directory.

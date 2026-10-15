@@ -25,9 +25,9 @@ import argparse
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from analysis._judge_common import DEFAULT_THRESHOLD, load_pair_scores
 from arandu.shared.rag.analysis.batch import _group_by_arm
 from arandu.shared.rag.analysis.metrics import aggregate_arm
-from analysis._judge_common import DEFAULT_THRESHOLD, load_pair_scores
 
 if TYPE_CHECKING:
     from arandu.shared.rag.schemas import AnswerRecord

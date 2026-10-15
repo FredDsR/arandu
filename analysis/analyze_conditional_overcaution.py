@@ -27,11 +27,11 @@ import argparse
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
 from arandu.shared.rag.analysis.batch import _group_by_arm
 from arandu.shared.rag.analysis.classifier import classify_record
 from arandu.shared.rag.analysis.loader import build_cross_cut_map
 from arandu.shared.rag.analysis.wilson import wilson_ci
-from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
 
 if TYPE_CHECKING:
     from arandu.shared.rag.schemas import AnswerRecord

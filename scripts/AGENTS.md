@@ -17,8 +17,11 @@ Cluster job scripts live in `slurm/`, which has its own guide.
 
 ## Rules
 
-1. **Run as a module from the repo root:** `uv run python -m scripts.<name>` or
-   `uv run python -m scripts.oneoff.<name>`. The directories are packages.
+1. **Run from the repo root,** either as a module
+   (`uv run python -m scripts.<package>.<name>`, for example
+   `scripts.oneoff.migrate_chunk_id_namespace`) or by path
+   (`uv run python scripts/<path>.py`). A script that imports from `scripts.*`
+   or `analysis.*` must be run with `-m`. The directories are packages.
 2. **Smoke scripts are named `smoke_*.py`, never `test_*.py`.** The `test_`
    prefix belongs to the pytest suite in `tests/`.
 3. **One-offs record their reason.** The docstring names the run, the PR or

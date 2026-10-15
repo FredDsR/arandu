@@ -21,7 +21,8 @@ scripts? Read that first.
 Directories with their own rules carry an `AGENTS.md`, loaded automatically
 through a sibling `CLAUDE.md`: [docs/](docs/AGENTS.md),
 [analysis/](analysis/AGENTS.md), [scripts/](scripts/AGENTS.md) and
-[scripts/slurm/](scripts/slurm/AGENTS.md). Read the guide of a directory before
+[scripts/slurm/](scripts/slurm/AGENTS.md), and each package area under
+`src/arandu/`. Read the guide of a directory before
 adding or moving files in it.
 
 - Documentation has one source, `docs/`. Never copy a page elsewhere.
