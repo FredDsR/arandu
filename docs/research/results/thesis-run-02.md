@@ -148,7 +148,7 @@ Todos os comandos deste documento rodam da raiz do repositório. As análises de
 | `results/thesis-run-02/annotation/outputs/tasks.json` | as mesmas 120 tarefas em formato Label Studio |
 | `results/thesis-run-02/analysis/kg_structure_profile.json` | perfil estrutural do grafo (seção 4.9) |
 | `analysis/notebooks/bloom-thesis-run-02.ipynb` | notebook do funil CEP executado sobre o run-02 |
-| `notebooks/figures/*-thesis-run-02.{pdf,png}` | figuras do notebook, em versão de artigo |
+| `analysis/figures/*-thesis-run-02.{pdf,png}` | figuras do notebook, em versão de artigo |
 
 O `analysis/notebooks/bloom.ipynb` continua apontando para o `thesis-run-01` e guarda as
 saídas antigas. Ele é histórico; não use seus números.
@@ -178,12 +178,11 @@ corretas; o que não pode é misturá-las na mesma frase.
 *Como reproduzir:* execute o notebook e leia as saídas das células 3 e 27.
 
 ```bash
-cd notebooks && uv run jupyter nbconvert --to notebook --execute --inplace \
-  --ExecutePreprocessor.timeout=1200 bloom-thesis-run-02.ipynb
+uv run jupyter nbconvert --to notebook --execute --inplace \
+  --ExecutePreprocessor.timeout=1200 analysis/notebooks/bloom-thesis-run-02.ipynb
 ```
 
-O notebook precisa rodar com `notebooks/` como diretório de trabalho: é de lá que
-ele resolve a raiz do repositório e grava o export manual de pares.
+O notebook encontra sozinho a raiz do repositório (sobe até o `pyproject.toml`) e grava o export em Markdown dos pares em `results/<run-id>/analysis/`.
 
 ### 4.2 Portão CEP
 
@@ -273,7 +272,7 @@ Concentração:
 | documentos sem nenhum par útil | 85 de 214 |
 
 *Como reproduzir:* notebook, células 20 a 27. As figuras correspondentes são
-`notebooks/figures/rendimento-chunk-thesis-run-02.pdf` e
+`analysis/figures/rendimento-chunk-thesis-run-02.pdf` e
 `cobertura-corpus-thesis-run-02.pdf`.
 
 ### 4.4 Distribuição das notas do juiz (base 2670)
@@ -618,8 +617,8 @@ tar -xzf ~/Downloads/thesis-run-02.tgz -C results/thesis-run-02
 uv run arandu rebuild-index
 
 # secao 4.1 a 4.3
-cd notebooks && uv run jupyter nbconvert --to notebook --execute --inplace \
-  --ExecutePreprocessor.timeout=1200 bloom-thesis-run-02.ipynb && cd ..
+uv run jupyter nbconvert --to notebook --execute --inplace \
+  --ExecutePreprocessor.timeout=1200 analysis/notebooks/bloom-thesis-run-02.ipynb
 
 # secao 4.4
 uv run python -m analysis.analyze_judge_thresholds --id thesis-run-02
