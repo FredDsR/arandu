@@ -400,75 +400,6 @@ Transcription results are saved as JSON files containing:
 }
 ```
 
-## Project Structure
-
-```
-arandu/
-├── pyproject.toml
-├── README.md
-├── docker-compose.yml
-├── Dockerfile
-├── src/
-│   └── arandu/
-│       ├── __init__.py
-│       ├── main.py                      # CLI entrypoint (10 commands)
-│       ├── config.py                    # 8 separate config classes
-│       ├── schemas.py                   # Pydantic models (transcription, QA, CEP, KG, eval)
-│       ├── core/
-│       │   ├── drive.py                 # Google Drive integration
-│       │   ├── engine.py                # Whisper engine
-│       │   ├── hardware.py              # Hardware detection
-│       │   ├── io.py                    # File operations
-│       │   ├── media.py                 # Media file handling
-│       │   ├── batch.py                 # Batch transcription logic
-│       │   ├── checkpoint.py            # Checkpoint/resume support
-│       │   ├── llm_client.py            # Unified LLM client
-│       │   ├── qa_batch.py              # Batch QA generation logic
-│       │   ├── results_manager.py       # Results versioning
-│       │   ├── transcription_validator.py  # Quality validation
-│       │   └── cep/                     # CEP modules
-│       │       ├── cep_generator.py     # Main orchestrator
-│       │       ├── bloom_scaffolding.py # Bloom taxonomy scaffolding
-│       │       ├── reasoning.py         # Reasoning enrichment
-│       │       └── validator.py         # LLM-as-a-Judge validation
-│       └── utils/
-│           ├── logger.py                # Rich logging utilities
-│           ├── console.py               # Console utilities
-│           └── ui.py                    # Progress bars & UI
-├── prompts/
-│   └── qa/
-│       └── cep/                         # Externalized CEP prompts
-│           ├── pt/                      # Portuguese templates
-│           └── en/                      # English templates
-├── scripts/
-│   └── slurm/
-│       ├── transcription/               # Transcription SLURM jobs
-│       ├── qa/                          # QA generation SLURM jobs
-│       ├── cep/                         # CEP SLURM jobs
-│       ├── kg/                          # KG SLURM jobs (planned)
-│       └── evaluation/                  # Evaluation SLURM jobs (planned)
-└── docs/
-    ├── README.md                        # Documentation index
-    ├── user-guide/
-    │   ├── getting-started.md
-    │   ├── cli-reference.md
-    │   ├── transcription.md
-    │   ├── transcription-validation.md
-    │   ├── cep-qa-generation.md
-    │   ├── kg-construction.md           # Planned
-    │   └── configuration.md
-    ├── development/
-    │   ├── architecture.md
-    │   ├── schemas.md
-    │   ├── dependencies.md
-    │   ├── testing.md
-    │   └── ci-cd.md
-    └── deployment/
-        ├── docker.md
-        ├── slurm.md
-        └── pcad.md
-```
-
 ## Requirements
 
 - Python >= 3.13
@@ -488,16 +419,12 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 
 ## Documentation
 
-- [Documentation Index](docs/README.md)
-- [Getting Started](docs/guide/getting-started.md)
-- [CLI Reference](docs/guide/cli-reference.md)
-- [Transcription Guide](docs/guide/pipelines/transcription.md)
-- [Transcription Validation Guide](docs/guide/pipelines/transcription-validation.md)
-- [CEP QA Generation Guide](docs/guide/pipelines/cep-qa-generation.md)
-- [KG Construction Guide](docs/guide/pipelines/kg-construction.md) (Planned)
-- [Configuration Reference](docs/guide/configuration.md)
-- [Architecture](docs/development/architecture.md)
-- [Schemas Reference](docs/development/schemas.md)
+- [Documentation index](docs/README.md)
+- [Getting started](docs/guide/getting-started.md)
+- [CLI reference](docs/guide/cli-reference.md)
+- [Configuration](docs/guide/configuration.md)
+- [Methodology](docs/research/methodology.md)
+- [Canonical results: thesis-run-02](docs/research/results/thesis-run-02.md)
 
 ## License
 

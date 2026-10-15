@@ -99,20 +99,8 @@ Options:
 
 ### Module Structure
 
-```
-src/arandu/core/report/
-├── __init__.py           # Public API
-├── collector.py          # Results discovery and aggregation
-├── charts.py             # Plotly chart builders
-├── dataset.py            # Flat data models and dataset builder
-├── exporter.py           # PNG export via kaleido
-├── generator.py          # HTML report assembly (Jinja2)
-├── style.py              # Shared theme and color palettes
-└── templates/
-    ├── report.html.j2    # Main HTML template
-    ├── _styles.css        # Dashboard CSS
-    └── _filter_engine.js  # Client-side filtering and chart rendering
-```
+The module lives in
+[`src/arandu/report/`](../../src/arandu/report).
 
 ### Key Classes
 

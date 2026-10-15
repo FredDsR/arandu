@@ -177,13 +177,8 @@ singularity exec --nv arandu.sif arandu generate-cep-qa results/ -o qa_dataset/
 
 The CEP (Cognitive Elicitation Pipeline) pipeline has dedicated SLURM scripts organized by cluster partition:
 
-```
-scripts/slurm/cep/
-├── cep_common.sh      # Shared logic for all CEP jobs
-├── grace.slurm        # Grace partition (NVIDIA L40S)
-├── tupi.slurm         # Tupi partition (NVIDIA RTX 4090)
-└── sirius.slurm       # Sirius partition (AMD, CPU mode)
-```
+The CEP job scripts live in [`scripts/slurm/cep/`](../../scripts/slurm/cep): a
+shared `cep_common.sh` plus one `.slurm` file per partition.
 
 ### Submit CEP Jobs
 

@@ -33,3 +33,16 @@ def test_relative_markdown_links_resolve() -> None:
             if path and not (md.parent / path).exists():
                 broken.append(f"{md.relative_to(ROOT)} -> {target}")
     assert broken == []
+
+
+TREE = re.compile(r"[├└]──")
+GUIDE_NAMES = {"AGENTS.md", "README.md"}
+
+
+def test_guides_do_not_draw_file_trees() -> None:
+    offenders = [
+        str(md.relative_to(ROOT))
+        for md in tracked_markdown()
+        if md.name in GUIDE_NAMES and TREE.search(md.read_text(encoding="utf-8"))
+    ]
+    assert offenders == []
