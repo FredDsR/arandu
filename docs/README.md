@@ -80,4 +80,4 @@ docs/
 
 ## Contributing
 
-See [AGENT.md](../AGENT.md) for development guidelines, coding standards, and the contribution workflow.
+See [AGENTS.md](../AGENTS.md) for development guidelines, coding standards, and the contribution workflow.

@@ -226,5 +226,3 @@ These are intentional first-cut scope - tracked for follow-up PRs:
 ## Related
 
 - [CLI reference](cli-reference.md) - full command list.
-- [`docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md`](../superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md)
-  - Phase C design spec; §8 is the analysis-stage methodology.

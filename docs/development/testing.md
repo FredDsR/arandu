@@ -405,4 +405,4 @@ def test_function_name_scenario(mocker: MockerFixture) -> None:
 - [pytest Documentation](https://docs.pytest.org/)
 - [pytest-mock Documentation](https://pytest-mock.readthedocs.io/)
 - [pytest-cov Documentation](https://pytest-cov.readthedocs.io/)
-- [Project Testing Standards](../AGENTS.md#testing)
+- [Project Testing Standards](../../AGENTS.md#testing)
