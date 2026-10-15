@@ -37,7 +37,7 @@ da entrevista que a geração CEP sempre injetou. É mudança de instrumento, n�
 dado: notas êmicas anteriores a essa data não são comparáveis às atuais, e
 anotação humana coletada com o instrumento cego não pode ser confrontada com um
 juiz que enxerga os metadados. Os números da seção 4.7 são os do instrumento
-vigente; a seção 4.7.1 mede o efeito da mudança.
+vigente.
 
 ## 1. Procedência do dado
 
@@ -50,7 +50,7 @@ arquivo `thesis-run-02.tgz` mantém sempre o mesmo id,
 |---|---|---|---|
 | **2026-09-24, segunda (vigente)** | 227 296 588 | `3903a6385ff82871527ea9efbde42b53` | juiz êmico com metadados, instrumento humano reconstruído, `analysis` regerado |
 | 2026-09-24, primeira (substituída) | 227 515 814 | `4ed668f52a36adc8e85945d885e333f5` | juiz êmico com metadados, mas `human_eval` e `annotation` ainda cegos |
-| 2026-09-21 | 227 517 922 | `050e751e53fa4f9bde6eb219836deb15` | juiz êmico cego, linha de base da seção 4.7.1 |
+| 2026-09-21 | 227 517 922 | `050e751e53fa4f9bde6eb219836deb15` | juiz êmico cego (instrumento anterior) |
 
 Entre a versão de 2026-09-21 e as de 2026-09-24 mudaram apenas os estágios
 `emic_judge` (os 214 arquivos), `human_eval`, `annotation` e `analysis`. `cep`,
@@ -408,73 +408,6 @@ uv run python scripts/analyze_emic_scores.py --id thesis-run-02 \
 Este script roda direto (não como módulo) porque não importa
 `scripts._judge_analysis_common`.
 
-### 4.7.1 Efeito da injeção de metadados no juiz êmico
-
-O #176 parte de uma previsão específica: o item 3 da escala êmica ("acrescenta
-algo que a pessoa não disse") estava disparando em pares que citam um valor de
-metadado que o juiz não podia ver, então **apenas** esses pares deveriam subir
-ao receber o bloco. O teste é uma diferença em diferenças entre o run cego
-(2026-08-19) e o run com metadados (2026-09-23), sobre os mesmos pares, o mesmo
-modelo e a mesma temperatura.
-
-O grupo tratado é definido por regra explícita: o par cita, na pergunta ou na
-resposta, um valor de metadado da entrevista (participante, pesquisador, local,
-data, contexto) que **não** aparece no próprio chunk. São 456 dos 2670 pares
-(17,1%). A regra é um casamento de substring com normalização de caixa e
-acentos, ou seja, uma operacionalização de "cita o metadado", não a leitura do
-próprio juiz.
-
-| Grupo | n | média cego | média com metadados | Δ | >= 4 cego | >= 4 com metadados |
-|---|---|---|---|---|---|---|
-| cita metadado ausente do chunk | 456 | 3,62 | 4,19 | **+0,56** | 35,1% | 63,8% |
-| não cita | 2213 | 4,05 | 4,12 | +0,08 | 55,5% | 59,3% |
-
-**Diferença em diferenças: +0,487, IC 95% bootstrap [+0,368, +0,607]** (5000
-reamostragens, semente 20260924).
-
-Movimento por par:
-
-| Grupo | subiu | desceu |
-|---|---|---|
-| cita metadado ausente | 170 (37,3%) | 41 (9,0%) |
-| não cita | 328 (14,8%) | 241 (10,9%) |
-
-O grupo que não cita metadado é o piso de ruído desta medida: 14,8% de subida
-contra 10,9% de descida é churn de re-julgamento, simétrico e sem direção. O
-grupo tratado sobe quatro vezes mais do que desce. O efeito é do instrumento,
-não do acaso.
-
-Por nível de Bloom:
-
-| Nível | Δ no nível inteiro | n que citam | Δ entre os que citam |
-|---|---|---|---|
-| remember | +0,25 | 260 | **+0,97** |
-| understand | +0,04 | 64 | +0,06 |
-| analyze | +0,06 | 68 | -0,12 |
-| evaluate | +0,11 | 64 | +0,14 |
-
-**Leitura.** O fix funcionou exatamente onde foi desenhado para funcionar, e
-esse é o contraste com o fix de contexto do juiz CEP da seção 5, cujo efeito era
-indistinguível de ruído. Mas o ganho está quase todo em `remember`: dos 456
-pares tratados, 260 são de recall factual, e é lá que a nota sobe quase um ponto
-inteiro. Nos níveis táticos o subgrupo tratado é pequeno (64 a 68 pares) e o
-efeito é nulo. Em termos de tese: a injeção de metadados corrige um falso
-negativo real de medição, e não melhora a validade êmica dos pares que
-interessam à pergunta de pesquisa.
-
-*Como reproduzir:*
-
-```bash
-# a linha de base cega vem do arquivo de 2026-09-21
-mkdir -p ~/Downloads/thesis-run-02-emic-blind
-tar -xzf ~/Downloads/thesis-run-02.2026-09-21.tgz \
-  -C ~/Downloads/thesis-run-02-emic-blind ./emic_judge
-mv ~/Downloads/thesis-run-02-emic-blind/emic_judge/* ~/Downloads/thesis-run-02-emic-blind/
-
-uv run python -m scripts.analyze_emic_metadata_effect \
-  --id thesis-run-02 --baseline ~/Downloads/thesis-run-02-emic-blind
-```
-
 ### 4.8 Amostras para anotação humana
 
 Reconstruídas com o instrumento novo: o bloco de metadados chega ao anotador
@@ -708,10 +641,6 @@ uv run python -m scripts.analyze_qa_cohort_rag_outcome --id thesis-run-02
 uv run python scripts/analyze_emic_scores.py --id thesis-run-02 \
   --out results/thesis-run-02/analysis/outputs/emic_scores.md
 
-# secao 4.7.1 (precisa da linha de base cega, receita na propria secao)
-uv run python -m scripts.analyze_emic_metadata_effect \
-  --id thesis-run-02 --baseline ~/Downloads/thesis-run-02-emic-blind
-
 # secao 5 (precisa tambem do thesis-run-01 extraido em results/)
 uv run python -m scripts.analyze_cep_gate_flip --old thesis-run-01 --new thesis-run-02
 ```
@@ -727,16 +656,15 @@ de 2026-09-21, no commit `4708d9e7`, e reconferidas em 2026-09-24 sobre o
 arquivo vigente: os estágios que as sustentam são byte a byte idênticos entre as
 duas versões, e os comandos reproduzem os mesmos números.
 
-As seções 4.7, 4.7.1 e 4.8 foram executadas em 2026-09-24 sobre o arquivo
+As seções 4.7 e 4.8 foram executadas em 2026-09-24 sobre o arquivo
 vigente, no commit `764eac15`.
 
 Os tarballs publicados no Drive foram regerados da árvore local e republicados
 em 2026-09-24, e conferidos por md5 depois do upload (seção 1.1).
 
-Dois scripts foram acrescentados ao repositório para que as análises sejam
-refazíveis: `scripts/analyze_cep_gate_flip.py` (seção 5, em 2026-09-21) e
-`scripts/analyze_emic_metadata_effect.py` (seção 4.7.1, em 2026-09-24). Ambos
-passam `ruff check` e `ruff format`.
+Um script foi acrescentado ao repositório para que a análise da seção 5 seja
+refazível: `scripts/analyze_cep_gate_flip.py`, em 2026-09-21. Ele passa
+`ruff check` e `ruff format`.
 
 Uma armadilha encontrada no caminho, que vale para quem for revisar: o `diff`
 desta máquina passa por um proxy (`rtk`) que reportou "Files are identical" para
