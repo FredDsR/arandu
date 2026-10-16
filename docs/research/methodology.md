@@ -43,11 +43,9 @@ flowchart TD
     subgraph P2["Phase 2 — Cognitive Elicitation Pipeline · CEP"]
         BL["I · Bloom Scaffolding"]:::p2
         SG["Scaffolded QA Generation"]:::p2
-        RT["II · Reasoning Traces"]:::p2
-        MH["Multi-hop + Tacit Inference"]:::p2
         JU["III · LLM-as-a-Judge<br/>Faith. 30% · Bloom 25% · Inform. 25% · Self-Cont. 20%"]:::p2
         VD{"Weighted Score ≥ 0.6?"}
-        BL --> SG --> RT --> MH --> JU --> VD
+        BL --> SG --> JU --> VD
     end
 
     subgraph P3["Phase 3 — Knowledge Graph Construction"]
@@ -806,7 +804,7 @@ flowchart LR
 This methodology implements a **four-phase composable pipeline** for tacit knowledge elicitation from ethnographic interviews:
 
 1. **Phase 1 (Transcription)** converts raw audio/video into quality-validated text using Whisper ASR with automatic failure detection
-2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, enriched with reasoning traces and validated by an LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, and self-containedness for GraphRAG compatibility)
+2. **Phase 2 (CEP)** generates cognitively-scaffolded QA pairs across Bloom's Taxonomy levels, validated by an LLM-as-a-Judge across four criteria (faithfulness, Bloom calibration, informativeness, and self-containedness for GraphRAG compatibility)
 3. **Phase 3 (Knowledge Graph)** extracts entity-relation structures using AutoSchemaKG with dynamic schema induction
 4. **Phase 4 (Evaluation)** uses the QA dataset as ground truth to assess how well the knowledge graph captures the elicited tacit knowledge, combining functional Knowledge Coverage (Bloom-stratified QA answering from the graph) with intrinsic metrics (schema profile, relation density, connectivity, and clustering coefficient)
 

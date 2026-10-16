@@ -38,9 +38,8 @@ _BODY = (
 def generator(mocker: MockerFixture) -> CEPQAGenerator:
     """A CEP generator whose Bloom module returns one pair per chunk, no LLM.
 
-    Reasoning traces are off so the enricher never runs. One pair per chunk is
-    enough: the assertion is about the ``chunk_id`` stamped on each pair, not
-    about the ladder.
+    One pair per chunk is enough: the assertion is about the ``chunk_id``
+    stamped on each pair, not about the ladder.
     """
     client = mocker.MagicMock()
     client.provider.value = "ollama"
@@ -50,7 +49,6 @@ def generator(mocker: MockerFixture) -> CEPQAGenerator:
         qa_config=QAConfig(),
         cep_config=CEPConfig(
             language="pt",
-            enable_reasoning_traces=False,
             bloom_distribution={"remember": 1},
         ),
     )

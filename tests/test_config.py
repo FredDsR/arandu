@@ -229,8 +229,6 @@ class TestCEPConfig:
         """Test default CEP configuration initialization."""
         config = CEPConfig()
 
-        assert config.enable_reasoning_traces is False
-        assert config.max_hop_count == 3
         assert config.language == "pt"
 
     def test_valid_bloom_distribution(self) -> None:
@@ -318,32 +316,20 @@ class TestCEPConfig:
             assert field not in CEPConfig.model_fields
             assert not hasattr(config, field)
 
+    def test_carries_no_reasoning_enrichment_fields(self) -> None:
+        """CEPConfig no longer configures the removed reasoning-enrichment pass."""
+        config = CEPConfig()
+        for field in ("enable_reasoning_traces", "max_hop_count", "reasoning_max_tokens"):
+            assert field not in CEPConfig.model_fields
+            assert not hasattr(config, field)
+
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test CEP config loading from environment variables."""
-        monkeypatch.setenv("ARANDU_CEP_MAX_HOP_COUNT", "5")
+        monkeypatch.setenv("ARANDU_CEP_MAX_SCAFFOLDING_PAIRS", "5")
 
         config = CEPConfig()
 
-        assert config.max_hop_count == 5
-
-    def test_max_hop_count_boundaries(self) -> None:
-        """Test max_hop_count boundary values."""
-        config_min = CEPConfig(max_hop_count=1)
-        config_max = CEPConfig(max_hop_count=5)
-        assert config_min.max_hop_count == 1
-        assert config_max.max_hop_count == 5
-
-    def test_max_hop_count_below_min(self) -> None:
-        """Test validation error when max_hop_count is below minimum."""
-        with pytest.raises(ValidationError) as exc_info:
-            CEPConfig(max_hop_count=0)
-        assert "greater than or equal to 1" in str(exc_info.value)
-
-    def test_max_hop_count_above_max(self) -> None:
-        """Test validation error when max_hop_count is above maximum."""
-        with pytest.raises(ValidationError) as exc_info:
-            CEPConfig(max_hop_count=6)
-        assert "less than or equal to 5" in str(exc_info.value)
+        assert config.max_scaffolding_pairs == 5
 
 
 class TestLLMConfig:

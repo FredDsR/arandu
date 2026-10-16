@@ -4,19 +4,16 @@ Generate cognitively-calibrated question-answer pairs using the **Cognitive Elic
 
 ## Overview
 
-The CEP pipeline generates QA pairs through two specialized modules, then the scaffolding gate judges each pair inside `generate-cep-qa` (default on), and `judge-qa` covers pairs without a clean verdict:
+The CEP pipeline generates QA pairs with Bloom scaffolding, then the scaffolding gate judges each pair inside `generate-cep-qa` (default on), and `judge-qa` covers pairs without a clean verdict:
 
 1. **Module I: Bloom Scaffolding** - Generates questions distributed across Bloom's taxonomy levels
-2. **Module II: Reasoning & Grounding** - Enriches higher-level questions with reasoning traces
-3. **LLM-as-a-Judge (scaffolding gate during generation, plus the `judge-qa` step for anything left unjudged)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
+2. **LLM-as-a-Judge (scaffolding gate during generation, plus the `judge-qa` step for anything left unjudged)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ### Key Features
 
 - **Cognitive Scaffolding**: Questions progress from basic recall to advanced analysis
 - **Bloom Taxonomy Levels**: remember, understand, apply, analyze, evaluate, create
-- **Reasoning Traces**: Explicit logical connections for complex questions
-- **Multi-hop Detection**: Identifies questions requiring distant information connection
-- **Tacit Knowledge Extraction**: Surfaces implicit domain knowledge
+- **Generation Rationale**: Each pair records why it was built from its context (an inspection aid, never a judge input)
 - **Quality Validation** (scaffolding gate in `generate-cep-qa`, plus `judge-qa` for pairs without a clean verdict or with `--rejudge`): LLM-based scoring for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ## Prerequisites
@@ -229,10 +226,11 @@ cep_dataset/
       "question_type": "conceptual",
       "confidence": 0.88,
       "bloom_level": "analyze",
-      "reasoning_trace": "Fato: rio sobe → Ação: guardar barco → Razão: evitar perda",
+      "rationale": "O trecho liga a subida do rio à decisão de guardar o barco",
+      "reasoning_trace": null,
       "is_multi_hop": false,
       "hop_count": null,
-      "tacit_inference": "Subida rápida do rio indica risco iminente de enchente",
+      "tacit_inference": null,
       "generation_prompt": "Gere uma pergunta de análise que identifique relações de causa e efeito..."
     }
   ],
@@ -264,7 +262,7 @@ Each line contains one QA pair:
 
 ```json
 {"question": "O que aconteceu?", "answer": "...", "context": "...", "bloom_level": "remember", "confidence": 0.92}
-{"question": "Por que isso aconteceu?", "answer": "...", "context": "...", "bloom_level": "analyze", "reasoning_trace": "..."}
+{"question": "Por que isso aconteceu?", "answer": "...", "context": "...", "bloom_level": "analyze", "rationale": "..."}
 ```
 
 ## Bloom Taxonomy Levels
@@ -362,8 +360,8 @@ for qa in record.qa_pairs:
     print(f"Level: {qa.bloom_level}")
     print(f"Q: {qa.question}")
     print(f"A: {qa.answer}")
-    if qa.reasoning_trace:
-        print(f"Reasoning: {qa.reasoning_trace}")
+    if qa.rationale:
+        print(f"Rationale: {qa.rationale}")
     print()
 
 # Filter by Bloom level
