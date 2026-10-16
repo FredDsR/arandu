@@ -73,7 +73,6 @@ Options:
 - **Validation Score Distributions**: Violin plots for faithfulness, bloom calibration, informativeness, self-containedness
 - **Bloom Level x Criterion Heatmap**: Mean ± std per combination
 - **Confidence Score Distribution**: Histogram of LLM generation confidence
-- **Multi-hop vs Single-hop**: Horizontal bar chart
 - **Correlation Matrix**: Pearson r between validation criteria and confidence
 - **Parallel Coordinates**: Multi-dimensional quality profile colored by Bloom level
 
@@ -139,7 +138,6 @@ export_charts_as_png(dataset, Path("figures/"))
 | `validation_scores.png` | Violin plots of validation criteria |
 | `confidence_distribution.png` | Histogram of QA confidence scores |
 | `transcription_quality.png` | Multi-panel histogram of quality sub-scores |
-| `multihop.png` | Multi-hop vs single-hop bar chart |
 | `correlation_heatmap.png` | Pearson correlation matrix |
 | `quality_radar.png` | Mean quality profile radar chart |
 | `parallel_coordinates.png` | Multi-dimensional QA quality profile |

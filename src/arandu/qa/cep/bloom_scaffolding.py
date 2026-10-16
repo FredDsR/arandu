@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# QAPairCEP fields filled only by the removed reasoning-enrichment pass.
+_LEGACY_ENRICHMENT_FIELDS = ("reasoning_trace", "is_multi_hop", "hop_count", "tacit_inference")
+
 DEFAULT_CEP_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep"
 
 BLOOM_HIERARCHY: list[str] = [
@@ -521,9 +524,10 @@ class BloomScaffoldingGenerator:
         if not isinstance(data, dict):
             raise LLMResponseError(f"Expected JSON object, got {type(data).__name__}")
 
-        # Coerce hop_count=0 to None so Pydantic's ge=1 constraint isn't violated
-        if not data.get("hop_count"):
-            data.pop("hop_count", None)
+        # The generation prompt does not ask for the legacy enrichment fields;
+        # drop any the model emits so new pairs never carry unvalidated labels.
+        for key in _LEGACY_ENRICHMENT_FIELDS:
+            data.pop(key, None)
 
         question_type = self._bloom_to_question_type(bloom_level)
 

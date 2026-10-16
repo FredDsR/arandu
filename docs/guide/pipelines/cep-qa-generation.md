@@ -7,7 +7,8 @@ Generate cognitively-calibrated question-answer pairs using the **Cognitive Elic
 The CEP pipeline generates QA pairs with Bloom scaffolding, then the scaffolding gate judges each pair inside `generate-cep-qa` (default on), and `judge-qa` covers pairs without a clean verdict:
 
 1. **Module I: Bloom Scaffolding** - Generates questions distributed across Bloom's taxonomy levels
-2. **LLM-as-a-Judge (scaffolding gate during generation, plus the `judge-qa` step for anything left unjudged)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
+2. **Module II: Generation Rationale** - Each pair records why it was built from its context, in the same generation call (an inspection aid, never a judge input)
+3. **Module III: LLM-as-a-Judge (scaffolding gate during generation, plus the `judge-qa` step for anything left unjudged)** - Validates QA pairs for faithfulness, Bloom calibration, informativeness, and self-containedness
 
 ### Key Features
 
@@ -214,6 +215,7 @@ cep_dataset/
       "question_type": "factual",
       "confidence": 0.92,
       "bloom_level": "remember",
+      "rationale": "O trecho afirma diretamente o que o pescador faz",
       "reasoning_trace": null,
       "is_multi_hop": false,
       "hop_count": null,

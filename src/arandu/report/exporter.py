@@ -61,7 +61,6 @@ def export_charts_as_png(dataset: ReportDataset, output_dir: Path) -> list[Path]
                 dataset.transcriptions, threshold=quality_threshold
             ),
         ),
-        ("multihop", lambda: charts.create_multihop_chart(dataset.qa_pairs)),
         (
             "correlation_heatmap",
             lambda: charts.create_correlation_heatmap(dataset.qa_pairs),

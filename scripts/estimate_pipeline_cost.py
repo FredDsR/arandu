@@ -20,7 +20,7 @@ LLM-call model (coefficients read from the code, 2026-06):
                                                       (gated behind no-LLM heuristics)
     build-kg extraction   kg_passages * passes       AutoSchemaKG passes per passage (~3)
     build-kg concept      kg_nodes / concept_batch    batch_size_concept = 16
-    generate-cep-qa       cep_chunks * Q * (1 + 1)    generation + reasoning[if enabled]
+    generate-cep-qa       cep_chunks * Q * 1          one generation call per pair
     judge-qa              cep_pairs * criteria        4 (3 for 'remember'-level pairs)
     generate-non-answer.  n_nonanswerable * 1         entity-swap, happy path
     retrieve NER          N_questions * 1             only the atlas_rag arm hits an LLM
@@ -68,7 +68,6 @@ from pathlib import Path
 # --- LLM-generation coefficients (from the code) ---------------------------
 JUDGE_TRANSCRIPTION_CRITERIA = 2  # language_drift + hallucination_loop (gated)
 GEN_CALLS_PER_PAIR = 1  # bloom_scaffolding: one generate() per pair
-REASONING_CALLS_PER_PAIR = 1  # reasoning.enrich: one generate() per pair
 JUDGE_QA_CRITERIA = 4  # faithfulness, bloom_calibration, informativeness, self_containedness
 JUDGE_QA_CRITERIA_REMEMBER = 3  # 'remember' level drops self_containedness
 NONANSWERABLE_CALLS_PER_ITEM = 1  # perturbation: one generate_structured (happy path)
@@ -112,7 +111,7 @@ OUTPUT_TOKENS: dict[str, float] = {
     "judge_transcription": 150,
     "build_kg_extraction": 1200,  # triple lists are verbose
     "build_kg_concept": 300,
-    "cep_generation": 200,  # one QA pair; reasoning adds more (handled below)
+    "cep_generation": 200,  # one QA pair
     "judge_qa": 250,  # verdict + rationale, per criterion
     "generate_non_answerable": 200,
     "retrieve_ner": 150,
@@ -160,7 +159,6 @@ class Config:
 
     cep_chunk_size: int
     questions_per_chunk: int
-    reasoning_enabled: bool
     judge_pass_rate: float
     remember_fraction: float
     nonanswerable: int
@@ -194,9 +192,7 @@ def _token_profiles(cfg: Config, mean_doc_tokens: float) -> dict[str, tuple[floa
     """
     cep_chunk_tokens = cfg.cep_chunk_size / CHARS_PER_TOKEN
     kg_passage_tokens = cfg.kg_passage_size / CHARS_PER_TOKEN
-    cep_out = OUTPUT_TOKENS["cep_generation"] + (
-        OUTPUT_TOKENS["cep_generation"] if cfg.reasoning_enabled else 0
-    )
+    cep_out = OUTPUT_TOKENS["cep_generation"]
     # input = fixed prompt overhead + the variable context the stage actually reads.
     context_in: dict[str, float] = {
         "judge_transcription": mean_doc_tokens,
@@ -232,7 +228,7 @@ def estimate(doc_chars: list[int], cfg: Config) -> dict[str, object]:
     answerable = pairs * cfg.judge_pass_rate
     n_questions = answerable + cfg.nonanswerable
 
-    gen_per_pair = GEN_CALLS_PER_PAIR + (REASONING_CALLS_PER_PAIR if cfg.reasoning_enabled else 0)
+    gen_per_pair = GEN_CALLS_PER_PAIR
     avg_judge_qa = (
         cfg.remember_fraction * JUDGE_QA_CRITERIA_REMEMBER
         + (1 - cfg.remember_fraction) * JUDGE_QA_CRITERIA
@@ -400,12 +396,6 @@ def main() -> None:
         help="Override modeled CEP chunk count with the real value (cep_pairs = cep_chunks*Q).",
     )
     p.add_argument(
-        "--with-reasoning",
-        action="store_true",
-        help="Model the (deleted 2026-06-17) Module II reasoning-enrichment call per pair. "
-        "Off by default; thinking/reasoning tokens are not modeled.",
-    )
-    p.add_argument(
         "--judge-pass-rate", type=float, default=0.8, help="Fraction of pairs surviving judge-qa."
     )
     p.add_argument(
@@ -451,7 +441,6 @@ def main() -> None:
     cfg = Config(
         cep_chunk_size=args.cep_chunk_size,
         questions_per_chunk=args.questions,
-        reasoning_enabled=args.with_reasoning,
         judge_pass_rate=args.judge_pass_rate,
         remember_fraction=args.remember_fraction,
         nonanswerable=args.nonanswerable,
@@ -468,7 +457,7 @@ def main() -> None:
     print(f"corpus: {r['n_docs']} docs, {sum(doc_chars):,} chars, {audio_hours:.1f} audio-hours")
     print(
         f"config: cep_chunk={cfg.cep_chunk_size}, Q={cfg.questions_per_chunk}, "
-        f"reasoning={cfg.reasoning_enabled}, judge_pass={cfg.judge_pass_rate}, "
+        f"judge_pass={cfg.judge_pass_rate}, "
         f"remember={cfg.remember_fraction}, non_answerable={cfg.nonanswerable}, "
         f"arms={cfg.n_arms}, kg_passage={cfg.kg_passage_size}"
     )

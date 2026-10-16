@@ -239,7 +239,7 @@ The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for cog
 
 ### QAPairCEP
 
-Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `TranscriptionRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once the scaffolding gate (at generation) or `judge-qa` has judged it.
+Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding the Bloom's taxonomy level and the generation rationale for cognitive scaffolding-based QA generation. The `reasoning_trace`, `is_multi_hop`, `hop_count` and `tacit_inference` fields are legacy: only runs made before the reasoning-enrichment pass was removed fill them, and they stay on the model so those runs still load. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `TranscriptionRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once the scaffolding gate (at generation) or `judge-qa` has judged it.
 
 **Fields** (in addition to QAPair base fields):
 
@@ -253,10 +253,11 @@ Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, a
 | `start_time` | `float \| None` | No | Segment start time in seconds (inherited) |
 | `end_time` | `float \| None` | No | Segment end time in seconds (inherited) |
 | `bloom_level` | `BloomLevel` | Yes | Bloom's taxonomy cognitive level |
-| `reasoning_trace` | `str \| None` | No | Logical connections between facts leading to the answer |
-| `is_multi_hop` | `bool` | No | Whether answer requires connecting distant text parts (default: False) |
-| `hop_count` | `int \| None` | No | Number of reasoning hops (1-5 when is_multi_hop=True) |
-| `tacit_inference` | `str \| None` | No | Explanation of implicit domain knowledge surfaced |
+| `rationale` | `str \| None` | No | Generator's reasoning for how and why it built this pair from the context. Inspection aid; never a judge input |
+| `reasoning_trace` | `str \| None` | No | Legacy (removed reasoning-enrichment pass); `None` in new runs |
+| `is_multi_hop` | `bool` | No | Legacy (removed reasoning-enrichment pass); `False` in new runs |
+| `hop_count` | `int \| None` | No | Legacy (removed reasoning-enrichment pass); `None` in new runs |
+| `tacit_inference` | `str \| None` | No | Legacy (removed reasoning-enrichment pass); `None` in new runs |
 | `generation_prompt` | `str \| None` | No | LLM prompt used to generate this QA pair |
 | `generation_thinking` | `str \| None` | No | Model thinking/reasoning trace for this specific QA pair |
 | `chunk_id` | `str \| None` | No | Reference into the source ChunkSet for the chunker view used at generation |
@@ -266,7 +267,8 @@ Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, a
 **BloomLevel**: `Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]`
 
 **Validators**:
-- `coerce_reasoning_trace`: Automatically converts `list[str]` to joined string with " -> " separator
+- `coerce_reasoning_trace`: Automatically converts `list[str]` to joined string with " -> " separator (legacy records)
+- `validate_multi_hop`: Keeps `hop_count` consistent with `is_multi_hop` (legacy records)
 
 **Example**:
 ```json
@@ -279,10 +281,11 @@ Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, a
   "start_time": 120.5,
   "end_time": 125.3,
   "bloom_level": "analyze",
-  "reasoning_trace": "Fato: rio sobe -> Ação: guardar barco -> Razão: evitar perda",
+  "rationale": "O trecho liga a subida do rio à decisão de guardar o barco",
+  "reasoning_trace": null,
   "is_multi_hop": false,
   "hop_count": null,
-  "tacit_inference": "Subida rápida do rio indica risco iminente de enchente",
+  "tacit_inference": null,
   "generation_prompt": "Generate an analyze-level question about risk management..."
 }
 ```
@@ -311,6 +314,10 @@ class QAPairCEP(QAPair, JudgeResultMixin):
     bloom_level: BloomLevel = Field(
         ..., description="Bloom's taxonomy cognitive level for this question"
     )
+    rationale: str | None = Field(
+        None, description="Generator's reasoning for how/why it built this pair"
+    )
+    # Legacy: filled only by the removed reasoning-enrichment pass.
     reasoning_trace: str | None = Field(
         None, description="Logical connections between facts leading to the answer"
     )
@@ -465,7 +472,7 @@ jsonl_content = record.to_jsonl()
 Each line in the JSONL contains one QA pair with all CEP fields:
 ```json
 {"question": "O que aconteceu?", "answer": "...", "context": "...", "bloom_level": "remember", "confidence": 0.92}
-{"question": "Por que isso aconteceu?", "answer": "...", "context": "...", "bloom_level": "analyze", "reasoning_trace": "..."}
+{"question": "Por que isso aconteceu?", "answer": "...", "context": "...", "bloom_level": "analyze", "rationale": "..."}
 ```
 
 **Python Implementation**:

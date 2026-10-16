@@ -14,7 +14,6 @@ from arandu.report.charts.distribution import (
     create_location_treemap,
     create_participant_breakdown_chart,
 )
-from arandu.report.charts.multihop import create_multihop_chart
 from arandu.report.charts.quality import (
     create_confidence_distribution_chart,
     create_quality_radar_chart,
@@ -40,7 +39,6 @@ __all__ = [
     "create_funnel_chart",
     "create_location_quality_chart",
     "create_location_treemap",
-    "create_multihop_chart",
     "create_parallel_coordinates_chart",
     "create_participant_breakdown_chart",
     "create_pipeline_overview_chart",

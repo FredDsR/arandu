@@ -23,7 +23,6 @@ def _cfg(**overrides: object) -> Config:
     base = {
         "cep_chunk_size": 8000,
         "questions_per_chunk": 6,
-        "reasoning_enabled": False,
         "judge_pass_rate": 0.54,
         "remember_fraction": 0.5,
         "nonanswerable": 0,

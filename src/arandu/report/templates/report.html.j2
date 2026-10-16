@@ -221,27 +221,16 @@
                 </div>
             </div>
 
-            <div class="chart-row">
-                <div class="chart-container">
-                    <h3 class="chart-title">Multi-hop vs Single-hop Questions</h3>
-                    <p class="chart-desc">
-                        Proportion of QA pairs requiring multi-hop reasoning (connecting
-                        distant text segments) versus single-hop extraction. Multi-hop
-                        questions are more challenging for downstream KG-based QA systems.
-                    </p>
-                    <div id="chart-multihop"></div>
-                </div>
-                <div class="chart-container">
-                    <h3 class="chart-title">Validation Criteria Correlation Matrix</h3>
-                    <p class="chart-desc">
-                        Pearson correlation coefficients between the four validation criteria
-                        and generation confidence. Strong positive correlations suggest
-                        redundant criteria; negative correlations reveal trade-offs
-                        (e.g., informativeness may inversely correlate with faithfulness
-                        for tacit knowledge questions).
-                    </p>
-                    <div id="chart-correlation-heatmap"></div>
-                </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Validation Criteria Correlation Matrix</h3>
+                <p class="chart-desc">
+                    Pearson correlation coefficients between the four validation criteria
+                    and generation confidence. Strong positive correlations suggest
+                    redundant criteria; negative correlations reveal trade-offs
+                    (e.g., informativeness may inversely correlate with faithfulness
+                    for tacit knowledge questions).
+                </p>
+                <div id="chart-correlation-heatmap"></div>
             </div>
 
             <div class="chart-container">

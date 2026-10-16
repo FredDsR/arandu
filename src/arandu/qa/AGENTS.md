@@ -14,7 +14,7 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
 | Path | Role |
 | ---- | ---- |
 | `config.py` | `QAConfig` (`ARANDU_QA_`, provider/model), `CEPConfig` (`ARANDU_CEP_`, bloom_distribution + judge weights), `JudgeConfig` (`ARANDU_JUDGE_`, validator client) |
-| `schemas.py` | `QAPairCEP` (extends `QAPair` + `JudgeResultMixin`: bloom_level, reasoning_trace, multi-hop, `validation`), `QARecordCEP` (doc wrapper, `validation_rate`) |
+| `schemas.py` | `QAPairCEP` (extends `QAPair` + `JudgeResultMixin`: bloom_level, rationale, `validation`; legacy reasoning_trace/multi-hop/tacit_inference kept so old runs load), `QARecordCEP` (doc wrapper, `validation_rate`) |
 | `batch.py` | Orchestrator: load transcriptions, task filtering, parallel generation, checkpoint |
 | `cep/generator.py` | Per-chunk driver: runs Module I; stamps `chunk_id` |
 | `cep/bloom_scaffolding.py` | Module I: per-level generation with scaffolding context + retries |

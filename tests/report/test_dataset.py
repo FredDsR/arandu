@@ -142,8 +142,6 @@ def _make_cep_record(
             question_type="factual",
             confidence=0.9,
             bloom_level="analyze",
-            is_multi_hop=i == 0,
-            hop_count=2 if i == 0 else None,
             validation=validation,
         )
         qa_pairs.append(pair)
@@ -232,8 +230,6 @@ class TestBuildDataset:
         assert qa.participant_name == "Maria"
         assert qa.location == "Barra de Pelotas"
         assert qa.bloom_level == "analyze"
-        assert qa.is_multi_hop is True
-        assert qa.hop_count == 2
         assert qa.confidence == 0.9
         assert qa.faithfulness == 0.9
         assert qa.bloom_calibration == 0.85

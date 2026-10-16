@@ -298,30 +298,27 @@ class TestCEPConfig:
             CEPConfig(language="fr")
         assert "Invalid CEP language" in str(exc_info.value)
 
-    def test_carries_no_scoring_fields(self) -> None:
-        """CEPConfig exposes no validation gate or criterion weight.
-
-        The judge verdict is the conjunction of independent per-criterion gates
-        (``prompts/judge/criteria/<criterion>/config.json``), so a config-level
-        cut or weight would be dead state that misdescribes the decision.
-        """
-        config = CEPConfig()
-        for field in (
+    @pytest.mark.parametrize(
+        "field",
+        [
+            # Scoring: the judge verdict is the conjunction of independent
+            # per-criterion gates (prompts/judge/criteria/<criterion>/config.json),
+            # so a config-level cut or weight would misdescribe the decision.
             "validation_threshold",
             "faithfulness_weight",
             "bloom_calibration_weight",
             "informativeness_weight",
             "self_containedness_weight",
-        ):
-            assert field not in CEPConfig.model_fields
-            assert not hasattr(config, field)
-
-    def test_carries_no_reasoning_enrichment_fields(self) -> None:
-        """CEPConfig no longer configures the removed reasoning-enrichment pass."""
-        config = CEPConfig()
-        for field in ("enable_reasoning_traces", "max_hop_count", "reasoning_max_tokens"):
-            assert field not in CEPConfig.model_fields
-            assert not hasattr(config, field)
+            # The removed reasoning-enrichment pass.
+            "enable_reasoning_traces",
+            "max_hop_count",
+            "reasoning_max_tokens",
+        ],
+    )
+    def test_carries_no_removed_field(self, field: str) -> None:
+        """CEPConfig exposes no scoring or reasoning-enrichment field."""
+        assert field not in CEPConfig.model_fields
+        assert not hasattr(CEPConfig(), field)
 
     def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
         """Test CEP config loading from environment variables."""

@@ -15,7 +15,7 @@ a read-only view over `results/`.
 | `generator.py` | `generate_html_report()`: Jinja2 (`templates/report.html.j2`) + embedded Plotly for offline use |
 | `exporter.py` | CSV / static exports |
 | `dataset.py`, `schemas.py` | `ReportDataset` (flat, template-ready) + API response/pagination/filter models |
-| `charts/*.py` | Plotly figure builders (`quality`, `distribution`, `comparison`, `timeline`, `multihop`, `validation`); all import `charts/style.py` |
+| `charts/*.py` | Plotly figure builders (`quality`, `distribution`, `comparison`, `timeline`, `validation`); all import `charts/style.py` |
 
 ## Patterns to follow
 

@@ -27,7 +27,6 @@ _CHART_FUNCTIONS = [
     "create_validation_scores_chart",
     "create_confidence_distribution_chart",
     "create_transcription_quality_chart",
-    "create_multihop_chart",
     "create_correlation_heatmap",
     "create_quality_radar_chart",
     "create_parallel_coordinates_chart",
@@ -111,8 +110,8 @@ class TestExportChartsAsPng:
         result = export_charts_as_png(dataset, output_dir)
 
         assert isinstance(result, list)
-        assert len(result) == 14
-        assert mock_fig.write_image.call_count == 14
+        assert len(result) == 13
+        assert mock_fig.write_image.call_count == 13
 
     @patch("arandu.report.exporter.charts")
     def test_handles_chart_failure(self, mock_charts: MagicMock, tmp_path: Path) -> None:

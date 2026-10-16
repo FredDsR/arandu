@@ -42,9 +42,9 @@ flowchart TD
 
     subgraph P2["Phase 2 — Cognitive Elicitation Pipeline · CEP"]
         BL["I · Bloom Scaffolding"]:::p2
-        SG["Scaffolded QA Generation"]:::p2
-        JU["III · LLM-as-a-Judge<br/>Faith. 30% · Bloom 25% · Inform. 25% · Self-Cont. 20%"]:::p2
-        VD{"Weighted Score ≥ 0.6?"}
+        SG["II · Scaffolded QA Generation<br/>+ generation rationale"]:::p2
+        JU["III · LLM-as-a-Judge<br/>Faithfulness · Bloom · Informativeness · Self-Containedness"]:::p2
+        VD{"Every criterion<br/>passes its gate?"}
         BL --> SG --> JU --> VD
     end
 
@@ -156,7 +156,7 @@ The pipeline uses four of the six Bloom levels: **Remember**, **Understand**, **
 
 - **Understand** (1 of 6 pairs per chunk) bridges factual recall and analytical reasoning. It verifies **semantic comprehension** -- whether processes, mechanisms, and concepts can be paraphrased and explained beyond literal repetition. In ethnographic interviews, much domain expertise is processual: how a technique works, what a natural sign indicates, how a seasonal cycle affects daily routines. This processual knowledge is not captured by factual questions (Remember) nor by evaluative judgment (Evaluate), yet it is central to the Knowledge Graph representation. Understand also plays a critical scaffolding role: without this intermediate conceptual layer, the LLM would have to leap from raw facts directly to causal analysis, losing the comprehension base that Analyze depends on.
 
-- **Analyze** (1 of 6 pairs per chunk) is where the pipeline begins to extract **tacit knowledge** in earnest. It identifies causal relationships, hidden patterns, and connections between elements that the interviewee did not necessarily articulate explicitly. This is the level where Module II (Reasoning & Grounding) is most active: Analyze-level questions frequently require **multi-hop reasoning**, synthesizing information from distant parts of the transcript into explicit causal chains. It also drives **tacit inference extraction** -- surfacing implicit domain knowledge that interviewees assumed as shared understanding but never verbalized. From a Knowledge Graph perspective, Analyze maps directly to **relation edges** (subject-predicate-object triples): while Remember populates graph nodes, Analyze populates the connections between them, providing the richest ground truth for the Graph Structure evaluation dimension.
+- **Analyze** (1 of 6 pairs per chunk) is where the pipeline begins to extract **tacit knowledge** in earnest. It identifies causal relationships, hidden patterns, and connections between elements that the interviewee did not necessarily articulate explicitly. Analyze-level questions frequently synthesize information from distant parts of the transcript into explicit causal chains, surfacing implicit domain knowledge that interviewees assumed as shared understanding but never verbalized. From a Knowledge Graph perspective, Analyze maps directly to **relation edges** (subject-predicate-object triples): while Remember populates graph nodes, Analyze populates the connections between them, providing the richest ground truth for the Graph Structure evaluation dimension.
 
 - **Evaluate** (1 of 6 pairs per chunk) is the highest level employed and targets **expert judgment** -- decisions, priorities, and criteria that domain experts apply based on years of experience but rarely verbalize explicitly. The distinction from Analyze is cognitive in nature: Analyze identifies relationships descriptively (*why* X causes Y), while Evaluate requires prescriptive judgment (*is X worth doing? When should one act? Which alternative is better?*). Evaluate has the strongest dependency on scaffolding, receiving QA pairs from all three prior levels, enabling the LLM to construct judgment questions grounded in established facts (Remember), conceptual understanding (Understand), and causal connections (Analyze). For GraphRAG evaluation, Evaluate-level questions represent the most demanding test: if the Knowledge Graph can answer questions requiring synthesis of multiple relations to support an expert judgment, it demonstrates the capacity to represent not just facts but the implicit decision-making logic of the interviewees.
 
@@ -574,7 +574,7 @@ A match is accepted if the similarity exceeds a threshold $\tau_e$ (default: 0.7
 
 $$G_i = \bigcup_{a \in A_i} \mathcal{N}_k(a,\, G)$$
 
-where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$). For questions flagged as multi-hop (`is_multi_hop = true`), the retrieval radius is extended to $k = \min(h + 1,\, 3)$ where $h$ is the question's `hop_count`, accommodating additional reasoning hops while capping context size.
+where $\mathcal{N}_k(a, G)$ denotes all nodes and edges reachable within $k$ hops from node $a$ (default: $k = 2$).
 
 The subgraph is linearized into a textual triple representation with node type annotations (e.g., `[PERSON] Maria da Silva --[VIVE_EM]--> [LOCATION] Barra do Ribeiro`) to provide the LLM with structural context.
 
@@ -672,7 +672,7 @@ where $w_{\text{Understand}} = 0.35$, $w_{\text{Analyze}} = 0.35$, $w_{\text{Eva
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | $\tau_e$ | 0.75 | Cosine similarity threshold for entity-to-node matching |
-| $k$ | 2 | Hop radius for subgraph retrieval (extended for multi-hop questions) |
+| $k$ | 2 | Hop radius for subgraph retrieval |
 | $T_\text{gen}$ | 0.3 | LLM temperature for answer generation |
 | $T_\text{judge}$ | 0.1 | LLM temperature for judge evaluation (single-shot, reproducible) |
 | Embedding model | `paraphrase-multilingual-MiniLM-L12-v2` | Multilingual sentence-transformer for entity matching |

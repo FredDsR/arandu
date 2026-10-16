@@ -35,8 +35,6 @@ class QAPairRow(BaseModel):
     location: str | None = None
     recording_date: str | None = None
     bloom_level: str | None = None
-    is_multi_hop: bool = False
-    hop_count: int | None = None
     confidence: float | None = None
     faithfulness: float | None = None
     bloom_calibration: float | None = None
@@ -429,8 +427,6 @@ def build_qa_rows(report: RunReport, qa_rows: list[QAPairRow]) -> None:
                 location=source.location if source else None,
                 recording_date=source.recording_date if source else None,
                 bloom_level=qa_pair.bloom_level if hasattr(qa_pair, "bloom_level") else None,
-                is_multi_hop=getattr(qa_pair, "is_multi_hop", False),
-                hop_count=getattr(qa_pair, "hop_count", None),
                 confidence=getattr(qa_pair, "confidence", None),
                 faithfulness=scores.get("faithfulness"),
                 bloom_calibration=scores.get("bloom_calibration"),

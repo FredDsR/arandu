@@ -12,7 +12,6 @@ from arandu.report.charts import (
     create_funnel_chart,
     create_location_quality_chart,
     create_location_treemap,
-    create_multihop_chart,
     create_parallel_coordinates_chart,
     create_participant_breakdown_chart,
     create_pipeline_overview_chart,
@@ -36,7 +35,6 @@ def _make_qa_pair(
     informativeness: float = 0.7,
     self_containedness: float = 0.9,
     overall_score: float = 0.81,
-    is_multi_hop: bool = False,
     location: str | None = "Pelotas",
 ) -> QAPairRow:
     """Create a sample QAPairRow for testing."""
@@ -50,7 +48,6 @@ def _make_qa_pair(
         informativeness=informativeness,
         self_containedness=self_containedness,
         overall_score=overall_score,
-        is_multi_hop=is_multi_hop,
         location=location,
         participant_name="Maria",
     )
@@ -190,23 +187,6 @@ class TestTranscriptionQualityChart:
     def test_empty_data(self) -> None:
         """Test with empty input."""
         fig = create_transcription_quality_chart([])
-        assert isinstance(fig, go.Figure)
-
-
-class TestMultihopChart:
-    """Tests for create_multihop_chart."""
-
-    def test_returns_figure(self) -> None:
-        """Test with mixed data."""
-        qa_pairs = [_make_qa_pair(is_multi_hop=True), _make_qa_pair(is_multi_hop=False)]
-        fig = create_multihop_chart(qa_pairs)
-        assert isinstance(fig, go.Figure)
-        assert fig.data[0].x[0] == 1  # 1 multi-hop
-        assert fig.data[0].x[1] == 1  # 1 single-hop
-
-    def test_empty_data(self) -> None:
-        """Test with empty input."""
-        fig = create_multihop_chart([])
         assert isinstance(fig, go.Figure)
 
 

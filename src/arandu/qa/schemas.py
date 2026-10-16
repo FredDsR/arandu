@@ -61,8 +61,11 @@ class QAPair(BaseModel):
 class QAPairCEP(QAPair, JudgeResultMixin):
     """Extended QA pair with CEP cognitive elicitation fields.
 
-    Adds Bloom's taxonomy level, reasoning traces, and tacit knowledge inference
-    to the base QAPair for cognitive scaffolding-based QA generation. Mixes in
+    Adds the Bloom's taxonomy level and the generation rationale to the base
+    QAPair for cognitive scaffolding-based QA generation. The ``reasoning_trace``,
+    ``is_multi_hop``, ``hop_count`` and ``tacit_inference`` fields are legacy:
+    only runs made before the reasoning-enrichment pass was removed fill them,
+    and they stay so those runs still load. Mixes in
     judge verdict fields so any pair can carry a ``validation`` result once
     a judge has run.
     """
