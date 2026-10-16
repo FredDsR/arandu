@@ -23,18 +23,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from analysis._judge_common import DEFAULT_THRESHOLD, load_pair_scores
+from analysis._judge_common import DEFAULT_THRESHOLD, load_pair_scores, outcome_table
 from arandu.shared.rag.analysis.batch import _group_by_arm
-from arandu.shared.rag.analysis.metrics import aggregate_arm
-
-if TYPE_CHECKING:
-    from arandu.shared.rag.schemas import AnswerRecord
-
-
-def _fmt(x: float | None) -> str:
-    return "n/a" if x is None else f"{x:.3f}"
+from arandu.utils.console import console
 
 
 def _build_cohorts(
@@ -70,23 +62,8 @@ def _build_cohorts(
     }
 
 
-def _report(name: str, ids: set[str], by_arm: dict[str, list[AnswerRecord]]) -> None:
-    print(f"\n### {name}  (|answerable| = {len(ids)})")
-    print(f"{'Arm':<20} {'n_ans':>6} {'KC':>7} {'Correct':>8} {'PassCov':>8} {'answered%':>10}")
-    for arm in sorted(by_arm):
-        recs = [r for r in by_arm[arm] if r.is_answerable and r.qa_pair_id in ids]
-        m = aggregate_arm(arm, recs, slice_name=name)
-        conf = m.confusion
-        answered = conf.get("TC", 0) + conf.get("TA", 0)
-        denom = sum(conf.get(k, 0) for k in ("TC", "TA", "FC", "FA"))
-        pct = f"{100 * answered / denom:.0f}%" if denom else "n/a"
-        print(
-            f"{arm:<20} {len(recs):>6} {_fmt(m.knowledge_coverage.mean):>7} "
-            f"{_fmt(m.answer_correctness.mean):>8} {_fmt(m.passage_coverage.mean):>8} {pct:>10}"
-        )
-
-
 def main() -> None:
+    """Entry point for the 0.5-cohort outcome report."""
     parser = argparse.ArgumentParser(description="RAG outcome on the 0.5 judge-qa cohort.")
     parser.add_argument("--id", required=True, help="Pipeline run id (e.g. thesis-run-01).")
     parser.add_argument("--results-root", default="results", help="Results root dir.")
@@ -99,8 +76,10 @@ def main() -> None:
     scores = load_pair_scores(base / "cep" / "outputs")
     by_arm, _, _ = _group_by_arm(base / "judge_answers" / "outputs")
     cohorts = _build_cohorts(scores, args.threshold)
+    lines: list[str] = []
     for name, ids in cohorts.items():
-        _report(name, ids, by_arm)
+        lines += outcome_table(name, ids, by_arm)
+    console.print("\n".join(lines), markup=False, highlight=False, soft_wrap=True)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ errored / criterion-less pair never passes.
 
 from __future__ import annotations
 
-from analysis._judge_common import ANCHORS, approved_ids, snap_to_anchor
+from analysis._judge_common import ANCHORS, answered_share, approved_ids, snap_to_anchor
 
 
 def test_approved_requires_all_criteria_at_threshold() -> None:
@@ -43,3 +43,9 @@ def test_snap_to_anchor() -> None:
     assert snap_to_anchor(0.72) == 0.75
     assert snap_to_anchor(0.6) == 0.5
     assert all(snap_to_anchor(a) == a for a in ANCHORS)
+
+
+def test_answered_share_counts_commitments_on_answerable_records_only() -> None:
+    # TA and FC belong to non-answerable records and must not move the share.
+    assert answered_share({"TC": 3, "FA": 1, "TA": 5, "FC": 2}) == 0.75
+    assert answered_share({"TA": 4}) is None
