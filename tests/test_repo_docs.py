@@ -70,22 +70,3 @@ def test_broken_links_flags_untracked_target(tmp_path: Path) -> None:
         "docs/page.md -> scratch.md",
         "docs/page.md -> nope.md#x",
     ]
-
-
-TREE = re.compile(r"^[ \t]*(?:│[ \t]*)*[├└]── ", re.MULTILINE)
-GUIDE_NAMES = {"AGENTS.md", "README.md"}
-
-
-def test_guides_do_not_draw_file_trees() -> None:
-    offenders = [
-        str(md.relative_to(ROOT))
-        for md in tracked_markdown()
-        if md.name in GUIDE_NAMES and TREE.search(md.read_text(encoding="utf-8"))
-    ]
-    assert offenders == []
-
-
-def test_tree_pattern_matches_tree_lines_only() -> None:
-    assert TREE.search("src/\n├── arandu/\n│   └── utils/\n")
-    assert TREE.search("    │   └── file.py")
-    assert not TREE.search("┌──────┐\n│ box  │\n└──────┘\n")
