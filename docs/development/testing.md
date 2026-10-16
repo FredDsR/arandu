@@ -4,20 +4,9 @@ This document provides an overview of the test suite for Arandu.
 
 ## Test Structure
 
-The test suite follows the project structure, with tests mirroring the source code organization:
-
-```
-tests/
-├── conftest.py              # Shared pytest fixtures
-├── test_config.py           # Configuration module tests
-├── test_schemas.py          # Pydantic schema tests
-└── core/
-    ├── test_hardware.py     # Hardware detection tests
-    ├── test_llm_client.py   # LLM client tests
-    ├── test_media.py        # Media file utility tests
-    ├── test_checkpoint.py   # Checkpoint management tests
-    └── test_io.py           # File I/O tests
-```
+Tests mirror the source layout: a module at `src/arandu/<area>/x.py` is tested in
+`tests/<area>/test_x.py`. Browse [`tests/`](../../tests) for the current
+set.
 
 ## Running Tests
 
@@ -405,4 +394,4 @@ def test_function_name_scenario(mocker: MockerFixture) -> None:
 - [pytest Documentation](https://docs.pytest.org/)
 - [pytest-mock Documentation](https://pytest-mock.readthedocs.io/)
 - [pytest-cov Documentation](https://pytest-cov.readthedocs.io/)
-- [Project Testing Standards](../AGENTS.md#testing)
+- [Project Testing Standards](../../AGENTS.md#testing)

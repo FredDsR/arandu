@@ -144,7 +144,7 @@ class TranscriptionRecord(InputRecord, JudgeResultMixin):
 
 ## Judge Result Schemas
 
-Transcription quality is no longer a single weighted score. It is the verdict of a multi-stage **filter pipeline** (pure-Python heuristics, plus an optional LLM stage), and the same domain-agnostic result types are reused for QA-pair judging. A record passes only when it clears every criterion in each non-skipped stage; there is no aggregate `overall_score`. See the [Transcription Validation guide](../user-guide/transcription-validation.md) for the full model.
+Transcription quality is no longer a single weighted score. It is the verdict of a multi-stage **filter pipeline** (pure-Python heuristics, plus an optional LLM stage), and the same domain-agnostic result types are reused for QA-pair judging. A record passes only when it clears every criterion in each non-skipped stage; there is no aggregate `overall_score`. See the [Transcription Validation guide](../guide/pipelines/transcription-validation.md) for the full model.
 
 ### JudgeResultMixin
 

@@ -3,7 +3,7 @@
 Sibling of :class:`KHopSubgraphRetriever`. Same entity-link + k-hop machinery,
 but emits **linearized triples** instead of passage references — the
 ``[type1] head_label --[relation]--> [type2] tail_label`` form described
-in ``docs/methodology.md §6.4`` Stage 2. The methodology's pre-Phase-C
+in ``docs/research/methodology.md §6.4`` Stage 2. The methodology's pre-Phase-C
 KC algorithm linearized the subgraph as triples and fed them to the
 Answerer as the sole context; this retriever brings that paradigm back
 as a **fifth Phase C arm** so the ``passage-NetworkX vs
@@ -73,7 +73,7 @@ def _format_triple(
 ) -> str:
     """Render ``[type] label --[relation]--> [type] label`` for a single edge.
 
-    Follows the format shown in ``docs/methodology.md §6.4`` Stage 2.
+    Follows the format shown in ``docs/research/methodology.md §6.4`` Stage 2.
     Falls back to the node ID when the ``id`` attribute is missing
     (defensive — shouldn't happen on atlas-rag KGs).
     """

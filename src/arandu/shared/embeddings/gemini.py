@@ -1,6 +1,6 @@
 """Gemini-backed embedder for atlas-rag's encoder interface.
 
-Promoted from ``scripts/test_atlas_rag_retriever.py`` after the smoke run
+Promoted from ``scripts/smoke/smoke_atlas_rag_retriever.py`` after the smoke run
 on ``test-kg-04`` (2026-05-22) confirmed the throttling + batch shape
 hold up under a real KG build (~75k embeddings, ~5 min wall time, ~$0.05).
 

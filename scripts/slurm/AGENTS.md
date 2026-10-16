@@ -29,7 +29,7 @@ QA generation is the CEP path (`generate-cep-qa`); there is no separate
 standalone `evaluate` command).
 
 Config-class fields + env prefixes are the contract; see
-[docs/user-guide/configuration.md](../../docs/user-guide/configuration.md).
+[docs/guide/configuration.md](../../docs/guide/configuration.md).
 
 **Two images.** `arandu:latest` (`Dockerfile`) covers transcription/cep/judge.
 `arandu-kg:latest` (`Dockerfile.kg` = base **+ `uv sync --extra kg`**, i.e. atlas-rag)

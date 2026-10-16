@@ -168,7 +168,7 @@ The `results/` root itself carries a single aggregate file, `index.json`, which 
 
 ### Extensions
 
-Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieve`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`. See `docs/superpowers/specs/2026-05-08-phase-c-rag-evaluation-design.md` §11 for the binding spec, in particular §11.0 which restates this convention for Phase C.
+Phase C (RAG evaluation) plugs new stages (`chunk`, `retrieve`, `answers`, `judge_answers`, `analysis`) into this same shape under each `results/<run-id>/`.
 
 #### The `retrieve` stage
 
@@ -212,7 +212,7 @@ The field validator strips surrounding whitespace, so the coordinate space is a 
 ### What this means in practice
 
 - Never re-derive the text a chunk offset refers to. Read `record.transcription_text` and trust it.
-- Never add a `.strip()`, `.replace()`, or normalization pass on that text at a call site. If the canonical form must change, change the validator, and migrate every persisted artifact that carries an offset (see `scripts/migrate_chunk_id_namespace.py`).
+- Never add a `.strip()`, `.replace()`, or normalization pass on that text at a call site. If the canonical form must change, change the validator, and migrate every persisted artifact that carries an offset (see `scripts/oneoff/migrate_chunk_id_namespace.py`).
 - The validator runs on `model_validate_json` too, so already-persisted transcriptions load canonical without being rewritten. `model_construct` bypasses validators and must not be used on `TranscriptionRecord`.
 
 ---

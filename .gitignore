@@ -84,7 +84,7 @@ target/
 
 # Figuras exportadas pelos notebooks: sao regeneradas ao executar o notebook,
 # que ja carrega as mesmas figuras nos seus outputs.
-notebooks/figures/
+analysis/figures/
 
 # IPython
 profile_default/
@@ -225,7 +225,5 @@ test_report_manual.py
 .claude/
 .agents/
 
-# Astro docs site build artifacts
-docs-site/node_modules/
-docs-site/.astro/
-docs-site/dist/
+# Specs e planos de trabalho locais (superpowers): nao versionados
+docs/superpowers/

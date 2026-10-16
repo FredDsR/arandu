@@ -1,83 +1,52 @@
 # Arandu Documentation
 
-Welcome to the Arandu documentation. This guide will help you find the information you need based on your role.
+The only documentation source of the project. GitHub renders these pages
+directly.
 
-## Quick Navigation
+## Research
 
-### New Users
+- [Methodology](research/methodology.md)
+- [Related works](research/related-works.md)
+- [Canonical results: thesis-run-02](research/results/thesis-run-02.md)
+- [Notes: decontextualization in QA and GraphRAG](research/notes/decontextualization-qa-graphrag.md)
+- [Notes: judge pipeline calibration](research/notes/judge-pipeline-calibration.md)
+- [Notes: multi-node vLLM on SLURM](research/notes/vllm-multinode-slurm.md)
+- [Instrument: emic annotator instructions (pt-BR)](research/instruments/annotator-instructions.pt.md)
 
-Start here if you're new to Arandu:
+## Using Arandu
 
-1. **[Getting Started](user-guide/getting-started.md)** - Installation and first steps
-2. **[Transcription Guide](user-guide/transcription.md)** - Process audio/video files
-3. **[Configuration Reference](user-guide/configuration.md)** - Environment variables and settings
+- [Getting started](guide/getting-started.md)
+- [Configuration](guide/configuration.md)
+- [CLI reference](guide/cli-reference.md)
+- [Results report and dashboard](guide/report.md)
+- Pipelines: [transcription](guide/pipelines/transcription.md),
+  [transcription validation](guide/pipelines/transcription-validation.md),
+  [CEP QA generation](guide/pipelines/cep-qa-generation.md),
+  [KG construction](guide/pipelines/kg-construction.md),
+  [RAG analysis](guide/pipelines/rag-analysis.md)
 
-### Pipeline Users
+## Operations
 
-Guides for each processing pipeline:
+- [Docker](operations/docker.md)
+- [PCAD cluster](operations/pcad.md)
+- [SLURM](operations/slurm.md)
 
-| Pipeline | Guide | Description |
-|----------|-------|-------------|
-| Transcription | [transcription.md](user-guide/transcription.md) | Audio/video to text |
-| CEP QA Generation | [cep-qa-generation.md](user-guide/cep-qa-generation.md) | Cognitive scaffolding with Bloom's Taxonomy |
-| KG Construction | [kg-construction.md](user-guide/kg-construction.md) | Build knowledge graphs |
-| RAG Analysis | [rag-analysis.md](user-guide/rag-analysis.md) | Cross-arm retrieval evaluation (Phase C) |
+## Development
 
-### Operators & DevOps
+- [Architecture](development/architecture.md)
+- [Schemas](development/schemas.md)
+- [Testing](development/testing.md)
+- [Dependencies](development/dependencies.md)
+- [CI/CD](development/ci-cd.md)
+- [Development guidelines](../AGENTS.md)
 
-Deployment guides for different environments:
+## Planning
 
-- **[Docker Deployment](deployment/docker.md)** - Local Docker setup (GPU/CPU/ROCm)
-- **[PCAD Cluster](deployment/pcad.md)** - PCAD HPC cluster deployment
-- **[SLURM Guide](deployment/slurm.md)** - Generic SLURM job configuration
+- [Roadmap](planning/ROADMAP.md)
+- [Intra-judge reliability design](planning/2026-09-28-intrajudge-reliability-design.md)
 
-### Developers
+## External resources
 
-Technical documentation for contributors:
-
-- **[Architecture](development/architecture.md)** - System design and patterns
-- **[Data Schemas](development/schemas.md)** - Pydantic models and validation
-- **[Testing Guide](development/testing.md)** - Test suite and coverage
-- **[Dependencies](development/dependencies.md)** - Package requirements
-- **[CI/CD Setup](development/ci-cd.md)** - GitHub Actions workflow
-
-### Roadmap
-
-- **[ROADMAP.md](planning/ROADMAP.md)** — master's roadmap, phase timeline, and active tasks
-
-## Documentation Structure
-
-```
-docs/
-├── README.md                 # This file (documentation index)
-├── user-guide/               # End-user documentation
-│   ├── getting-started.md
-│   ├── transcription.md
-│   ├── cep-qa-generation.md  # CEP cognitive scaffolding pipeline
-│   ├── kg-construction.md
-│   ├── rag-analysis.md       # Cross-arm retrieval evaluation (Phase C)
-│   ├── configuration.md
-│   └── cli-reference.md
-├── deployment/               # Deployment guides
-│   ├── docker.md
-│   ├── pcad.md
-│   └── slurm.md
-├── development/              # Developer documentation
-│   ├── architecture.md
-│   ├── schemas.md
-│   ├── testing.md
-│   ├── dependencies.md
-│   └── ci-cd.md
-└── planning/
-    └── ROADMAP.md            # Master's roadmap + phase status
-```
-
-## External Resources
-
-- [AutoSchemaKG Documentation](https://hkust-knowcomp.github.io/AutoSchemaKG/)
-- [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
-- [Ollama Documentation](https://github.com/ollama/ollama)
-
-## Contributing
-
-See [AGENT.md](../AGENT.md) for development guidelines, coding standards, and the contribution workflow.
+- [AutoSchemaKG](https://hkust-knowcomp.github.io/AutoSchemaKG/)
+- [OpenAI API reference](https://platform.openai.com/docs/api-reference)
+- [Ollama](https://github.com/ollama/ollama)

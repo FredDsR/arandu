@@ -3,7 +3,7 @@
 Locks the failure-mode surface (missing KG outputs, missing graphml,
 missing API key, skip-on-existing-manifest) without paying the
 embedding compute cost. The actual atlas-rag build is exercised by
-``scripts/test_atlas_rag_retriever.py`` against the real test-kg-04 KG.
+``scripts/smoke/smoke_atlas_rag_retriever.py`` against the real test-kg-04 KG.
 """
 
 from __future__ import annotations

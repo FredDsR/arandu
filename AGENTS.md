@@ -16,6 +16,24 @@ live in [scripts/slurm/AGENTS.md](scripts/slurm/AGENTS.md) ("How the layers
 connect"). Touching env vars, Dockerfiles, `docker-compose.yml`, or SLURM
 scripts? Read that first.
 
+## Repository Layout
+
+Directories with their own rules carry an `AGENTS.md`, loaded automatically
+through a sibling `CLAUDE.md`: [docs/](docs/AGENTS.md),
+[analysis/](analysis/AGENTS.md), [scripts/](scripts/AGENTS.md) and
+[scripts/slurm/](scripts/slurm/AGENTS.md), and each package area under
+`src/arandu/`. Read the guide of a directory before
+adding or moving files in it.
+
+- Documentation has one source, `docs/`. Never copy a page elsewhere.
+- Code that reads a finished run to answer a research question goes in
+  `analysis/`; code that operates the pipeline or repairs a run goes in
+  `scripts/`.
+- Do not add top-level files or directories without asking. LaTeX drafts live
+  in the separate `dissertacao-tex` repository, not here.
+- Do not draw file trees of the repository in any `AGENTS.md`, README or doc
+  page; they go stale with the next move. Link to the directory instead.
+
 ## Quick Start Checklist
 
 Before making any changes:

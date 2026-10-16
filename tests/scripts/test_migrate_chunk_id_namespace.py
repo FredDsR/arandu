@@ -13,7 +13,7 @@ import pytest
 
 from arandu.shared.chunking.registry import get_chunker
 from arandu.shared.chunking.schemas import Chunk, ChunkSet
-from scripts.migrate_chunk_id_namespace import (
+from scripts.oneoff.migrate_chunk_id_namespace import (
     _assert_pure_shift,
     load_source_texts,
     main,

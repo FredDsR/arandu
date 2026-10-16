@@ -5,8 +5,6 @@
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
-📖 **[Documentation](https://FredDsR.github.io/arandu/)** | **[Run Results](https://drive.google.com/drive/folders/1OAELvX2akMaKJKheh5NWfHrH0jzIsjAp?usp=sharing)** ([how to extract](#run-results-thesis-run-02))
-
 Composable pipelines for ethnographic knowledge elicitation: transcription, QA generation, and knowledge graph construction.
 
 ## About the Name
@@ -53,101 +51,6 @@ uv sync
 # Or with pip
 pip install -e .
 ```
-
-## Run Results (`thesis-run-02`)
-
-The [Run Results](https://drive.google.com/drive/folders/1OAELvX2akMaKJKheh5NWfHrH0jzIsjAp?usp=sharing)
-folder on Google Drive publishes the full artifact tree of the `thesis-run-02`
-pipeline, so the analysis can be reproduced without re-running transcription,
-CEP generation, KG construction, retrieval, or the judges. Stages included:
-`transcription`, `chunk`, `cep`, `kg`, `non_answerable`, `retrieve`, `answers`,
-`judge_answers`, `analysis`. Emic-validity results are not part of these
-archives yet.
-
-Two archives are published. They are **alternatives, not two halves**: download
-one.
-
-| Archive | Size | Contents |
-|---------|------|----------|
-| `thesis-run-02.tgz` | ~220 MB | Every stage artifact: transcriptions, chunks, CEP QA pairs, KG passage offsets, retrieved passages, generated answers, judged answers, and the analysis tables. Enough to inspect the run and re-run `rag-analysis` / `report` / `build-human-eval-sample`. |
-| `thesis-run-02_with-indexes.tgz` | ~696 MB | The same tree **plus** the precomputed retriever indexes: `retrieve/indexes/bm25_cep_4k/bm25.pkl` and the AtlasRAG FAISS indexes and embeddings under `kg/outputs/atlas_output/precompute/`. Pick this one to re-run `arandu retrieve` without rebuilding the indexes (which needs a GPU and hours of compute). |
-
-### 1. Download
-
-Download one archive from the Drive folder. The commands below assume it landed
-in the repository root; adjust the paths otherwise.
-
-### 2. Extract into `results/`
-
-Both archives are rooted at `./`: the stage directories sit at the top level of
-the tarball, with no `thesis-run-02/` wrapper. Create the run directory first
-and extract into it, so the layout matches what the CLI expects
-(`results/<run-id>/<stage>/outputs/`):
-
-```bash
-# Without the retriever indexes
-mkdir -p results/thesis-run-02
-tar -xzf thesis-run-02.tgz -C results/thesis-run-02
-
-# Or, with the retriever indexes
-mkdir -p results/thesis-run-02
-tar -xzf thesis-run-02_with-indexes.tgz -C results/thesis-run-02
-```
-
-To confirm the archive layout before extracting:
-
-```bash
-tar -tzf thesis-run-02.tgz | head
-```
-
-If the listing shows a leading `thesis-run-02/` component instead of `./`,
-extract into `results/` directly and drop the `mkdir`:
-
-```bash
-tar -xzf thesis-run-02.tgz -C results/
-```
-
-### 3. Verify
-
-```bash
-ls results/thesis-run-02
-# analysis  answers  cep  chunk  judge_answers  kg
-# non_answerable  pipeline.json  retrieve  transcription
-
-cat results/thesis-run-02/pipeline.json   # stages already executed
-arandu list-runs
-arandu run-info thesis-run-02 --pipeline analysis
-```
-
-Extracting somewhere other than `./results` is fine as long as
-`ARANDU_RESULTS_BASE_DIR` points at that directory:
-
-```bash
-export ARANDU_RESULTS_BASE_DIR=/data/arandu/results
-```
-
-### 4. Run commands against the extracted run
-
-Every stage command resolves its inputs and outputs from the pipeline ID, so
-pass `--id thesis-run-02`:
-
-```bash
-# Rebuild the cross-arm comparison tables from the judged answers
-arandu rag-analysis --id thesis-run-02
-
-# Draw the stratified human-eval sample from the judged answers
-arandu build-human-eval-sample --id thesis-run-02
-
-# Re-run retrieval (requires thesis-run-02_with-indexes.tgz)
-arandu retrieve --id thesis-run-02 --arm bm25 --top-k 10
-
-# Interactive dashboard (requires the `report` extra: uv sync --extra report)
-arandu serve-report results/
-```
-
-Commands that call an LLM (`generate-cep-qa`, `judge-qa`, `answer`,
-`judge-answers`, `emic-judge`) still need a reachable provider; see
-[Configuration](#configuration).
 
 ## Usage
 
@@ -361,7 +264,7 @@ The system can be configured via:
 | `ARANDU_QUALITY_ENABLED` | `true` | Enable transcription quality validation |
 | `ARANDU_QUALITY_QUALITY_THRESHOLD` | `0.5` | Minimum quality score (0.0-1.0) |
 
-See [Configuration Guide](docs/user-guide/configuration.md) for complete reference.
+See [Configuration Guide](docs/guide/configuration.md) for complete reference.
 
 ## Output Format
 
@@ -400,75 +303,6 @@ Transcription results are saved as JSON files containing:
 }
 ```
 
-## Project Structure
-
-```
-arandu/
-├── pyproject.toml
-├── README.md
-├── docker-compose.yml
-├── Dockerfile
-├── src/
-│   └── arandu/
-│       ├── __init__.py
-│       ├── main.py                      # CLI entrypoint (10 commands)
-│       ├── config.py                    # 8 separate config classes
-│       ├── schemas.py                   # Pydantic models (transcription, QA, CEP, KG, eval)
-│       ├── core/
-│       │   ├── drive.py                 # Google Drive integration
-│       │   ├── engine.py                # Whisper engine
-│       │   ├── hardware.py              # Hardware detection
-│       │   ├── io.py                    # File operations
-│       │   ├── media.py                 # Media file handling
-│       │   ├── batch.py                 # Batch transcription logic
-│       │   ├── checkpoint.py            # Checkpoint/resume support
-│       │   ├── llm_client.py            # Unified LLM client
-│       │   ├── qa_batch.py              # Batch QA generation logic
-│       │   ├── results_manager.py       # Results versioning
-│       │   ├── transcription_validator.py  # Quality validation
-│       │   └── cep/                     # CEP modules
-│       │       ├── cep_generator.py     # Main orchestrator
-│       │       ├── bloom_scaffolding.py # Bloom taxonomy scaffolding
-│       │       ├── reasoning.py         # Reasoning enrichment
-│       │       └── validator.py         # LLM-as-a-Judge validation
-│       └── utils/
-│           ├── logger.py                # Rich logging utilities
-│           ├── console.py               # Console utilities
-│           └── ui.py                    # Progress bars & UI
-├── prompts/
-│   └── qa/
-│       └── cep/                         # Externalized CEP prompts
-│           ├── pt/                      # Portuguese templates
-│           └── en/                      # English templates
-├── scripts/
-│   └── slurm/
-│       ├── transcription/               # Transcription SLURM jobs
-│       ├── qa/                          # QA generation SLURM jobs
-│       ├── cep/                         # CEP SLURM jobs
-│       ├── kg/                          # KG SLURM jobs (planned)
-│       └── evaluation/                  # Evaluation SLURM jobs (planned)
-└── docs/
-    ├── README.md                        # Documentation index
-    ├── user-guide/
-    │   ├── getting-started.md
-    │   ├── cli-reference.md
-    │   ├── transcription.md
-    │   ├── transcription-validation.md
-    │   ├── cep-qa-generation.md
-    │   ├── kg-construction.md           # Planned
-    │   └── configuration.md
-    ├── development/
-    │   ├── architecture.md
-    │   ├── schemas.md
-    │   ├── dependencies.md
-    │   ├── testing.md
-    │   └── ci-cd.md
-    └── deployment/
-        ├── docker.md
-        ├── slurm.md
-        └── pcad.md
-```
-
 ## Requirements
 
 - Python >= 3.13
@@ -488,16 +322,13 @@ Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for
 
 ## Documentation
 
-- [Documentation Index](docs/README.md)
-- [Getting Started](docs/user-guide/getting-started.md)
-- [CLI Reference](docs/user-guide/cli-reference.md)
-- [Transcription Guide](docs/user-guide/transcription.md)
-- [Transcription Validation Guide](docs/user-guide/transcription-validation.md)
-- [CEP QA Generation Guide](docs/user-guide/cep-qa-generation.md)
-- [KG Construction Guide](docs/user-guide/kg-construction.md) (Planned)
-- [Configuration Reference](docs/user-guide/configuration.md)
-- [Architecture](docs/development/architecture.md)
-- [Schemas Reference](docs/development/schemas.md)
+- [Documentation index](docs/README.md)
+- [Getting started](docs/guide/getting-started.md)
+- [CLI reference](docs/guide/cli-reference.md)
+- [Configuration](docs/guide/configuration.md)
+- [Methodology](docs/research/methodology.md)
+- [Canonical results: thesis-run-02](docs/research/results/thesis-run-02.md)
+- [Analyses of finished runs](analysis/README.md)
 
 ## License
 

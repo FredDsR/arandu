@@ -2,7 +2,7 @@
 """Render all PT prompts + criteria configs of the thesis run into one markdown.
 
 Read-only snapshot for prompt review. Regenerate after editing any ``prompts/``
-file. Output: ``docs/reports/thesis-run-prompts-review-pt.md``.
+file. Output: ``results/prompt-review/thesis-run-prompts-review-pt.md``.
 
 Example:
     uv run python scripts/render_prompt_review.py
@@ -14,7 +14,7 @@ import contextlib
 import json
 from pathlib import Path
 
-OUT = Path("docs/reports/thesis-run-prompts-review-pt.md")
+OUT = Path("results/prompt-review/thesis-run-prompts-review-pt.md")
 
 # (stage title, arandu command, [(path, kind)]) in pipeline order. kind: md|j2|json
 STAGES: list[tuple[str, str, list[tuple[str, str]]]] = [
@@ -126,6 +126,7 @@ def main() -> int:
             lines += [f"```{fence}", text.rstrip(), "```", ""]
         lines += ["---", ""]
 
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines))
     print(f"wrote {OUT} ({OUT.stat().st_size // 1024} KB)")
     if missing:
