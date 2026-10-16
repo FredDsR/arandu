@@ -308,14 +308,14 @@ Problem statement, objectives, justification. Frames the evidence gap at the int
 |-------------|---------------|
 | SLR findings (Reckziegel & Costa, 2025b) documenting the evidence gap | Write the problem statement connecting the SLR gap to the Arandu pipeline |
 | `docs/research/related-works.md` §10 (Ethnographic Knowledge, AI, Climate Resilience) | Frame the research questions and objectives |
-| `docs/research/related-works.md` §11 (Positioning: What This Work Adds) | Justification — why this integration is novel |
+| `docs/research/related-works.md` §11 (Positioning: What This Work Adds) | Justification: why this integration is novel |
 | CARE Principles / decolonial frameworks (Carroll et al., BlackDeer, Tapu & Fa'agau) | Ethical grounding section |
 
 **Can start**: now
 
 #### Chapter 2 — Referencial Teórico / Trabalhos Relacionados
 
-Literature review organized by thematic axes. `docs/research/related-works.md` (45+ references, 11 sections) is the primary source — needs consolidation into a cohesive narrative.
+Literature review organized by thematic axes. `docs/research/related-works.md` (45+ references, 11 sections) is the primary source; it needs consolidation into a cohesive narrative.
 
 | Thematic Axis | Source | Pipeline Phase |
 |---------------|--------|----------------|
