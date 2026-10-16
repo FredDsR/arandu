@@ -112,7 +112,10 @@ matching `*Config` reads them (same contract as the CLI):
 | `USE_GPU_OLLAMA` | `true` selects the `-gpu` compose profile (set by GPU partition scripts) |
 | `ARANDU_QA_WORKERS` | Parallel workers for CEP/QA generation |
 | `ARANDU_QA_MODEL_ID` / `ARANDU_KG_MODEL_ID` | Generation / KG model override |
-| `ARANDU_JUDGE_VALIDATOR_MODEL` | Validator model for `judge-qa` / `judge-transcription` |
+| `ARANDU_JUDGE_VALIDATOR_MODEL` | Validator model for `judge-qa` / `judge-transcription`, and for the CEP scaffolding gate |
+| `ARANDU_JUDGE_VALIDATOR_PROVIDER` / `ARANDU_JUDGE_VALIDATOR_BASE_URL` | Validator provider (`ollama` default in the scripts) and base URL |
+| `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` | `true` (default) judges each CEP pair during generation; `false` disables the gate |
+| `OLLAMA_NUM_PARALLEL` / `OLLAMA_CONTEXT_LENGTH` | Per-step sidecar slots and context: `cep` = `ARANDU_QA_WORKERS` / 16384, `judge` = 2 / 32768, `kg` = 3 / 32768 |
 | `JUDGE_REJUDGE` | `1` forces a fresh judge pass instead of resume |
 | `ARANDU_CEP_LANGUAGE` | Prompt language (`pt` or `en`) |
 
@@ -200,9 +203,11 @@ PIPELINE_ID=run-01 sbatch scripts/slurm/cep/sirius.slurm
 
 Each partition script sources `cep_common.sh` which handles:
 
-1. **Ollama Sidecar Management**: Starts Ollama container, pulls required model
+1. **Ollama Sidecar Management**: Starts Ollama container, pulls required model.
+   When the gate is active and its validator uses the `ollama` provider, the
+   validator model is also pulled if it differs from the sidecar model
 2. **Container Lifecycle**: Unique container names per job to avoid conflicts
-3. **CEP Configuration**: Bloom taxonomy distribution, validation settings
+3. **CEP Configuration**: Bloom taxonomy distribution, scaffolding gate and validator settings
 4. **Cleanup**: Automatic container removal on job completion
 
 ### CEP-Specific Environment Variables
@@ -212,11 +217,16 @@ Each partition script sources `cep_common.sh` which handles:
 | `ARANDU_QA_WORKERS` | Parallel workers for CEP generation | Partition-dependent |
 | `USE_GPU_OLLAMA` | Enable GPU acceleration for Ollama | `true` (GPU partitions) |
 | `ARANDU_CEP_LANGUAGE` | Prompt language (`pt` or `en`) | `pt` |
+| `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` | Judge each pair during generation | `true` |
+| `ARANDU_JUDGE_VALIDATOR_MODEL` / `_PROVIDER` / `_BASE_URL` | Gate validator | `qwen3:14b` / `ollama` / sidecar URL |
 
-> **Note**: `generate-cep-qa` only generates pairs; it has no validation toggle
-> (CEPConfig has no `enable_validation`). CEP-pair validation runs as the separate
-> `judge-qa` command, configured via `ARANDU_JUDGE_VALIDATOR_*`. Run it after
-> generation (e.g. a chained job with `--dependency=afterok:`).
+> **Note**: the scaffolding gate is on by default inside `generate-cep-qa`. Each
+> pair is judged right after generation and its verdict is saved in the output.
+> The gate is configured by `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` and
+> `ARANDU_JUDGE_VALIDATOR_*` (same variables as the `judge-qa` job), and needs a
+> validator model. See
+> [Scaffolding gate](../guide/pipelines/cep-qa-generation.md#scaffolding-gate).
+> `judge-qa` remains for resuming and re-judging.
 
 ### Override CEP Settings
 
@@ -225,12 +235,14 @@ Each partition script sources `cep_common.sh` which handles:
 ARANDU_CEP_LANGUAGE=en sbatch scripts/slurm/cep/tupi.slurm
 ```
 
-### Validating CEP Pairs (separate job)
+### Resuming or Re-judging CEP Pairs
 
-Validation runs as the dedicated `judge-qa` job, configured with `ARANDU_JUDGE_*`:
+The dedicated `judge-qa` job, configured with `ARANDU_JUDGE_*`, judges pairs that
+have no clean verdict (for example a run generated with the gate off) and skips
+the ones the gate already judged:
 
 ```bash
-# Judge a populated run's CEP dataset
+# Judge the pairs of a populated run's CEP dataset that lack a clean verdict
 PIPELINE_ID=test-cep-01 \
 ARANDU_JUDGE_VALIDATOR_MODEL=llama3.3:70b \
 sbatch scripts/slurm/judge/qa/tupi.slurm

@@ -239,7 +239,7 @@ The QA generation pipeline uses the CEP (Cognitive Elicitation Pipeline) for cog
 
 ### QAPairCEP
 
-Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `TranscriptionRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once `judge-qa` has run.
+Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, adding Bloom's taxonomy level, reasoning traces, and tacit knowledge inference for cognitive scaffolding-based QA generation. The judge verdict (`validation` + computed `is_valid`) comes from `JudgeResultMixin` — the same mixin used by `TranscriptionRecord` — so a pair carries a [`JudgePipelineResult`](#judgepipelineresult) once the scaffolding gate (at generation) or `judge-qa` has judged it.
 
 **Fields** (in addition to QAPair base fields):
 
@@ -260,7 +260,7 @@ Extends `QAPair` and `JudgeResultMixin` with CEP cognitive elicitation fields, a
 | `generation_prompt` | `str \| None` | No | LLM prompt used to generate this QA pair |
 | `generation_thinking` | `str \| None` | No | Model thinking/reasoning trace for this specific QA pair |
 | `chunk_id` | `str \| None` | No | Reference into the source ChunkSet for the chunker view used at generation |
-| `validation` | `JudgePipelineResult \| None` | No | Judge verdict (from `JudgeResultMixin`). None until judged by `judge-qa` |
+| `validation` | `JudgePipelineResult \| None` | No | Judge verdict (from `JudgeResultMixin`). Set at generation by the scaffolding gate, or later by `judge-qa`; None until judged. The generation parse always discards a `validation` echoed by the LLM |
 | `is_valid` | `bool \| None` | Computed | Derived from `validation.passed` (None when not yet judged) |
 
 **BloomLevel**: `Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]`
@@ -398,21 +398,23 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
 | `qa_pairs` | `list[QAPairCEP]` | Yes | CEP-enhanced QA pairs (each carries its own `validation` once judged) |
 | `chunker_id` | `str` | Yes | Chunker view used to slice `transcription_text` (default: "cep_4k") |
 | `model_id` | `str` | Yes | LLM model used for generation |
-| `validator_model_id` | `str \| None` | No | LLM model used for validation (if enabled) |
+| `validator_model_id` | `str \| None` | No | Validator model of the scaffolding gate, or the model `judge-qa` judged with (judge-qa writes it only when it judged something in the file) |
 | `provider` | `Literal["openai", "ollama", "custom"]` | Yes | LLM provider used |
 | `language` | `str` | Yes | Language for prompts (ISO 639-1, default: "pt") |
 | `generation_timestamp` | `datetime` | Yes | When QA pairs were generated |
 | `total_pairs` | `int` | Yes | Total number of QA pairs generated |
-| `validated_pairs` | `int` | Yes | Number of pairs passing validation (default: 0) |
+| `validated_pairs` | `int` | Yes | Number of pairs with a passing verdict (`is_valid` true); computed at generation and refreshed by `judge-qa` (default: 0) |
+| `scaffolding_gate_enabled` | `bool` | No | Whether every pair was judged before it could scaffold later pairs. Default `False`, so records written before the gate existed load as gate off |
 | `bloom_distribution` | `dict[str, int]` | Yes | Count of pairs per Bloom level |
 | `validation_summary` | `dict[str, float] \| None` | No | Aggregated validation metrics (NOT a ValidationSummary class) |
 | `validation_rate` | `float` | Computed | Percentage of pairs that passed validation (computed field) |
 | `cep_version` | `str` | Yes | CEP pipeline version (default: "1.0") |
 
 **Important Notes**:
-- `qa_pairs` is `list[QAPairCEP]`; each pair carries its own `validation` (`JudgePipelineResult`) once `judge-qa` has run. There is no separate `QAPairValidated` type.
+- `qa_pairs` is `list[QAPairCEP]`; each pair carries its own `validation` (`JudgePipelineResult`) once the gate or `judge-qa` has run. There is no separate `QAPairValidated` type.
 - `validation_summary` is a plain `dict[str, float]`, **NOT** a ValidationSummary class (this class does not exist)
 - `validation_rate` is a computed property: `validated_pairs / total_pairs`
+- Gate provenance lives in `run_metadata.json` of the `cep` run, under `config_values.scaffolding_gate`: `{"enabled": false}` when the gate is inactive; otherwise `enabled`, `judge` (the `JudgeConfig` dump), `resolved_provider`, `resolved_base_url`, `criteria` (per-criterion threshold and prompt digest) and `bloom_descriptions_sha256`. Verdicts written at generation have no `judge_qa/run_metadata.json` of their own, so this snapshot stands in for it.
 
 **Example**:
 ```json
@@ -423,6 +425,7 @@ Complete CEP QA dataset for a single transcription with cognitive scaffolding me
   "qa_pairs": [...],
   "model_id": "llama3.1:8b",
   "validator_model_id": "gpt-4",
+  "scaffolding_gate_enabled": true,
   "provider": "ollama",
   "language": "pt",
   "generation_timestamp": "2026-02-03T10:30:00Z",
@@ -494,6 +497,10 @@ class QARecordCEP(BaseModel):
     )
     total_pairs: int = Field(..., description="Total number of QA pairs generated")
     validated_pairs: int = Field(default=0, description="Number of pairs passing validation")
+    scaffolding_gate_enabled: bool = Field(
+        default=False,
+        description="Whether every pair was judged before it could scaffold later pairs",
+    )
     bloom_distribution: dict[str, int] = Field(
         default_factory=dict, description="Count of QA pairs per Bloom level"
     )

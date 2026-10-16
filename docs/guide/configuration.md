@@ -178,7 +178,7 @@ config = QAConfig(
 
 ## CEPConfig
 
-Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair while generating; `judge-qa` covers pairs without a clean verdict (or everything with `--rejudge`), using the scoring weights and threshold defined here.
+Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's Taxonomy scaffolding. With the scaffolding gate on (default), `generate-cep-qa` judges each pair while generating; `judge-qa` covers pairs without a clean verdict (or everything with `--rejudge`).
 
 **Module**: `arandu.qa.config` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_CEP_`
 
@@ -188,7 +188,7 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 |---------|------|---------|-------------|
 | `enable_reasoning_traces` | `bool` | `True` | Enable reasoning trace generation for answers |
 | `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
-| `enable_scaffolding_gate` | `bool` | `True` | Judge each pair before it can scaffold later pairs (needs a validator model) |
+| `enable_scaffolding_gate` | `bool` | `True` | Judge each pair before it can scaffold later pairs (needs a validator model). No effect without `enable_scaffolding_context`; rules in [Scaffolding gate](pipelines/cep-qa-generation.md#scaffolding-gate) |
 | `enable_source_metadata_context` | `bool` | `True` | Include extracted source metadata (participant name, location, date) in CEP prompt context |
 
 ### Module I - Bloom Scaffolding Settings
@@ -196,7 +196,7 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `bloom_distribution` | `dict[str, int]` | `{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}` | Absolute number of QA pairs to generate at each Bloom level, per chunk (single source of truth). Counts must be non-negative; the total must be between 1 and `MAX_BLOOM_PAIRS_PER_CHUNK` (50). Locked at 3/1/1/1 for the thesis run. |
-| `max_scaffolding_pairs` | `int` | `10` | Max prior QA pairs to include as scaffolding context (min: 1, max: 50) |
+| `max_scaffolding_pairs` | `int` | `10` | Max prior QA pairs to include as scaffolding context (min: 1, max: 50); applies after the gate filter |
 
 **Valid Bloom Levels**: `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`
 
@@ -245,7 +245,7 @@ Configuration for the composable judge pipeline. Supplies the validator LLM clie
 | `language` | `str` | `"pt"` | Language for judge criterion prompts (ISO 639-1: 'pt' or 'en') |
 | `temperature` | `float` | `0.1` | Temperature for judge LLM (low for consistent evaluation, range: 0.0-1.0) |
 | `max_tokens` | `int` | `8192` | Max tokens for judge responses (min: 128, max: 8192) |
-| `validator_model` | `str \| None` | `None` | Model ID enabling the LLM stage (e.g. `qwen3:14b`, `gemini-2.5-flash`). When unset, `judge-transcription` runs heuristic-only and skips the LLM stage |
+| `validator_model` | `str \| None` | `None` | Model ID enabling the LLM stage (e.g. `qwen3:14b`, `gemini-2.5-flash`). When unset, `judge-transcription` runs heuristic-only and skips the LLM stage. Also feeds the CEP scaffolding gate, where it is required while the gate is active |
 | `validator_provider` | `str \| None` | `None` | Provider: "openai", "ollama", or "custom". Inferred from `ARANDU_LLM_BASE_URL` (custom when set, else ollama) when unspecified |
 | `validator_base_url` | `str \| None` | `None` | Base URL for the validator provider. Inherits `ARANDU_LLM_BASE_URL` only when the resolved provider is "custom" |
 
