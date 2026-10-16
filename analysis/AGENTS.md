@@ -37,8 +37,8 @@ index that maps each question to its module or notebook.
 - Resolve paths from the repo root and honour `ARANDU_RESULTS_BASE_DIR`. Save
   figures to `analysis/figures/` with the run id in the filename
   (`<figure>-<run-id>.pdf` plus a 300 dpi `.png`).
-- Per-run copies of a notebook carry the run id as a suffix
-  (`<notebook>-<run-id>.ipynb`). Prefer parametrizing the run id over copying.
+- Keep one notebook per question and choose the run with `ARANDU_RUN_ID`; its
+  default is the canonical run. Do not copy a notebook per run.
 - Logic that two notebooks need, or that a results number depends on, moves
   into a module here so it can be tested and called from the command line.
 

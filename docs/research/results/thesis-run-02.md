@@ -147,11 +147,12 @@ Todos os comandos deste documento rodam da raiz do repositório. As análises de
 | `results/thesis-run-02/human_eval/outputs/sample.jsonl` | amostra de 120 pares para anotação humana |
 | `results/thesis-run-02/annotation/outputs/tasks.json` | as mesmas 120 tarefas em formato Label Studio |
 | `results/thesis-run-02/analysis/kg_structure_profile.json` | perfil estrutural do grafo (seção 4.9) |
-| `analysis/notebooks/bloom-thesis-run-02.ipynb` | notebook do funil CEP executado sobre o run-02 |
+| `analysis/notebooks/bloom.ipynb` | notebook do funil CEP, executado sobre o run-02 (o run padrão) |
 | `analysis/figures/*-thesis-run-02.{pdf,png}` | figuras do notebook, em versão de artigo |
 
-O `analysis/notebooks/bloom.ipynb` continua apontando para o `thesis-run-01` e guarda as
-saídas antigas. Ele é histórico; não use seus números.
+O notebook escolhe o run pela variável `ARANDU_RUN_ID`, com `thesis-run-02` como
+padrão. As saídas antigas do `thesis-run-01` ficam só no histórico do Git; não use
+seus números.
 
 **Duas bases de contagem.** Os comandos `arandu` e os scripts de `analysis/`
 contam sobre os **2670 pares** do corpus bruto. O notebook aplica um piso de 100
@@ -179,7 +180,7 @@ corretas; o que não pode é misturá-las na mesma frase.
 
 ```bash
 uv run jupyter nbconvert --to notebook --execute --inplace \
-  --ExecutePreprocessor.timeout=1200 analysis/notebooks/bloom-thesis-run-02.ipynb
+  --ExecutePreprocessor.timeout=1200 analysis/notebooks/bloom.ipynb
 ```
 
 O notebook encontra sozinho a raiz do repositório (sobe até o `pyproject.toml`) e grava o export em Markdown dos pares em `results/<run-id>/analysis/`.
@@ -618,7 +619,7 @@ uv run arandu rebuild-index
 
 # secao 4.1 a 4.3
 uv run jupyter nbconvert --to notebook --execute --inplace \
-  --ExecutePreprocessor.timeout=1200 analysis/notebooks/bloom-thesis-run-02.ipynb
+  --ExecutePreprocessor.timeout=1200 analysis/notebooks/bloom.ipynb
 
 # secao 4.4
 uv run python -m analysis.analyze_judge_thresholds --id thesis-run-02

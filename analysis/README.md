@@ -18,6 +18,6 @@ which take `--id <run-id>`. Rules for adding one are in [AGENTS.md](AGENTS.md).
 | Is over-caution explained by unsupported evidence? | [`analyze_conditional_overcaution`](analyze_conditional_overcaution.py) | |
 | Which rejected QA pairs missed the threshold narrowly? | [`audit_near_threshold_qa`](audit_near_threshold_qa.py) | |
 | What did the KG pipeline produce? | [`kg_report`](kg_report.py), [`kg_structural_metrics`](kg_structural_metrics.py) | |
-| How do Bloom levels approve, chunk by chunk? | [`bloom.ipynb`](notebooks/bloom.ipynb), [`bloom-thesis-run-02.ipynb`](notebooks/bloom-thesis-run-02.ipynb) | |
+| How do Bloom levels approve, chunk by chunk? | [`bloom.ipynb`](notebooks/bloom.ipynb) (run chosen by `ARANDU_RUN_ID`) | |
 
 Shared judge helpers live in [`_judge_common`](_judge_common.py).
