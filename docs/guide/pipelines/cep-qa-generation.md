@@ -470,7 +470,7 @@ docker compose --profile cep exec ollama ollama list
 
 ### Validation Rejecting Most Pairs
 
-- Lower threshold: default is 0.6, try 0.5
+- Lower the per-criterion `threshold` in `prompts/judge/criteria/<criterion>/config.json`: default is 0.625, and the next anchor down is 0.5
 - Check validator model capability
 - Review prompt language matches content language
 
