@@ -49,8 +49,9 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   `JudgeResultMixin`); `is_valid` is computed from `validation.passed`. There is
   no aggregate `overall_score` on the pair — the four criteria are individual
   `CriterionScore`s under the stage.
-- `judge-qa` resumes by default (skips pairs that already have `validation`);
-  `--rejudge` forces a fresh pass — required after changing the validator model.
+- `judge-qa` resumes by default (skips pairs with a clean verdict; a verdict with a
+  judge error, see `has_judge_error`, is re-judged); `--rejudge` forces a fresh
+  pass — required after changing the validator model.
 - `batch.load_transcription_tasks` skips judged-failed records and re-uses the
   transcription `ContentLengthFloorCriterion` to skip too-short text (so QA
   doesn't spend LLM budget on records the transcription judge would reject).
@@ -62,6 +63,10 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   passes (`JudgeStepResult.passed` is an `all()`), each against the `threshold`
   in `prompts/judge/criteria/<criterion>/config.json`. There is no aggregate
   score and no criterion weights; zeroing a criterion is not possible from config.
+- The generation parse (`bloom_scaffolding.py`) always sets `validation` to
+  `None`: a verdict echoed by the LLM is discarded, only the judge writes one.
+- `max_scaffolding_pairs` caps the pairs left after the gate filter
+  (`_scaffolding_pool` runs before `_format_prior_pairs`), not the raw prior pairs.
 - `MAX_BLOOM_PAIRS_PER_CHUNK = 50` caps the distribution sum (typo guard against
   runaway cost like `remember:9999`).
 - `ReasoningEnricher.enrich` must `model_copy` the pair; rebuilding it drops the

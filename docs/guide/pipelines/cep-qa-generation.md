@@ -94,6 +94,19 @@ The validator client is configured with the `ARANDU_JUDGE_` prefix (shared with 
 | `ARANDU_JUDGE_VALIDATOR_PROVIDER` | inferred | `openai`, `ollama`, or `custom` |
 | `ARANDU_JUDGE_VALIDATOR_BASE_URL` | inferred | Validator base URL (falls back to `ARANDU_LLM_BASE_URL`) |
 
+### Scaffolding Gate
+
+With the gate active, each generated pair is judged by the same judge `judge-qa` uses, right after generation and before the next Bloom level is generated. The rules:
+
+- The gate has no effect unless `ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT` is on, and it is active only when both switches are on (`--no-scaffolding-gate` turns it off for one run).
+- Only approved pairs scaffold later levels. A pair without a verdict (the validator raised) or with a judge error counts as not approved.
+- The admission filter runs before the `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` cap, so the cap is applied to approved pairs only.
+- Rejected pairs stay in the output with their verdict and are not regenerated, so the Bloom distribution is preserved.
+- The verdict is written at generation time; `judge-qa` resume skips pairs with a clean verdict and re-judges those with a judge error.
+- A file whose pairs got no clean verdict at all counts as a failed file. If only some pairs lack one, a warning is logged and the file is kept.
+- Each record carries `scaffolding_gate_enabled`, and the run records the gate settings in `run_metadata.json` (see [Schemas](../../development/schemas.md)).
+- Resuming a pipeline id generated under the other gate regime is refused. Use `--rebuild` or a new `--id`; ids generated before the gate existed count as gate off.
+
 ### Bloom Distribution
 
 The distribution is the absolute number of QA pairs to generate at each
@@ -126,7 +139,8 @@ ARANDU_QA_OUTPUT_DIR=cep_dataset
 # CEP-Specific Settings
 ARANDU_CEP_LANGUAGE=pt
 
-# Judge Settings (used by judge-qa)
+# Judge Settings (used by the scaffolding gate and judge-qa)
+ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b
 ARANDU_JUDGE_VALIDATOR_PROVIDER=ollama
 
@@ -139,14 +153,15 @@ ARANDU_RESULTS_DIR=./results
 ### Basic CEP Generation
 
 ```bash
-# Default configuration (Portuguese prompts); validate separately with judge-qa
+# Default configuration (Portuguese prompts); pairs are judged by the scaffolding gate
 docker compose --profile cep up
 ```
 
 ### Validating Generated Pairs
 
 ```bash
-# Generation does not validate. Run judge-qa afterwards:
+# With the gate on, verdicts are already written at generation time. Run judge-qa
+# to resume pairs without a clean verdict (it skips the gated ones):
 arandu judge-qa cep_dataset/ --model qwen3:14b
 
 # Sample a subset while iterating
@@ -286,7 +301,7 @@ Each line contains one QA pair:
 
 ## Validation Criteria
 
-Validation runs via the separate [`judge-qa`](../cli-reference.md#judge-qa) command. Each criterion is an independent gate: the pair passes only if **every** criterion evaluated for it clears its own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights. Non-remember pairs are scored on all four criteria below; `remember` pairs are scored on **faithfulness** and **bloom calibration** only, since factual recall is neither expected to reveal tacit knowledge nor to be fully self-contained (the other two are omitted, not auto-passed).
+Verdicts are written at generation time by the scaffolding gate, or later by [`judge-qa`](../cli-reference.md#judge-qa) command. Each criterion is an independent gate: the pair passes only if **every** criterion evaluated for it clears its own `threshold` (`0.625` for every criterion today, set in `prompts/judge/criteria/<criterion>/config.json`). There is no aggregate score and no criterion weights. Non-remember pairs are scored on all four criteria below; `remember` pairs are scored on **faithfulness** and **bloom calibration** only, since factual recall is neither expected to reveal tacit knowledge nor to be fully self-contained (the other two are omitted, not auto-passed).
 
 ### Faithfulness
 Is the answer grounded in the provided context?
@@ -363,7 +378,7 @@ jsonl_content = record.to_jsonl()
 # Export to JSONL file
 record.to_jsonl("output.jsonl")
 
-# Inspect per-pair judge verdicts (populated by judge-qa)
+# Inspect per-pair judge verdicts (set by the gate at generation or by judge-qa)
 for qa in record.qa_pairs:
     print(f"{qa.bloom_level}: is_valid={qa.is_valid}")
 
@@ -458,6 +473,18 @@ docker compose --profile cep exec ollama ollama list
 - Lower threshold: default is 0.6, try 0.5
 - Check validator model capability
 - Review prompt language matches content language
+
+### Gate Fails With "no validator model is set"
+
+The gate is on by default and needs a validator. Set `ARANDU_JUDGE_VALIDATOR_MODEL` (or pass `--validator-model`), or disable the gate with `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=false` (`--no-scaffolding-gate`). The command exits with code 1; it also exits 1 with "Invalid scaffolding gate validator" when the validator provider or base URL cannot build a client.
+
+### Files Fail With "no clean verdict"
+
+Every pair of a file came back unjudged or with a judge error, usually because the validator endpoint is down. Check the validator model and `ARANDU_JUDGE_VALIDATOR_BASE_URL`, then re-run.
+
+### Resume Refused After Changing the Gate
+
+The pipeline id holds outputs written with the gate on (or off) and this run requests the other regime. Re-run with `--rebuild` or a new `--id`.
 
 ### Ollama Connection Issues
 

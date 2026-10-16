@@ -144,7 +144,7 @@ arandu run-info latest --pipeline transcription
 
 ## CEP QA Pipeline
 
-Generate Cognitive Elicitation Pipeline (CEP) QA pairs from transcriptions with Bloom's Taxonomy scaffolding and LLM-as-a-Judge validation.
+Generate Cognitive Elicitation Pipeline (CEP) QA pairs from transcriptions with Bloom's Taxonomy scaffolding. By default a scaffolding gate judges each pair during generation, and only approved pairs scaffold later Bloom levels.
 
 ```bash
 # Generate CEP QA pairs with Ollama (default)
@@ -160,8 +160,8 @@ arandu generate-cep-qa results/ \
     --model-id gpt-4o-mini \
     --workers 2
 
-# Without validation (faster)
-arandu generate-cep-qa results/ --no-validate
+# Without the scaffolding gate (faster, no validator model needed)
+arandu generate-cep-qa results/ --no-scaffolding-gate
 ```
 
 Configuration:
@@ -170,8 +170,8 @@ Configuration:
 export ARANDU_QA_PROVIDER=ollama                # ollama, openai, custom
 export ARANDU_QA_MODEL_ID=qwen3:14b             # Model for generation
 export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1  # Ollama API URL
-export ARANDU_CEP_ENABLE_VALIDATION=true        # Enable LLM-as-a-Judge
-export ARANDU_CEP_VALIDATOR_MODEL_ID=qwen3:14b  # Validator model
+export ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true  # Judge pairs during generation (default)
+export ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b   # Gate validator model (required with the gate)
 ```
 
 Output: `qa_dataset/cep_qa_<file_id>.json`
@@ -195,7 +195,7 @@ Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
 
 | Profile | Services | Pipeline |
 |---------|----------|----------|
-| `cep` (`cep-gpu`) | ollama, arandu-cep | CEP QA generation (`generate-cep-qa`) |
+| `cep` (`cep-gpu`) | ollama, arandu-cep | CEP QA generation (`generate-cep-qa`); also needs the `ARANDU_JUDGE_VALIDATOR_*` vars for the gate |
 | `judge` (`judge-gpu`) | ollama, arandu-judge | LLM-as-a-Judge (`judge-transcription` / `judge-qa`) |
 | `emic` (`emic-gpu`) | ollama, arandu-emic | Phase D emic-validity judge (`emic-judge`) |
 | `kg` (`kg-gpu`) | ollama, arandu-kg | KG construction (`build-kg`) |
@@ -244,8 +244,10 @@ The system can be configured via:
 | `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
 | `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature |
 | `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API base URL |
-| `ARANDU_CEP_ENABLE_VALIDATION` | `true` | Enable LLM-as-a-Judge validation |
-| `ARANDU_CEP_VALIDATOR_MODEL_ID` | `qwen3:14b` | Validator model ID |
+| `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` | `true` | Judge each pair during generation; only approved pairs scaffold later levels (needs scaffolding context) |
+| `ARANDU_JUDGE_VALIDATOR_MODEL` | unset | Validator model for the gate (required while the gate is active) |
+| `ARANDU_JUDGE_VALIDATOR_PROVIDER` | inferred | Validator provider: `openai`, `ollama`, `custom` |
+| `ARANDU_JUDGE_VALIDATOR_BASE_URL` | provider default | Validator base URL (inherits `ARANDU_LLM_BASE_URL` only for `custom`) |
 
 ### KG Pipeline Settings (Planned)
 | Variable | Default | Description |

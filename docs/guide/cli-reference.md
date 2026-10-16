@@ -205,6 +205,7 @@ arandu generate-cep-qa INPUT_DIR [OPTIONS]
 | `--bloom-dist` | | str | `None` | Bloom level pair counts (e.g., 'remember:3,understand:1,analyze:1,evaluate:1') |
 | `--jsonl/--no-jsonl` | | flag | `False` | Export QA pairs to JSONL format for training |
 | `--id` | | str | Auto-resolved | Pipeline ID (auto-resolves transcription outputs) |
+| `--rebuild` | | flag | `False` | Clear existing CEP outputs and checkpoint before generating, so a re-run on a changed source set starts clean |
 | `--scaffolding-gate/--no-scaffolding-gate` | | flag | `True` | Judge each pair before it can scaffold later pairs (env `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE`); needs a validator model |
 | `--validator-model` | | str | `None` | Judge model for the scaffolding gate (else `ARANDU_JUDGE_VALIDATOR_MODEL`) |
 | `--validator-provider` | | str | `None` | Judge provider: openai, ollama, custom (else `ARANDU_JUDGE_VALIDATOR_PROVIDER`) |
@@ -225,8 +226,8 @@ arandu generate-cep-qa results/ \
     --model-id gpt-4o-mini \
     --workers 2
 
-# Generate, then validate as a separate step
-arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
+# Gate on (default): verdicts are written during generation; judge-qa resumes anything left
+arandu generate-cep-qa results/ -o qa_dataset/ --workers 4 --validator-model qwen3:14b
 arandu judge-qa qa_dataset/ --model qwen3:14b
 
 # Export to JSONL for KGQA training
@@ -240,6 +241,13 @@ arandu generate-cep-qa results/ \
 # With pipeline ID
 arandu generate-cep-qa results/ --id my-project-001
 ```
+
+**Errors** (exit code 1):
+- The gate is active and no validator model is set (`--validator-model` or `ARANDU_JUDGE_VALIDATOR_MODEL`), or the validator client cannot be built from the provider and base URL.
+- The pipeline id holds outputs generated under the other gate regime. Pass `--rebuild` or a new `--id`; ids generated before the gate existed count as gate off.
+- A file whose pairs all lack a clean verdict is reported as failed.
+
+The gate rules are described once in [Scaffolding gate](pipelines/cep-qa-generation.md#scaffolding-gate).
 
 **Output Structure**:
 ```
@@ -335,7 +343,7 @@ arandu judge-qa INPUT_DIR [OPTIONS]
 | `--language` | `-l` | str | `pt` | Language for judge prompts: 'pt' or 'en' |
 | `--files` | | int | All | Maximum number of QA files to sample |
 | `--pairs` | | int | All | Maximum QA pairs to judge per file |
-| `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every sampled pair; `--resume` skips pairs already carrying a `validation` payload |
+| `--rejudge` / `--resume` | | flag | `--resume` | `--rejudge` re-evaluates every sampled pair; `--resume` skips pairs with a clean verdict and re-judges verdicts that carry a judge error |
 
 **Examples**:
 ```bash

@@ -19,7 +19,7 @@ writes `results/<id>/<stage>/outputs/`.
 | ---- | ------------------- | ------------------------- | ------------------ | ------------------ | --------- |
 | Transcription | `batch-transcribe` | `TranscriberConfig` · `ARANDU_` | worker (runtime GPU) | `arandu:latest` · `Dockerfile`; `arandu:rocm` · `Dockerfile.rocm` | `transcription/` |
 | CEP (QA) | `generate-cep-qa` | `QAConfig` + `CEPConfig` + `JudgeConfig` (gate) · `ARANDU_QA_`, `ARANDU_CEP_`, `ARANDU_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `cep/` |
-| Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` (+ `CEPConfig` weights) · `ARANDU_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
+| Judge | `judge-transcription`, `judge-qa` | `JudgeConfig` · `ARANDU_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `judge/{transcription,qa}/` |
 | Emic judge (Phase D) | `emic-judge` | `EmicJudgeSettings` · `ARANDU_EMIC_JUDGE_` | worker + ollama | `arandu:latest` · `Dockerfile` | `emic/` |
 | KG | `build-kg`, `kg-link-passages`, `kg-build-retriever-index` | `KGConfig` · `ARANDU_KG_` | worker + ollama | `arandu-kg:latest` · `Dockerfile.kg` | `kg/` |
 | RAG (Phase C) | `chunk`, `retrieve`, `answer`, `judge-answers`, `generate-non-answerable`, `rag-analysis` | rag settings + `RAG_*` runner vars | worker (+ ollama for LLM stages) | `arandu-kg:latest` · `Dockerfile.kg` | `rag/` |
