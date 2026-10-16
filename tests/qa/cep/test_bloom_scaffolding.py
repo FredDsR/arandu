@@ -323,13 +323,13 @@ class TestBloomScaffoldingGenerator:
         assert pair.validation is None
         assert pair.is_valid is None
 
-    def test_parse_response_with_cep_fields(
+    def test_parse_response_drops_legacy_enrichment_fields(
         self,
         mock_llm_client: Any,
         qa_config: QAConfig,
         cep_config: CEPConfig,
     ) -> None:
-        """Test parsing response with CEP-specific fields."""
+        """Legacy reasoning-enrichment fields emitted by the model are discarded."""
         generator = BloomScaffoldingGenerator(
             llm_client=mock_llm_client,
             qa_config=qa_config,
@@ -343,64 +343,17 @@ class TestBloomScaffoldingGenerator:
                 "confidence": 0.85,
                 "reasoning_trace": "Fato A + Fato B → Conclusão",
                 "is_multi_hop": True,
-                "hop_count": 2,
+                "hop_count": 10,
                 "tacit_inference": "Conhecimento implícito X",
             }
         )
 
-        context = "Contexto de teste."
-        pair = generator._parse_response(response, context, "analyze")
+        pair = generator._parse_response(response, "Contexto de teste.", "analyze")
 
-        assert pair.reasoning_trace == "Fato A + Fato B → Conclusão"
-        assert pair.is_multi_hop is True
-        assert pair.hop_count == 2
-        assert pair.tacit_inference == "Conhecimento implícito X"
-
-    def test_parse_response_validates_hop_count(
-        self,
-        mock_llm_client: Any,
-        qa_config: QAConfig,
-        cep_config: CEPConfig,
-    ) -> None:
-        """Test that hop_count outside 1-5 raises validation error."""
-        generator = BloomScaffoldingGenerator(
-            llm_client=mock_llm_client,
-            qa_config=qa_config,
-            cep_config=cep_config,
-        )
-
-        response = json.dumps(
-            {"question": "Q?", "answer": "A.", "is_multi_hop": True, "hop_count": 10}
-        )
-
-        with pytest.raises(LLMResponseError, match="Validation failed"):
-            generator._parse_response(response, "Context.", "analyze")
-
-    def test_parse_response_valid_hop_count(
-        self,
-        mock_llm_client: Any,
-        qa_config: QAConfig,
-        cep_config: CEPConfig,
-    ) -> None:
-        """Test that valid hop_count within 1-5 is accepted."""
-        generator = BloomScaffoldingGenerator(
-            llm_client=mock_llm_client,
-            qa_config=qa_config,
-            cep_config=cep_config,
-        )
-
-        response = json.dumps(
-            {
-                "question": "Q?",
-                "answer": "A.",
-                "confidence": 0.9,
-                "is_multi_hop": True,
-                "hop_count": 3,
-            }
-        )
-
-        pair = generator._parse_response(response, "Context.", "analyze")
-        assert pair.hop_count == 3
+        assert pair.reasoning_trace is None
+        assert pair.is_multi_hop is False
+        assert pair.hop_count is None
+        assert pair.tacit_inference is None
 
     def test_load_prompts_file_not_found(
         self,

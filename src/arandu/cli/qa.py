@@ -122,7 +122,6 @@ def generate_cep_qa(
 
     Uses the Cognitive Elicitation Pipeline (CEP) with:
     - Module I: Bloom Scaffolding (question generation by cognitive level)
-    - Module II: Reasoning & Grounding (reasoning traces and multi-hop detection)
 
     Questions are distributed across Bloom taxonomy levels (remember, understand,
     analyze, evaluate) to create cognitively scaffolded QA datasets.
@@ -255,7 +254,6 @@ def generate_cep_qa(
     console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_distribution.keys())}")
     console.print(f"[cyan]Bloom Distribution (pairs/level):[/cyan] {cep_config.bloom_distribution}")
     console.print(f"[cyan]Pairs per chunk:[/cyan] {cep_config.pairs_per_chunk}")
-    console.print(f"[cyan]Reasoning Traces:[/cyan] {cep_config.enable_reasoning_traces}")
     console.print(f"[cyan]Scaffolding Gate:[/cyan] {cep_config.scaffolding_gate_active}")
     if cep_config.scaffolding_gate_active:
         console.print(f"[cyan]Gate Validator:[/cyan] {judge_config.validator_model}")

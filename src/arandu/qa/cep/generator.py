@@ -2,7 +2,6 @@
 
 Coordinates the CEP pipeline modules:
 - Module I: Bloom Scaffolding (question generation by cognitive level)
-- Module II: Reasoning & Grounding (reasoning traces and multi-hop detection)
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from arandu.qa.cep.bloom_scaffolding import BloomScaffoldingGenerator
-from arandu.qa.cep.reasoning import ReasoningEnricher
 from arandu.qa.schemas import QAPairCEP, QARecordCEP
 from arandu.shared.chunking.registry import get_chunker
 
@@ -32,8 +30,8 @@ CEP_CHUNKER_ID = "cep_4k"
 class CEPQAGenerator:
     """Orchestrate CEP pipeline for cognitive knowledge elicitation.
 
-    Combines Bloom scaffolding and reasoning enrichment to generate
-    high-quality, cognitively calibrated QA pairs.
+    Runs Bloom scaffolding over each chunk to generate cognitively
+    calibrated QA pairs.
     """
 
     def __init__(
@@ -62,13 +60,9 @@ class CEPQAGenerator:
             llm_client, qa_config, cep_config, validator=validator
         )
 
-        # Initialize Module II: Reasoning Enrichment
-        self._reasoning_enricher = ReasoningEnricher(llm_client, cep_config)
-
         logger.info(
             f"CEPQAGenerator initialized - "
             f"ScaffoldingContext={cep_config.enable_scaffolding_context}, "
-            f"Reasoning={cep_config.enable_reasoning_traces}, "
             f"ScaffoldingGate={self._gate_enabled}"
         )
 
@@ -127,11 +121,6 @@ class CEPQAGenerator:
                 source_metadata=transcription.source_metadata,
             )
             logger.debug(f"Chunk {i + 1}: Generated {len(pairs)} pairs")
-
-            # Module II: Reasoning Enrichment
-            if self.cep_config.enable_reasoning_traces:
-                pairs = self._reasoning_enricher.enrich_batch(pairs, context)
-                logger.debug(f"Chunk {i + 1}: Enriched with reasoning traces")
 
             # Stamp provenance: every pair generated from this chunk inherits its chunk_id.
             for pair in pairs:

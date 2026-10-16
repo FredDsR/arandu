@@ -186,7 +186,6 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `enable_reasoning_traces` | `bool` | `True` | Enable reasoning trace generation for answers |
 | `enable_scaffolding_context` | `bool` | `True` | Pass previously generated QA pairs as context to higher Bloom levels |
 | `enable_scaffolding_gate` | `bool` | `True` | Judge each pair before it can scaffold later pairs (needs a validator model). No effect without `enable_scaffolding_context`; rules in [Scaffolding gate](pipelines/cep-qa-generation.md#scaffolding-gate) |
 | `enable_source_metadata_context` | `bool` | `True` | Include extracted source metadata (participant name, location, date) in CEP prompt context |
@@ -201,13 +200,6 @@ Configuration settings for the CEP (Cognitive Elicitation Pipeline) with Bloom's
 **Valid Bloom Levels**: `remember`, `understand`, `apply`, `analyze`, `evaluate`, `create`
 
 **Derived property**: `pairs_per_chunk` returns the sum of `bloom_distribution` values (the per-chunk ladder size). There is no `bloom_levels` field; the keys of `bloom_distribution` are the levels to generate.
-
-### Module II - Reasoning Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `max_hop_count` | `int` | `3` | Maximum reasoning hops to detect for multi-hop questions (min: 1, max: 5) |
-| `reasoning_max_tokens` | `int` | `8192` | Max tokens for reasoning enrichment responses (min: 128, max: 8192). Sized for thinking models |
 
 ### Judge Scoring Settings
 
@@ -443,7 +435,7 @@ Configuration settings are loaded from environment variables with config-specifi
 |--------------|--------|---------|
 | `TranscriberConfig` | `ARANDU_` | `ARANDU_MODEL_ID` |
 | `QAConfig` | `ARANDU_QA_` | `ARANDU_QA_PROVIDER` |
-| `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_MAX_HOP_COUNT` |
+| `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` |
 | `JudgeConfig` | `ARANDU_JUDGE_` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `KGConfig` | `ARANDU_KG_` | `ARANDU_KG_PROVIDER` |
 | `LLMConfig` | (No prefix) | `OPENAI_API_KEY`, `ARANDU_LLM_BASE_URL` |
@@ -675,7 +667,6 @@ services:
 **.env file**:
 ```bash
 # CEP Settings
-ARANDU_CEP_ENABLE_REASONING_TRACES=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=15
@@ -864,7 +855,6 @@ ARANDU_QA_WORKERS=2
 # ============================================================================
 
 # Module toggles
-ARANDU_CEP_ENABLE_REASONING_TRACES=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_CONTEXT=true
 ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true
 ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
@@ -872,9 +862,6 @@ ARANDU_CEP_ENABLE_SOURCE_METADATA_CONTEXT=true
 # Bloom scaffolding (integer pair counts per level; single source of truth)
 ARANDU_CEP_BLOOM_DISTRIBUTION='{"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}'
 ARANDU_CEP_MAX_SCAFFOLDING_PAIRS=10
-
-# Reasoning
-ARANDU_CEP_MAX_HOP_COUNT=3
 
 # Judge gates are per criterion and live in
 # prompts/judge/criteria/<criterion>/config.json, not in the environment.

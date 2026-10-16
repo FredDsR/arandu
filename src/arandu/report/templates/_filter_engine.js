@@ -501,7 +501,6 @@
           filtered.qa_pairs,
           "chart-confidence-distribution"
         );
-        buildMultihopChart(filtered.qa_pairs, "chart-multihop");
         buildCorrelationHeatmap(
           filtered.qa_pairs,
           "chart-correlation-heatmap"
@@ -793,21 +792,6 @@
       addThresholdOverlay(layout, threshold, "y", "x domain");
     }
     plotReact(divId, traces, layout);
-  }
-
-  function buildMultihopChart(qa, divId) {
-    var multi = qa.filter(function (q) { return q.is_multi_hop; }).length;
-    var single = qa.length - multi;
-    plotReact(divId, [{
-      y: ["Multi-hop", "Single-hop"], x: [multi, single],
-      type: "bar", orientation: "h",
-      marker: { color: [COLORS[0], COLORS[1]] },
-      text: [multi, single], textposition: "auto",
-    }], {
-      title: "Reasoning Complexity: Multi-hop vs Single-hop",
-      xaxis: { title: "Number of QA Pairs" },
-      height: 300, template: "plotly_white",
-    });
   }
 
   function buildCorrelationHeatmap(qa, divId) {

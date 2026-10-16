@@ -14,11 +14,10 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
 | Path | Role |
 | ---- | ---- |
 | `config.py` | `QAConfig` (`ARANDU_QA_`, provider/model), `CEPConfig` (`ARANDU_CEP_`, bloom_distribution + judge weights), `JudgeConfig` (`ARANDU_JUDGE_`, validator client) |
-| `schemas.py` | `QAPairCEP` (extends `QAPair` + `JudgeResultMixin`: bloom_level, reasoning_trace, multi-hop, `validation`), `QARecordCEP` (doc wrapper, `validation_rate`) |
+| `schemas.py` | `QAPairCEP` (extends `QAPair` + `JudgeResultMixin`: bloom_level, rationale, `validation`; legacy reasoning_trace/multi-hop/tacit_inference kept so old runs load), `QARecordCEP` (doc wrapper, `validation_rate`) |
 | `batch.py` | Orchestrator: load transcriptions, task filtering, parallel generation, checkpoint |
-| `cep/generator.py` | Per-chunk driver: Module I then Module II; stamps `chunk_id` |
+| `cep/generator.py` | Per-chunk driver: runs Module I; stamps `chunk_id` |
 | `cep/bloom_scaffolding.py` | Module I: per-level generation with scaffolding context + retries |
-| `cep/reasoning.py` | Module II: reasoning_trace + multi-hop detection (analyze/evaluate/create only) |
 | `cep/judge.py` | `QAJudge`: wraps the shared `JudgePipeline` (stage `cep_validation`, four criteria) |
 | `non_answerable/` | Derive the non-answerable benchmark (stratified seeds, perturbation, KG/corpus absence check) |
 
@@ -69,13 +68,11 @@ Config: `QAConfig`/`CEPConfig`/`JudgeConfig` (`config.py`). Output:
   (`_scaffolding_pool` runs before `_format_prior_pairs`), not the raw prior pairs.
 - `MAX_BLOOM_PAIRS_PER_CHUNK = 50` caps the distribution sum (typo guard against
   runaway cost like `remember:9999`).
-- `ReasoningEnricher.enrich` must `model_copy` the pair; rebuilding it drops the
-  gate verdict.
 - When generation and the gate's validator use different Ollama models in the same
   sidecar, both weights must fit in VRAM alongside the KV cache; otherwise Ollama
   swaps models between every generate and judge call.
 - `extra="ignore"` on the configs silently drops unknown/misspelled env vars.
-- `chunk_id` is stamped after enrichment; changing the chunker view between
+- `chunk_id` is stamped after generation; changing the chunker view between
   generations breaks provenance.
 
 **Deployment surface**: `arandu:latest` (`Dockerfile`); `arandu-cep` service

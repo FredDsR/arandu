@@ -49,7 +49,6 @@ def qa_config() -> QAConfig:
 def cep_config() -> CEPConfig:
     """Create a CEP config for testing (two pairs per level, four levels)."""
     return CEPConfig(
-        enable_reasoning_traces=True,
         bloom_distribution={
             "remember": 2,
             "understand": 2,

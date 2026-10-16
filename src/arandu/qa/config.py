@@ -112,14 +112,6 @@ class CEPConfig(BaseSettings):
         extra="ignore",
     )
 
-    # Module toggles
-    enable_reasoning_traces: bool = Field(
-        default=False,
-        description="Enable Module II reasoning-trace enrichment (extra LLM call per analyze/"
-        "evaluate pair). Off by default: traces/multi-hop were unvalidated self-annotations "
-        "unused downstream. The generation 'rationale' field is the inspection aid instead.",
-    )
-
     # Module I - Bloom Scaffolding settings
     bloom_distribution: dict[str, int] = Field(
         default={
@@ -162,25 +154,6 @@ class CEPConfig(BaseSettings):
             "with their verdict but are never shown to the generator, and the "
             "verdict is persisted so judge-qa --resume skips the pair. Requires "
             "ARANDU_JUDGE_VALIDATOR_MODEL. No effect without enable_scaffolding_context."
-        ),
-    )
-
-    # Module II - Reasoning settings
-    max_hop_count: int = Field(
-        default=3,
-        ge=1,
-        le=5,
-        description="Maximum reasoning hops to detect for multi-hop questions",
-    )
-    reasoning_max_tokens: int = Field(
-        default=REASONING_MODEL_MAX_TOKENS,
-        ge=128,
-        le=REASONING_MODEL_MAX_TOKENS,
-        description=(
-            "Maximum tokens for reasoning enrichment responses. "
-            "Defaults high for thinking models (Qwen3, DeepSeek-R1, Gemini 2.5) "
-            "whose <think> blocks consume tokens before the JSON output and "
-            "would otherwise truncate it."
         ),
     )
 
