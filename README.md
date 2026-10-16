@@ -5,322 +5,201 @@
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FredDsR/94bfd9f7de8e4f16abcdc62811a81cd0/raw/coverage-badge.json)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
-Composable pipelines for ethnographic knowledge elicitation: transcription, QA generation, and knowledge graph construction.
+Arandu turns recorded interviews into a knowledge graph and then measures that
+graph without a reference to compare it against. It transcribes the recordings,
+generates a cognitively stratified question-answer benchmark from them, builds a
+knowledge graph with an LLM, and asks how well each retrieval strategy over that
+graph lets an answerer answer the benchmark, or abstain when it should. The case
+study is a corpus of interviews with riverine communities in southern Brazil
+affected by the May 2024 floods.
 
 ## About the Name
 
-**Arandu** comes from the Guarani language (*ara* = time + *endu* = to hear/feel), meaning "wisdom through perceiving time" — knowledge gained through listening and experiencing. This directly mirrors the project's purpose: eliciting tacit knowledge from ethnographic interviews with riverine communities in southern Brazil.
+**Arandu** comes from the Guarani language (*ara* = time + *endu* = to hear/feel),
+meaning "wisdom through perceiving time": knowledge gained through listening and
+experiencing. The project's aim is the same: eliciting tacit knowledge from
+ethnographic interviews.
 
-## Overview
+## What Arandu evaluates
 
-Arandu is a comprehensive pipeline for processing ethnographic media collections. It transcribes audio/video files using state-of-the-art speech recognition, generates synthetic QA pairs for retrieval evaluation, and constructs knowledge graphs for semantic analysis.
+A knowledge graph extracted from oral narrative has no ground-truth graph, the
+concepts it uses emerge from the same corpus, and an unanswered question is not
+necessarily an error. Arandu therefore evaluates the graph functionally, through
+a benchmark derived from the corpus itself. The framework has three parts.
 
-## Features
+- **Cognitively stratified benchmark.** For each chunk of a transcript an LLM
+  generates question-answer pairs at four levels of Bloom's revised taxonomy
+  (Remember, Understand, Analyze, Evaluate). Each level receives the pairs of the
+  levels below as scaffolding context, so that higher-order questions build on
+  established facts. An LLM judge scores every pair on faithfulness, Bloom
+  calibration, informativeness and self-containment, and the gate is
+  conjunctive: a pair passes only if every criterion clears the threshold. A
+  separate emic-validity judge scores, from 1 to 5, whether a pair keeps the
+  speaker's frame or restates it in the analyst's categories; it stratifies the
+  metrics instead of filtering the benchmark.
+- **Unanswerable probes.** Entity perturbation swaps a named entity in a
+  benchmark question for one found neither in the graph nor in the corpus, so the
+  correct behaviour on the probe is to abstain.
+- **Metrics.** A shared answerer receives each question and only the evidence a
+  retrieval arm returned. Answers fall into four cells: TC (commits on an
+  answerable question), FC (commits on an unanswerable one), FA (abstains on an
+  answerable one) and TA (abstains on an unanswerable one). See
+  [Metrics](#metrics).
 
-### Transcription Pipeline
-- **Flexible Model Support**: Use any Whisper model from Hugging Face Hub (e.g., `openai/whisper-large-v3`, `distil-whisper/distil-large-v3`)
-- **Hardware Agnostic**: Automatic detection and optimization for CPU, CUDA GPU, or Apple Silicon MPS
-- **Quantization Support**: 8-bit quantization for reduced VRAM usage on GPUs
-- **Google Drive Integration**: Download files, transcribe, and upload results back to Drive
-- **Resilient Transfers**: Resumable downloads/uploads with automatic retry logic, file size validation, and exponential backoff
-- **Rich CLI**: Beautiful command-line interface with progress bars and structured output
-- **Structured Output**: JSON output with transcription text, timestamps, and metadata
-- **Transcription Quality Validation**: Heuristic-based quality scoring detecting wrong language/script, repetition, suspicious patterns, and empty content
-- **Results Versioning**: Pipeline-ID-first directory layout with comprehensive run metadata and execution environment tracking — every run lives at `results/<run-id>/`, with each stage as a child subdir carrying `<stage>_checkpoint.json`, `run_metadata.json`, and `outputs/` (see [Results Directory Layout](docs/development/architecture.md#results-directory-layout))
+## Pipeline
 
-### CEP QA Generation
-- **Cognitive Elicitation Pipeline (CEP)**: Generate QA pairs with Bloom's Taxonomy scaffolding (remember, understand, analyze, evaluate)
-- **Reasoning Enrichment**: Automatic extraction of reasoning traces and multi-hop reasoning detection
-- **LLM-as-a-Judge Validation**: Quality validation with faithfulness, Bloom calibration, and informativeness scoring
-- **Scaffolding Context**: Progressive question generation where higher Bloom levels receive context from lower levels
-- **Multi-Provider LLM Support**: Ollama (local), OpenAI, or custom OpenAI-compatible endpoints
-- **Externalized Prompts**: Language-specific Markdown templates for maintainable prompt engineering
+Every stage reads and writes under `results/<run-id>/<stage>/`, checkpoints its
+progress and can be resumed. Run the stages in this order with the same
+`--id`:
 
-### KG Pipeline
-- **Knowledge Graph Construction**: Extract entities and relations using AutoSchemaKG via `atlas-rag`
-- **Protocol-Based Backend**: Extensible `KGConstructor` protocol with factory pattern for pluggable backends
-- **Batch Orchestration**: Process transcription results with configurable batch sizes and resume support
-- **Portuguese Extraction Prompts**: Externalized prompt templates optimized for ethnographic content
+| # | Stage | Command | Output in `results/<run-id>/` |
+|---|-------|---------|-------------------------------|
+| 1 | Transcription | `batch-transcribe` (also `transcribe`, `drive-transcribe`) | `transcription/` |
+| 2 | Transcription quality | `judge-transcription` | verdicts written into the transcription records |
+| 3 | Chunking | `chunk` | `chunk/` |
+| 4 | Benchmark generation with the scaffolding gate | `generate-cep-qa` | `cep/` |
+| 5 | Pair judging (resume or re-judge) | `judge-qa` | verdicts in `cep/`, metadata in `judge_qa/` |
+| 6 | Emic validity | `emic-judge` | `emic_judge/` |
+| 7 | Knowledge graph | `build-kg`, then `kg-link-passages` and `kg-build-retriever-index` | `kg/` |
+| 8 | Unanswerable probes | `generate-non-answerable` | `non_answerable/` |
+| 9 | Retrieval, one run per arm | `retrieve` | `retrieve/` |
+| 10 | Answering | `answer` | `answers/` |
+| 11 | Answer judging | `judge-answers` | `judge_answers/` |
+| 12 | Cross-arm report | `rag-analysis` | `analysis/` |
+| 13 | Human evaluation sample and annotation | `build-human-eval-sample`, `emic-annotation-build`, `emic-annotation-push`, `emic-annotation-pull` | `human_eval/`, `annotation/` |
+
+A run end to end, with the defaults of each stage:
+
+```bash
+RUN=my-run
+
+arandu batch-transcribe input/catalog.csv --id $RUN --credentials credentials.json
+arandu judge-transcription results/$RUN/transcription/outputs
+arandu chunk results/$RUN/transcription/outputs --id $RUN --view cep_4k
+arandu generate-cep-qa results/ --id $RUN
+arandu emic-judge --id $RUN
+arandu build-kg results/ --id $RUN
+arandu kg-link-passages --id $RUN
+arandu kg-build-retriever-index --id $RUN
+arandu generate-non-answerable --id $RUN
+arandu retrieve --id $RUN
+arandu answer --id $RUN
+arandu judge-answers --id $RUN
+arandu rag-analysis --id $RUN
+```
+
+`generate-cep-qa` judges each pair during generation (the scaffolding gate) and
+needs a validator model, set with `ARANDU_JUDGE_VALIDATOR_MODEL` or
+`--validator-model`. `judge-qa results/$RUN/cep/outputs` only judges the pairs
+that still have no clean verdict, or all of them with `--rejudge`.
+
+Run management: `list-runs`, `run-info`, `replicate` and `rebuild-index`.
+Reports: `report` writes an HTML dashboard and PNG charts, and `serve-report`
+serves it. Each command documents its options with `arandu <command> --help`,
+and the [CLI reference](docs/guide/cli-reference.md) collects them.
+
+## Retrieval arms
+
+All arms return their top 10 evidence items to the same answerer, under the
+same prompt and judges, so differences between arms come from the access
+strategy. Select them with `arandu retrieve --arm <id>` (repeatable); the
+default runs all five.
+
+| Arm | Evidence returned | How it retrieves |
+|-----|-------------------|------------------|
+| `null` | nothing | Control that always abstains; anchors the abstention scale |
+| `bm25` | 4k-character transcript chunks | Lexical BM25 over the chunks; separates the value of graph structure from the value of having passages |
+| `khop_passage` | graph passages | Matches the question's lemmas to node labels, expands a 2-hop neighbourhood over every edge type, and returns the passages its entities and events came from, ranked by hop distance |
+| `khop_triple` | linearized triples | Same seeding and neighbourhood as `khop_passage`, but returns the relation edges themselves |
+| `atlas_rag` | graph passages | HippoRAG-style retriever shipped with AutoSchemaKG: Personalized PageRank from the question's entities over node embeddings |
+
+Arm settings come from `ARANDU_BM25_*`, `ARANDU_KHOP_*` and
+`ARANDU_ATLAS_RAG_*`. The arms are compared in the
+[RAG analysis guide](docs/guide/pipelines/rag-analysis.md).
+
+## Metrics
+
+`rag-analysis` writes `report.json` and `tables.md` under `analysis/outputs/`,
+per arm and per Bloom level.
+
+- **Knowledge coverage (KC):** mean of correctness times faithfulness over the
+  TC items, the questions an arm chose to answer.
+- **Hallucination:** FC / (FC + TA).
+- **Over-caution:** FA / (FA + TC).
+- **F1 of abstention:** 2 TA / (2 TA + FA + FC), with 95% Wilson intervals on
+  the rates.
+- **Evidence support:** share of answerable questions whose retrieved evidence
+  supports the reference answer, committed or not; it separates missing evidence
+  from an answerer that declines sufficient evidence.
+
+A question counts as abstained only when the answerer's structured flag and an
+abstention judge agree. Every metric can be stratified by emic validity
+(EV >= 4) to check whether a comparison between arms holds for references that
+keep the speaker's frame. Judge reliability is measured by test-retest with
+Krippendorff's alpha (`analysis/analyze_judge_retest.py`).
 
 ## Installation
 
-```bash
-# Using uv (recommended - project uses uv as build system)
-uv sync
-
-# Or with pip
-pip install -e .
-```
-
-## Usage
-
-### Transcribe a Local File
+Python 3.13 or newer and [uv](https://docs.astral.sh/uv/):
 
 ```bash
-arandu transcribe audio.mp3
+uv sync                              # base dependencies
+uv sync --all-extras --all-groups    # with the KG, report and dashboard extras and the test tools
+uv run arandu --help
 ```
 
-### Transcribe with Custom Model
+## Running on Docker and SLURM
 
-```bash
-arandu transcribe audio.mp3 --model-id openai/whisper-large-v3
-```
-
-### Transcribe with Quantization (Reduced VRAM)
-
-```bash
-arandu transcribe audio.mp3 --quantize
-```
-
-### Force CPU Execution
-
-```bash
-arandu transcribe audio.mp3 --cpu
-```
-
-### Transcribe from Google Drive
-
-```bash
-arandu drive-transcribe <file-id> --credentials credentials.json
-```
-
-### Batch Transcribe from Catalog
-
-Transcribe all audio/video files from a catalog CSV with parallel processing:
-
-```bash
-arandu batch-transcribe input/catalog.csv --credentials credentials.json --workers 4
-```
-
-Advanced options:
-
-```bash
-# Use custom output directory
-arandu batch-transcribe input/catalog.csv -o transcriptions/ --workers 2
-
-# Use different model with quantization
-arandu batch-transcribe input/catalog.csv --model-id openai/whisper-large-v3 --quantize --workers 4
-
-# Resume interrupted job (uses checkpoint automatically)
-arandu batch-transcribe input/catalog.csv --workers 4
-```
-
-The batch transcribe command:
-- Filters only audio/video files from the catalog
-- Downloads files from Google Drive
-- Extracts media duration and includes it in output
-- Processes files in parallel with multiple model instances
-- Automatically checkpoints progress for resumption
-- Saves results as JSON files with full metadata
-
-### Check System Information
-
-```bash
-arandu info
-```
-
-### Validate Transcription Quality
-
-```bash
-# Validate and update in-place
-arandu validate-transcriptions results/
-
-# Report only (no file updates)
-arandu validate-transcriptions results/ --report-only --threshold 0.6
-```
-
-### List Pipeline Runs
-
-```bash
-# List all runs
-arandu list-runs
-
-# Filter by pipeline type
-arandu list-runs --pipeline cep
-
-# View specific run details
-arandu run-info latest --pipeline transcription
-```
-
-## CEP QA Pipeline
-
-Generate Cognitive Elicitation Pipeline (CEP) QA pairs from transcriptions with Bloom's Taxonomy scaffolding. By default a scaffolding gate judges each pair during generation, and only approved pairs scaffold later Bloom levels.
-
-```bash
-# Generate CEP QA pairs with Ollama (default)
-arandu generate-cep-qa results/ -o qa_dataset/ --workers 4
-
-# With custom Bloom distribution
-arandu generate-cep-qa results/ \
-    --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
-
-# With OpenAI
-arandu generate-cep-qa results/ \
-    --provider openai \
-    --model-id gpt-4o-mini \
-    --workers 2
-
-# Without the scaffolding gate (faster, no validator model needed)
-arandu generate-cep-qa results/ --no-scaffolding-gate
-```
-
-Configuration:
-
-```bash
-export ARANDU_QA_PROVIDER=ollama                # ollama, openai, custom
-export ARANDU_QA_MODEL_ID=qwen3:14b             # Model for generation
-export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1  # Ollama API URL
-export ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=true  # Judge pairs during generation (default)
-export ARANDU_JUDGE_VALIDATOR_MODEL=qwen3:14b   # Gate validator model (required with the gate)
-```
-
-Output: `qa_dataset/cep_qa_<file_id>.json`
-
-## KG Pipeline (Planned)
-
-> **Status**: PLANNED - NOT YET IMPLEMENTED. Configuration schemas exist, but there are no CLI commands or pipeline modules for KG construction yet.
-
-Knowledge graph construction using AutoSchemaKG for entity and relation extraction is planned for a future release. The configuration infrastructure is in place:
-
-```bash
-export ARANDU_KG_PROVIDER=ollama          # ollama, openai, custom
-export ARANDU_KG_MODEL_ID=llama3.1:8b     # Model for extraction
-export ARANDU_KG_LANGUAGE=pt              # pt, en, es
-export ARANDU_KG_MERGE_GRAPHS=true        # Merge into corpus graph
-```
-
-Expected output (when implemented): `knowledge_graphs/corpus_graph.graphml`
-
-## Docker Compose Profiles
+Each step runs as a Docker Compose profile, with an Ollama sidecar for the LLM
+steps:
 
 | Profile | Services | Pipeline |
 |---------|----------|----------|
 | `cep` (`cep-gpu`) | ollama, arandu-cep | CEP QA generation (`generate-cep-qa`); also needs the `ARANDU_JUDGE_VALIDATOR_*` vars for the gate |
 | `judge` (`judge-gpu`) | ollama, arandu-judge | LLM-as-a-Judge (`judge-transcription` / `judge-qa`) |
-| `emic` (`emic-gpu`) | ollama, arandu-emic | Phase D emic-validity judge (`emic-judge`) |
+| `emic` (`emic-gpu`) | ollama, arandu-emic | Emic-validity judge (`emic-judge`) |
 | `kg` (`kg-gpu`) | ollama, arandu-kg | KG construction (`build-kg`) |
-| `rag` (`rag-gpu` / `rag-cpu`) | ollama, arandu-rag | Phase C RAG evaluation chain |
+| `rag` (`rag-gpu` / `rag-cpu`) | ollama, arandu-rag | Retrieval evaluation chain |
 | `cpu` | arandu-cpu | Transcription (CPU) |
 | `rocm` | arandu-rocm | Transcription (AMD GPU) |
 
-## SLURM Execution
-
-SLURM scripts are organized as `scripts/slurm/<step>/<partition>.slurm`, each
-sourcing a shared `<step>_common.sh`. Submit with `PIPELINE_ID` set (see
-[scripts/slurm/AGENTS.md](scripts/slurm/AGENTS.md) for the full wiring + the
-tupi/draco partition rules):
+On the pcad cluster the SLURM scripts live in `scripts/slurm/<step>/`, each
+sourcing a shared `<step>_common.sh`. Submit with `PIPELINE_ID` set:
 
 ```bash
-# Transcription / CEP / Judge / KG / RAG / Emic: pick the partition script
 PIPELINE_ID=run-01 sbatch scripts/slurm/transcription/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/cep/tupi.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/judge/qa/tupi.slurm
-PIPELINE_ID=run-01 sbatch scripts/slurm/kg/tupi.slurm
-PIPELINE_ID=run-01 sbatch scripts/slurm/rag/retrieve.slurm
 PIPELINE_ID=run-01 sbatch scripts/slurm/emic/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/kg/tupi.slurm
+PIPELINE_ID=run-01 sbatch scripts/slurm/rag/chunk.slurm   # also retrieve, answer, judge-answers, ...
 ```
+
+[scripts/slurm/AGENTS.md](scripts/slurm/AGENTS.md) maps each command to its
+config class, compose service, image and SLURM directory, and lists the
+partition rules. The [SLURM guide](docs/operations/slurm.md) covers submission.
 
 ## Configuration
 
-The system can be configured via:
+Command-line options take precedence over environment variables, which can live
+in a `.env` file (see [.env.example](.env.example)). Each LLM role is configured
+on its own, so the generator, the judges and the answerer can use different
+models:
 
-1. **Command-line arguments** (highest priority)
-2. **Environment variables**:
+| Prefix | Configures |
+|--------|------------|
+| `ARANDU_` | Transcription (Whisper model, device, workers) |
+| `ARANDU_QA_`, `ARANDU_CEP_` | Benchmark generation and the scaffolding gate |
+| `ARANDU_JUDGE_` | QA pair and transcription judges, and the gate validator |
+| `ARANDU_EMIC_JUDGE_` | Emic-validity judge |
+| `ARANDU_KG_`, `ARANDU_EMBEDDER_` | Graph construction and node embeddings |
+| `ARANDU_NONANSWERABLE_` | Unanswerable probes |
+| `ARANDU_BM25_`, `ARANDU_KHOP_`, `ARANDU_ATLAS_RAG_` | Retrieval arms |
+| `ARANDU_ANSWERER_`, `ARANDU_JUDGE_ANSWERS_` | Answerer and answer judges |
+| `ARANDU_LABEL_STUDIO_` | Human annotation |
+| `ARANDU_RESULTS_` | Results directory and versioning |
 
-### Transcription Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARANDU_MODEL_ID` | `openai/whisper-large-v3` | Whisper model ID |
-| `ARANDU_FORCE_CPU` | `false` | Force CPU execution |
-| `ARANDU_QUANTIZE` | `false` | Enable 8-bit quantization |
-| `ARANDU_CREDENTIALS` | `credentials.json` | Path to Google OAuth credentials |
-| `ARANDU_TOKEN` | `token.json` | Path to token file |
-| `ARANDU_WORKERS` | `1` | Number of parallel workers |
-
-### QA/CEP Pipeline Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARANDU_QA_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `ARANDU_QA_MODEL_ID` | `qwen3:14b` | Model for QA generation |
-| `ARANDU_QA_TEMPERATURE` | `0.7` | LLM temperature |
-| `ARANDU_QA_OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API base URL |
-| `ARANDU_CEP_ENABLE_SCAFFOLDING_GATE` | `true` | Judge each pair during generation; only approved pairs scaffold later levels (needs scaffolding context) |
-| `ARANDU_JUDGE_VALIDATOR_MODEL` | unset | Validator model for the gate (required while the gate is active) |
-| `ARANDU_JUDGE_VALIDATOR_PROVIDER` | inferred | Validator provider: `openai`, `ollama`, `custom` |
-| `ARANDU_JUDGE_VALIDATOR_BASE_URL` | provider default | Validator base URL (inherits `ARANDU_LLM_BASE_URL` only for `custom`) |
-
-### KG Pipeline Settings (Planned)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARANDU_KG_PROVIDER` | `ollama` | LLM provider: `openai`, `ollama`, `custom` |
-| `ARANDU_KG_MODEL_ID` | `llama3.1:8b` | Model for extraction |
-| `ARANDU_KG_LANGUAGE` | `pt` | Language code: `pt`, `en`, `es` |
-| `ARANDU_KG_MERGE_GRAPHS` | `true` | Merge into corpus graph |
-| `ARANDU_KG_OUTPUT_FORMAT` | `graphml` | Output format: `graphml`, `json` |
-
-### Results & Quality Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARANDU_RESULTS_BASE_DIR` | `./results` | Base directory for versioned results |
-| `ARANDU_RESULTS_ENABLE_VERSIONING` | `true` | Enable versioned result directories |
-| `ARANDU_QUALITY_ENABLED` | `true` | Enable transcription quality validation |
-| `ARANDU_QUALITY_QUALITY_THRESHOLD` | `0.5` | Minimum quality score (0.0-1.0) |
-
-See [Configuration Guide](docs/guide/configuration.md) for complete reference.
-
-## Output Format
-
-Transcription results are saved as JSON files containing:
-
-```json
-{
-  "file_id": "...",
-  "name": "audio.mp3",
-  "mimeType": "audio/mpeg",
-  "size_bytes": 12345678,
-  "duration_milliseconds": 120000,
-  "parents": ["parent_folder_id"],
-  "web_content_link": "https://drive.google.com/...",
-  "transcription_text": "...",
-  "detected_language": "en",
-  "language_probability": 0.95,
-  "model_id": "openai/whisper-large-v3",
-  "compute_device": "cuda:0",
-  "processing_duration_sec": 45.2,
-  "transcription_status": "completed",
-  "created_at_enrichment": "2026-02-11T14:30:22",
-  "segments": [
-    {"text": "...", "start": 0.0, "end": 3.5}
-  ],
-  "transcription_quality": {
-    "script_match_score": 1.0,
-    "repetition_score": 0.95,
-    "segment_quality_score": 1.0,
-    "content_density_score": 0.85,
-    "overall_score": 0.94,
-    "issues_detected": [],
-    "quality_rationale": "High quality transcription"
-  },
-  "is_valid": true
-}
-```
-
-## Requirements
-
-- Python >= 3.13
-- PyTorch (CUDA 12.4 index)
-- Transformers >= 4.57.3
-- Google API Python Client >= 2.100.0
-- OpenAI SDK >= 1.0.0 (supports Ollama and OpenAI-compatible endpoints)
-- Accelerate >= 1.12.0
-- bitsandbytes >= 0.49.1
-- Tenacity >= 8.0.0
-- Rich >= 13.0.0
-- Typer >= 0.9.0
-- Pydantic >= 2.0.0
-- Pydantic Settings >= 2.0.0
-
-Note: NetworkX, scikit-learn, sentence-transformers are planned dependencies for KG/Evaluation phases (not yet in pyproject.toml)
+The [configuration guide](docs/guide/configuration.md) lists every variable.
 
 ## Documentation
 
