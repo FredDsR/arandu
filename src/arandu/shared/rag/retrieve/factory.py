@@ -19,7 +19,12 @@ from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.config import ResultsConfig
 from arandu.shared.embeddings import EmbedderSettings, build_embedder
 from arandu.shared.io import resolve_transcription_path
-from arandu.shared.llm_client import LLMClient, LLMProvider, parse_provider
+from arandu.shared.llm_client import (
+    LLMClient,
+    LLMProvider,
+    parse_provider,
+    reasoning_effort_from_extra_body,
+)
 from arandu.shared.rag.retrieve.settings import (
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
@@ -307,6 +312,9 @@ def _build_atlas_rag(
         kg_outputs_dir=atlas_output_dir,
         llm_client=llm_client.client,
         llm_model_id=llm_client.model_id,
+        reasoning_effort=reasoning_effort_from_extra_body(
+            settings.extra_body, consumer="ARANDU_ATLAS_RAG_"
+        ),
         sentence_encoder=encoder,
         sentence_encoder_model=embedder_settings.model,
         keyword=settings.keyword,

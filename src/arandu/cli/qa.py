@@ -426,6 +426,8 @@ def judge_qa(
             model_id=resolved_model,
             provider=provider or judge_config.validator_provider,
             base_url=base_url or judge_config.validator_base_url,
+            api_key_env=judge_config.validator_api_key_env,
+            extra_body=judge_config.validator_extra_body,
         )
     except ValueError as exc:
         print_error(str(exc))

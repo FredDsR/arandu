@@ -8,6 +8,8 @@ from typing import Any
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from arandu.shared.llm_client import reasoning_effort_from_extra_body
+
 
 class KGConfig(BaseSettings):
     """Configuration settings for the knowledge graph construction pipeline.
@@ -51,6 +53,18 @@ class KGConfig(BaseSettings):
         default=None,
         description="Custom base URL for OpenAI-compatible endpoints",
     )
+    api_key_env: str = Field(
+        default="OPENAI_API_KEY",
+        description="Env var holding the API key (ignored for ollama)",
+    )
+    extra_body: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Extra request fields for KG construction, as JSON. atlas-rag forwards "
+            'only {"reasoning_effort": ...}, e.g. "none" to switch off thinking on '
+            "DeepSeek."
+        ),
+    )
 
     # LLM settings
     temperature: float = Field(
@@ -71,6 +85,13 @@ class KGConfig(BaseSettings):
         default=Path("knowledge_graphs"),
         description="Output directory for knowledge graphs",
     )
+
+    @field_validator("extra_body")
+    @classmethod
+    def validate_extra_body(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Reject extra_body keys atlas-rag cannot forward, before any LLM spend."""
+        reasoning_effort_from_extra_body(v, consumer="ARANDU_KG_")
+        return v
 
     @field_validator("language")
     @classmethod

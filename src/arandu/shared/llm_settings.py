@@ -9,7 +9,7 @@ client module; the settings -> client bridge is
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +22,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #: the :class:`LLMSettings` ``max_tokens`` default and re-exported as
 #: ``arandu.shared.judge.criterion.DEFAULT_MAX_TOKENS``.
 REASONING_MODEL_MAX_TOKENS = 8192
+
+#: Field description shared by every stage config that exposes ``extra_body``.
+EXTRA_BODY_DESCRIPTION = (
+    "Provider-specific fields merged into every request body, as JSON. "
+    'E.g. {"reasoning_effort": "none"} switches off thinking on DeepSeek, '
+    'OpenAI and Mistral; {"enable_thinking": false} does it on Qwen. Thinking '
+    "models ignore temperature, so a low-temperature judge needs thinking off."
+)
 
 
 class LLMSettings(BaseSettings):
@@ -43,6 +51,11 @@ class LLMSettings(BaseSettings):
         model_id: Model identifier.
         api_key_env: Env var holding the API key (ignored for ollama).
         base_url: Base URL override; required when ``provider == "custom"``.
+        extra_body: Provider-specific fields merged into every request body
+            (JSON in the env var), e.g. ``{"reasoning_effort": "none"}`` to
+            switch off thinking on DeepSeek. Thinking models ignore
+            ``temperature``, so a judge meant to run at low temperature needs
+            thinking off.
         temperature: Sampling temperature.
         max_tokens: Cap on each response.
         language: Prompt language; selects the per-stage prompt template.
@@ -58,6 +71,7 @@ class LLMSettings(BaseSettings):
     model_id: str = Field(default="qwen3:14b")
     api_key_env: str = Field(default="OPENAI_API_KEY")
     base_url: str | None = Field(default=None)
+    extra_body: dict[str, Any] | None = Field(default=None, description=EXTRA_BODY_DESCRIPTION)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     # See REASONING_MODEL_MAX_TOKENS. Every stage inherits this headroom; even
     # short-answer stages (e.g. the answerer) need it because the response is

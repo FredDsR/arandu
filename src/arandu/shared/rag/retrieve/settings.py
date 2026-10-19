@@ -15,10 +15,12 @@ the existing :class:`arandu.shared.embeddings.EmbedderSettings`.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from arandu.shared.llm_client import reasoning_effort_from_extra_body
 
 if TYPE_CHECKING:
     from typing import Self
@@ -88,6 +90,9 @@ class AtlasRagRetrieveSettings(BaseSettings):
             CLI reads this env var when constructing the LLMClient.
         base_url: Optional explicit base URL. Required for ``custom``
             provider; ignored for ``openai``/``ollama`` defaults.
+        extra_body: Extra request fields for the NER/filter LLM, as JSON.
+            atlas-rag forwards only ``reasoning_effort`` (e.g. ``"none"`` to
+            switch off thinking on DeepSeek); other keys are rejected.
         keyword: atlas-rag's filename pattern. Defaults to project
             convention ``"transcriptions.json"`` (must match the value
             used at index-build time).
@@ -120,6 +125,10 @@ class AtlasRagRetrieveSettings(BaseSettings):
             "localhost default; custom requires an explicit value."
         ),
     )
+    extra_body: dict[str, Any] | None = Field(
+        default=None,
+        description="Extra request fields; atlas-rag forwards only reasoning_effort.",
+    )
     keyword: str = Field(
         default="transcriptions.json",
         description="atlas-rag filename pattern (must match index build).",
@@ -141,6 +150,13 @@ class AtlasRagRetrieveSettings(BaseSettings):
         """Normalize provider to lowercase so env-var case doesn't break dispatch."""
         if isinstance(v, str):
             return v.lower()
+        return v
+
+    @field_validator("extra_body")
+    @classmethod
+    def _validate_extra_body(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Reject extra_body keys atlas-rag cannot forward."""
+        reasoning_effort_from_extra_body(v, consumer="ARANDU_ATLAS_RAG_")
         return v
 
     @model_validator(mode="after")

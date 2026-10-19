@@ -1287,12 +1287,37 @@ class TestBuildCEPGenerator:
         generator = _build_cep_generator(QAConfig(provider="ollama"), cep, judge)
 
         build_client.assert_called_once_with(
-            "judge-model", provider="ollama", base_url="http://judge:11434/v1"
+            "judge-model",
+            provider="ollama",
+            base_url="http://judge:11434/v1",
+            api_key_env="OPENAI_API_KEY",
+            extra_body=None,
         )
         judge_cls.assert_called_once_with(
             validator_client=build_client.return_value, cep_config=cep, judge_config=judge
         )
         assert generator._bloom_generator.validator is judge_cls.return_value
+
+    def test_generation_client_uses_api_key_env_and_extra_body(
+        self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        openai_cls = mocker.patch("arandu.shared.llm_client.OpenAI")
+        qa = QAConfig(
+            provider="custom",
+            model_id="deepseek-flash",
+            base_url="https://api.deepseek.com",
+            api_key_env="DEEPSEEK_API_KEY",
+            extra_body={"reasoning_effort": "none"},
+        )
+        cep = CEPConfig(enable_scaffolding_gate=False)
+
+        generator = _build_cep_generator(qa, cep, JudgeConfig())
+
+        assert openai_cls.call_args.kwargs["api_key"] == "sk-deepseek"
+        assert generator.llm_client.extra_body == {"reasoning_effort": "none"}
 
     def test_build_cep_generator_skips_validator_without_scaffolding(
         self, mocker: MockerFixture

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import multiprocessing as mp
+import os
 import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime
@@ -242,6 +243,8 @@ def build_gate_validator_client(judge_config: JudgeConfig) -> LLMClient:
         judge_config.validator_model,
         provider=judge_config.validator_provider,
         base_url=judge_config.validator_base_url,
+        api_key_env=judge_config.validator_api_key_env,
+        extra_body=judge_config.validator_extra_body,
     )
 
 
@@ -276,7 +279,9 @@ def _build_cep_generator(
     llm_client = LLMClient(
         provider=parse_provider(qa_config.provider),
         model_id=qa_config.model_id,
+        api_key=os.environ.get(qa_config.api_key_env),
         base_url=base_url,
+        extra_body=qa_config.extra_body,
     )
 
     validator = None

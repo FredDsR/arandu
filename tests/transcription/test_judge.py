@@ -448,3 +448,24 @@ class TestJudgeTranscriptionCLI:
         result_rejudge = runner.invoke(app, ["judge-transcription", str(input_dir), "--rejudge"])
         assert result_rejudge.exit_code == 0, result_rejudge.stdout
         evaluate_mock.assert_called_once()
+
+
+class TestBuildValidatorClientCredentials:
+    """The validator reads its key from a configurable env var and forwards extra_body."""
+
+    def test_api_key_env_and_extra_body(
+        self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        openai_cls = mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = build_validator_client(
+            "deepseek-flash",
+            provider="custom",
+            base_url="https://api.deepseek.com",
+            api_key_env="DEEPSEEK_API_KEY",
+            extra_body={"reasoning_effort": "none"},
+        )
+
+        assert openai_cls.call_args.kwargs["api_key"] == "sk-deepseek"
+        assert client.extra_body == {"reasoning_effort": "none"}

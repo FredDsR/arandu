@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import shutil
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
     from arandu.shared.schemas import TranscriptionRecord
 
 from arandu.kg.schemas import KGConstructionResult
-from arandu.shared.llm_client import create_llm_client
+from arandu.shared.llm_client import create_llm_client, reasoning_effort_from_extra_body
 from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
 from arandu.utils.paths import get_project_root
 
@@ -533,6 +534,7 @@ class AtlasRagConstructor:
         return create_llm_client(
             provider=self._config.provider,
             model_id=self._config.model_id,
+            api_key=os.environ.get(self._config.api_key_env),
             base_url=self._config.base_url
             or (self._config.ollama_url if self._config.provider == "ollama" else None),
         )
@@ -540,14 +542,24 @@ class AtlasRagConstructor:
     def _build_generation_config(self) -> Any:
         """Build an atlas-rag ``GenerationConfig`` from KGConfig settings.
 
+        atlas-rag sends its own requests from the raw OpenAI client, so the
+        ``reasoning_effort`` of ``KGConfig.extra_body`` travels here rather
+        than through the ``LLMClient``.
+
         Returns:
             A ``GenerationConfig`` instance with temperature from KGConfig.
+
+        Raises:
+            ValueError: If ``extra_body`` has keys atlas-rag cannot forward.
         """
         from atlas_rag.llm_generator.generation_config import GenerationConfig
 
         return GenerationConfig(
             temperature=self._config.temperature,
             max_tokens=self._opts["max_new_tokens"],
+            reasoning_effort=reasoning_effort_from_extra_body(
+                self._config.extra_body, consumer="ARANDU_KG_"
+            ),
         )
 
     def _build_processing_config(

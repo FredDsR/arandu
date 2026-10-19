@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from arandu.kg.config import KGConfig
 from arandu.shared.schemas import SourceMetadata, TranscriptionRecord
@@ -718,6 +719,11 @@ class TestDetectResumeOffset:
 class TestBuildLLMClient:
     """Tests for _build_llm_client (delegates to unified LLMClient)."""
 
+    @pytest.fixture(autouse=True)
+    def _no_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Keep a developer's real OPENAI_API_KEY out of the expected calls."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
     def test_ollama_provider(self, _mock_atlas_rag: dict, mocker: MockerFixture) -> None:
         """Test LLM client construction for Ollama provider."""
         mock_create = mocker.patch("arandu.kg.atlas_backend.create_llm_client")
@@ -731,6 +737,7 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="ollama",
             model_id=config.model_id,
+            api_key=None,
             base_url="http://localhost:11434/v1",
         )
 
@@ -749,6 +756,7 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="custom",
             model_id=config.model_id,
+            api_key=None,
             base_url="http://my-api:8000/v1",
         )
 
@@ -767,8 +775,52 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="custom",
             model_id=config.model_id,
+            api_key=None,
             base_url=None,
         )
+
+    def test_api_key_read_from_configured_env_var(
+        self, _mock_atlas_rag: dict, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The key comes from KGConfig.api_key_env, not implicitly from OPENAI_API_KEY."""
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        mock_create = mocker.patch("arandu.kg.atlas_backend.create_llm_client")
+
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig(
+            provider="custom",
+            base_url="https://api.deepseek.com",
+            api_key_env="DEEPSEEK_API_KEY",
+        )
+        AtlasRagConstructor(config)._build_llm_client()
+
+        assert mock_create.call_args.kwargs["api_key"] == "sk-deepseek"
+
+    def test_reasoning_effort_reaches_generation_config(
+        self, _mock_atlas_rag: dict, mocker: MockerFixture
+    ) -> None:
+        """extra_body's reasoning_effort is forwarded through atlas-rag's GenerationConfig."""
+        gen_config_cls = mocker.MagicMock()
+        mocker.patch.dict(
+            "sys.modules",
+            {
+                "atlas_rag.llm_generator.generation_config": mocker.MagicMock(
+                    GenerationConfig=gen_config_cls
+                )
+            },
+        )
+        from arandu.kg.atlas_backend import AtlasRagConstructor
+
+        config = KGConfig(extra_body={"reasoning_effort": "none"})
+        AtlasRagConstructor(config)._build_generation_config()
+
+        assert gen_config_cls.call_args.kwargs["reasoning_effort"] == "none"
+
+    def test_extra_body_with_unforwardable_key_rejected(self) -> None:
+        """Keys atlas-rag would drop silently fail at config validation."""
+        with pytest.raises(ValidationError, match="enable_thinking"):
+            KGConfig(extra_body={"enable_thinking": False})
 
 
 class TestInjectConceptPrompts:

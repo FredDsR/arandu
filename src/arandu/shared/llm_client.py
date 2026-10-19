@@ -1,7 +1,7 @@
 """Unified LLM client using OpenAI SDK with configurable base_url.
 
-Supports OpenAI, Ollama, and any OpenAI-compatible provider through
-the OpenAI SDK's base_url parameter.
+Supports OpenAI, Ollama, and any OpenAI-compatible provider (Gemini,
+DeepSeek, Maritaca, Qwen, ...) through the OpenAI SDK's base_url parameter.
 """
 
 from __future__ import annotations
@@ -115,6 +115,7 @@ class LLMClient:
         model_id: str,
         api_key: str | None = None,
         base_url: str | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the LLM client.
 
@@ -123,9 +124,14 @@ class LLMClient:
             model_id: The model identifier (e.g., "gpt-4", "llama3.1:8b").
             api_key: API key for authentication. Optional for Ollama.
             base_url: Custom base URL. If not provided, uses provider default.
+            extra_body: Provider-specific fields merged into every request
+                body, e.g. ``{"reasoning_effort": "none"}`` to switch off
+                thinking on DeepSeek/OpenAI/Mistral, or
+                ``{"enable_thinking": False}`` on Qwen.
         """
         self.provider = provider
         self.model_id = model_id
+        self.extra_body = dict(extra_body) if extra_body else None
 
         # Determine base_url: explicit > provider default
         if base_url:
@@ -225,6 +231,9 @@ class LLMClient:
 
         if response_format is not None:
             kwargs["response_format"] = response_format
+
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
 
         response = self.client.chat.completions.create(**kwargs)
 
@@ -442,6 +451,7 @@ def create_llm_client(
     model_id: str,
     api_key: str | None = None,
     base_url: str | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> LLMClient:
     """Factory function to create an LLM client.
 
@@ -451,6 +461,7 @@ def create_llm_client(
         model_id: The model identifier.
         api_key: API key for authentication.
         base_url: Custom base URL for the API endpoint.
+        extra_body: Provider-specific fields merged into every request body.
 
     Returns:
         Configured LLMClient instance.
@@ -467,7 +478,41 @@ def create_llm_client(
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
+        extra_body=extra_body,
     )
+
+
+def reasoning_effort_from_extra_body(
+    extra_body: dict[str, Any] | None, *, consumer: str
+) -> str | None:
+    """Return the ``reasoning_effort`` of an ``extra_body`` for atlas-rag consumers.
+
+    atlas-rag builds its own requests from a raw OpenAI client and forwards
+    only the fields of its ``GenerationConfig``, so of an ``extra_body`` it can
+    carry ``reasoning_effort`` alone. Any other key would be dropped silently,
+    which for a switch like Qwen's ``enable_thinking`` changes what the model
+    does; it is rejected instead.
+
+    Args:
+        extra_body: The stage's configured extra request fields.
+        consumer: Env-var prefix of the stage, named in the error message.
+
+    Returns:
+        The ``reasoning_effort`` value, or ``None`` when not configured.
+
+    Raises:
+        ValueError: If ``extra_body`` has keys other than ``reasoning_effort``.
+    """
+    if not extra_body:
+        return None
+    unsupported = sorted(set(extra_body) - {"reasoning_effort"})
+    if unsupported:
+        raise ValueError(
+            f"{consumer}EXTRA_BODY keys {unsupported} are not supported: atlas-rag "
+            f"forwards only 'reasoning_effort'. Use a provider that switches thinking "
+            f"off through reasoning_effort (e.g. DeepSeek, OpenAI, Mistral)."
+        )
+    return extra_body.get("reasoning_effort")
 
 
 def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
@@ -516,4 +561,5 @@ def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
         model_id=settings.model_id,
         api_key=api_key,
         base_url=settings.base_url,
+        extra_body=settings.extra_body,
     )

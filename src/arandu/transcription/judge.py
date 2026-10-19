@@ -10,7 +10,8 @@ drift, formulaic Whisper hallucinations).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Any
 
 from arandu.shared.config import get_llm_config
 from arandu.shared.judge import (
@@ -39,6 +40,8 @@ def build_validator_client(
     *,
     provider: str | None = None,
     base_url: str | None = None,
+    api_key_env: str = "OPENAI_API_KEY",
+    extra_body: dict[str, Any] | None = None,
 ) -> LLMClient:
     """Build an ``LLMClient`` for the ``TranscriptionJudge`` LLM stage.
 
@@ -57,6 +60,9 @@ def build_validator_client(
         model_id: Model identifier (e.g. ``'qwen3:14b'``, ``'gemini-2.5-flash'``).
         provider: Optional provider name. ``'openai'`` / ``'ollama'`` / ``'custom'``.
         base_url: Optional explicit base URL override.
+        api_key_env: Env var holding the API key. Unset for ollama is fine.
+        extra_body: Provider-specific fields merged into every request body
+            (e.g. ``{"reasoning_effort": "none"}`` to switch off thinking).
 
     Returns:
         A configured ``LLMClient`` instance ready to pass as
@@ -98,7 +104,9 @@ def build_validator_client(
     return LLMClient(
         provider=provider_enum,
         model_id=model_id,
+        api_key=os.environ.get(api_key_env),
         base_url=resolved_base_url,
+        extra_body=extra_body,
     )
 
 

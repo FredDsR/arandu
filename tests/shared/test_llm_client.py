@@ -19,6 +19,7 @@ from arandu.shared.llm_client import (
     StructuredOutputError,
     build_llm_client_from_settings,
     create_llm_client,
+    reasoning_effort_from_extra_body,
 )
 from arandu.shared.llm_settings import LLMSettings
 from arandu.utils.text import GenerateResult
@@ -950,3 +951,67 @@ class TestSchemaFallbackHardening:
 
         with pytest.raises(InternalServerError):
             client.generate_structured("p", _StructuredDemo)
+
+
+class TestExtraBody:
+    """extra_body carries provider-specific switches (e.g. thinking off) into every request."""
+
+    @staticmethod
+    def _mock_client(mocker: MockerFixture) -> Mock:
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        message = Mock(content="ok", reasoning_content=None, reasoning=None, model_extra=None)
+        mock_client.chat.completions.create.return_value = Mock(choices=[Mock(message=message)])
+        mock_openai.return_value = mock_client
+        return mock_client
+
+    def test_generate_forwards_extra_body(self, mocker: MockerFixture) -> None:
+        mock_client = self._mock_client(mocker)
+        client = LLMClient(
+            LLMProvider.CUSTOM,
+            "deepseek-flash",
+            api_key="sk",
+            base_url="https://api.deepseek.com",
+            extra_body={"reasoning_effort": "none"},
+        )
+
+        client.generate("p")
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert kwargs["extra_body"] == {"reasoning_effort": "none"}
+
+    def test_generate_omits_extra_body_by_default(self, mocker: MockerFixture) -> None:
+        mock_client = self._mock_client(mocker)
+        LLMClient(LLMProvider.OLLAMA, "qwen3:14b").generate("p")
+
+        assert "extra_body" not in mock_client.chat.completions.create.call_args.kwargs
+
+    def test_settings_extra_body_parsed_from_env_and_forwarded(
+        self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        monkeypatch.setenv("ARANDU_LLM_EXTRA_BODY", '{"enable_thinking": false}')
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+
+        settings = LLMSettings(
+            provider="custom", base_url="https://api.example/v1", api_key_env="DEEPSEEK_API_KEY"
+        )
+        client = build_llm_client_from_settings(settings)
+
+        assert client.extra_body == {"enable_thinking": False}
+
+
+class TestReasoningEffortFromExtraBody:
+    """atlas-rag consumers accept only reasoning_effort from extra_body."""
+
+    def test_none_and_empty_yield_none(self) -> None:
+        assert reasoning_effort_from_extra_body(None, consumer="X_") is None
+        assert reasoning_effort_from_extra_body({}, consumer="X_") is None
+
+    def test_returns_reasoning_effort(self) -> None:
+        body = {"reasoning_effort": "none"}
+        assert reasoning_effort_from_extra_body(body, consumer="X_") == "none"
+
+    def test_other_keys_rejected_with_prefix(self) -> None:
+        with pytest.raises(ValueError, match="ARANDU_KG_EXTRA_BODY"):
+            reasoning_effort_from_extra_body({"enable_thinking": False}, consumer="ARANDU_KG_")
