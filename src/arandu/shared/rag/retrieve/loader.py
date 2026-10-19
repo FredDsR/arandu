@@ -101,12 +101,15 @@ class QuestionRecord(BaseModel):
     parent_qa_pair_id: str | None = None
 
     @property
-    def source_qa_pair_id(self) -> str:
+    def source_qa_pair_id(self) -> str | None:
         """Return the id of the CEP pair whose context this item was built from.
 
-        A CEP row is its own source; a non-answerable item points to its parent.
+        A CEP row is its own source; a non-answerable item points to its parent,
+        or to nothing (``None``) when its dataset predates the parent link.
         """
-        return self.parent_qa_pair_id or self.qa_pair_id
+        if self.source == "cep":
+            return self.qa_pair_id
+        return self.parent_qa_pair_id
 
 
 def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list[QuestionRecord]:

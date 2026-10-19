@@ -75,9 +75,14 @@ class TestOracleRetriever:
         with pytest.raises(ValueError, match="source_qa_pair_id"):
             OracleRetriever({}).retrieve(_query(None), top_k=5)
 
+    def test_empty_context_raises(self) -> None:
+        retriever = OracleRetriever({"f:chk_0:0": ("chk_0", "  ")})
+        with pytest.raises(ValueError, match="empty"):
+            retriever.retrieve(_query("f:chk_0:0"), top_k=5)
+
     def test_unknown_id_raises(self) -> None:
         # An empty record would read as an abstention; the batch must see a failure.
-        with pytest.raises(KeyError, match="missing:x:0"):
+        with pytest.raises(LookupError, match="missing:x:0"):
             OracleRetriever({}).retrieve(_query("missing:x:0"), top_k=5)
 
 

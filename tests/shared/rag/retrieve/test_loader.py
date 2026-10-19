@@ -199,9 +199,9 @@ class TestLoadQuestionsNonAnswerable:
         na_item = next(q for q in questions if q.source == "nonanswerable")
         assert na_item.qa_pair_id == "swap:0001"
         assert na_item.is_answerable is False
-        # Older datasets without the parent link load; the item is its own source.
+        # Older datasets without the parent link load, with no source pair.
         assert na_item.parent_qa_pair_id is None
-        assert na_item.source_qa_pair_id == "swap:0001"
+        assert na_item.source_qa_pair_id is None
 
     def test_nonanswerable_parent_link_sets_source_qa_pair_id(self, tmp_path: Path) -> None:
         cep_dir = tmp_path / "cep"

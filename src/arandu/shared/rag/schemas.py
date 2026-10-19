@@ -2,7 +2,7 @@
 
 Defines:
 
-- :class:`RetrievalQuery` — what a retriever receives for one item.
+- :class:`RetrievalQuery`: what a retriever receives for one item.
 - :class:`RetrievedPassage` — a single ranked passage handed back by a retriever.
 - :class:`RetrievalRecord` — the complete output of a retrieval call for one
   question against one retriever arm.

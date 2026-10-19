@@ -103,7 +103,7 @@ class OracleRetriever:
         Raises:
             ValueError: If ``query.source_qa_pair_id`` is ``None`` (an ad-hoc
                 query has no source pair to look up).
-            KeyError: If no CEP pair has that id (e.g. a
+            LookupError: If no CEP pair has that id (e.g. a
                 non-answerable item generated against another CEP output).
                 Raising lets the batch runner mark the item failed instead of
                 writing an empty record that would read as an abstention.
@@ -115,8 +115,11 @@ class OracleRetriever:
             raise ValueError("The oracle arm needs query.source_qa_pair_id; got None.")
         entry = self._contexts.get(source_qa_pair_id)
         if entry is None:
-            raise KeyError(f"Oracle has no context for qa_pair_id {source_qa_pair_id!r}.")
+            raise LookupError(f"Oracle has no context for qa_pair_id {source_qa_pair_id!r}.")
         chunk_id, context = entry
+        if not context.strip():
+            # An empty passage would read as missing evidence, not as a failure.
+            raise ValueError(f"Oracle context for qa_pair_id {source_qa_pair_id!r} is empty.")
         return [
             RetrievedPassage(
                 chunk_id=chunk_id,

@@ -82,7 +82,7 @@ from typing import Any
 import numpy as np
 
 from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
-from arandu.qa.schemas import QARecordCEP
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 from arandu.shared.agreement.coefficients import (
     cohen_kappa_weighted,
     gwet_ac2,
@@ -97,6 +97,9 @@ TAU = DEFAULT_THRESHOLD
 TAU_EMIC = 4
 ARMS = ["null", "bm25", "khop_passage", "khop_triple", "atlas_rag"]
 GRAPH_ARMS = ["khop_passage", "khop_triple", "atlas_rag"]
+# Control arms fix the ends of the scale (null retrieves nothing, oracle returns the
+# gold chunk); their near-constant verdicts stay out of the pooled strata.
+CONTROL_ARMS = frozenset({"null", "oracle"})
 BLOOM = ["remember", "understand", "analyze", "evaluate"]
 HIGHER = ["understand", "analyze", "evaluate"]
 GATE_CRITERIA = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
@@ -121,7 +124,7 @@ def load_cep(cep_dir: Path) -> dict[str, dict[str, Any]]:
     for path in sorted(cep_dir.glob("*.json")):
         rec = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
         for idx, pair in enumerate(rec.qa_pairs):
-            pid = f"{rec.source_file_id}:{pair.chunk_id or 'none'}:{idx}"
+            pid = cep_qa_pair_id(rec.source_file_id, pair.chunk_id, idx)
             v = pair.validation
             out[pid] = {
                 "bloom": str(pair.bloom_level),
@@ -1427,18 +1430,19 @@ def answers_section(
             "abstain_decision": {},
             "transitions": {},
         }
-        # The null arm is constant (always abstains, coverage 0) and would inflate a
-        # pooled coefficient, so the pooled strata cover the retrieval arms only.
+        # The control arms are near-constant (null always abstains with coverage 0,
+        # oracle always holds the gold chunk) and would inflate a pooled coefficient,
+        # so the pooled strata cover the retrieval arms only.
         strata: dict[str, list[tuple[str, str]]] = {}
         for stratum, pred in preds.items():
             ks = [k for k in sk if pred(k)]
-            strata[stratum] = [k for k in ks if k[0] != "null"]
+            strata[stratum] = [k for k in ks if k[0] not in CONTROL_ARMS]
             for arm in ARMS:
                 strata[f"{stratum}.{arm}"] = [k for k in ks if k[0] == arm]
             if stratum != "useful":
                 for lvl in BLOOM if stratum == "total" else HIGHER:
                     strata[f"{stratum}.{lvl}"] = [
-                        k for k in ks if k[0] != "null" and level(k) == lvl
+                        k for k in ks if k[0] not in CONTROL_ARMS and level(k) == lvl
                     ]
         for crit in [*ANS_CRITERIA, "passage_coverage_pass"]:
             nominal = crit == "passage_coverage_pass"
