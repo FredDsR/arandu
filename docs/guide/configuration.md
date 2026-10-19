@@ -140,6 +140,8 @@ Configuration settings for the QA generation pipeline.
 | `model_id` | `str` | `"qwen3:14b"` | Model ID for QA generation |
 | `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL |
 | `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
+| `api_key_env` | `str` | `"OPENAI_API_KEY"` | Env var holding the API key (ignored for ollama) |
+| `extra_body` | `dict \| None` | `None` | Provider-specific fields merged into every request body, set as JSON. See [Cloud providers and thinking models](#cloud-providers-and-thinking-models) |
 
 ### Generation Settings
 
@@ -240,6 +242,8 @@ Configuration for the composable judge pipeline. Supplies the validator LLM clie
 | `validator_model` | `str \| None` | `None` | Model ID enabling the LLM stage (e.g. `qwen3:14b`, `gemini-2.5-flash`). When unset, `judge-transcription` runs heuristic-only and skips the LLM stage. Also feeds the CEP scaffolding gate, where it is required while the gate is active |
 | `validator_provider` | `str \| None` | `None` | Provider: "openai", "ollama", or "custom". Inferred from `ARANDU_LLM_BASE_URL` (custom when set, else ollama) when unspecified |
 | `validator_base_url` | `str \| None` | `None` | Base URL for the validator provider. Inherits `ARANDU_LLM_BASE_URL` only when the resolved provider is "custom" |
+| `validator_api_key_env` | `str` | `"OPENAI_API_KEY"` | Env var holding the validator's API key (ignored for ollama) |
+| `validator_extra_body` | `dict \| None` | `None` | Provider-specific fields merged into every request body, set as JSON. See [Cloud providers and thinking models](#cloud-providers-and-thinking-models). Recorded in the `judge-qa` run snapshot |
 
 **Example Configuration**:
 ```python
@@ -267,6 +271,8 @@ emic judgment deliberately changes.
 | `provider` | `str` | `"ollama"` | LLM provider: "ollama", "openai", or "custom" |
 | `model_id` | `str` | `"qwen3:14b"` | Model identifier. **Methodological parameter**: see the note below |
 | `base_url` | `str \| None` | `None` | Base URL override; required when `provider == "custom"` |
+| `api_key_env` | `str` | `"OPENAI_API_KEY"` | Env var holding the API key (ignored for ollama) |
+| `extra_body` | `dict \| None` | `None` | Provider-specific fields merged into every request body, set as JSON. See [Cloud providers and thinking models](#cloud-providers-and-thinking-models). Every `LLMSettings` stage (answerer, judge-answers, non-answerable) has the same field |
 | `temperature` | `float` | `0.1` | Lower than the other judges: the emic judgment is structural, not creative (spec §4.2 principle 8) |
 | `max_tokens` | `int` | `8192` | Response budget. qwen3 burns thinking tokens against it |
 | `language` | `"pt"` | `"pt"` | Narrowed to `pt`, the only `emic_validity` prompt template that ships today |
@@ -323,6 +329,8 @@ Configuration settings for the knowledge graph construction pipeline.
 | `model_id` | `str` | `"llama3.1:8b"` | Model ID for KG construction |
 | `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL for KG construction |
 | `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
+| `api_key_env` | `str` | `"OPENAI_API_KEY"` | Env var holding the API key (ignored for ollama) |
+| `extra_body` | `dict \| None` | `None` | Extra request fields, as JSON. atlas-rag forwards only `reasoning_effort`, so any other key is rejected at load time. `ARANDU_ATLAS_RAG_EXTRA_BODY` follows the same rule for the retrieve arm |
 
 ### LLM Settings
 
@@ -517,6 +525,67 @@ ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
 ```
 
 **Note**: The `.env` file should be added to `.gitignore`.
+
+### Cloud providers and thinking models
+
+Any OpenAI-compatible API works with `provider=custom` and its base URL. Each
+stage reads its key from the env var its `*_API_KEY_ENV` names, so stages can
+use different providers in one run. Embeddings are separate
+(`ARANDU_EMBEDDER_*`): DeepSeek and Maritaca have no embedding API, so keep the
+embedder on Gemini or `sentence_transformers`.
+
+| Provider | `BASE_URL` | Example `MODEL_ID` | Thinking off (`EXTRA_BODY`) |
+|---|---|---|---|
+| DeepSeek | `https://api.deepseek.com` | `deepseek-flash`, `deepseek-v4-pro` | `{"reasoning_effort": "none"}` |
+| Maritaca | `https://chat.maritaca.ai/api` | `sabia-4`, `sabiazinho-4` | not needed (non-thinking models) |
+| Qwen (DashScope intl.) | `https://<workspace>.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` | `qwen3.8-flash` | `{"enable_thinking": false}` |
+| Mistral | `https://api.mistral.ai/v1` | `mistral-small-2603` | `{"reasoning_effort": "none"}` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash` | `{"reasoning_effort": "none"}` |
+
+Thinking models ignore `temperature`, so a judge configured for low-temperature
+scoring needs thinking off, and the reasoning tokens are billed as output and
+count against `max_tokens`. atlas-rag (`build-kg`, the `atlas_rag` retrieve
+arm) forwards only `reasoning_effort`; use a provider that honours it there.
+DeepSeek accepts only `json_object` structured output: the client tries
+`json_schema` once, gets a 400, and falls back to `json_object` for the rest of
+the run. Maritaca documents structured output only for its Responses API, so
+check JSON mode on Chat Completions with a short smoke run first. Verify base
+URLs and model ids against the provider's docs before a run; they change.
+
+DeepSeek on every LLM stage (`.env`):
+
+```bash
+DEEPSEEK_API_KEY=sk-...
+
+ARANDU_QA_PROVIDER=custom
+ARANDU_QA_BASE_URL=https://api.deepseek.com
+ARANDU_QA_MODEL_ID=deepseek-flash
+ARANDU_QA_API_KEY_ENV=DEEPSEEK_API_KEY
+ARANDU_QA_EXTRA_BODY={"reasoning_effort": "none"}
+
+ARANDU_JUDGE_VALIDATOR_PROVIDER=custom
+ARANDU_JUDGE_VALIDATOR_BASE_URL=https://api.deepseek.com
+ARANDU_JUDGE_VALIDATOR_MODEL=deepseek-flash
+ARANDU_JUDGE_VALIDATOR_API_KEY_ENV=DEEPSEEK_API_KEY
+ARANDU_JUDGE_VALIDATOR_EXTRA_BODY={"reasoning_effort": "none"}
+
+ARANDU_KG_PROVIDER=custom
+ARANDU_KG_BASE_URL=https://api.deepseek.com
+ARANDU_KG_MODEL_ID=deepseek-flash
+ARANDU_KG_API_KEY_ENV=DEEPSEEK_API_KEY
+ARANDU_KG_EXTRA_BODY={"reasoning_effort": "none"}
+
+# Same four variables (PROVIDER, BASE_URL, MODEL_ID, API_KEY_ENV) plus
+# EXTRA_BODY for ARANDU_ANSWERER_, ARANDU_JUDGE_ANSWERS_,
+# ARANDU_NONANSWERABLE_, ARANDU_EMIC_JUDGE_ and ARANDU_ATLAS_RAG_.
+```
+
+On the cluster the worker container receives every `ARANDU_*` variable and every `*_API_KEY`
+(`scripts/slurm/container_lib.sh`); under `docker compose` the services forward
+`OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` and `MARITACA_API_KEY`.
+
+Price the run first with `uv run python scripts/estimate_pipeline_cost.py --id <run-id>
+--providers deepseek-flash,sabia-4` (add `--reasoning-tokens N` when thinking stays on).
 
 ---
 
