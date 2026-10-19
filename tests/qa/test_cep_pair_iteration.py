@@ -12,12 +12,12 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+import pytest
+
 from arandu.qa.schemas import cep_qa_pair_id, iter_cep_pairs
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 def _pair(question: str, chunk_id: str | None, passed: bool | None = None) -> dict:
@@ -92,6 +92,19 @@ class TestIterCepPairs:
 
         assert [r.qa_pair_id for r in refs] == ["a:c0:0"]
         assert any("broken.json" in r.message for r in caplog.records)
+
+    def test_undecodable_file_is_skipped(self, tmp_path: Path) -> None:
+        _write_record(tmp_path, "a", [_pair("A0?", "c0")])
+        (tmp_path / "latin1.json").write_bytes(b"\xff\xfe{")
+
+        assert [r.qa_pair_id for r in iter_cep_pairs(tmp_path)] == ["a:c0:0"]
+
+    def test_strict_raises_on_unreadable_file(self, tmp_path: Path) -> None:
+        _write_record(tmp_path, "a", [_pair("A0?", "c0")])
+        (tmp_path / "broken.json").write_text("{not json")
+
+        with pytest.raises(ValueError):
+            list(iter_cep_pairs(tmp_path, strict=True))
 
     def test_missing_dir_yields_nothing(self, tmp_path: Path) -> None:
         assert list(iter_cep_pairs(tmp_path / "absent")) == []

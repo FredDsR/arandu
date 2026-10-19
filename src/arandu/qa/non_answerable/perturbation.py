@@ -75,7 +75,7 @@ def stratified_seed_sample(
     by_bloom: dict[str, list[SeedPair]] = defaultdict(list)
     for ref in iter_cep_pairs(cep_dir):
         pair = ref.pair
-        if pair.validation is None or not pair.validation.passed:
+        if pair.is_valid is not True:
             continue
         by_bloom[str(pair.bloom_level)].append(
             SeedPair(

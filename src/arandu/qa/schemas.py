@@ -7,14 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import (
-    BaseModel,
-    Field,
-    ValidationError,
-    computed_field,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from arandu.shared.judge.schemas import JudgeResultMixin
 from arandu.shared.schemas import BloomLevel, SourceMetadata  # noqa: TC001
@@ -272,7 +265,7 @@ class CEPPairRef(BaseModel):
     pair: QAPairCEP
 
 
-def iter_cep_pairs(cep_dir: Path) -> Iterator[CEPPairRef]:
+def iter_cep_pairs(cep_dir: Path, *, strict: bool = False) -> Iterator[CEPPairRef]:
     """Yield every pair of every readable CEP record under ``cep_dir``.
 
     The single walk over ``results/<id>/cep/outputs/``: files in sorted
@@ -282,15 +275,25 @@ def iter_cep_pairs(cep_dir: Path) -> Iterator[CEPPairRef]:
 
     Args:
         cep_dir: Directory of :class:`QARecordCEP` JSON files.
+        strict: Raise on an unreadable or invalid file instead of skipping it.
+            For callers that cache or publish a result, where a silently
+            incomplete pair set is worse than a failed run.
 
     Yields:
-        One :class:`CEPPairRef` per pair. Unreadable or invalid files are
-        logged and skipped.
+        One :class:`CEPPairRef` per pair. Unless ``strict``, unreadable or
+        invalid files are logged and skipped.
+
+    Raises:
+        OSError: With ``strict``, if a file cannot be read.
+        ValueError: With ``strict``, if a file is not valid UTF-8 or not a
+            valid :class:`QARecordCEP` (``ValidationError`` is a subclass).
     """
     for path in sorted(cep_dir.glob("*.json")):
         try:
             record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as exc:
+        except (OSError, ValueError) as exc:  # ValueError covers ValidationError and decode
+            if strict:
+                raise
             logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
             continue
         for idx, pair in enumerate(record.qa_pairs):
