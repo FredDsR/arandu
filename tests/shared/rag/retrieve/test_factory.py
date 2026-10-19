@@ -24,11 +24,23 @@ from arandu.shared.rag.retrieve.settings import (
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
+from arandu.shared.rag.retrievers.oracle import OracleRetriever
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from tests.conftest import TranscriptionRecordWriter
+
+
+class TestOracleArm:
+    def test_builds_from_cep_outputs(self, tmp_path: Path) -> None:
+        (tmp_path / "run_x" / "cep" / "outputs").mkdir(parents=True)
+        retriever = build_retriever("oracle", pipeline_id="run_x", base_dir=tmp_path)
+        assert isinstance(retriever, OracleRetriever)
+
+    def test_missing_cep_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
+            build_retriever("oracle", pipeline_id="never_built", base_dir=tmp_path)
 
 
 class TestNullArm:

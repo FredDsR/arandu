@@ -11,6 +11,8 @@ Three retriever families produce three chunk_id namespaces:
 - **khop_triple** emits ``"triple:<sha>"`` ids with the text already
   in ``RetrievedPassage.payload``; the packer handles those without
   consulting this map.
+- **oracle** emits the source pair's ``cep_4k`` chunk_id with the text
+  already in ``payload`` (prose), so it needs no entry here either.
 
 This helper unions the BM25 + atlas-rag/khop_passage resolutions into a
 single dict the batch driver can pass to :func:`pack_passages`.

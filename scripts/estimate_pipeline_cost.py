@@ -84,7 +84,7 @@ KG_CONCEPT_BATCH = 16  # ATLAS_DEFAULTS["batch_size_concept"]
 KG_NODES_PER_PASSAGE = 33.0
 KG_EDGES_PER_NODE = 4.3
 
-DEFAULT_ARMS = 5  # bm25, atlas_rag, khop_passage, khop_triple, null
+DEFAULT_ARMS = 6  # bm25, atlas_rag, khop_passage, khop_triple, null, oracle
 # Default Bloom ladder is 3:1:1:1 (remember:understand:analyze:evaluate) -> remember = 3/6.
 REMEMBER_FRACTION = 0.5
 WHISPER_RTF = 0.30  # whisper-large-v3 GPU real-time factor (frac of audio duration)

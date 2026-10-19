@@ -5,6 +5,7 @@ from arandu.shared.rag.retrievers.bm25 import BM25Retriever
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
+from arandu.shared.rag.retrievers.oracle import OracleRetriever
 
 __all__ = [
     "AtlasRagRetriever",
@@ -12,4 +13,5 @@ __all__ = [
     "KHopSubgraphRetriever",
     "KHopTripleRetriever",
     "NullRetriever",
+    "OracleRetriever",
 ]

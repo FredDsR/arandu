@@ -199,3 +199,25 @@ class TestLoadQuestionsNonAnswerable:
         na_item = next(q for q in questions if q.source == "nonanswerable")
         assert na_item.qa_pair_id == "swap:0001"
         assert na_item.is_answerable is False
+        # Older datasets without the parent link load; the item is its own source.
+        assert na_item.parent_qa_pair_id is None
+        assert na_item.source_qa_pair_id == "swap:0001"
+
+    def test_nonanswerable_parent_link_sets_source_qa_pair_id(self, tmp_path: Path) -> None:
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(cep_dir, "src_a", [_qa_pair("CEP question?", chunk_id="c0")])
+        na_dir = tmp_path / "nonanswerable"
+        na_dir.mkdir()
+        item = {
+            "qa_pair_id": "src_a:c0:0:na0",
+            "question": "Non-answerable question?",
+            "source_file_id": "src_a",
+            "parent_qa_pair_id": "src_a:c0:0",
+        }
+        (na_dir / "items.json").write_text(json.dumps({"items": [item]}))
+
+        questions = load_questions(cep_dir, na_dir)
+        cep_item, na_item = questions
+        assert cep_item.source_qa_pair_id == "src_a:c0:0"
+        assert na_item.source_qa_pair_id == "src_a:c0:0"

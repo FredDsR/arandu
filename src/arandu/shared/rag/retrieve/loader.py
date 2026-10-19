@@ -56,6 +56,7 @@ class _NonAnswerableItem(BaseModel):
         min_length=1,
     )
     chunker_id: str = Field(default="unknown")
+    parent_qa_pair_id: str | None = Field(default=None)
 
 
 class _NonAnswerableBatch(BaseModel):
@@ -85,6 +86,8 @@ class QuestionRecord(BaseModel):
             generation). The retrieve stage records this on each
             :class:`RetrievalRecord` to preserve the chunker → retriever
             provenance.
+        parent_qa_pair_id: For non-answerable items, the ``qa_pair_id`` of
+            the CEP pair the item was perturbed from. ``None`` for CEP rows.
 
     """
 
@@ -94,6 +97,29 @@ class QuestionRecord(BaseModel):
     source: QuestionSource
     source_file_id: str
     chunker_id: str
+    parent_qa_pair_id: str | None = None
+
+    @property
+    def source_qa_pair_id(self) -> str:
+        """Return the id of the CEP pair whose context this item was built from.
+
+        A CEP row is its own source; a non-answerable item points to its parent.
+        """
+        return self.parent_qa_pair_id or self.qa_pair_id
+
+
+def cep_qa_pair_id(source_file_id: str, chunk_id: str | None, idx: int) -> str:
+    """Build the composite ``qa_pair_id`` of the ``idx``-th pair of a CEP record.
+
+    Args:
+        source_file_id: The record's source media file id.
+        chunk_id: The pair's chunk id; ``None`` renders as ``"none"``.
+        idx: The pair's position among ALL pairs of the record.
+
+    Returns:
+        ``"<file_id>:<chunk_id or 'none'>:<idx>"``.
+    """
+    return f"{source_file_id}:{chunk_id or 'none'}:{idx}"
 
 
 def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list[QuestionRecord]:
@@ -156,9 +182,8 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
         for idx, pair in enumerate(record.qa_pairs):
             if pair.is_judge_rejected:
                 continue
-            chunk_id_segment = pair.chunk_id or "none"
             yield QuestionRecord(
-                qa_pair_id=f"{record.source_file_id}:{chunk_id_segment}:{idx}",
+                qa_pair_id=cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx),
                 question=pair.question,
                 is_answerable=True,
                 source="cep",
@@ -190,4 +215,5 @@ def _iter_nonanswerable_questions(nonanswerable_dir: Path) -> Iterator[QuestionR
                 source="nonanswerable",
                 source_file_id=item.source_file_id,
                 chunker_id=item.chunker_id,
+                parent_qa_pair_id=item.parent_qa_pair_id,
             )
