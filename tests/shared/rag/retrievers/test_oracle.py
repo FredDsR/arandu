@@ -68,10 +68,10 @@ class TestOracleRetriever:
         retriever = OracleRetriever({"f:chk_0:0": ("chk_0", "Contexto.")})
         assert retriever.retrieve_source("f:chk_0:0", top_k=0) == []
 
-    def test_unknown_id_returns_empty_and_warns(self, caplog: pytest.LogCaptureFixture) -> None:
-        with caplog.at_level("WARNING"):
-            assert OracleRetriever({}).retrieve_source("missing:x:0", top_k=5) == []
-        assert any("missing:x:0" in r.message for r in caplog.records)
+    def test_unknown_id_raises(self) -> None:
+        # An empty record would read as an abstention; the batch must see a failure.
+        with pytest.raises(KeyError, match="missing:x:0"):
+            OracleRetriever({}).retrieve_source("missing:x:0", top_k=5)
 
 
 class TestFromCepDir:
@@ -103,3 +103,18 @@ class TestFromCepDir:
     def test_missing_dir_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
             OracleRetriever.from_cep_dir(tmp_path / "absent")
+
+
+def test_retrievers_package_imports_alone() -> None:
+    # Regression: oracle.py once imported from the retrieve package, whose
+    # factory imports the retrievers back; a fresh interpreter exposed the cycle.
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import arandu.shared.rag.retrievers.bm25"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

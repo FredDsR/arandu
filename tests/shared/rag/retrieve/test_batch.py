@@ -246,3 +246,23 @@ class TestRunRetrieveBatchOracleArm:
         assert record.is_answerable is False
         assert record.passages[0].payload == "C1."
         assert record.passages[0].retriever_meta == {"source_qa_pair_id": "src_a:chk_00:0"}
+
+    def test_unknown_parent_counts_as_failure(self, tmp_path: Path) -> None:
+        # A dangling parent must fail visibly, not write an empty oracle record.
+        _seed_cep(tmp_path)
+        na_dir = tmp_path / "run_x" / "non_answerable" / "outputs"
+        na_dir.mkdir(parents=True)
+        item = {
+            "qa_pair_id": "src_z:chk_09:0:na0",
+            "question": "Pergunta órfã?",
+            "source_file_id": "src_z",
+            "parent_qa_pair_id": "src_z:chk_09:0",
+        }
+        (na_dir / "dataset.json").write_text(json.dumps({"items": [item]}))
+
+        result = run_retrieve_batch(
+            pipeline_id="run_x", arms=["oracle"], top_k=5, base_dir=tmp_path
+        )
+
+        assert result.retrievals_written == 2
+        assert result.retrievals_failed == 1

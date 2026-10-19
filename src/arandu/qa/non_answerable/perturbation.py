@@ -23,7 +23,7 @@ from arandu.qa.non_answerable.schemas import (
     PerturbationOutput,
     SwapRecord,
 )
-from arandu.qa.schemas import QAPairCEP, QARecordCEP
+from arandu.qa.schemas import QAPairCEP, QARecordCEP, cep_qa_pair_id
 from arandu.shared.llm_client import StructuredOutputError
 
 if TYPE_CHECKING:
@@ -82,8 +82,7 @@ def stratified_seed_sample(
         for idx, pair in enumerate(record.qa_pairs):
             if pair.validation is None or not pair.validation.passed:
                 continue
-            chunk_id_segment = pair.chunk_id or "none"
-            parent_id = f"{record.source_file_id}:{chunk_id_segment}:{idx}"
+            parent_id = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
             by_bloom[str(pair.bloom_level)].append(
                 SeedPair(
                     parent_qa_pair_id=parent_id,

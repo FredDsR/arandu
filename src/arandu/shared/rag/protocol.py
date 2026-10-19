@@ -1,4 +1,4 @@
-"""Retriever Protocols — narrow contracts for retrieval backends (spec §4.1)."""
+"""Retriever Protocols: narrow contracts for retrieval backends (spec §4.1)."""
 
 from __future__ import annotations
 

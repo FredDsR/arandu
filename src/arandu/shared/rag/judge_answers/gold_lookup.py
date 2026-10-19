@@ -29,8 +29,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError
 
-from arandu.qa.schemas import QARecordCEP
-from arandu.shared.rag.retrieve.loader import cep_qa_pair_id
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 
 if TYPE_CHECKING:
     from pathlib import Path

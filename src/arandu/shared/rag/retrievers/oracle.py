@@ -22,8 +22,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from arandu.qa.schemas import QARecordCEP
-from arandu.shared.rag.retrieve.loader import cep_qa_pair_id
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
@@ -96,15 +95,19 @@ class OracleRetriever:
             top_k: Maximum passages; ``0`` yields ``[]``.
 
         Returns:
-            One passage, or ``[]`` when ``top_k`` is 0 or the pair is unknown
-            (logged, so a missing parent surfaces instead of passing silently).
+            One passage, or ``[]`` when ``top_k`` is 0.
+
+        Raises:
+            KeyError: If no CEP pair has id ``source_qa_pair_id`` (e.g. a
+                non-answerable item generated against another CEP output).
+                Raising lets the batch runner mark the item failed instead of
+                writing an empty record that would read as an abstention.
         """
         if top_k < 1:
             return []
         entry = self._contexts.get(source_qa_pair_id)
         if entry is None:
-            logger.warning("Oracle has no context for qa_pair_id %s.", source_qa_pair_id)
-            return []
+            raise KeyError(f"Oracle has no context for qa_pair_id {source_qa_pair_id!r}.")
         chunk_id, context = entry
         return [
             RetrievedPassage(

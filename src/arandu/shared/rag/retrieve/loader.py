@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
-from arandu.qa.schemas import QARecordCEP
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -37,10 +37,11 @@ class _NonAnswerableItem(BaseModel):
 
     The producer (``arandu generate-non-answerable``) writes the full
     :class:`~arandu.qa.non_answerable.schemas.NonAnswerableItem`, but the
-    retrieve stage only needs four fields to build a query stream. This
+    retrieve stage only needs five fields to build a query stream (the
+    oracle arm reads ``parent_qa_pair_id``). This
     stub is kept deliberately narrow (ISP) and tolerant: ``extra="ignore"``
     drops the producer's analysis-only fields (``bloom_level``,
-    ``swapped_entity``, ``parent_qa_pair_id``, …) and the
+    ``swapped_entity``, …) and the
     :class:`AliasChoices` decouple retrieve from non-breaking field
     renames upstream. Each ``AliasChoices`` tries its options in order;
     first hit wins.
@@ -106,20 +107,6 @@ class QuestionRecord(BaseModel):
         A CEP row is its own source; a non-answerable item points to its parent.
         """
         return self.parent_qa_pair_id or self.qa_pair_id
-
-
-def cep_qa_pair_id(source_file_id: str, chunk_id: str | None, idx: int) -> str:
-    """Build the composite ``qa_pair_id`` of the ``idx``-th pair of a CEP record.
-
-    Args:
-        source_file_id: The record's source media file id.
-        chunk_id: The pair's chunk id; ``None`` renders as ``"none"``.
-        idx: The pair's position among ALL pairs of the record.
-
-    Returns:
-        ``"<file_id>:<chunk_id or 'none'>:<idx>"``.
-    """
-    return f"{source_file_id}:{chunk_id or 'none'}:{idx}"
 
 
 def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list[QuestionRecord]:

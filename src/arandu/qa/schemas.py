@@ -227,3 +227,17 @@ class QARecordCEP(BaseModel):
     def load(cls, path: str | Path) -> QARecordCEP:
         """Load CEP QA record from JSON file."""
         return cls.model_validate_json(Path(path).read_text())
+
+
+def cep_qa_pair_id(source_file_id: str, chunk_id: str | None, idx: int) -> str:
+    """Build the composite ``qa_pair_id`` of the ``idx``-th pair of a CEP record.
+
+    Args:
+        source_file_id: The record's source media file id.
+        chunk_id: The pair's chunk id; ``None`` renders as ``"none"``.
+        idx: The pair's position among ALL pairs of the record.
+
+    Returns:
+        ``"<file_id>:<chunk_id or 'none'>:<idx>"``.
+    """
+    return f"{source_file_id}:{chunk_id or 'none'}:{idx}"
