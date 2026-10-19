@@ -21,6 +21,7 @@ import networkx as nx
 
 from arandu.shared.rag.retrievers import _khop_common as kc
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+from arandu.shared.rag.schemas import RetrievalQuery
 
 KG_DIR = Path("results/test-kg-04/kg/outputs/atlas_output")
 KG_PATH = KG_DIR / "kg_graphml" / "transcriptions.json_graph.graphml"
@@ -119,7 +120,7 @@ def main() -> None:
     # cost is captured by the OLD empty-seed fraction above (empty seeds ->
     # empty retrieval -> answerer abstains).
     sample = qs[:: max(1, len(qs) // RETRIEVE_SAMPLE)][:RETRIEVE_SAMPLE]
-    new_results = [len(r.retrieve(q, top_k=10)) for q, _ in sample]
+    new_results = [len(r.retrieve(RetrievalQuery(question=q), top_k=10)) for q, _ in sample]
     print(f"\n=== RETRIEVAL LEVEL (NEW retriever, sample of {len(sample)}) ===")
     print(f"NEW empty-result: {new_results.count(0):3d} ({new_results.count(0)/len(sample):.1%})  passages/query {_dist(new_results)}")
 

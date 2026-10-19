@@ -57,6 +57,8 @@ from arandu.shared.rag.schemas import RetrievedPassage
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from arandu.shared.rag.schemas import RetrievalQuery
+
 logger = logging.getLogger(__name__)
 
 
@@ -143,11 +145,11 @@ class KHopSubgraphRetriever:
             if attrs.get("type") == "passage"
         }
 
-    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
         """Run the entity-link + k-hop + frequency-scoring pipeline.
 
         Args:
-            question: Natural-language query.
+            query: The item to retrieve for; this arm reads only ``query.question``.
             top_k: Maximum number of passages to return.
 
         Returns:
@@ -160,7 +162,7 @@ class KHopSubgraphRetriever:
             # branching elsewhere. Return [] cleanly rather than letting
             # the build-then-cap loop yield a stray record.
             return []
-        seeds = self._entity_link(question)
+        seeds = self._entity_link(query.question)
         if not seeds:
             return []
 

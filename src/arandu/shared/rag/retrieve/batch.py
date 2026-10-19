@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.rag.protocol import SourceRetriever
 from arandu.shared.rag.retrieve.factory import build_retriever
 from arandu.shared.rag.retrieve.loader import load_questions
 from arandu.shared.rag.retrieve.settings import (
@@ -25,7 +24,7 @@ from arandu.shared.rag.retrieve.settings import (
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
 )
-from arandu.shared.rag.schemas import RetrievalRecord
+from arandu.shared.rag.schemas import RetrievalQuery, RetrievalRecord
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
 
@@ -259,7 +258,7 @@ def _build_with_logging(
     embedder_settings: EmbedderSettings | None,
     base_dir: Path,
     rebuild_index: bool,
-) -> Retriever | SourceRetriever | None:
+) -> Retriever | None:
     """Construct a retriever for ``arm``; log + return ``None`` on failure.
 
     Per-arm build failures (missing index, missing KG outputs, missing
@@ -291,18 +290,15 @@ def _build_with_logging(
 
 def _retrieve_one(
     *,
-    retriever: Retriever | SourceRetriever,
+    retriever: Retriever,
     arm: ArmName,
     question: QuestionRecord,
     top_k: int,
 ) -> RetrievalRecord:
     """Run one retrieval call and wrap the result as a :class:`RetrievalRecord`."""
     t0 = time.perf_counter()
-    if isinstance(retriever, SourceRetriever):
-        # Provenance-keyed arm (oracle): the question text is not a unique key.
-        passages = retriever.retrieve_source(question.source_qa_pair_id, top_k=top_k)
-    else:
-        passages = retriever.retrieve(question.question, top_k=top_k)
+    query = RetrievalQuery(question=question.question, source_qa_pair_id=question.source_qa_pair_id)
+    passages = retriever.retrieve(query, top_k=top_k)
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
     return RetrievalRecord(
         qa_pair_id=question.qa_pair_id,

@@ -33,11 +33,10 @@ transcription, and rag at once.
   earlier rejection. Criteria are `LLMCriterion`s (router/facade over
   Range/Ordinal engines) loaded from `prompts/<...>/<lang>/<name>/config.json`.
 - **Retrievers**: implement the `Retriever` protocol (`retriever_id`,
-  `retrieve(question, top_k)`) and wire it through `rag/retrieve/factory.py`'s
-  `build_retriever(arm, ...)`. Don't special-case arms at call sites. An arm
-  keyed on the item's provenance rather than its question (the `oracle`)
-  implements `SourceRetriever` (`retrieve_source(source_qa_pair_id, top_k)`)
-  instead; the batch runner dispatches on the protocol, not on the arm name.
+  `retrieve(query, top_k)`) and wire it through `rag/retrieve/factory.py`'s
+  `build_retriever(arm, ...)`. Don't special-case arms at call sites. The
+  `RetrievalQuery` carries the question text and the source `qa_pair_id`;
+  each arm reads the field it keys on (the `oracle` reads only the id).
 - **Persistence**: go through `ResultsManager` (`create_run` →
   `update_progress` → `complete_run`); never hand-build a `results/` path.
 - **Token budget**: default `max_tokens` to `REASONING_MODEL_MAX_TOKENS`;

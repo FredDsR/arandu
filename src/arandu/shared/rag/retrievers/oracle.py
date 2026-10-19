@@ -10,9 +10,9 @@ answerer can reach with the Answerer prompt held constant: its KC is the
 ceiling against which the other arms are read. It mirrors the Null arm,
 which bounds the scale from below.
 
-The oracle is keyed on the source ``qa_pair_id``, not on the question text:
-distinct pairs share question text, so a text lookup is ambiguous. It
-therefore implements :class:`SourceRetriever` instead of :class:`Retriever`.
+The oracle reads ``RetrievalQuery.source_qa_pair_id`` and ignores the
+question text: distinct pairs share question text, so a text lookup would be
+ambiguous.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from arandu.shared.rag.schemas import RetrievalQuery
 
 logger = logging.getLogger(__name__)
 
@@ -83,28 +85,34 @@ class OracleRetriever:
                 contexts[qa_pair_id] = (pair.chunk_id or qa_pair_id, pair.context)
         return cls(contexts)
 
-    def retrieve_source(self, source_qa_pair_id: str, top_k: int) -> list[RetrievedPassage]:
-        """Return the generation context of ``source_qa_pair_id`` as one passage.
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
+        """Return the generation context of the query's source pair as one passage.
 
         The passage keeps the chunk's id (the ``cep_4k`` namespace the BM25
         arm also emits) and carries the text inline as prose, so packing and
         ``source_recovery`` need no offset resolution.
 
         Args:
-            source_qa_pair_id: The CEP pair whose context to return.
+            query: The item to retrieve for; this arm reads only
+                ``query.source_qa_pair_id``.
             top_k: Maximum passages; ``0`` yields ``[]``.
 
         Returns:
             One passage, or ``[]`` when ``top_k`` is 0.
 
         Raises:
-            KeyError: If no CEP pair has id ``source_qa_pair_id`` (e.g. a
+            ValueError: If ``query.source_qa_pair_id`` is ``None`` (an ad-hoc
+                query has no source pair to look up).
+            KeyError: If no CEP pair has that id (e.g. a
                 non-answerable item generated against another CEP output).
                 Raising lets the batch runner mark the item failed instead of
                 writing an empty record that would read as an abstention.
         """
         if top_k < 1:
             return []
+        source_qa_pair_id = query.source_qa_pair_id
+        if source_qa_pair_id is None:
+            raise ValueError("The oracle arm needs query.source_qa_pair_id; got None.")
         entry = self._contexts.get(source_qa_pair_id)
         if entry is None:
             raise KeyError(f"Oracle has no context for qa_pair_id {source_qa_pair_id!r}.")

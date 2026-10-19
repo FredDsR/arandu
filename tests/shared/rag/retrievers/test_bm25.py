@@ -16,6 +16,7 @@ from arandu.shared.rag.retrievers.bm25 import (
     MANIFEST_FILENAME,
     BM25Retriever,
 )
+from arandu.shared.rag.schemas import RetrievalQuery
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -185,7 +186,7 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        results = retriever.retrieve("enchente", top_k=2)
+        results = retriever.retrieve(RetrievalQuery(question="enchente"), top_k=2)
         assert len(results) == 2
 
     def test_top_k_zero_returns_empty(self, tmp_path: Path) -> None:
@@ -196,7 +197,7 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        assert retriever.retrieve("enchente", top_k=0) == []
+        assert retriever.retrieve(RetrievalQuery(question="enchente"), top_k=0) == []
 
     def test_retrieve_returns_ranked_zero_indexed(self, tmp_path: Path) -> None:
         # "Itaqui Maria" — each token appears in exactly one doc (idf > 0), so the
@@ -204,7 +205,7 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        results = retriever.retrieve("Itaqui Maria", top_k=4)
+        results = retriever.retrieve(RetrievalQuery(question="Itaqui Maria"), top_k=4)
         assert [p.rank for p in results] == [0, 1, 2, 3]
         scores = [p.score for p in results]
         assert all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1))
@@ -216,7 +217,7 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        results = retriever.retrieve("Itaqui Maria", top_k=4)
+        results = retriever.retrieve(RetrievalQuery(question="Itaqui Maria"), top_k=4)
         top_2_ids = {p.chunk_id for p in results[:2]}
         assert top_2_ids == {chunks[0].chunk_id, chunks[1].chunk_id}
         assert results[0].score > 0
@@ -229,8 +230,8 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        results_a = retriever.retrieve("enchente rio", top_k=3)
-        results_b = retriever.retrieve("enchente rio", top_k=3)
+        results_a = retriever.retrieve(RetrievalQuery(question="enchente rio"), top_k=3)
+        results_b = retriever.retrieve(RetrievalQuery(question="enchente rio"), top_k=3)
         assert [(p.chunk_id, p.rank, p.score) for p in results_a] == [
             (p.chunk_id, p.rank, p.score) for p in results_b
         ]
@@ -239,7 +240,7 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        results = retriever.retrieve("enchente", top_k=100)
+        results = retriever.retrieve(RetrievalQuery(question="enchente"), top_k=100)
         # top_k > corpus size; returns all 4 chunks (RetrievalRecord enforces <= top_k separately)
         assert len(results) == 4
 
@@ -247,5 +248,5 @@ class TestBM25Retrieve:
         chunks, resolver, index_dir = _build_corpus_fixture(tmp_path)
         BM25Retriever.build_index(chunks, resolver, index_dir, CHUNKER_ID, language="pt")
         retriever = BM25Retriever(index_dir=index_dir, chunker_id=CHUNKER_ID)
-        results = retriever.retrieve("enchente", top_k=1)
+        results = retriever.retrieve(RetrievalQuery(question="enchente"), top_k=1)
         assert results[0].retriever_meta == {"score_method": "bm25_okapi"}

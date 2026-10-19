@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
     from arandu.shared.chunking.resolver import ChunkResolver
     from arandu.shared.chunking.schemas import Chunk
+    from arandu.shared.rag.schemas import RetrievalQuery
 
 
 INDEX_FILENAME = "bm25.pkl"
@@ -196,19 +197,20 @@ class BM25Retriever:
             bm25 = pickle.load(f)
         return bm25, manifest["chunk_ids"]
 
-    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
         """Retrieve up to ``top_k`` chunks ranked by BM25 score.
 
         Args:
-            question: Natural-language query; tokenized with the same
-                language tokenizer used at index build time.
+            query: The item to retrieve for; this arm reads only
+                ``query.question``, tokenized with the same language
+                tokenizer used at index build time.
             top_k: Maximum number of passages to return.
 
         Returns:
             A list of :class:`RetrievedPassage` with consecutive
             zero-indexed ranks and monotonically non-increasing scores.
         """
-        tokens = self._tokenize(question)
+        tokens = self._tokenize(query.question)
         scores = self._bm25.get_scores(tokens)
         ranked_idx = (-scores).argsort(kind="stable")[:top_k]
         return [

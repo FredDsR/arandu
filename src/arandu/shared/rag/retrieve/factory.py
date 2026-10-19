@@ -40,7 +40,7 @@ from arandu.shared.schemas import TranscriptionRecord
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from arandu.shared.rag.protocol import Retriever, SourceRetriever
+    from arandu.shared.rag.protocol import Retriever
     from arandu.shared.rag.retrieve.settings import ArmName
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def build_retriever(
     embedder_settings: EmbedderSettings | None = None,
     base_dir: Path | None = None,
     rebuild_index: bool = False,
-) -> Retriever | SourceRetriever:
+) -> Retriever:
     """Construct the retriever for ``arm`` against ``pipeline_id``'s artifacts.
 
     Args:
@@ -89,8 +89,7 @@ def build_retriever(
             ``arandu kg-build-retriever-index``).
 
     Returns:
-        A retriever instance satisfying :class:`Retriever`, or
-        :class:`SourceRetriever` for the ``oracle`` arm.
+        A retriever instance satisfying :class:`Retriever`.
 
     Raises:
         FileNotFoundError: If required artifacts (chunks, KG outputs,

@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from arandu.shared.rag.protocol import Retriever, SourceRetriever
+from arandu.shared.rag.protocol import Retriever
 from arandu.shared.rag.retrievers.oracle import OracleRetriever
+from arandu.shared.rag.schemas import RetrievalQuery
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,19 +44,21 @@ def _write_cep(cep_dir: Path, source_file_id: str, pairs: list[dict]) -> None:
     (cep_dir / f"{source_file_id}_cep_qa.json").write_text(json.dumps(record))
 
 
+def _query(source_qa_pair_id: str | None) -> RetrievalQuery:
+    # The question text is irrelevant to the oracle; a fixed one proves it.
+    return RetrievalQuery(question="Pergunta?", source_qa_pair_id=source_qa_pair_id)
+
+
 class TestOracleRetriever:
     def test_retriever_id_is_oracle(self) -> None:
         assert OracleRetriever({}).retriever_id == "oracle"
 
-    def test_satisfies_source_retriever_not_retriever(self) -> None:
-        # Keyed on provenance, so it must not pass as a question-keyed arm.
-        retriever = OracleRetriever({})
-        assert isinstance(retriever, SourceRetriever)
-        assert not isinstance(retriever, Retriever)
+    def test_satisfies_retriever_protocol(self) -> None:
+        assert isinstance(OracleRetriever({}), Retriever)
 
     def test_returns_generation_context_as_prose_payload(self) -> None:
         retriever = OracleRetriever({"f:chk_0:0": ("chk_0", "A enchente de 1941.")})
-        passages = retriever.retrieve_source("f:chk_0:0", top_k=10)
+        passages = retriever.retrieve(_query("f:chk_0:0"), top_k=10)
         assert len(passages) == 1
         passage = passages[0]
         assert passage.chunk_id == "chk_0"
@@ -66,12 +69,16 @@ class TestOracleRetriever:
 
     def test_top_k_zero_returns_empty(self) -> None:
         retriever = OracleRetriever({"f:chk_0:0": ("chk_0", "Contexto.")})
-        assert retriever.retrieve_source("f:chk_0:0", top_k=0) == []
+        assert retriever.retrieve(_query("f:chk_0:0"), top_k=0) == []
+
+    def test_query_without_source_id_raises(self) -> None:
+        with pytest.raises(ValueError, match="source_qa_pair_id"):
+            OracleRetriever({}).retrieve(_query(None), top_k=5)
 
     def test_unknown_id_raises(self) -> None:
         # An empty record would read as an abstention; the batch must see a failure.
         with pytest.raises(KeyError, match="missing:x:0"):
-            OracleRetriever({}).retrieve_source("missing:x:0", top_k=5)
+            OracleRetriever({}).retrieve(_query("missing:x:0"), top_k=5)
 
 
 class TestFromCepDir:
@@ -84,13 +91,13 @@ class TestFromCepDir:
         )
         retriever = OracleRetriever.from_cep_dir(cep_dir)
         # Same question text, distinct sources: the id disambiguates.
-        assert retriever.retrieve_source("src_a:chk_a:0", 5)[0].payload == "Contexto A."
-        assert retriever.retrieve_source("src_a:chk_b:1", 5)[0].payload == "Contexto B."
+        assert retriever.retrieve(_query("src_a:chk_a:0"), 5)[0].payload == "Contexto A."
+        assert retriever.retrieve(_query("src_a:chk_b:1"), 5)[0].payload == "Contexto B."
 
     def test_pair_without_chunk_id_falls_back_to_qa_pair_id(self, tmp_path: Path) -> None:
         cep_dir = tmp_path / "cep"
         _write_cep(cep_dir, "src_a", [_pair("P?", "Contexto.", None)])
-        passage = OracleRetriever.from_cep_dir(cep_dir).retrieve_source("src_a:none:0", 5)[0]
+        passage = OracleRetriever.from_cep_dir(cep_dir).retrieve(_query("src_a:none:0"), 5)[0]
         assert passage.chunk_id == "src_a:none:0"
 
     def test_unreadable_file_is_skipped(self, tmp_path: Path) -> None:
@@ -98,7 +105,7 @@ class TestFromCepDir:
         _write_cep(cep_dir, "src_a", [_pair("P?", "Contexto.", "chk_a")])
         (cep_dir / "broken.json").write_text("{not json")
         retriever = OracleRetriever.from_cep_dir(cep_dir)
-        assert retriever.retrieve_source("src_a:chk_a:0", 5)
+        assert retriever.retrieve(_query("src_a:chk_a:0"), 5)
 
     def test_missing_dir_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
