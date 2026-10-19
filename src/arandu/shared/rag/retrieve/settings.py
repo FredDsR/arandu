@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 _GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-ArmName = Literal["bm25", "atlas_rag", "khop_passage", "khop_triple", "null"]
+ArmName = Literal["bm25", "atlas_rag", "khop_passage", "khop_triple", "null", "oracle"]
 
 # Stable ordering — drives the CLI's default arm set + the iteration
 # order in the batch runner. Keeps benchmark output reproducible.
@@ -42,6 +42,7 @@ ALL_ARMS: tuple[ArmName, ...] = (
     "khop_passage",
     "khop_triple",
     "null",
+    "oracle",
 )
 
 

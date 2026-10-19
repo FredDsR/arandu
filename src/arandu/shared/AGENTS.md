@@ -17,7 +17,7 @@ transcription, and rag at once.
 | `checkpoint.py` | `CheckpointManager`: batched save-interval state for resume |
 | `schemas.py` | `InputRecord`, `TranscriptionRecord`, `SourceMetadata`, `JudgeResultMixin`, run/pipeline metadata |
 | `judge/` | The multi-stage judge: `JudgePipeline` → `JudgeStage` (filter/score/always) → `JudgeStep` → criteria; `LLMCriterion` + factory |
-| `rag/` | Phase C: `retrieve/` (factory over bm25/atlas_rag/khop_passage/khop_triple/null), `answer/`, `judge_answers/`, `analysis/`, `retrievers/` |
+| `rag/` | Phase C: `retrieve/` (factory over bm25/atlas_rag/khop_passage/khop_triple/null/oracle), `answer/`, `judge_answers/`, `analysis/`, `retrievers/` |
 | `agreement/`, `chunking/`, `embeddings/`, `emic/`, `human_eval/` | Krippendorff/Scott/Cohen agreement; chunk registry+chonkie; sentence-transformer wrappers; emic categories; human-eval sampling |
 
 ## Patterns to follow
@@ -33,8 +33,10 @@ transcription, and rag at once.
   earlier rejection. Criteria are `LLMCriterion`s (router/facade over
   Range/Ordinal engines) loaded from `prompts/<...>/<lang>/<name>/config.json`.
 - **Retrievers**: implement the `Retriever` protocol (`retriever_id`,
-  `retrieve(question, top_k)`) and wire it through `rag/retrieve/factory.py`'s
-  `build_retriever(arm, ...)`. Don't special-case arms at call sites.
+  `retrieve(query, top_k)`) and wire it through `rag/retrieve/factory.py`'s
+  `build_retriever(arm, ...)`. Don't special-case arms at call sites. The
+  `RetrievalQuery` carries the question text and the source `qa_pair_id`;
+  each arm reads the field it keys on (the `oracle` reads only the id).
 - **Persistence**: go through `ResultsManager` (`create_run` →
   `update_progress` → `complete_run`); never hand-build a `results/` path.
 - **Token budget**: default `max_tokens` to `REASONING_MODEL_MAX_TOKENS`;

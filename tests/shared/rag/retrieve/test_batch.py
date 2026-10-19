@@ -205,3 +205,64 @@ class TestPerArmFailureIsolation:
         assert result.retrievals_failed >= 2  # bm25 x2 questions
         null_outputs = tmp_path / "run_x" / "retrieve" / "outputs" / "null" / "cep"
         assert len(list(null_outputs.glob("*.json"))) == 2
+
+
+class TestRunRetrieveBatchOracleArm:
+    def test_cep_items_receive_their_own_context(self, tmp_path: Path) -> None:
+        _seed_cep(tmp_path)
+
+        result = run_retrieve_batch(
+            pipeline_id="run_x", arms=["oracle"], top_k=5, base_dir=tmp_path
+        )
+
+        assert result.retrievals_written == 2
+        outputs = tmp_path / "run_x" / "retrieve" / "outputs" / "oracle" / "cep"
+        record = RetrievalRecord.load(outputs / "src_a__chk_01__1.json")
+        assert record.retriever_id == "oracle"
+        assert [p.chunk_id for p in record.passages] == ["chk_01"]
+        assert record.passages[0].payload == "C2."
+
+    def test_nonanswerable_item_receives_parent_context(self, tmp_path: Path) -> None:
+        _seed_cep(tmp_path)
+        na_dir = tmp_path / "run_x" / "non_answerable" / "outputs"
+        na_dir.mkdir(parents=True)
+        dataset = {
+            "items": [
+                {
+                    "qa_pair_id": "src_a:chk_00:0:na0",
+                    "question": "Pergunta trocada?",
+                    "source_file_id": "src_a",
+                    "chunker_id": "cep_4k",
+                    "parent_qa_pair_id": "src_a:chk_00:0",
+                }
+            ]
+        }
+        (na_dir / "dataset.json").write_text(json.dumps(dataset))
+
+        run_retrieve_batch(pipeline_id="run_x", arms=["oracle"], top_k=5, base_dir=tmp_path)
+
+        outputs = tmp_path / "run_x" / "retrieve" / "outputs" / "oracle" / "nonanswerable"
+        record = RetrievalRecord.load(outputs / "src_a__chk_00__0__na0.json")
+        assert record.is_answerable is False
+        assert record.passages[0].payload == "C1."
+        assert record.passages[0].retriever_meta == {"source_qa_pair_id": "src_a:chk_00:0"}
+
+    def test_unknown_parent_counts_as_failure(self, tmp_path: Path) -> None:
+        # A dangling parent must fail visibly, not write an empty oracle record.
+        _seed_cep(tmp_path)
+        na_dir = tmp_path / "run_x" / "non_answerable" / "outputs"
+        na_dir.mkdir(parents=True)
+        item = {
+            "qa_pair_id": "src_z:chk_09:0:na0",
+            "question": "Pergunta órfã?",
+            "source_file_id": "src_z",
+            "parent_qa_pair_id": "src_z:chk_09:0",
+        }
+        (na_dir / "dataset.json").write_text(json.dumps({"items": [item]}))
+
+        result = run_retrieve_batch(
+            pipeline_id="run_x", arms=["oracle"], top_k=5, base_dir=tmp_path
+        )
+
+        assert result.retrievals_written == 2
+        assert result.retrievals_failed == 1

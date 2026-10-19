@@ -43,6 +43,8 @@ from arandu.shared.rag.schemas import RetrievedPassage
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from arandu.shared.rag.schemas import RetrievalQuery
+
 
 # Triple endpoints deliberately exclude `concept` nodes (which ARE in
 # the shared :data:`_LINKABLE_TYPES`). atlas-rag's conceptualization
@@ -142,11 +144,11 @@ class KHopTripleRetriever:
 
         self._token_to_nodes, self._n_linkable = build_label_index(self._kg)
 
-    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
         """Run entity-link + k-hop subgraph + triple linearization.
 
         Args:
-            question: Natural-language query.
+            query: The item to retrieve for; this arm reads only ``query.question``.
             top_k: Maximum number of triples to return.
 
         Returns:
@@ -155,7 +157,7 @@ class KHopTripleRetriever:
             populated ``payload`` field with the linearized triple.
             Empty entity-link → empty list (graph-floor guarantee).
         """
-        seeds = self._entity_link(question)
+        seeds = self._entity_link(query.question)
         if not seeds:
             return []
 

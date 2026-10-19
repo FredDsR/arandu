@@ -34,6 +34,7 @@ from arandu.shared.rag.retrievers.bm25 import BM25Retriever
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
+from arandu.shared.rag.retrievers.oracle import OracleRetriever
 from arandu.shared.schemas import TranscriptionRecord
 
 if TYPE_CHECKING:
@@ -64,10 +65,11 @@ def build_retriever(
 
     Args:
         arm: One of ``"bm25"``, ``"atlas_rag"``, ``"khop_passage"``,
-            ``"khop_triple"``, ``"null"``.
+            ``"khop_triple"``, ``"null"``, ``"oracle"``.
         pipeline_id: The run identifier; all paths resolve relative to
             ``<base_dir>/<pipeline_id>/``.
-        settings: Arm-specific settings instance. For ``null``, ignored.
+        settings: Arm-specific settings instance. For ``null`` and
+            ``oracle``, ignored.
             For ``bm25``, must be :class:`Bm25RetrieveSettings`; for
             k-hop arms, :class:`KHopRetrieveSettings`; for atlas-rag,
             :class:`AtlasRagRetrieveSettings`. Defaults are instantiated
@@ -91,7 +93,8 @@ def build_retriever(
 
     Raises:
         FileNotFoundError: If required artifacts (chunks, KG outputs,
-            atlas-rag precompute) are missing for ``pipeline_id``.
+            atlas-rag precompute, CEP outputs for oracle) are missing for
+            ``pipeline_id``.
         RuntimeError: From :func:`build_embedder` (atlas-rag arm) if the
             embedder API key is unset, or from the atlas-rag LLM
             construction if its API key env var is unset.
@@ -102,6 +105,9 @@ def build_retriever(
 
     if arm == "null":
         return NullRetriever()
+
+    if arm == "oracle":
+        return OracleRetriever.from_cep_dir(base / pipeline_id / "cep" / "outputs")
 
     if arm == "bm25":
         bm25_settings = (

@@ -2,13 +2,14 @@
 
 Defines:
 
+- :class:`RetrievalQuery`: what a retriever receives for one item.
 - :class:`RetrievedPassage` — a single ranked passage handed back by a retriever.
 - :class:`RetrievalRecord` — the complete output of a retrieval call for one
   question against one retriever arm.
 - :class:`AnswerRecord` — extends :class:`RetrievalRecord` with the Answerer's
   output and reuses Phase B's :class:`JudgeResultMixin` for verdict shape.
 
-All three are storage-stable: serialized once at retrieval/answer/judge time
+The last three are storage-stable: serialized once at retrieval/answer/judge time
 and joined in cross-arm comparison without re-running the upstream stages.
 """
 
@@ -23,6 +24,28 @@ from arandu.shared.judge.schemas import JudgeResultMixin
 
 if TYPE_CHECKING:
     from typing import Self
+
+
+class RetrievalQuery(BaseModel):
+    """What a :class:`Retriever` receives for one benchmark item.
+
+    Each arm reads only the field it keys on, so one contract serves both
+    question-keyed arms (BM25, k-hop, atlas-rag) and provenance-keyed arms
+    (the oracle, which returns the context the item was generated from).
+
+    Attributes:
+        question: Verbatim question text. Question-keyed arms read only this.
+        source_qa_pair_id: ``qa_pair_id`` of the CEP pair the item was built
+            from: the item itself for a CEP pair, its parent for a
+            non-answerable item. Provenance-keyed arms read only this.
+            ``None`` for ad-hoc queries outside the benchmark (smoke scripts),
+            which provenance-keyed arms reject.
+    """
+
+    model_config = {"frozen": True}
+
+    question: str
+    source_qa_pair_id: str | None = None
 
 
 class RetrievedPassage(BaseModel):

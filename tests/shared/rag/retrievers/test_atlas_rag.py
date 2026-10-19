@@ -19,6 +19,7 @@ from arandu.shared.rag.retrievers.atlas_rag import (
     AtlasRagRetriever,
     _atlas_results_to_retrieved_passages,
 )
+from arandu.shared.rag.schemas import RetrievalQuery
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -143,7 +144,7 @@ class TestAtlasRagRetrieverRetrieve:
             return_value=[("p1", 0.9), ("p2", 0.5), ("p3", 0.1)]
         )
 
-        results = instance.retrieve("some question", top_k=3)
+        results = instance.retrieve(RetrievalQuery(question="some question"), top_k=3)
 
         instance._retrieve_with_scores.assert_called_once_with("some question", top_k=3)
         assert [r.chunk_id for r in results] == ["p1", "p2", "p3"]
@@ -167,7 +168,7 @@ class TestAtlasRagRetrieverRetrieve:
         instance._retrieve_with_scores = MagicMock(  # type: ignore[method-assign]
             return_value=[("p1", 0.9)]
         )
-        assert instance.retrieve("some question", top_k=0) == []
+        assert instance.retrieve(RetrievalQuery(question="some question"), top_k=0) == []
         instance._retrieve_with_scores.assert_not_called()
 
 
@@ -637,6 +638,7 @@ def test_retrieve_one_copies_last_retrieve_meta_into_record() -> None:
     retriever.last_retrieve_meta = {"seed_path": "node_fallback"}
     question = MagicMock()
     question.qa_pair_id = "s:c:0"
+    question.source_qa_pair_id = "s:c:0"
     question.question = "q?"
     question.chunker_id = "cep_4k"
     question.is_answerable = True

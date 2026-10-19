@@ -43,6 +43,8 @@ from arandu.shared.rag.schemas import RetrievedPassage
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from arandu.shared.rag.schemas import RetrievalQuery
+
 logger = logging.getLogger(__name__)
 
 
@@ -553,11 +555,11 @@ class AtlasRagRetriever:
         retriever.edge_faiss_index = data["edge_faiss_index"]
         return retriever
 
-    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
         """Run HippoRAG retrieval and return ranked passages.
 
         Args:
-            question: Natural-language query.
+            query: The item to retrieve for; this arm reads only ``query.question``.
             top_k: Maximum number of passages to return.
 
         Returns:
@@ -571,7 +573,7 @@ class AtlasRagRetriever:
             # the bridge loop's `len(out) >= 0` short-circuit yield a
             # stray record.
             return []
-        scored = self._retrieve_with_scores(question, top_k=top_k)
+        scored = self._retrieve_with_scores(query.question, top_k=top_k)
         return _atlas_results_to_retrieved_passages(scored)
 
     def _retrieve_with_scores(self, question: str, *, top_k: int) -> list[tuple[str, float]]:

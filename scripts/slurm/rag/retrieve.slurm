@@ -13,8 +13,8 @@
 # orphaned ollama-gpu / arandu-rag-run containers on the node; see rag_common).
 #SBATCH --signal=B:TERM@60
 
-# Phase C: run all 5 arms. atlas_rag needs the LLM (NER + edge-filter) via ollama
-# and the local embedder for query encoding; bm25/khop/null need neither.
+# Phase C: run all 6 arms. atlas_rag needs the LLM (NER + edge-filter) via ollama
+# and the local embedder for query encoding; bm25/khop/null/oracle need neither.
 export RAG_CLI_ARGS="retrieve --id ${PIPELINE_ID}"
 export RAG_NEEDS_OLLAMA=true
 # Sequential client; atlas_rag NER/edge-filter calls are short: one slot

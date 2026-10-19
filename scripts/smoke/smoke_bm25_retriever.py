@@ -30,6 +30,7 @@ from arandu.shared.rag.retrievers.bm25 import (
     MANIFEST_FILENAME,
     BM25Retriever,
 )
+from arandu.shared.rag.schemas import RetrievalQuery
 
 PT_CORPUS = [
     "A enchente de 2024 alagou completamente a cidade de Itaqui.",
@@ -154,7 +155,7 @@ def main() -> None:
 
     console.print("\n[bold cyan]3. Running queries[/bold cyan]")
     for q in queries:
-        results = retriever.retrieve(q, top_k=args.top_k)
+        results = retriever.retrieve(RetrievalQuery(question=q), top_k=args.top_k)
         table = Table(title=f"query: {q!r}  (top_k={args.top_k})")
         table.add_column("rank", justify="right")
         table.add_column("score", justify="right")

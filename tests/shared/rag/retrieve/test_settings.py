@@ -19,7 +19,14 @@ class TestArmCatalog:
         # atlas_rag is recognized (so --arm atlas_rag routes to the
         # factory's clear "deferred PR" error) but excluded from the
         # CLI's default set until its LLM-client wiring lands.
-        assert ALL_ARMS == ("bm25", "atlas_rag", "khop_passage", "khop_triple", "null")
+        assert ALL_ARMS == (
+            "bm25",
+            "atlas_rag",
+            "khop_passage",
+            "khop_triple",
+            "null",
+            "oracle",
+        )
 
 
 class TestBm25Settings:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
-from arandu.qa.schemas import QARecordCEP
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,8 +53,7 @@ def build_cross_cut_map(cep_dir: Path) -> dict[str, CrossCutMeta]:
             logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
             continue
         for idx, pair in enumerate(record.qa_pairs):
-            chunk_id_segment = pair.chunk_id or "none"
-            qa_pair_id = f"{record.source_file_id}:{chunk_id_segment}:{idx}"
+            qa_pair_id = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
             out[qa_pair_id] = CrossCutMeta(
                 qa_pair_id=qa_pair_id,
                 bloom_level=str(pair.bloom_level),

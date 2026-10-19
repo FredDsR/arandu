@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from arandu.shared.rag.protocol import Retriever
-from arandu.shared.rag.schemas import RetrievedPassage
+from arandu.shared.rag.schemas import RetrievalQuery, RetrievedPassage
 
 
 class _StubRetriever:
@@ -12,14 +12,14 @@ class _StubRetriever:
     def __init__(self, retriever_id: str = "stub_retriever") -> None:
         self.retriever_id = retriever_id
 
-    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
         # Echoes top_k so tests can assert the argument plumbing.
         return [
             RetrievedPassage(
                 chunk_id=f"chunk{i:013d}",
                 rank=i,
                 score=1.0 - i * 0.1,
-                retriever_meta={"q": question, "top_k": top_k},
+                retriever_meta={"q": query.question, "top_k": top_k},
             )
             for i in range(top_k)
         ]
@@ -42,7 +42,7 @@ class TestRetrieverProtocol:
 
     def test_retrieve_returns_ranked_passages(self) -> None:
         retriever = _StubRetriever()
-        passages = retriever.retrieve("Em que ano?", top_k=3)
+        passages = retriever.retrieve(RetrievalQuery(question="Em que ano?"), top_k=3)
         assert len(passages) == 3
         assert [p.rank for p in passages] == [0, 1, 2]
         # Argument plumbing preserved in the stub's meta
@@ -58,7 +58,7 @@ class TestRetrieverProtocol:
         class _Lambdic:
             retriever_id = "lambdic"
 
-            def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+            def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
                 return []
 
         assert isinstance(_Lambdic(), Retriever)

@@ -4,10 +4,11 @@ Interpret the cross-arm comparison report produced by `arandu rag-analysis`.
 
 This is the **last** stage of the Phase C RAG-evaluation pipeline. It reads
 the judged answers from `arandu judge-answers` and emits per-arm tables you
-can compare across the five retriever arms, identified by their canonical ids:
+can compare across the six retriever arms, identified by their canonical ids:
 `bm25` (lexical), `atlas_rag` (HippoRAG-style), `khop_passage` and `khop_triple`
 (k-hop over the atlas-rag KG, using lemmatized smoothed-IDF seed weighting and
-seed-proximity scoring), and `null` (no-retrieval baseline).
+seed-proximity scoring), `null` (no-retrieval baseline) and `oracle`
+(gold-context upper bound, see [The two control arms](#the-two-control-arms)).
 
 > **What changed (2026-05-26)**: Phase C `rag-analysis` is the retrieval-arm
 > comparison. It superseded an earlier QA/KG metrics pipeline (the classic
@@ -117,6 +118,31 @@ These two rates are in tension. An arm that abstains aggressively will have
 An arm that never abstains will have the opposite. **Abstention F1 ↑**
 balances them into one number; use the individual rates when you care about
 the underlying behaviour.
+
+### The two control arms
+
+`null` and `oracle` do not compete with the other arms. They fix the two ends
+of the scale the other four are read on.
+
+- `null` returns no passage. Its KC is the floor: whatever an arm scores
+  above it comes from the evidence the arm retrieved.
+- `oracle` returns exactly the context the QA pair was generated from: the
+  `cep_4k` chunk the CEP generator read, as one passage carried inline. A
+  non-answerable item receives the chunk of the CEP pair it was perturbed from
+  (`parent_qa_pair_id`), so the oracle also tests abstention when the closest
+  possible evidence is in the prompt. Its KC is the ceiling the answerer and
+  judges allow with perfect retrieval.
+
+Retrieval is perfect by construction for `oracle`, so its passage coverage is
+an upper bound too, and its `chunk_id` uses the same `cep_4k` namespace as
+`bm25` (default view), which makes the two directly comparable. The oracle
+looks items up by `qa_pair_id`, never by question text, because distinct
+pairs can share a question (26 question texts in `thesis-run-02` repeat
+across chunks). It needs only the `cep/` stage.
+
+To place an arm between the bounds, compare its KC with the `null` and
+`oracle` rows of Table 1, or with the same rows of the Bloom and
+question-type tables.
 
 ---
 

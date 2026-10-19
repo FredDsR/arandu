@@ -42,7 +42,8 @@ def retrieve(
             "--id",
             help=(
                 "Pipeline ID for the run. The cep/ stage must already be populated; "
-                "each arm has its own prerequisites (chunk/ for bm25, kg/ for k-hop)."
+                "each arm has its own prerequisites (chunk/ for bm25, kg/ for k-hop; "
+                "oracle and null need only cep/)."
             ),
         ),
     ],

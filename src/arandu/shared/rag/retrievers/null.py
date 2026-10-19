@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arandu.shared.rag.schemas import RetrievedPassage
+    from arandu.shared.rag.schemas import RetrievalQuery, RetrievedPassage
 
 
 class NullRetriever:
@@ -25,11 +25,11 @@ class NullRetriever:
 
     retriever_id: str = "null"
 
-    def retrieve(self, question: str, top_k: int) -> list[RetrievedPassage]:
+    def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
         """Return an empty list regardless of inputs.
 
         Args:
-            question: Ignored.
+            query: Ignored.
             top_k: Ignored.
 
         Returns:

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
-from arandu.qa.schemas import QARecordCEP
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -37,10 +37,11 @@ class _NonAnswerableItem(BaseModel):
 
     The producer (``arandu generate-non-answerable``) writes the full
     :class:`~arandu.qa.non_answerable.schemas.NonAnswerableItem`, but the
-    retrieve stage only needs four fields to build a query stream. This
+    retrieve stage only needs five fields to build a query stream (the
+    oracle arm reads ``parent_qa_pair_id``). This
     stub is kept deliberately narrow (ISP) and tolerant: ``extra="ignore"``
     drops the producer's analysis-only fields (``bloom_level``,
-    ``swapped_entity``, ``parent_qa_pair_id``, …) and the
+    ``swapped_entity``, …) and the
     :class:`AliasChoices` decouple retrieve from non-breaking field
     renames upstream. Each ``AliasChoices`` tries its options in order;
     first hit wins.
@@ -56,6 +57,7 @@ class _NonAnswerableItem(BaseModel):
         min_length=1,
     )
     chunker_id: str = Field(default="unknown")
+    parent_qa_pair_id: str | None = Field(default=None)
 
 
 class _NonAnswerableBatch(BaseModel):
@@ -85,6 +87,8 @@ class QuestionRecord(BaseModel):
             generation). The retrieve stage records this on each
             :class:`RetrievalRecord` to preserve the chunker → retriever
             provenance.
+        parent_qa_pair_id: For non-answerable items, the ``qa_pair_id`` of
+            the CEP pair the item was perturbed from. ``None`` for CEP rows.
 
     """
 
@@ -94,6 +98,18 @@ class QuestionRecord(BaseModel):
     source: QuestionSource
     source_file_id: str
     chunker_id: str
+    parent_qa_pair_id: str | None = None
+
+    @property
+    def source_qa_pair_id(self) -> str | None:
+        """Return the id of the CEP pair whose context this item was built from.
+
+        A CEP row is its own source; a non-answerable item points to its parent,
+        or to nothing (``None``) when its dataset predates the parent link.
+        """
+        if self.source == "cep":
+            return self.qa_pair_id
+        return self.parent_qa_pair_id
 
 
 def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list[QuestionRecord]:
@@ -156,9 +172,8 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
         for idx, pair in enumerate(record.qa_pairs):
             if pair.is_judge_rejected:
                 continue
-            chunk_id_segment = pair.chunk_id or "none"
             yield QuestionRecord(
-                qa_pair_id=f"{record.source_file_id}:{chunk_id_segment}:{idx}",
+                qa_pair_id=cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx),
                 question=pair.question,
                 is_answerable=True,
                 source="cep",
@@ -190,4 +205,5 @@ def _iter_nonanswerable_questions(nonanswerable_dir: Path) -> Iterator[QuestionR
                 source="nonanswerable",
                 source_file_id=item.source_file_id,
                 chunker_id=item.chunker_id,
+                parent_qa_pair_id=item.parent_qa_pair_id,
             )

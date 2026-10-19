@@ -24,7 +24,7 @@ from arandu.shared.rag.retrieve.settings import (
     Bm25RetrieveSettings,
     KHopRetrieveSettings,
 )
-from arandu.shared.rag.schemas import RetrievalRecord
+from arandu.shared.rag.schemas import RetrievalQuery, RetrievalRecord
 from arandu.shared.results_manager import ResultsManager
 from arandu.shared.schemas import PipelineType
 
@@ -297,7 +297,8 @@ def _retrieve_one(
 ) -> RetrievalRecord:
     """Run one retrieval call and wrap the result as a :class:`RetrievalRecord`."""
     t0 = time.perf_counter()
-    passages = retriever.retrieve(question.question, top_k=top_k)
+    query = RetrievalQuery(question=question.question, source_qa_pair_id=question.source_qa_pair_id)
+    passages = retriever.retrieve(query, top_k=top_k)
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
     return RetrievalRecord(
         qa_pair_id=question.qa_pair_id,

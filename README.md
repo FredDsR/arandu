@@ -103,18 +103,19 @@ and the [CLI reference](docs/guide/cli-reference.md) collects them.
 All arms return their top 10 evidence items to the same answerer, under the
 same prompt and judges, so differences between arms come from the access
 strategy. Select them with `arandu retrieve --arm <id>` (repeatable); the
-default runs all five.
+default runs all six.
 
 | Arm | Evidence returned | How it retrieves |
 |-----|-------------------|------------------|
 | `null` | nothing | Control that always abstains; anchors the abstention scale |
+| `oracle` | the source 4k-character chunk | Control that returns exactly the chunk the QA pair was generated from (the parent pair's chunk for a non-answerable item); bounds KC from above |
 | `bm25` | 4k-character transcript chunks | Lexical BM25 over the chunks; separates the value of graph structure from the value of having passages |
 | `khop_passage` | graph passages | Matches the question's lemmas to node labels, expands a 2-hop neighbourhood over every edge type, and returns the passages its entities and events came from, ranked by hop distance |
 | `khop_triple` | linearized triples | Same seeding and neighbourhood as `khop_passage`, but returns the relation edges themselves |
 | `atlas_rag` | graph passages | HippoRAG-style retriever shipped with AutoSchemaKG: Personalized PageRank from the question's entities over node embeddings |
 
 Arm settings come from `ARANDU_BM25_*`, `ARANDU_KHOP_*` and
-`ARANDU_ATLAS_RAG_*`. The arms are compared in the
+`ARANDU_ATLAS_RAG_*`; `null` and `oracle` take none. The arms are compared in the
 [RAG analysis guide](docs/guide/pipelines/rag-analysis.md).
 
 ## Metrics

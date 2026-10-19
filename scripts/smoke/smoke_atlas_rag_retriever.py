@@ -49,6 +49,7 @@ from arandu.shared.rag.retrievers.atlas_rag import (
     PRECOMPUTE_DIR_NAME,
     AtlasRagRetriever,
 )
+from arandu.shared.rag.schemas import RetrievalQuery
 
 # A few canned PT questions covering the kinds of recall the CEP benchmark uses.
 SMOKE_QUESTIONS: list[str] = [
@@ -196,7 +197,7 @@ def main() -> None:
     console.print("\n[bold cyan]Phase 3: retrieve[/bold cyan]")
     for q in SMOKE_QUESTIONS:
         t0 = time.perf_counter()
-        results = retriever.retrieve(q, top_k=args.top_k)
+        results = retriever.retrieve(RetrievalQuery(question=q), top_k=args.top_k)
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
         table = Table(title=f"{q!r}  (top_k={args.top_k}, {elapsed_ms:.0f} ms)")

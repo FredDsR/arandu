@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from arandu.qa.schemas import QARecordCEP
+from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
 from arandu.shared.rag.analysis.metrics import aggregate_arm
 
 if TYPE_CHECKING:
@@ -60,8 +60,7 @@ def load_pair_scores(cep_dir: Path) -> PairScores:
         except (OSError, ValidationError):
             continue
         for idx, pair in enumerate(record.qa_pairs):
-            seg = pair.chunk_id or "none"
-            pid = f"{record.source_file_id}:{seg}:{idx}"
+            pid = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
             scores: dict[str, float | None] = {}
             if pair.validation is not None:
                 step = pair.validation.stage_results.get(CEP_STAGE)

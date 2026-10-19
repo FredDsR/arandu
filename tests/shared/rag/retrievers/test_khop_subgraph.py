@@ -15,6 +15,7 @@ import pytest
 
 from arandu.shared.rag.protocol import Retriever
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+from arandu.shared.rag.schemas import RetrievalQuery
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -159,7 +160,9 @@ class TestKHopSubgraphRetrieverRetrieve:
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
         # "rio" + "enchente" both point at p_a; "barragem" points at p_b.
         # Question mentions only rio/enchente → p_a should rank ahead of p_b.
-        results = retriever.retrieve("Quando foi a enchente do rio?", top_k=3)
+        results = retriever.retrieve(
+            RetrievalQuery(question="Quando foi a enchente do rio?"), top_k=3
+        )
         assert len(results) >= 1
         # chunk_id is the atlas-rag synthesized passage_id (`<file_id>:<idx>`),
         # NOT the passage text — same namespace as the passage_offsets sidecar
@@ -174,7 +177,7 @@ class TestKHopSubgraphRetrieverRetrieve:
     def test_top_k_caps_result_size(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("rio enchente barragem", top_k=1)
+        results = retriever.retrieve(RetrievalQuery(question="rio enchente barragem"), top_k=1)
         assert len(results) == 1
 
     def test_top_k_zero_returns_empty(self, tmp_path: Path) -> None:
@@ -185,7 +188,7 @@ class TestKHopSubgraphRetrieverRetrieve:
         # requested. Now guarded with an early `if top_k <= 0: return []`.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        assert retriever.retrieve("rio enchente", top_k=0) == []
+        assert retriever.retrieve(RetrievalQuery(question="rio enchente"), top_k=0) == []
 
     def test_chunk_id_is_atlas_passage_id_not_text(self, tmp_path: Path) -> None:
         # Per the `RetrievedPassage.chunk_id` docstring it must be a
@@ -196,7 +199,7 @@ class TestKHopSubgraphRetrieverRetrieve:
         # is NOT the passage text.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("rio Uruguai enchente", top_k=5)
+        results = retriever.retrieve(RetrievalQuery(question="rio Uruguai enchente"), top_k=5)
         assert results, "expected non-empty results for in-KG question"
         for r in results:
             assert ":" in r.chunk_id, (
@@ -214,7 +217,7 @@ class TestKHopSubgraphRetrieverRetrieve:
         # triple arm's non-prose payload.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("rio Uruguai enchente", top_k=5)
+        results = retriever.retrieve(RetrievalQuery(question="rio Uruguai enchente"), top_k=5)
         assert results, "expected non-empty results for in-KG question"
         for r in results:
             assert r.payload, "expected source prose carried in payload"
@@ -236,7 +239,7 @@ class TestKHopSubgraphRetrieverRetrieve:
         path = _write_kg_layout(kg, tmp_path)
 
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("rio Uruguai enchente", top_k=5)
+        results = retriever.retrieve(RetrievalQuery(question="rio Uruguai enchente"), top_k=5)
 
         assert results, "expected the header-bearing passage to be retrieved"
         for r in results:
@@ -264,14 +267,14 @@ class TestKHopSubgraphRetrieverRetrieve:
         )
 
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("alpha beta", top_k=5)
+        results = retriever.retrieve(RetrievalQuery(question="alpha beta"), top_k=5)
         # Only p_in_jsonl makes it through.
         assert [r.chunk_id for r in results] == ["p_in_jsonl:0"]
 
     def test_retriever_meta_records_score_method(self, tmp_path: Path) -> None:
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2, top_k_seeds=50)
-        results = retriever.retrieve("enchente", top_k=1)
+        results = retriever.retrieve(RetrievalQuery(question="enchente"), top_k=1)
         assert results[0].retriever_meta == {
             "score_method": "seed_proximity",
             "k_hop": 2,
@@ -284,7 +287,9 @@ class TestKHopSubgraphRetrieverRetrieve:
         # cleanly — no exception, no hallucinated passages.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("totally unrelated foobar xyzzy", top_k=5)
+        results = retriever.retrieve(
+            RetrievalQuery(question="totally unrelated foobar xyzzy"), top_k=5
+        )
         assert results == []
 
     def test_token_overlap_fallback_when_exact_misses(self, tmp_path: Path) -> None:
@@ -294,7 +299,7 @@ class TestKHopSubgraphRetrieverRetrieve:
         # still hits.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("Uruguai", top_k=3)
+        results = retriever.retrieve(RetrievalQuery(question="Uruguai"), top_k=3)
         assert any(r.chunk_id == "p_a:0" for r in results)
 
     def test_rare_seeds_ranked_above_common_via_idf(self, tmp_path: Path) -> None:
@@ -318,11 +323,11 @@ class TestKHopSubgraphRetrieverRetrieve:
         # "raretoken" has a much higher IDF than "common" (df=1 vs df=5),
         # so e_rare is the seed; p_x is reachable via e_rare → p_x.
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1, top_k_seeds=1)
-        results = retriever.retrieve("common raretoken", top_k=5)
+        results = retriever.retrieve(RetrievalQuery(question="common raretoken"), top_k=5)
         assert any(r.chunk_id == "p_x:0" for r in results)
 
         # A question with no matching tokens still returns empty (graph-floor).
-        empty = retriever.retrieve("totallyunrelated xyzzy", top_k=5)
+        empty = retriever.retrieve(RetrievalQuery(question="totallyunrelated xyzzy"), top_k=5)
         assert empty == []
 
     def test_stopword_only_query_returns_empty(self, tmp_path: Path) -> None:
@@ -335,7 +340,7 @@ class TestKHopSubgraphRetrieverRetrieve:
         # entities.
         path = _write_kg_layout(_build_minimal_kg(), tmp_path)
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results = retriever.retrieve("que e a do em", top_k=5)
+        results = retriever.retrieve(RetrievalQuery(question="que e a do em"), top_k=5)
         assert results == []
 
 
@@ -370,11 +375,11 @@ class TestKHopContainment:
 
         # k_hop=1: only mid is reachable; projector (dist=2) is excluded
         retriever = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=1)
-        assert retriever.retrieve("hop1_token", top_k=5) == []
+        assert retriever.retrieve(RetrievalQuery(question="hop1_token"), top_k=5) == []
 
         # k_hop=2: projector enters the subgraph and projects p_far
         retriever2 = KHopSubgraphRetriever(kg_outputs_dir=path, k_hop=2)
-        results2 = retriever2.retrieve("hop1_token", top_k=5)
+        results2 = retriever2.retrieve(RetrievalQuery(question="hop1_token"), top_k=5)
         assert any(r.chunk_id == "p_far:0" for r in results2)
 
 
@@ -418,7 +423,7 @@ def test_passage_near_entity_outranks_far() -> None:
     r._text_to_passage_id = {"passage one text": "src:0", "passage two text": "src:1"}
     r._entity_link = lambda _q: ["seed"]  # type: ignore[method-assign]
 
-    results = r.retrieve("q", top_k=10)
+    results = r.retrieve(RetrievalQuery(question="q"), top_k=10)
     ids = [p.chunk_id for p in results]
     assert ids[0] == "src:0"
     assert results[0].score == pytest.approx(1.0)
@@ -440,7 +445,7 @@ def test_passage_scored_by_closest_node() -> None:
     r._text_to_passage_id = {"p1": "src:0", "p2": "src:1"}
     r._entity_link = lambda _q: ["seed"]  # type: ignore[method-assign]
 
-    results = r.retrieve("q", top_k=10)
+    results = r.retrieve(RetrievalQuery(question="q"), top_k=10)
     scores = {p.chunk_id: p.score for p in results}
     assert scores["src:0"] == pytest.approx(1.0)
     assert scores["src:1"] == pytest.approx(1.0)
@@ -460,7 +465,7 @@ def test_dedup_and_unresolvable_dropped() -> None:
     r._text_to_passage_id = {"p1": "src:0", "p2": "src:1"}
     r._entity_link = lambda _q: ["seed"]  # type: ignore[method-assign]
 
-    results = r.retrieve("q", top_k=10)
+    results = r.retrieve(RetrievalQuery(question="q"), top_k=10)
     ids = [p.chunk_id for p in results]
     assert ids.count("src:0") == 1
     assert "PX" not in ids
@@ -477,4 +482,4 @@ def test_empty_seeds_returns_empty() -> None:
     r._passage_text = {"P1": "p1"}
     r._text_to_passage_id = {"p1": "src:0"}
     r._entity_link = lambda _q: []  # type: ignore[method-assign]
-    assert r.retrieve("q", top_k=10) == []
+    assert r.retrieve(RetrievalQuery(question="q"), top_k=10) == []
