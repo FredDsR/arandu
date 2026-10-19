@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -12,7 +13,10 @@ from arandu.shared.judge.schemas import JudgeResultMixin
 from arandu.shared.schemas import BloomLevel, SourceMetadata  # noqa: TC001
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from typing import Self
+
+logger = logging.getLogger(__name__)
 
 
 class QAPair(BaseModel):
@@ -241,3 +245,61 @@ def cep_qa_pair_id(source_file_id: str, chunk_id: str | None, idx: int) -> str:
         ``"<file_id>:<chunk_id or 'none'>:<idx>"``.
     """
     return f"{source_file_id}:{chunk_id or 'none'}:{idx}"
+
+
+class CEPPairRef(BaseModel):
+    """One pair of a CEP record, addressed by its composite ``qa_pair_id``.
+
+    Attributes:
+        qa_pair_id: The pair's id, from :func:`cep_qa_pair_id`.
+        idx: The pair's position among ALL pairs of its record.
+        record: The record the pair belongs to.
+        pair: The pair itself.
+    """
+
+    model_config = {"frozen": True}
+
+    qa_pair_id: str
+    idx: int
+    record: QARecordCEP
+    pair: QAPairCEP
+
+
+def iter_cep_pairs(cep_dir: Path, *, strict: bool = False) -> Iterator[CEPPairRef]:
+    """Yield every pair of every readable CEP record under ``cep_dir``.
+
+    The single walk over ``results/<id>/cep/outputs/``: files in sorted
+    order, pairs in record order, judge-rejected pairs included. Callers apply
+    their own filters (``is_judge_rejected``, ``validation.passed``) and their
+    own policy for a missing directory, which yields nothing here.
+
+    Args:
+        cep_dir: Directory of :class:`QARecordCEP` JSON files.
+        strict: Raise on an unreadable or invalid file instead of skipping it.
+            For callers that cache or publish a result, where a silently
+            incomplete pair set is worse than a failed run.
+
+    Yields:
+        One :class:`CEPPairRef` per pair. Unless ``strict``, unreadable or
+        invalid files are logged and skipped.
+
+    Raises:
+        OSError: With ``strict``, if a file cannot be read.
+        ValueError: With ``strict``, if a file is not valid UTF-8 or not a
+            valid :class:`QARecordCEP` (``ValidationError`` is a subclass).
+    """
+    for path in sorted(cep_dir.glob("*.json")):
+        try:
+            record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:  # ValueError covers ValidationError and decode
+            if strict:
+                raise
+            logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
+            continue
+        for idx, pair in enumerate(record.qa_pairs):
+            yield CEPPairRef(
+                qa_pair_id=cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx),
+                idx=idx,
+                record=record,
+                pair=pair,
+            )

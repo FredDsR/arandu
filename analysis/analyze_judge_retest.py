@@ -81,8 +81,8 @@ from typing import Any
 
 import numpy as np
 
-from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, load_pair_scores
-from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
+from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, pair_scores
+from arandu.qa.schemas import iter_cep_pairs
 from arandu.shared.agreement.coefficients import (
     cohen_kappa_weighted,
     gwet_ac2,
@@ -117,27 +117,31 @@ def _sha(obj: Any) -> str:
 
 
 def load_cep(cep_dir: Path) -> dict[str, dict[str, Any]]:
-    """``qa_pair_id -> pair facts`` with the official id and approval rule."""
-    scores = load_pair_scores(cep_dir)
+    """``qa_pair_id -> pair facts`` with the official id and approval rule.
+
+    Strict: an unreadable CEP file aborts the run. ``load_replica`` caches this
+    map under a key that ignores file contents, so a skipped file would persist
+    an incomplete pair set into every later run.
+    """
+    refs = list(iter_cep_pairs(cep_dir, strict=True))
+    scores = {ref.qa_pair_id: pair_scores(ref.pair) for ref in refs}
     approved = approved_ids(scores, TAU)
     out: dict[str, dict[str, Any]] = {}
-    for path in sorted(cep_dir.glob("*.json")):
-        rec = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        for idx, pair in enumerate(rec.qa_pairs):
-            pid = cep_qa_pair_id(rec.source_file_id, pair.chunk_id, idx)
-            v = pair.validation
-            out[pid] = {
-                "bloom": str(pair.bloom_level),
-                "scores": scores.get(pid, {}),
-                "approved": pid in approved,
-                "passed": None if v is None else bool(v.passed),
-                "file": rec.source_file_id,
-                "idx": idx,
-                "chunk": pair.chunk_id,
-                "ctx_len": len(pair.context or ""),
-                "content_sha": _sha([pair.question, pair.answer, pair.context, pair.bloom_level]),
-                "validation_sha": None if v is None else _sha(v.model_dump()),
-            }
+    for ref in refs:
+        pid, pair = ref.qa_pair_id, ref.pair
+        v = pair.validation
+        out[pid] = {
+            "bloom": str(pair.bloom_level),
+            "scores": scores[pid],
+            "approved": pid in approved,
+            "passed": None if v is None else bool(v.passed),
+            "file": ref.record.source_file_id,
+            "idx": ref.idx,
+            "chunk": pair.chunk_id,
+            "ctx_len": len(pair.context or ""),
+            "content_sha": _sha([pair.question, pair.answer, pair.context, pair.bloom_level]),
+            "validation_sha": None if v is None else _sha(v.model_dump()),
+        }
     return out
 
 

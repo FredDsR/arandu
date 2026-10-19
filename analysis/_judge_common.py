@@ -18,15 +18,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import ValidationError
-
-from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
+from arandu.qa.schemas import iter_cep_pairs
 from arandu.shared.rag.analysis.metrics import aggregate_arm
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
+    from arandu.qa.schemas import QAPairCEP
     from arandu.shared.rag.schemas import AnswerRecord
 
 CRITERIA = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
@@ -42,9 +41,9 @@ PairScores = dict[str, dict[str, float | None]]
 def load_pair_scores(cep_dir: Path) -> PairScores:
     """Read per-criterion judge-qa scores for every CEP pair.
 
-    The ``qa_pair_id`` is derived exactly as the retrieve loader and analysis
-    cross-cut map derive it (``"<file_id>:<chunk_id or 'none'>:<idx>"``), so ids
-    join cleanly onto the ``judge_answers`` records.
+    Pairs come from :func:`arandu.qa.schemas.iter_cep_pairs`, the walk the
+    retrieve loader and the analysis cross-cut map share, so ids join cleanly
+    onto the ``judge_answers`` records.
 
     Args:
         cep_dir: ``results/<id>/cep/outputs/``.
@@ -53,22 +52,28 @@ def load_pair_scores(cep_dir: Path) -> PairScores:
         Mapping ``qa_pair_id -> {criterion: score or None}`` over the criteria
         the judge actually evaluated for that pair.
     """
-    out: PairScores = {}
-    for path in sorted(cep_dir.glob("*.json")):
-        try:
-            record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError):
-            continue
-        for idx, pair in enumerate(record.qa_pairs):
-            pid = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
-            scores: dict[str, float | None] = {}
-            if pair.validation is not None:
-                step = pair.validation.stage_results.get(CEP_STAGE)
-                if step is not None:
-                    for name, cs in step.criterion_scores.items():
-                        scores[name] = None if cs.error is not None else cs.score
-            out[pid] = scores
-    return out
+    return {ref.qa_pair_id: pair_scores(ref.pair) for ref in iter_cep_pairs(cep_dir)}
+
+
+def pair_scores(pair: QAPairCEP) -> dict[str, float | None]:
+    """Read one pair's per-criterion judge-qa scores.
+
+    Args:
+        pair: A CEP pair, judged or not.
+
+    Returns:
+        Mapping ``criterion -> score or None`` (None when the criterion
+        errored); empty when the pair carries no ``cep_validation`` stage.
+    """
+    if pair.validation is None:
+        return {}
+    step = pair.validation.stage_results.get(CEP_STAGE)
+    if step is None:
+        return {}
+    return {
+        name: None if cs.error is not None else cs.score
+        for name, cs in step.criterion_scores.items()
+    }
 
 
 def approved_ids(scores: PairScores, threshold: float) -> set[str]:
