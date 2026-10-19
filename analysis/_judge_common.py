@@ -18,9 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import ValidationError
-
-from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
+from arandu.qa.schemas import iter_cep_pairs
 from arandu.shared.rag.analysis.metrics import aggregate_arm
 
 if TYPE_CHECKING:
@@ -54,20 +52,14 @@ def load_pair_scores(cep_dir: Path) -> PairScores:
         the judge actually evaluated for that pair.
     """
     out: PairScores = {}
-    for path in sorted(cep_dir.glob("*.json")):
-        try:
-            record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError):
-            continue
-        for idx, pair in enumerate(record.qa_pairs):
-            pid = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
-            scores: dict[str, float | None] = {}
-            if pair.validation is not None:
-                step = pair.validation.stage_results.get(CEP_STAGE)
-                if step is not None:
-                    for name, cs in step.criterion_scores.items():
-                        scores[name] = None if cs.error is not None else cs.score
-            out[pid] = scores
+    for ref in iter_cep_pairs(cep_dir):
+        scores: dict[str, float | None] = {}
+        if ref.pair.validation is not None:
+            step = ref.pair.validation.stage_results.get(CEP_STAGE)
+            if step is not None:
+                for name, cs in step.criterion_scores.items():
+                    scores[name] = None if cs.error is not None else cs.score
+        out[ref.qa_pair_id] = scores
     return out
 
 

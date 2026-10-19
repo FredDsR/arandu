@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
-from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
+from arandu.qa.schemas import iter_cep_pairs
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -163,23 +163,17 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
     middle does not shift the ids of the pairs after it. Unjudged pairs
     (``is_valid`` is None, e.g. a run where judge-qa has not run) are kept.
     """
-    for path in sorted(cep_dir.glob("*.json")):
-        try:
-            record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as exc:
-            logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
+    for ref in iter_cep_pairs(cep_dir):
+        if ref.pair.is_judge_rejected:
             continue
-        for idx, pair in enumerate(record.qa_pairs):
-            if pair.is_judge_rejected:
-                continue
-            yield QuestionRecord(
-                qa_pair_id=cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx),
-                question=pair.question,
-                is_answerable=True,
-                source="cep",
-                source_file_id=record.source_file_id,
-                chunker_id=record.chunker_id,
-            )
+        yield QuestionRecord(
+            qa_pair_id=ref.qa_pair_id,
+            question=ref.pair.question,
+            is_answerable=True,
+            source="cep",
+            source_file_id=ref.record.source_file_id,
+            chunker_id=ref.record.chunker_id,
+        )
 
 
 def _iter_nonanswerable_questions(nonanswerable_dir: Path) -> Iterator[QuestionRecord]:

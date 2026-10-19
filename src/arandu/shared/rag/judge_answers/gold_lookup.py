@@ -27,9 +27,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
-from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
+from arandu.qa.schemas import iter_cep_pairs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -63,18 +63,11 @@ def build_gold_lookup(cep_dir: Path) -> dict[str, GoldRecord]:
     if not cep_dir.exists():
         logger.warning("CEP outputs absent at %s; gold lookup will be empty.", cep_dir)
         return out
-    for path in sorted(cep_dir.glob("*.json")):
-        try:
-            record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as exc:
-            logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
-            continue
-        for idx, pair in enumerate(record.qa_pairs):
-            qa_pair_id = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
-            out[qa_pair_id] = GoldRecord(
-                qa_pair_id=qa_pair_id,
-                question=pair.question,
-                gold_answer=pair.answer,
-                context=pair.context,
-            )
+    for ref in iter_cep_pairs(cep_dir):
+        out[ref.qa_pair_id] = GoldRecord(
+            qa_pair_id=ref.qa_pair_id,
+            question=ref.pair.question,
+            gold_answer=ref.pair.answer,
+            context=ref.pair.context,
+        )
     return out

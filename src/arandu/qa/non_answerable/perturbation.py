@@ -23,7 +23,7 @@ from arandu.qa.non_answerable.schemas import (
     PerturbationOutput,
     SwapRecord,
 )
-from arandu.qa.schemas import QAPairCEP, QARecordCEP, cep_qa_pair_id
+from arandu.qa.schemas import QAPairCEP, iter_cep_pairs
 from arandu.shared.llm_client import StructuredOutputError
 
 if TYPE_CHECKING:
@@ -73,24 +73,18 @@ def stratified_seed_sample(
     """
     rng = random.Random(rng_seed)
     by_bloom: dict[str, list[SeedPair]] = defaultdict(list)
-    for path in sorted(cep_dir.glob("*.json")):
-        try:
-            record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
+    for ref in iter_cep_pairs(cep_dir):
+        pair = ref.pair
+        if pair.validation is None or not pair.validation.passed:
             continue
-        for idx, pair in enumerate(record.qa_pairs):
-            if pair.validation is None or not pair.validation.passed:
-                continue
-            parent_id = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
-            by_bloom[str(pair.bloom_level)].append(
-                SeedPair(
-                    parent_qa_pair_id=parent_id,
-                    source_file_id=record.source_file_id,
-                    chunker_id=record.chunker_id,
-                    pair=pair,
-                )
+        by_bloom[str(pair.bloom_level)].append(
+            SeedPair(
+                parent_qa_pair_id=ref.qa_pair_id,
+                source_file_id=ref.record.source_file_id,
+                chunker_id=ref.record.chunker_id,
+                pair=pair,
             )
+        )
 
     seeds: list[SeedPair] = []
     for pool in by_bloom.values():

@@ -17,20 +17,15 @@ ambiguous.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
-from pydantic import ValidationError
-
-from arandu.qa.schemas import QARecordCEP, cep_qa_pair_id
+from arandu.qa.schemas import iter_cep_pairs
 from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from arandu.shared.rag.schemas import RetrievalQuery
-
-logger = logging.getLogger(__name__)
 
 
 class OracleRetriever:
@@ -74,15 +69,8 @@ class OracleRetriever:
                 f"CEP outputs not found at {cep_dir}. Run `arandu generate-cep-qa` first."
             )
         contexts: dict[str, tuple[str, str]] = {}
-        for path in sorted(cep_dir.glob("*.json")):
-            try:
-                record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
-            except (OSError, ValidationError) as exc:
-                logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
-                continue
-            for idx, pair in enumerate(record.qa_pairs):
-                qa_pair_id = cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx)
-                contexts[qa_pair_id] = (pair.chunk_id or qa_pair_id, pair.context)
+        for ref in iter_cep_pairs(cep_dir):
+            contexts[ref.qa_pair_id] = (ref.pair.chunk_id or ref.qa_pair_id, ref.pair.context)
         return cls(contexts)
 
     def retrieve(self, query: RetrievalQuery, top_k: int) -> list[RetrievedPassage]:
