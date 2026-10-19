@@ -309,6 +309,15 @@ services:
       - ARANDU_JUDGE_LANGUAGE=${ARANDU_JUDGE_LANGUAGE:-pt}
       - ARANDU_JUDGE_TEMPERATURE=${ARANDU_JUDGE_TEMPERATURE:-0.1}
       - ARANDU_JUDGE_MAX_TOKENS=${ARANDU_JUDGE_MAX_TOKENS:-8192}
+      # JSON request fields, e.g. {"reasoning_effort": "none"} for DeepSeek.
+      - ARANDU_JUDGE_VALIDATOR_EXTRA_BODY
+      - ARANDU_JUDGE_VALIDATOR_API_KEY_ENV=${ARANDU_JUDGE_VALIDATOR_API_KEY_ENV:-OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Cloud API keys, forwarded only when set on the host. A stage reads the
+      # one its *_API_KEY_ENV names (default OPENAI_API_KEY).
+      - GEMINI_API_KEY
+      - DEEPSEEK_API_KEY
+      - MARITACA_API_KEY
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -375,6 +384,12 @@ services:
       # no key and dies after the image build and disk preflight.
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ARANDU_EMIC_JUDGE_API_KEY_ENV=${ARANDU_EMIC_JUDGE_API_KEY_ENV:-OPENAI_API_KEY}
+      - ARANDU_EMIC_JUDGE_EXTRA_BODY
+      # Cloud API keys, forwarded only when set on the host. A stage reads the
+      # one its *_API_KEY_ENV names (default OPENAI_API_KEY).
+      - GEMINI_API_KEY
+      - DEEPSEEK_API_KEY
+      - MARITACA_API_KEY
       # Client-side concurrency. Pair with OLLAMA_NUM_PARALLEL and the per-slot
       # context VRAM budget; scripts/slurm/emic/tupi.slurm derives the server
       # slots from this value so they cannot drift.
@@ -426,7 +441,16 @@ services:
       - ARANDU_QA_MODEL_ID=${ARANDU_QA_MODEL_ID:-qwen3:14b}
       # Use Ollama sidecar service by default
       - ARANDU_QA_OLLAMA_URL=${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}
+      # Cloud endpoint for generation (provider=custom), e.g. https://api.deepseek.com
+      - ARANDU_QA_BASE_URL
+      - ARANDU_QA_API_KEY_ENV=${ARANDU_QA_API_KEY_ENV:-OPENAI_API_KEY}
+      - ARANDU_QA_EXTRA_BODY
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Cloud API keys, forwarded only when set on the host. A stage reads the
+      # one its *_API_KEY_ENV names (default OPENAI_API_KEY).
+      - GEMINI_API_KEY
+      - DEEPSEEK_API_KEY
+      - MARITACA_API_KEY
       - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
       - ARANDU_QA_TEMPERATURE=${ARANDU_QA_TEMPERATURE:-0.7}
       - ARANDU_QA_WORKERS=${ARANDU_QA_WORKERS:-2}
@@ -444,6 +468,8 @@ services:
       - ARANDU_JUDGE_LANGUAGE=${ARANDU_JUDGE_LANGUAGE:-pt}
       - ARANDU_JUDGE_TEMPERATURE=${ARANDU_JUDGE_TEMPERATURE:-0.1}
       - ARANDU_JUDGE_MAX_TOKENS=${ARANDU_JUDGE_MAX_TOKENS:-8192}
+      - ARANDU_JUDGE_VALIDATOR_EXTRA_BODY
+      - ARANDU_JUDGE_VALIDATOR_API_KEY_ENV=${ARANDU_JUDGE_VALIDATOR_API_KEY_ENV:-OPENAI_API_KEY}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -494,7 +520,17 @@ services:
       - ARANDU_KG_MODEL_ID=${ARANDU_KG_MODEL_ID:-llama3.1:8b}
       # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
       - ARANDU_KG_OLLAMA_URL=${ARANDU_KG_OLLAMA_URL:-http://ollama:11434/v1}
+      # Cloud endpoint for extraction (provider=custom), e.g. https://api.deepseek.com
+      - ARANDU_KG_BASE_URL
+      - ARANDU_KG_API_KEY_ENV=${ARANDU_KG_API_KEY_ENV:-OPENAI_API_KEY}
+      # atlas-rag forwards only {"reasoning_effort": ...}
+      - ARANDU_KG_EXTRA_BODY
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Cloud API keys, forwarded only when set on the host. A stage reads the
+      # one its *_API_KEY_ENV names (default OPENAI_API_KEY).
+      - GEMINI_API_KEY
+      - DEEPSEEK_API_KEY
+      - MARITACA_API_KEY
       - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
       - ARANDU_KG_BACKEND=${ARANDU_KG_BACKEND:-atlas}
       - ARANDU_KG_TEMPERATURE=${ARANDU_KG_TEMPERATURE:-0.5}
@@ -556,20 +592,34 @@ services:
       # Client-side concurrent LLM requests; the wrappers pair this with
       # matching OLLAMA_NUM_PARALLEL slots + per-slot context VRAM budget.
       - ARANDU_ANSWERER_WORKERS=${ARANDU_ANSWERER_WORKERS:-1}
+      - ARANDU_ANSWERER_API_KEY_ENV=${ARANDU_ANSWERER_API_KEY_ENV:-OPENAI_API_KEY}
+      - ARANDU_ANSWERER_EXTRA_BODY
       # Answer judge (spec §6)
       - ARANDU_JUDGE_ANSWERS_PROVIDER=${ARANDU_JUDGE_ANSWERS_PROVIDER:-ollama}
       - ARANDU_JUDGE_ANSWERS_MODEL_ID=${ARANDU_JUDGE_ANSWERS_MODEL_ID:-qwen3:14b}
       - ARANDU_JUDGE_ANSWERS_BASE_URL=${ARANDU_JUDGE_ANSWERS_BASE_URL:-http://ollama:11434/v1}
       - ARANDU_JUDGE_ANSWERS_WORKERS=${ARANDU_JUDGE_ANSWERS_WORKERS:-1}
+      - ARANDU_JUDGE_ANSWERS_API_KEY_ENV=${ARANDU_JUDGE_ANSWERS_API_KEY_ENV:-OPENAI_API_KEY}
+      - ARANDU_JUDGE_ANSWERS_EXTRA_BODY
       # Non-answerable item generator (entity-perturbation LLM)
       - ARANDU_NONANSWERABLE_PROVIDER=${ARANDU_NONANSWERABLE_PROVIDER:-ollama}
       - ARANDU_NONANSWERABLE_MODEL_ID=${ARANDU_NONANSWERABLE_MODEL_ID:-qwen3:14b}
       - ARANDU_NONANSWERABLE_BASE_URL=${ARANDU_NONANSWERABLE_BASE_URL:-http://ollama:11434/v1}
       - ARANDU_NONANSWERABLE_WORKERS=${ARANDU_NONANSWERABLE_WORKERS:-1}
+      - ARANDU_NONANSWERABLE_API_KEY_ENV=${ARANDU_NONANSWERABLE_API_KEY_ENV:-OPENAI_API_KEY}
+      - ARANDU_NONANSWERABLE_EXTRA_BODY
       # atlas-rag retrieve arm (NER LLM); other arms need no LLM
       - ARANDU_ATLAS_RAG_PROVIDER=${ARANDU_ATLAS_RAG_PROVIDER:-ollama}
       - ARANDU_ATLAS_RAG_MODEL_ID=${ARANDU_ATLAS_RAG_MODEL_ID:-qwen3:14b}
       - ARANDU_ATLAS_RAG_BASE_URL=${ARANDU_ATLAS_RAG_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_ATLAS_RAG_API_KEY_ENV=${ARANDU_ATLAS_RAG_API_KEY_ENV:-GEMINI_API_KEY}
+      - ARANDU_ATLAS_RAG_EXTRA_BODY
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Cloud API keys, forwarded only when set on the host. A stage reads the
+      # one its *_API_KEY_ENV names (default OPENAI_API_KEY).
+      - GEMINI_API_KEY
+      - DEEPSEEK_API_KEY
+      - MARITACA_API_KEY
       # Local sentence-transformers embedder (kg-build-retriever-index + retrieve);
       # avoids paid Gemini embeddings. Multilingual for the PT-BR corpus.
       - ARANDU_EMBEDDER_PROVIDER=${ARANDU_EMBEDDER_PROVIDER:-sentence_transformers}

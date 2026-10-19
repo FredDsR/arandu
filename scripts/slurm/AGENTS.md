@@ -48,6 +48,13 @@ judges pairs during generation through `ARANDU_JUDGE_*` (the same variables the
 `judge-qa` step reads) and persists the verdicts; `judge-qa` in resume mode then
 only re-judges pairs without a clean verdict.
 
+**API keys.** `arandu_run_worker` (`container_lib.sh`) forwards every `ARANDU_*`
+variable and every variable ending in `_API_KEY`, so a stage pointed at a cloud
+provider (`ARANDU_<STAGE>_API_KEY_ENV=DEEPSEEK_API_KEY`, ...) only needs the key
+exported in the job's environment. `docker-compose.yml` names its forwarded keys
+explicitly (`OPENAI_`, `GEMINI_`, `DEEPSEEK_`, `MARITACA_API_KEY`); a new
+provider's key must be added there too.
+
 ## Layout
 
 | Path | Role |
