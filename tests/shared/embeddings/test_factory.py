@@ -16,7 +16,7 @@ class TestEmbedderSettings:
         s = EmbedderSettings(_env_file=None)
         assert s.provider == "gemini"
         assert s.model == "gemini-embedding-001"
-        assert s.api_key_env == "GEMINI_API_KEY"
+        assert s.api_key is None
         # max_retries=8 is calibrated against the test-kg-04 smoke; the SDK
         # default (2) is too low for 75k-embedding builds under Gemini's quota.
         assert s.max_retries == 8
@@ -31,14 +31,15 @@ class TestEmbedderSettings:
 
 class TestBuildEmbedder:
     def test_gemini_requires_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        settings = EmbedderSettings(provider="gemini", model="m", api_key_env="GEMINI_API_KEY")
+        monkeypatch.delenv("ARANDU_EMBEDDER_API_KEY", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "not-a-fallback")
+        settings = EmbedderSettings(provider="gemini", model="m")
 
-        with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        with pytest.raises(RuntimeError, match="ARANDU_EMBEDDER_API_KEY"):
             build_embedder(settings)
 
     def test_gemini_returns_gemini_embedder(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_EMBEDDER_API_KEY", "test-key")
         settings = EmbedderSettings(provider="gemini", model="gemini-embedding-001")
 
         with patch("openai.OpenAI") as mock_openai:
@@ -59,7 +60,7 @@ class TestBuildEmbedder:
         assert kwargs["max_retries"] == 8
 
     def test_max_retries_override_via_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_EMBEDDER_API_KEY", "test-key")
         settings = EmbedderSettings(provider="gemini", model="m", max_retries=15)
 
         with patch("openai.OpenAI") as mock_openai:
@@ -97,7 +98,7 @@ class TestBuildEmbedder:
         settings = EmbedderSettings.model_construct(
             provider="nonexistent",  # type: ignore[arg-type]
             model="m",
-            api_key_env="GEMINI_API_KEY",
+            api_key=None,
         )
         with pytest.raises(ValueError, match="Unknown embedder provider"):
             build_embedder(settings)

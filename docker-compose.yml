@@ -591,8 +591,8 @@ services:
       - ARANDU_ATLAS_RAG_BASE_URL=${ARANDU_ATLAS_RAG_BASE_URL:-http://ollama:11434/v1}
       - ARANDU_ATLAS_RAG_API_KEY
       - ARANDU_ATLAS_RAG_EXTRA_BODY
-      # Gemini embedder key (ARANDU_EMBEDDER_PROVIDER=gemini); not an LLM fallback.
-      - GEMINI_API_KEY
+      # Gemini embedder key (ARANDU_EMBEDDER_PROVIDER=gemini).
+      - ARANDU_EMBEDDER_API_KEY
       # Local sentence-transformers embedder (kg-build-retriever-index + retrieve);
       # avoids paid Gemini embeddings. Multilingual for the PT-BR corpus.
       - ARANDU_EMBEDDER_PROVIDER=${ARANDU_EMBEDDER_PROVIDER:-sentence_transformers}

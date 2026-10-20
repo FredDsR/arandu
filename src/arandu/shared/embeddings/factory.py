@@ -14,10 +14,9 @@ The choice is exposed through :class:`EmbedderSettings` (env prefix
 
 from __future__ import annotations
 
-import os
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from arandu.shared.embeddings.gemini import GeminiEmbedder
@@ -40,9 +39,10 @@ class EmbedderSettings(BaseSettings):
             Google in 2025-Q1). For sentence-transformers, any
             ``sentence_transformers``-resolvable name works
             (e.g. ``"intfloat/multilingual-e5-large-instruct"``).
-        api_key_env: Name of the env var holding the Gemini API key.
-            Defaults to ``GEMINI_API_KEY`` — matching the smoke script's
-            convention. Ignored for sentence-transformers.
+        api_key: Gemini API key (``ARANDU_EMBEDDER_API_KEY``), required for
+            the Gemini provider; no shared fallback such as
+            ``GEMINI_API_KEY``. A ``SecretStr``, so run snapshots record it
+            masked. Ignored for sentence-transformers.
         max_retries: ``openai.OpenAI(max_retries=...)`` value used for the
             Gemini client. Default 8 because a 75k-embedding build (the
             ``test-kg-04`` smoke) hits Gemini's 429s often enough that
@@ -59,9 +59,9 @@ class EmbedderSettings(BaseSettings):
         default="gemini-embedding-001",
         description="Model identifier passed to the chosen provider.",
     )
-    api_key_env: str = Field(
-        default="GEMINI_API_KEY",
-        description="Env var name holding the Gemini API key (ignored for local providers).",
+    api_key: SecretStr | None = Field(
+        default=None,
+        description="Gemini API key; required for provider 'gemini', ignored for local ones.",
     )
     max_retries: int = Field(
         default=8,
@@ -92,18 +92,18 @@ def build_embedder(settings: EmbedderSettings) -> Any:
         An embedder satisfying atlas-rag's encoder contract.
 
     Raises:
-        RuntimeError: If ``provider`` is ``"gemini"`` and the API key
-            env var (default ``GEMINI_API_KEY``) is unset.
+        RuntimeError: If ``provider`` is ``"gemini"`` and
+            ``ARANDU_EMBEDDER_API_KEY`` is unset.
         ValueError: If ``provider`` is not a recognized value (defensive;
             ``EmbedderProvider`` is a Literal, but env-var paths can
             still feed an arbitrary string).
     """
     if settings.provider == "gemini":
-        api_key = os.environ.get(settings.api_key_env)
+        api_key = settings.api_key.get_secret_value() if settings.api_key else ""
         if not api_key:
             raise RuntimeError(
-                f"Gemini embedder requested but {settings.api_key_env} is unset. "
-                f"Set it or switch ARANDU_EMBEDDER_PROVIDER to 'sentence_transformers'."
+                "Gemini embedder requested but ARANDU_EMBEDDER_API_KEY is unset. "
+                "Set it or switch ARANDU_EMBEDDER_PROVIDER to 'sentence_transformers'."
             )
         # Import the OpenAI client lazily so the sentence-transformers path
         # works in envs without `openai` installed.

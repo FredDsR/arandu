@@ -6,7 +6,7 @@ pipeline works end-to-end with a real provider.
 
 Usage:
     # With Gemini (OpenAI-compatible)
-    GEMINI_API_KEY=your-key uv run python scripts/smoke/smoke_qa_judge.py
+    ARANDU_JUDGE_VALIDATOR_API_KEY=your-key uv run python scripts/smoke/smoke_qa_judge.py
 
     # With Ollama
     uv run python scripts/smoke/smoke_qa_judge.py --provider ollama --model qwen3:14b
@@ -53,9 +53,9 @@ def main() -> None:
     base_url = args.base_url
     api_key = None
     if base_url is None and args.provider == "custom":
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = os.environ.get("ARANDU_JUDGE_VALIDATOR_API_KEY")
         if not api_key:
-            console.print("[red]Set GEMINI_API_KEY or use --provider ollama[/red]")
+            console.print("[red]Set ARANDU_JUDGE_VALIDATOR_API_KEY or use --provider ollama[/red]")
             sys.exit(1)
         base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
 

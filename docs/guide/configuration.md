@@ -465,6 +465,7 @@ export ARANDU_RETRY_DELAY=1.0
 **QAConfig** (`ARANDU_QA_`):
 ```bash
 export ARANDU_QA_PROVIDER=openai
+export ARANDU_QA_API_KEY=sk-...
 export ARANDU_QA_MODEL_ID=gpt-4o-mini
 export ARANDU_QA_OLLAMA_URL=http://localhost:11434/v1
 export ARANDU_QA_LANGUAGE=pt
@@ -488,6 +489,7 @@ export ARANDU_JUDGE_TEMPERATURE=0.1
 **KGConfig** (`ARANDU_KG_`):
 ```bash
 export ARANDU_KG_PROVIDER=openai
+export ARANDU_KG_API_KEY=sk-...
 export ARANDU_KG_MODEL_ID=gpt-4o
 export ARANDU_KG_LANGUAGE=pt
 export ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
@@ -507,8 +509,8 @@ export ARANDU_RESULTS_ENABLE_VERSIONING=true
 ### API Keys
 
 **Sensitive values should be set as environment variables only** (never commit to git).
-Each LLM client has its own key and there is no shared fallback (`OPENAI_API_KEY` and
-`GEMINI_API_KEY` are not read by any LLM client):
+Each LLM client, and the embedder, has its own key and there is no shared fallback
+(`OPENAI_API_KEY` and `GEMINI_API_KEY` are not read):
 
 ```bash
 export ARANDU_QA_API_KEY=sk-...                # CEP generator
@@ -519,11 +521,11 @@ export ARANDU_JUDGE_ANSWERS_API_KEY=sk-...     # judge-answers
 export ARANDU_NONANSWERABLE_API_KEY=sk-...     # generate-non-answerable
 export ARANDU_EMIC_JUDGE_API_KEY=sk-...        # emic-judge
 export ARANDU_ATLAS_RAG_API_KEY=sk-...         # retrieve, atlas_rag arm
+export ARANDU_EMBEDDER_API_KEY=...             # Gemini embedder (kg-build-retriever-index, retrieve)
 ```
 
-Only clients whose provider is not `ollama` need a key. The Gemini embedder is not an
-LLM client and keeps its own setting (`ARANDU_EMBEDDER_API_KEY_ENV`, default
-`GEMINI_API_KEY`).
+Only clients whose provider is not `ollama` need a key; the embedder needs one only with
+`ARANDU_EMBEDDER_PROVIDER=gemini` (not with `sentence_transformers`).
 
 **Note**: The `.env` file should be added to `.gitignore`.
 
@@ -811,6 +813,7 @@ Pydantic Settings loads configuration in the following priority order (highest t
 2. **Environment variables**:
    ```bash
    export ARANDU_QA_PROVIDER=openai
+   export ARANDU_QA_API_KEY=sk-...
    export ARANDU_QA_MODEL_ID=gpt-4o-mini
    ```
 
