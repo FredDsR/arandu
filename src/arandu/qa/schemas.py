@@ -281,13 +281,16 @@ def iter_cep_pairs(cep_dir: Path, *, strict: bool = False) -> Iterator[CEPPairRe
 
     Yields:
         One :class:`CEPPairRef` per pair. Unless ``strict``, unreadable or
-        invalid files are logged and skipped.
+        invalid files are logged and skipped. A file whose ids repeat ids of an
+        earlier file (two records with the same ``source_file_id``) is logged;
+        its pairs are still yielded, and id-keyed consumers keep the later one.
 
     Raises:
         OSError: With ``strict``, if a file cannot be read.
         ValueError: With ``strict``, if a file is not valid UTF-8 or not a
             valid :class:`QARecordCEP` (``ValidationError`` is a subclass).
     """
+    seen: set[str] = set()
     for path in sorted(cep_dir.glob("*.json")):
         try:
             record = QARecordCEP.model_validate_json(path.read_text(encoding="utf-8"))
@@ -296,10 +299,19 @@ def iter_cep_pairs(cep_dir: Path, *, strict: bool = False) -> Iterator[CEPPairRe
                 raise
             logger.warning("Skipping unreadable CEP file %s: %s", path, exc)
             continue
-        for idx, pair in enumerate(record.qa_pairs):
-            yield CEPPairRef(
-                qa_pair_id=cep_qa_pair_id(record.source_file_id, pair.chunk_id, idx),
-                idx=idx,
-                record=record,
-                pair=pair,
+        ids = [
+            cep_qa_pair_id(record.source_file_id, p.chunk_id, i)
+            for i, p in enumerate(record.qa_pairs)
+        ]
+        repeated = seen.intersection(ids)
+        if repeated:
+            logger.warning(
+                "CEP file %s repeats %d qa_pair_ids of an earlier file "
+                "(duplicate source_file_id %r?); id-keyed lookups keep this file's pairs.",
+                path,
+                len(repeated),
+                record.source_file_id,
             )
+        seen.update(ids)
+        for idx, (qa_pair_id, pair) in enumerate(zip(ids, record.qa_pairs, strict=True)):
+            yield CEPPairRef(qa_pair_id=qa_pair_id, idx=idx, record=record, pair=pair)

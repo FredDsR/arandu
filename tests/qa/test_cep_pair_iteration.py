@@ -106,5 +106,18 @@ class TestIterCepPairs:
         with pytest.raises(ValueError):
             list(iter_cep_pairs(tmp_path, strict=True))
 
+    def test_repeated_ids_across_files_are_logged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # Two files for the same source collide on every id.
+        _write_record(tmp_path, "a", [_pair("A0?", "c0")])
+        (tmp_path / "zz_copy_cep_qa.json").write_text((tmp_path / "a_cep_qa.json").read_text())
+
+        with caplog.at_level(logging.WARNING, logger="arandu.qa.schemas"):
+            refs = list(iter_cep_pairs(tmp_path))
+
+        assert [r.qa_pair_id for r in refs] == ["a:c0:0", "a:c0:0"]
+        assert any("repeats 1 qa_pair_ids" in r.message for r in caplog.records)
+
     def test_missing_dir_yields_nothing(self, tmp_path: Path) -> None:
         assert list(iter_cep_pairs(tmp_path / "absent")) == []

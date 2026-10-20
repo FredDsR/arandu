@@ -191,6 +191,17 @@ def _iter_nonanswerable_questions(nonanswerable_dir: Path) -> Iterator[QuestionR
         except (OSError, ValidationError) as exc:
             logger.warning("Skipping unreadable non-answerable file %s: %s", path, exc)
             continue
+        orphans = sum(1 for item in batch.items if item.parent_qa_pair_id is None)
+        if orphans:
+            # Without the parent link the oracle arm cannot resolve these items;
+            # flag it at load time rather than as one failure per item later.
+            logger.warning(
+                "%d of %d non-answerable items in %s lack parent_qa_pair_id; "
+                "the oracle arm will fail on them.",
+                orphans,
+                len(batch.items),
+                path,
+            )
         for item in batch.items:
             yield QuestionRecord(
                 qa_pair_id=item.qa_pair_id,

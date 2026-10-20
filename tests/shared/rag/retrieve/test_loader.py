@@ -203,6 +203,22 @@ class TestLoadQuestionsNonAnswerable:
         assert na_item.parent_qa_pair_id is None
         assert na_item.source_qa_pair_id is None
 
+    def test_nonanswerable_items_without_parent_are_flagged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(cep_dir, "src_a", [_qa_pair("CEP question?")])
+        na_dir = tmp_path / "nonanswerable"
+        na_dir.mkdir()
+        item = {"qa_pair_id": "swap:0001", "question": "Q?", "source_file_id": "src_a"}
+        (na_dir / "items.json").write_text(json.dumps({"items": [item]}))
+
+        with caplog.at_level("WARNING", logger="arandu.shared.rag.retrieve.loader"):
+            load_questions(cep_dir, na_dir)
+
+        assert any("lack parent_qa_pair_id" in r.message for r in caplog.records)
+
     def test_nonanswerable_parent_link_sets_source_qa_pair_id(self, tmp_path: Path) -> None:
         cep_dir = tmp_path / "cep"
         cep_dir.mkdir()

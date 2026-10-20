@@ -77,7 +77,7 @@ import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -93,13 +93,13 @@ from arandu.shared.rag.analysis.classifier import classify_record
 from arandu.shared.rag.analysis.metrics import aggregate_arm
 from arandu.shared.rag.schemas import AnswerRecord
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 TAU = DEFAULT_THRESHOLD
 TAU_EMIC = 4
-ARMS = ["null", "bm25", "khop_passage", "khop_triple", "atlas_rag"]
+ARMS = ["null", "bm25", "khop_passage", "khop_triple", "atlas_rag", "oracle"]
 GRAPH_ARMS = ["khop_passage", "khop_triple", "atlas_rag"]
-# Control arms fix the ends of the scale (null retrieves nothing, oracle returns the
-# gold chunk); their near-constant verdicts stay out of the pooled strata.
-CONTROL_ARMS = frozenset({"null", "oracle"})
 BLOOM = ["remember", "understand", "analyze", "evaluate"]
 HIGHER = ["understand", "analyze", "evaluate"]
 GATE_CRITERIA = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
@@ -110,6 +110,15 @@ RESIDUAL_CHUNK_CHARS = 100
 # --------------------------------------------------------------------------- #
 # Loading
 # --------------------------------------------------------------------------- #
+
+
+def present_arms(keys: Iterable[tuple[str, str]]) -> list[str]:
+    """The arms of ``ARMS`` with at least one ``(arm, qa_pair_id)`` key, in ``ARMS`` order.
+
+    Runs made before an arm existed (e.g. ``oracle``) get no empty row for it.
+    """
+    seen = {arm for arm, _ in keys}
+    return [arm for arm in ARMS if arm in seen]
 
 
 def _sha(obj: Any) -> str:
@@ -584,7 +593,7 @@ def arm_aggregates(
     """
     out = {}
     levels = [lvl for lvl in BLOOM if any(cep[p]["bloom"] == lvl for p in useful)]
-    for arm in ARMS:
+    for arm in present_arms(records):
         ans = []
         non = []
         for (a, pid), rec in records.items():
@@ -1434,19 +1443,20 @@ def answers_section(
             "abstain_decision": {},
             "transitions": {},
         }
-        # The control arms are near-constant (null always abstains with coverage 0,
-        # oracle always holds the gold chunk) and would inflate a pooled coefficient,
-        # so the pooled strata cover the retrieval arms only.
+        # The null arm is constant (always abstains, coverage 0) and would inflate a
+        # pooled coefficient, so the pooled strata leave it out. The oracle stays in:
+        # its coverage is near-constant, but its correctness and faithfulness verdicts
+        # vary per item and are the most informative answerable-side ones.
         strata: dict[str, list[tuple[str, str]]] = {}
         for stratum, pred in preds.items():
             ks = [k for k in sk if pred(k)]
-            strata[stratum] = [k for k in ks if k[0] not in CONTROL_ARMS]
-            for arm in ARMS:
+            strata[stratum] = [k for k in ks if k[0] != "null"]
+            for arm in present_arms(sk):
                 strata[f"{stratum}.{arm}"] = [k for k in ks if k[0] == arm]
             if stratum != "useful":
                 for lvl in BLOOM if stratum == "total" else HIGHER:
                     strata[f"{stratum}.{lvl}"] = [
-                        k for k in ks if k[0] not in CONTROL_ARMS and level(k) == lvl
+                        k for k in ks if k[0] != "null" and level(k) == lvl
                     ]
         for crit in [*ANS_CRITERIA, "passage_coverage_pass"]:
             nominal = crit == "passage_coverage_pass"
