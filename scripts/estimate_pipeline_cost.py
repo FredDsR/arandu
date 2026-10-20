@@ -160,9 +160,9 @@ EVALUATION_STAGES = frozenset(
     }
 )
 
-# Maritaca bills in BRL. Conversion rate is a third-party mid-market quote
-# (late July 2026); recompute before citing a USD figure.
-BRL_PER_USD = 5.07
+# Maritaca bills in BRL. Conversion rate: Banco Central PTAX (venda) of
+# 2026-10-19 (olinda.bcb.gov.br, CotacaoDolarPeriodo); recompute before citing.
+BRL_PER_USD = 5.0564
 
 # Public list prices in USD per 1,000,000 tokens (input at cache miss, output),
 # verified against the providers' pricing pages on 2026-10-19:
