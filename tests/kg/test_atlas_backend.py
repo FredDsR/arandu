@@ -720,9 +720,9 @@ class TestBuildLLMClient:
     """Tests for _build_llm_client (delegates to unified LLMClient)."""
 
     @pytest.fixture(autouse=True)
-    def _fallback_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Pin the OPENAI_API_KEY fallback so a developer's real key stays out."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    def _kg_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pin ARANDU_KG_API_KEY so a developer's real key stays out."""
+        monkeypatch.setenv("ARANDU_KG_API_KEY", "sk-kg")
 
     def test_ollama_provider(self, _mock_atlas_rag: dict, mocker: MockerFixture) -> None:
         """Test LLM client construction for Ollama provider."""
@@ -756,7 +756,7 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="custom",
             model_id=config.model_id,
-            api_key="sk-openai",
+            api_key="sk-kg",
             base_url="http://my-api:8000/v1",
         )
 
@@ -775,14 +775,14 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="custom",
             model_id=config.model_id,
-            api_key="sk-openai",
+            api_key="sk-kg",
             base_url=None,
         )
 
-    def test_own_api_key_wins_over_openai_api_key(
+    def test_kg_api_key_is_sent_and_openai_api_key_ignored(
         self, _mock_atlas_rag: dict, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """KGConfig.api_key (ARANDU_KG_API_KEY) is sent instead of OPENAI_API_KEY."""
+        """KGConfig.api_key (ARANDU_KG_API_KEY) is sent; OPENAI_API_KEY is never read."""
         mock_create = mocker.patch("arandu.kg.atlas_backend.create_llm_client")
 
         from arandu.kg.atlas_backend import AtlasRagConstructor

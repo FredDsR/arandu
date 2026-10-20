@@ -47,9 +47,6 @@ class TestRunAnswerBatch:
         # reads retrieval records, runs the answerer, writes AnswerRecords
         # with the right layout, and updates the checkpoint.
         _seed_retrieve_outputs(tmp_path)
-        # Need an api_key for the runtime check, but we patch the LLMClient
-        # construction so the value doesn't matter.
-        monkeypatch.setenv("OPENAI_API_KEY", "test")
         settings = AnswererSettings(provider="ollama")  # no api key needed
 
         with patch("arandu.shared.rag.answer.batch.build_llm_client_from_settings") as mock_llm_cls:
@@ -150,9 +147,9 @@ class TestBuildLlmClientFailures:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _seed_retrieve_outputs(tmp_path)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_ANSWERER_API_KEY", raising=False)
         settings = AnswererSettings(provider="openai")
-        with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        with pytest.raises(RuntimeError, match="ARANDU_ANSWERER_API_KEY"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
     def test_custom_provider_without_base_url_raises(
@@ -164,8 +161,7 @@ class TestBuildLlmClientFailures:
         # potentially leaking benchmark data to the wrong provider.
         # Mirrors the guard in transcription/judge.py.
         _seed_retrieve_outputs(tmp_path)
-        monkeypatch.setenv("OPENAI_API_KEY", "test")
-        settings = AnswererSettings(provider="custom", base_url=None)
+        settings = AnswererSettings(provider="custom", base_url=None, api_key="test")
         with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 

@@ -291,7 +291,6 @@ def _build_atlas_rag(
         provider_enum,
         settings.api_key,
         key_var="ARANDU_ATLAS_RAG_API_KEY",
-        fallback_var="GEMINI_API_KEY",
     )
 
     llm_client = LLMClient(

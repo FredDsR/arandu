@@ -740,7 +740,7 @@ class TestBuildLlmClientFromSettings:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A missing cloud key points at the settings class's own env prefix."""
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_LLM_API_KEY", raising=False)
         with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY"):
             build_llm_client_from_settings(LLMSettings(provider="openai"))
 
@@ -750,15 +750,14 @@ class TestBuildLlmClientFromSettings:
         class _StageSettings(LLMSettings):
             model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
 
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_TESTSTAGE_API_KEY", raising=False)
         with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_API_KEY"):
             build_llm_client_from_settings(_StageSettings(provider="openai"))
 
     def test_custom_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The custom provider must have an explicit base_url to avoid leaking to OpenAI."""
-        monkeypatch.setenv("OPENAI_API_KEY", "test")
         with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
-            build_llm_client_from_settings(LLMSettings(provider="custom"))
+            build_llm_client_from_settings(LLMSettings(provider="custom", api_key="test"))
 
     def test_unknown_provider_raises(self) -> None:
         """An invalid provider surfaces the valid set."""
@@ -1006,33 +1005,23 @@ class TestExtraBody:
 
 
 class TestResolveApiKey:
-    """Each client has its own key; OPENAI_API_KEY is the fallback; ollama needs none."""
+    """Each client has its own key, with no shared fallback; ollama needs none."""
 
-    def test_ollama_gets_no_key_even_when_one_is_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    def test_ollama_gets_no_key(self) -> None:
         assert resolve_api_key("ollama", SecretStr("sk-x"), key_var="K") is None
 
-    def test_stage_key_wins_over_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    def test_returns_the_stage_key(self) -> None:
         assert resolve_api_key("custom", SecretStr("sk-stage"), key_var="K") == "sk-stage"
 
-    def test_falls_back_to_openai_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize("api_key", [None, SecretStr("")])
+    def test_missing_key_raises_without_fallback(
+        self, monkeypatch: pytest.MonkeyPatch, api_key: SecretStr | None
+    ) -> None:
+        """OPENAI_API_KEY and GEMINI_API_KEY are never read in place of the stage key."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-        assert resolve_api_key("openai", None, key_var="K") == "sk-openai"
-
-    def test_empty_stage_key_counts_as_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-        assert resolve_api_key("custom", SecretStr(""), key_var="K") == "sk-openai"
-
-    def test_missing_key_names_the_stage_variable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="ARANDU_QA_API_KEY"):
-            resolve_api_key("custom", None, key_var="ARANDU_QA_API_KEY")
-
-    def test_custom_fallback_variable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-        key = resolve_api_key("openai", None, key_var="K", fallback_var="GEMINI_API_KEY")
-        assert key == "g-key"
+        with pytest.raises(RuntimeError, match="ARANDU_QA_API_KEY"):
+            resolve_api_key("custom", api_key, key_var="ARANDU_QA_API_KEY")
 
     def test_key_is_masked_in_json_snapshots(self) -> None:
         """Run snapshots dump configs in JSON mode; the key must not reach them."""

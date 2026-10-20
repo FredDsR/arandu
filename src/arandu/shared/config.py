@@ -11,8 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class LLMConfig(BaseSettings):
     """Shared LLM configuration settings.
 
-    Settings are loaded from environment variables without prefix or with OPENAI_ prefix.
-    Used for API keys and shared LLM settings across pipelines.
+    API keys are not shared: each LLM client reads its own
+    ``ARANDU_<STAGE>_API_KEY``.
     """
 
     model_config = SettingsConfigDict(
@@ -20,13 +20,6 @@ class LLMConfig(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-    )
-
-    # API Keys
-    openai_api_key: str | None = Field(
-        default=None,
-        alias="OPENAI_API_KEY",
-        description="OpenAI API key",
     )
 
     # Shared base URL (for custom providers)

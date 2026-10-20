@@ -28,7 +28,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
 # LLM settings default to the local Ollama sidecar. Setting these explicitly
 # shields the job from whatever lives in the repo's .env (which may point
-# OPENAI_API_KEY / ARANDU_LLM_BASE_URL at a cloud provider).
+# ARANDU_LLM_BASE_URL at a cloud provider).
 #
 # NOTE: the model is a METHODOLOGICAL parameter here, not a budget knob. These
 # scores are the study's measurement of emic validity and the human annotation

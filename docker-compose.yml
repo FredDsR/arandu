@@ -301,7 +301,7 @@ services:
 
     environment:
       # Validator settings — default to the local Ollama sidecar so the Gemini
-      # values that may live in .env (OPENAI_API_KEY / ARANDU_LLM_BASE_URL)
+      # values that may live in .env (ARANDU_LLM_BASE_URL)
       # don't leak into SLURM runs.
       - ARANDU_JUDGE_VALIDATOR_MODEL=${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}
       - ARANDU_JUDGE_VALIDATOR_PROVIDER=${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}
@@ -312,7 +312,6 @@ services:
       # JSON request fields, e.g. {"reasoning_effort": "none"} for DeepSeek.
       - ARANDU_JUDGE_VALIDATOR_EXTRA_BODY
       - ARANDU_JUDGE_VALIDATOR_API_KEY
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 
@@ -360,7 +359,7 @@ services:
 
     environment:
       # Emic-judge settings default to the local Ollama sidecar so Gemini
-      # values that may live in .env (OPENAI_API_KEY / ARANDU_LLM_BASE_URL)
+      # values that may live in .env (ARANDU_LLM_BASE_URL)
       # don't leak into SLURM runs.
       #
       # MODEL_ID is a methodological parameter, not a budget knob: these scores
@@ -373,12 +372,11 @@ services:
       - ARANDU_EMIC_JUDGE_LANGUAGE=${ARANDU_EMIC_JUDGE_LANGUAGE:-pt}
       - ARANDU_EMIC_JUDGE_TEMPERATURE=${ARANDU_EMIC_JUDGE_TEMPERATURE:-0.1}
       - ARANDU_EMIC_JUDGE_MAX_TOKENS=${ARANDU_EMIC_JUDGE_MAX_TOKENS:-8192}
-      # Cloud-provider credentials: the stage's own key, else OPENAI_API_KEY.
+      # Cloud-provider credentials: the stage's own key (no shared fallback).
       # emic_common.sh skips the ollama sidecar when PROVIDER is not ollama, so
       # without these a provider=openai/custom run reaches
       # build_llm_client_from_settings with no key and dies after the image
       # build and disk preflight.
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ARANDU_EMIC_JUDGE_API_KEY
       - ARANDU_EMIC_JUDGE_EXTRA_BODY
       # Client-side concurrency. Pair with OLLAMA_NUM_PARALLEL and the per-slot
@@ -436,7 +434,6 @@ services:
       - ARANDU_QA_BASE_URL
       - ARANDU_QA_API_KEY
       - ARANDU_QA_EXTRA_BODY
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
       - ARANDU_QA_TEMPERATURE=${ARANDU_QA_TEMPERATURE:-0.7}
       - ARANDU_QA_WORKERS=${ARANDU_QA_WORKERS:-2}
@@ -511,7 +508,6 @@ services:
       - ARANDU_KG_API_KEY
       # atlas-rag forwards only {"reasoning_effort": ...}
       - ARANDU_KG_EXTRA_BODY
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
       - ARANDU_KG_BACKEND=${ARANDU_KG_BACKEND:-atlas}
       - ARANDU_KG_TEMPERATURE=${ARANDU_KG_TEMPERATURE:-0.5}
@@ -595,8 +591,7 @@ services:
       - ARANDU_ATLAS_RAG_BASE_URL=${ARANDU_ATLAS_RAG_BASE_URL:-http://ollama:11434/v1}
       - ARANDU_ATLAS_RAG_API_KEY
       - ARANDU_ATLAS_RAG_EXTRA_BODY
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      # The atlas_rag arm falls back to GEMINI_API_KEY when it has no key of its own.
+      # Gemini embedder key (ARANDU_EMBEDDER_PROVIDER=gemini); not an LLM fallback.
       - GEMINI_API_KEY
       # Local sentence-transformers embedder (kg-build-retriever-index + retrieve);
       # avoids paid Gemini embeddings. Multilingual for the PT-BR corpus.

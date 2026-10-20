@@ -25,8 +25,8 @@ REASONING_MODEL_MAX_TOKENS = 8192
 
 #: Field description shared by every stage config that exposes ``api_key``.
 API_KEY_DESCRIPTION = (
-    "API key of this stage's client. Falls back to OPENAI_API_KEY when unset; "
-    "ignored for ollama. A SecretStr, so run snapshots record it masked."
+    "API key of this stage's client, required unless the provider is ollama "
+    "(no shared fallback). A SecretStr, so run snapshots record it masked."
 )
 
 #: Field description shared by every stage config that exposes ``extra_body``.
@@ -87,8 +87,8 @@ class LLMSettings(BaseSettings):
             proper; ``"custom"`` for an OpenAI-compatible endpoint, paired
             with ``base_url``).
         model_id: Model identifier.
-        api_key: This stage's API key (``<prefix>API_KEY``). Falls back to
-            ``OPENAI_API_KEY`` when unset; ignored for ollama.
+        api_key: This stage's API key (``<prefix>API_KEY``), required unless
+            the provider is ollama.
         base_url: Base URL override; required when ``provider == "custom"``.
         extra_body: Provider-specific fields merged into every request body
             (JSON in the env var), e.g. ``{"reasoning_effort": "none"}`` to

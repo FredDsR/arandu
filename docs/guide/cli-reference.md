@@ -939,8 +939,9 @@ arandu generate-cep-qa results/ \
     --model-id qwen3:14b \
     --workers 4
 
-# With OpenAI
-export OPENAI_API_KEY=sk-...
+# With OpenAI (the gate validator needs ARANDU_JUDGE_VALIDATOR_API_KEY too
+# when its provider is not ollama)
+export ARANDU_QA_API_KEY=sk-...
 arandu generate-cep-qa results/ \
     --provider openai \
     --model-id gpt-4o-mini \
@@ -1021,8 +1022,8 @@ Solution: Start Ollama with 'ollama serve'
 
 **API Key Missing**:
 ```bash
-Error: OPENAI_API_KEY environment variable not set
-Solution: export OPENAI_API_KEY=sk-...
+Error: LLM provider 'openai' needs an API key: set ARANDU_QA_API_KEY, or switch the provider to 'ollama'.
+Solution: export the variable the message names (each LLM client has its own key)
 ```
 
 **Input Directory Empty**:

@@ -37,7 +37,7 @@ The Arandu project uses **Pydantic Settings** for configuration management with 
 | `JudgeConfig` | `arandu.qa.config` | `ARANDU_JUDGE_` |
 | `EmicJudgeSettings` | `arandu.shared.emic.settings` | `ARANDU_EMIC_JUDGE_` |
 | `KGConfig` | `arandu.kg.config` | `ARANDU_KG_` |
-| `LLMConfig` | `arandu.shared.config` | (no prefix; uses aliases like `OPENAI_API_KEY`) |
+| `LLMConfig` | `arandu.shared.config` | (no prefix; uses the alias `ARANDU_LLM_BASE_URL`) |
 | `ResultsConfig` | `arandu.shared.config` | `ARANDU_RESULTS_` |
 
 **Usage**:
@@ -140,7 +140,7 @@ Configuration settings for the QA generation pipeline.
 | `model_id` | `str` | `"qwen3:14b"` | Model ID for QA generation |
 | `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL |
 | `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
-| `api_key` | `SecretStr \| None` | `None` | This client's API key; falls back to `OPENAI_API_KEY`, ignored for ollama. Recorded masked in run snapshots |
+| `api_key` | `SecretStr \| None` | `None` | This client's API key, required unless the provider is ollama (no shared fallback). Recorded masked in run snapshots |
 | `extra_body` | `dict \| None` | `None` | Provider-specific fields merged into every request body, set as JSON. See [Cloud providers and thinking models](#cloud-providers-and-thinking-models) |
 
 ### Generation Settings
@@ -242,7 +242,7 @@ Configuration for the composable judge pipeline. Supplies the validator LLM clie
 | `validator_model` | `str \| None` | `None` | Model ID enabling the LLM stage (e.g. `qwen3:14b`, `gemini-2.5-flash`). When unset, `judge-transcription` runs heuristic-only and skips the LLM stage. Also feeds the CEP scaffolding gate, where it is required while the gate is active |
 | `validator_provider` | `str \| None` | `None` | Provider: "openai", "ollama", or "custom". Inferred from `ARANDU_LLM_BASE_URL` (custom when set, else ollama) when unspecified |
 | `validator_base_url` | `str \| None` | `None` | Base URL for the validator provider. Inherits `ARANDU_LLM_BASE_URL` only when the resolved provider is "custom" |
-| `validator_api_key` | `SecretStr \| None` | `None` | This client's API key; falls back to `OPENAI_API_KEY`, ignored for ollama. Recorded masked in run snapshots |
+| `validator_api_key` | `SecretStr \| None` | `None` | This client's API key, required unless the provider is ollama (no shared fallback). Recorded masked in run snapshots |
 | `validator_extra_body` | `dict \| None` | `None` | Provider-specific fields merged into every request body, set as JSON. See [Cloud providers and thinking models](#cloud-providers-and-thinking-models). Recorded in the `judge-qa` run snapshot |
 
 **Example Configuration**:
@@ -271,7 +271,7 @@ emic judgment deliberately changes.
 | `provider` | `str` | `"ollama"` | LLM provider: "ollama", "openai", or "custom" |
 | `model_id` | `str` | `"qwen3:14b"` | Model identifier. **Methodological parameter**: see the note below |
 | `base_url` | `str \| None` | `None` | Base URL override; required when `provider == "custom"` |
-| `api_key` | `SecretStr \| None` | `None` | This client's API key; falls back to `OPENAI_API_KEY`, ignored for ollama. Recorded masked in run snapshots |
+| `api_key` | `SecretStr \| None` | `None` | This client's API key, required unless the provider is ollama (no shared fallback). Recorded masked in run snapshots |
 | `extra_body` | `dict \| None` | `None` | Provider-specific fields merged into every request body, set as JSON. See [Cloud providers and thinking models](#cloud-providers-and-thinking-models). Every `LLMSettings` stage (answerer, judge-answers, non-answerable) has the same field |
 | `temperature` | `float` | `0.1` | Lower than the other judges: the emic judgment is structural, not creative (spec §4.2 principle 8) |
 | `max_tokens` | `int` | `8192` | Response budget. qwen3 burns thinking tokens against it |
@@ -329,7 +329,7 @@ Configuration settings for the knowledge graph construction pipeline.
 | `model_id` | `str` | `"llama3.1:8b"` | Model ID for KG construction |
 | `ollama_url` | `str` | `"http://localhost:11434/v1"` | Ollama API base URL for KG construction |
 | `base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible endpoints |
-| `api_key` | `SecretStr \| None` | `None` | This client's API key; falls back to `OPENAI_API_KEY`, ignored for ollama. Recorded masked in run snapshots |
+| `api_key` | `SecretStr \| None` | `None` | This client's API key, required unless the provider is ollama (no shared fallback). Recorded masked in run snapshots |
 | `extra_body` | `dict \| None` | `None` | Extra request fields, as JSON. atlas-rag forwards only `reasoning_effort`, so any other key is rejected at load time. `ARANDU_ATLAS_RAG_EXTRA_BODY` follows the same rule for the retrieve arm |
 
 ### LLM Settings
@@ -381,15 +381,13 @@ config = KGConfig(
 
 ## LLMConfig
 
-Shared LLM configuration settings for API keys and shared LLM settings across pipelines.
+Shared LLM settings across pipelines. It holds no API key: each LLM client reads its own
+`ARANDU_<STAGE>_API_KEY` (see [Cloud providers and thinking models](#cloud-providers-and-thinking-models)).
 
 **Module**: `arandu.shared.config` &nbsp;|&nbsp; **Environment Prefix**: None (uses field aliases)
 
-### API Keys
-
 | Setting | Type | Default | Alias | Description |
 |---------|------|---------|-------|-------------|
-| `openai_api_key` | `str \| None` | `None` | `OPENAI_API_KEY` | OpenAI API key |
 | `base_url` | `str \| None` | `None` | `ARANDU_LLM_BASE_URL` | Custom base URL for OpenAI-compatible endpoints |
 
 **Example Configuration**:
@@ -397,12 +395,11 @@ Shared LLM configuration settings for API keys and shared LLM settings across pi
 from arandu.shared.config import LLMConfig
 
 config = LLMConfig()
-# Loaded from OPENAI_API_KEY and ARANDU_LLM_BASE_URL env vars
+# Loaded from the ARANDU_LLM_BASE_URL env var
 ```
 
 **Environment Variables**:
 ```bash
-export OPENAI_API_KEY=sk-...
 export ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
 ```
 
@@ -446,7 +443,7 @@ Configuration settings are loaded from environment variables with config-specifi
 | `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` |
 | `JudgeConfig` | `ARANDU_JUDGE_` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `KGConfig` | `ARANDU_KG_` | `ARANDU_KG_PROVIDER` |
-| `LLMConfig` | (No prefix) | `OPENAI_API_KEY`, `ARANDU_LLM_BASE_URL` |
+| `LLMConfig` | (No prefix) | `ARANDU_LLM_BASE_URL` |
 | `ResultsConfig` | `ARANDU_RESULTS_` | `ARANDU_RESULTS_BASE_DIR` |
 
 ### Format
@@ -498,7 +495,6 @@ export ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
 
 **LLMConfig** (No prefix, uses aliases):
 ```bash
-export OPENAI_API_KEY=sk-...
 export ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
 ```
 
@@ -510,19 +506,24 @@ export ARANDU_RESULTS_ENABLE_VERSIONING=true
 
 ### API Keys
 
-**Sensitive values should be set as environment variables only** (never commit to git):
+**Sensitive values should be set as environment variables only** (never commit to git).
+Each LLM client has its own key and there is no shared fallback (`OPENAI_API_KEY` and
+`GEMINI_API_KEY` are not read by any LLM client):
 
 ```bash
-export OPENAI_API_KEY=sk-...
-export ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
+export ARANDU_QA_API_KEY=sk-...                # CEP generator
+export ARANDU_JUDGE_VALIDATOR_API_KEY=sk-...   # judge-transcription, judge-qa, CEP gate
+export ARANDU_KG_API_KEY=sk-...                # build-kg
+export ARANDU_ANSWERER_API_KEY=sk-...          # answer
+export ARANDU_JUDGE_ANSWERS_API_KEY=sk-...     # judge-answers
+export ARANDU_NONANSWERABLE_API_KEY=sk-...     # generate-non-answerable
+export ARANDU_EMIC_JUDGE_API_KEY=sk-...        # emic-judge
+export ARANDU_ATLAS_RAG_API_KEY=sk-...         # retrieve, atlas_rag arm
 ```
 
-These can also be set in `.env` file:
-```bash
-# .env file
-OPENAI_API_KEY=sk-...
-ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
-```
+Only clients whose provider is not `ollama` need a key. The Gemini embedder is not an
+LLM client and keeps its own setting (`ARANDU_EMBEDDER_API_KEY_ENV`, default
+`GEMINI_API_KEY`).
 
 **Note**: The `.env` file should be added to `.gitignore`.
 
@@ -531,9 +532,9 @@ ARANDU_LLM_BASE_URL=https://my-custom-endpoint/v1
 Any OpenAI-compatible API works with `provider=custom` and its base URL. Each
 LLM client has its own key variable, `ARANDU_<STAGE>_API_KEY` (for example
 `ARANDU_QA_API_KEY` for the generator and `ARANDU_JUDGE_VALIDATOR_API_KEY` for
-the validator), and falls back to `OPENAI_API_KEY` when it is unset (the
-`atlas_rag` arm falls back to `GEMINI_API_KEY`). A run can therefore generate
-with one provider and judge with another. Embeddings are separate
+the validator), with no shared fallback, so a key only reaches the provider it
+was set for. A run can therefore generate with one provider and judge with
+another. Embeddings are separate
 (`ARANDU_EMBEDDER_*`): DeepSeek and Maritaca have no embedding API, so keep the
 embedder on Gemini or `sentence_transformers`.
 
@@ -583,8 +584,7 @@ export ARANDU_KG_EXTRA_BODY='{"reasoning_effort": "none"}'
 
 Export the keys rather than relying on `.env`: `QAConfig`, `JudgeConfig` and
 `KGConfig` read `.env`, but the `LLMSettings` stages (answer, judge-answers,
-non-answerable, emic-judge) and the `OPENAI_API_KEY` fallback read only the
-process environment. The commands fail before any LLM call when a cloud
+non-answerable, emic-judge) read only the process environment. The commands fail before any LLM call when a cloud
 client has no key, naming the variable to set. On the cluster the worker
 container receives every `ARANDU_*` variable (`scripts/slurm/container_lib.sh`);
 `docker-compose.yml` forwards each service's key variables by name. Keys are
@@ -643,21 +643,21 @@ arandu generate-cep-qa results/ --bloom-dist "remember:3,understand:1,analyze:1,
 
 **.env file**:
 ```bash
-# API Keys
-OPENAI_API_KEY=sk-your-key-here
-
-# QA Generation with OpenAI
+# QA Generation with OpenAI (each client has its own key)
 ARANDU_QA_PROVIDER=openai
+ARANDU_QA_API_KEY=sk-your-key-here
 ARANDU_QA_MODEL_ID=gpt-4o-mini
 ARANDU_QA_TEMPERATURE=0.7
 ARANDU_QA_LANGUAGE=en
 
 # Judge with OpenAI
 ARANDU_JUDGE_VALIDATOR_PROVIDER=openai
+ARANDU_JUDGE_VALIDATOR_API_KEY=sk-your-key-here
 ARANDU_JUDGE_VALIDATOR_MODEL=gpt-4o-mini
 
 # KG Construction with OpenAI
 ARANDU_KG_PROVIDER=openai
+ARANDU_KG_API_KEY=sk-your-key-here
 ARANDU_KG_MODEL_ID=gpt-4o
 ARANDU_KG_TEMPERATURE=0.5
 
@@ -674,11 +674,9 @@ ARANDU_KG_OUTPUT_DIR=/data/knowledge_graphs
 
 **.env file**:
 ```bash
-# API Keys
-OPENAI_API_KEY=sk-your-key-here
-
 # QA with OpenAI (higher quality)
 ARANDU_QA_PROVIDER=openai
+ARANDU_QA_API_KEY=sk-your-key-here
 ARANDU_QA_MODEL_ID=gpt-4o
 
 # KG with Ollama (cost-effective)
@@ -980,9 +978,6 @@ ARANDU_KG_OUTPUT_DIR=knowledge_graphs
 # ============================================================================
 # LLMConfig (No prefix - uses aliases)
 # ============================================================================
-
-# API Keys (SENSITIVE - do not commit)
-# OPENAI_API_KEY=sk-...
 
 # Custom endpoints
 # ARANDU_LLM_BASE_URL=http://localhost:11434/v1

@@ -49,8 +49,8 @@ judges pairs during generation through `ARANDU_JUDGE_*` (the same variables the
 only re-judges pairs without a clean verdict.
 
 **API keys.** Each LLM client reads its own key, `ARANDU_<STAGE>_API_KEY`
-(`ARANDU_QA_API_KEY`, `ARANDU_JUDGE_VALIDATOR_API_KEY`, ...), and falls back to
-`OPENAI_API_KEY`. `arandu_run_worker` (`container_lib.sh`) forwards every
+(`ARANDU_QA_API_KEY`, `ARANDU_JUDGE_VALIDATOR_API_KEY`, ...); there is no
+shared fallback such as `OPENAI_API_KEY`. `arandu_run_worker` (`container_lib.sh`) forwards every
 `ARANDU_*` variable, so exporting the key in the job's environment is enough;
 `docker-compose.yml` lists each service's key variables by name.
 

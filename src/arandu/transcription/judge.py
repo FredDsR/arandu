@@ -61,8 +61,8 @@ def build_validator_client(
         model_id: Model identifier (e.g. ``'qwen3:14b'``, ``'gemini-2.5-flash'``).
         provider: Optional provider name. ``'openai'`` / ``'ollama'`` / ``'custom'``.
         base_url: Optional explicit base URL override.
-        api_key: The validator's own key (``ARANDU_JUDGE_VALIDATOR_API_KEY``);
-            falls back to ``OPENAI_API_KEY``. Not needed for ollama.
+        api_key: The validator's own key (``ARANDU_JUDGE_VALIDATOR_API_KEY``),
+            required unless the provider is ollama.
         extra_body: Provider-specific fields merged into every request body
             (e.g. ``{"reasoning_effort": "none"}`` to switch off thinking).
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
@@ -505,39 +504,34 @@ def resolve_api_key(
     api_key: SecretStr | None,
     *,
     key_var: str,
-    fallback_var: str = "OPENAI_API_KEY",
 ) -> str | None:
     """Resolve the API key of one stage's client, failing fast when it is missing.
 
     Each client has its own key variable (``ARANDU_QA_API_KEY``,
-    ``ARANDU_JUDGE_VALIDATOR_API_KEY``, ...). When it is unset the client falls
-    back to ``fallback_var``, so a run that only exports ``OPENAI_API_KEY``
-    keeps working. Ollama needs no key and gets ``None``.
+    ``ARANDU_JUDGE_VALIDATOR_API_KEY``, ...) and there is no shared fallback:
+    a key never reaches a provider it was not set for. Ollama needs no key and
+    gets ``None``.
 
     Args:
         provider: The client's provider.
         api_key: The stage's own key, or ``None`` when unset.
         key_var: Env var of the stage's own key, named in the error message.
-        fallback_var: Env var read when the stage has no key of its own.
 
     Returns:
         The key to send, or ``None`` for ollama.
 
     Raises:
         ValueError: If the provider is unknown.
-        RuntimeError: If a cloud provider has neither key.
+        RuntimeError: If a cloud provider has no key.
     """
     if parse_provider(provider) is LLMProvider.OLLAMA:
         return None
-    if api_key is not None and api_key.get_secret_value():
-        return api_key.get_secret_value()
-    fallback = os.environ.get(fallback_var)
-    if not fallback:
+    if api_key is None or not api_key.get_secret_value():
         raise RuntimeError(
-            f"LLM provider {str(provider)!r} needs an API key: set {key_var} "
-            f"(or {fallback_var}), or switch the provider to 'ollama'."
+            f"LLM provider {str(provider)!r} needs an API key: set {key_var}, "
+            f"or switch the provider to 'ollama'."
         )
-    return fallback
+    return api_key.get_secret_value()
 
 
 def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:

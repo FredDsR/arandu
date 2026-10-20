@@ -178,9 +178,9 @@ class TestBuildValidatorClient:
     """Tests for the build_validator_client factory helper."""
 
     @pytest.fixture(autouse=True)
-    def _fallback_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Cloud providers need a key; pin the OPENAI_API_KEY fallback."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    def _validator_api_key(self, mocker: MockerFixture) -> None:
+        """Cloud providers need a key; stub the resolver for the URL/provider tests."""
+        mocker.patch("arandu.transcription.judge.resolve_api_key", return_value="sk-test")
 
     def test_infers_ollama_when_no_base_url(self, mocker: MockerFixture) -> None:
         mocker.patch(

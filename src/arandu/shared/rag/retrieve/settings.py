@@ -87,8 +87,8 @@ class AtlasRagRetrieveSettings(BaseSettings):
         model_id: Model identifier passed to the LLMClient (e.g.
             ``"gemini-2.5-flash"`` on Gemini, ``"qwen3:14b"`` on Ollama).
         api_key: API key of the NER/filter client
-            (``ARANDU_ATLAS_RAG_API_KEY``). Falls back to ``GEMINI_API_KEY``,
-            the project's cloud path for this arm; ignored for ollama.
+            (``ARANDU_ATLAS_RAG_API_KEY``); required unless the provider is
+            ollama.
         base_url: Optional explicit base URL. Required for ``custom``
             provider; ignored for ``openai``/``ollama`` defaults.
         extra_body: Extra request fields for the NER/filter LLM, as JSON.
@@ -114,7 +114,7 @@ class AtlasRagRetrieveSettings(BaseSettings):
     )
     api_key: SecretStr | None = Field(
         default=None,
-        description="API key of the NER/filter client; falls back to GEMINI_API_KEY.",
+        description="API key of the NER/filter client; required unless provider is ollama.",
     )
     base_url: str | None = Field(
         default=None,

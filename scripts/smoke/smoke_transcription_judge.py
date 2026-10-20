@@ -33,12 +33,13 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from arandu.qa.config import get_judge_config
 from arandu.shared.llm_client import LLMClient, LLMProvider
 from arandu.shared.schemas import TranscriptionRecord
 from arandu.transcription.judge import TranscriptionJudge, build_validator_client
 
-# Load .env so OPENAI_API_KEY / ARANDU_LLM_BASE_URL are visible to the
-# OpenAI SDK and to LLMConfig used inside build_validator_client().
+# Load .env so ARANDU_JUDGE_VALIDATOR_API_KEY / ARANDU_LLM_BASE_URL are visible
+# to JudgeConfig and to LLMConfig used inside build_validator_client().
 load_dotenv()
 
 console = Console()
@@ -118,6 +119,7 @@ def main() -> None:
             model_id=args.validator_model,
             provider=args.validator_provider,
             base_url=args.validator_base_url,
+            api_key=get_judge_config().validator_api_key,
         )
         if not validator_client.is_available():
             console.print(

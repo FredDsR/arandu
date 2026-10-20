@@ -371,9 +371,9 @@ class TestBuildLlmClientFailures:
     ) -> None:
         _seed_answers(tmp_path)
         _seed_cep(tmp_path)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_JUDGE_ANSWERS_API_KEY", raising=False)
         settings = JudgeAnswersSettings(provider="openai")
-        with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        with pytest.raises(RuntimeError, match="ARANDU_JUDGE_ANSWERS_API_KEY"):
             run_judge_answers_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
     def test_custom_without_base_url_raises(
@@ -384,8 +384,7 @@ class TestBuildLlmClientFailures:
         # fires next.
         _seed_answers(tmp_path)
         _seed_cep(tmp_path)
-        monkeypatch.setenv("OPENAI_API_KEY", "test")
-        settings = JudgeAnswersSettings(provider="custom", base_url=None)
+        settings = JudgeAnswersSettings(provider="custom", base_url=None, api_key="test")
         with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
             run_judge_answers_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 
