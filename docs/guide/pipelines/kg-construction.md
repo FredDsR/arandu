@@ -102,7 +102,7 @@ ARANDU_KG_LANGUAGE=en docker compose --profile kg up
 # Use OpenAI for extraction
 export ARANDU_KG_PROVIDER=openai
 export ARANDU_KG_MODEL_ID=gpt-4o
-export OPENAI_API_KEY=sk-...
+export ARANDU_KG_API_KEY=sk-...
 docker compose --profile kg up
 ```
 

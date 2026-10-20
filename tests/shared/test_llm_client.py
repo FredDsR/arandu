@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from pydantic import BaseModel as _PydanticBaseModel
+from pydantic import SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from arandu.shared.llm_client import (
@@ -19,8 +20,9 @@ from arandu.shared.llm_client import (
     StructuredOutputError,
     build_llm_client_from_settings,
     create_llm_client,
+    resolve_api_key,
 )
-from arandu.shared.llm_settings import LLMSettings
+from arandu.shared.llm_settings import LLMSettings, validate_atlas_extra_body
 from arandu.utils.text import GenerateResult
 
 
@@ -683,7 +685,7 @@ class TestLLMSettings:
         s = LLMSettings()
         assert s.provider == "ollama"
         assert s.model_id == "qwen3:14b"
-        assert s.api_key_env == "OPENAI_API_KEY"
+        assert s.api_key is None
         assert s.base_url is None
         assert s.temperature == 0.2
         assert s.max_tokens == 8192
@@ -738,8 +740,8 @@ class TestBuildLlmClientFromSettings:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A missing cloud key points at the settings class's own env prefix."""
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY_ENV"):
+        monkeypatch.delenv("ARANDU_LLM_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY"):
             build_llm_client_from_settings(LLMSettings(provider="openai"))
 
     def test_subclass_env_prefix_drives_error_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -748,22 +750,21 @@ class TestBuildLlmClientFromSettings:
         class _StageSettings(LLMSettings):
             model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
 
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_PROVIDER"):
+        monkeypatch.delenv("ARANDU_TESTSTAGE_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_API_KEY"):
             build_llm_client_from_settings(_StageSettings(provider="openai"))
 
     def test_custom_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The custom provider must have an explicit base_url to avoid leaking to OpenAI."""
-        monkeypatch.setenv("OPENAI_API_KEY", "test")
         with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
-            build_llm_client_from_settings(LLMSettings(provider="custom"))
+            build_llm_client_from_settings(LLMSettings(provider="custom", api_key="test"))
 
     def test_unknown_provider_raises(self) -> None:
         """An invalid provider surfaces the valid set."""
         bad = LLMSettings.model_construct(
             provider="not_a_provider",
             model_id="x",
-            api_key_env="OPENAI_API_KEY",
+            api_key=None,
             base_url=None,
             temperature=0.2,
             max_tokens=2048,
@@ -950,3 +951,94 @@ class TestSchemaFallbackHardening:
 
         with pytest.raises(InternalServerError):
             client.generate_structured("p", _StructuredDemo)
+
+
+class TestExtraBody:
+    """extra_body carries provider-specific switches (e.g. thinking off) into every request."""
+
+    @staticmethod
+    def _mock_client(mocker: MockerFixture) -> Mock:
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        message = Mock(content="ok", reasoning_content=None, reasoning=None, model_extra=None)
+        mock_client.chat.completions.create.return_value = Mock(choices=[Mock(message=message)])
+        mock_openai.return_value = mock_client
+        return mock_client
+
+    def test_generate_forwards_extra_body(self, mocker: MockerFixture) -> None:
+        mock_client = self._mock_client(mocker)
+        client = LLMClient(
+            LLMProvider.CUSTOM,
+            "deepseek-flash",
+            api_key="sk",
+            base_url="https://api.deepseek.com",
+            extra_body={"reasoning_effort": "none"},
+        )
+
+        client.generate("p")
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert kwargs["extra_body"] == {"reasoning_effort": "none"}
+
+    def test_generate_omits_extra_body_by_default(self, mocker: MockerFixture) -> None:
+        mock_client = self._mock_client(mocker)
+        LLMClient(LLMProvider.OLLAMA, "qwen3:14b").generate("p")
+
+        assert "extra_body" not in mock_client.chat.completions.create.call_args.kwargs
+
+    def test_settings_extra_body_parsed_from_env_and_forwarded(
+        self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        monkeypatch.setenv("ARANDU_LLM_EXTRA_BODY", '{"enable_thinking": false}')
+        monkeypatch.setenv("ARANDU_LLM_API_KEY", "sk-stage")
+
+        settings = LLMSettings(provider="custom", base_url="https://api.example/v1")
+        client = build_llm_client_from_settings(settings)
+
+        assert client.extra_body == {"enable_thinking": False}
+
+    def test_extra_body_cannot_override_typed_fields(self, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        with pytest.raises(ValueError, match="max_tokens"):
+            LLMClient(LLMProvider.OLLAMA, "qwen3:14b", extra_body={"max_tokens": 512})
+
+
+class TestResolveApiKey:
+    """Each client has its own key, with no shared fallback; ollama needs none."""
+
+    def test_ollama_gets_no_key(self) -> None:
+        assert resolve_api_key("ollama", SecretStr("sk-x"), key_var="K") is None
+
+    def test_returns_the_stage_key(self) -> None:
+        assert resolve_api_key("custom", SecretStr("sk-stage"), key_var="K") == "sk-stage"
+
+    @pytest.mark.parametrize("api_key", [None, SecretStr("")])
+    def test_missing_key_raises_without_fallback(
+        self, monkeypatch: pytest.MonkeyPatch, api_key: SecretStr | None
+    ) -> None:
+        """OPENAI_API_KEY and GEMINI_API_KEY are never read in place of the stage key."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+        with pytest.raises(RuntimeError, match="ARANDU_QA_API_KEY"):
+            resolve_api_key("custom", api_key, key_var="ARANDU_QA_API_KEY")
+
+    def test_key_is_masked_in_json_snapshots(self) -> None:
+        """Run snapshots dump configs in JSON mode; the key must not reach them."""
+        from arandu.qa.config import JudgeConfig
+
+        dumped = JudgeConfig(validator_api_key="sk-secret").model_dump_json()
+        assert "sk-secret" not in dumped
+
+
+class TestValidateAtlasExtraBody:
+    """atlas-rag consumers accept only reasoning_effort from extra_body."""
+
+    def test_none_and_reasoning_effort_pass_through(self) -> None:
+        assert validate_atlas_extra_body(None, consumer="X_") is None
+        body = {"reasoning_effort": "none"}
+        assert validate_atlas_extra_body(body, consumer="X_") == body
+
+    def test_other_keys_rejected_with_prefix(self) -> None:
+        with pytest.raises(ValueError, match="ARANDU_KG_EXTRA_BODY"):
+            validate_atlas_extra_body({"enable_thinking": False}, consumer="ARANDU_KG_")

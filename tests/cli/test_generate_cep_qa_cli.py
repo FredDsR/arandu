@@ -30,6 +30,8 @@ def clean_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "ARANDU_JUDGE_VALIDATOR_MODEL",
         "ARANDU_JUDGE_VALIDATOR_PROVIDER",
         "ARANDU_JUDGE_VALIDATOR_BASE_URL",
+        "ARANDU_JUDGE_VALIDATOR_API_KEY",
+        "ARANDU_QA_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
     input_dir = tmp_path / "input"
@@ -64,7 +66,7 @@ def test_no_scaffolding_gate_needs_no_validator(
 def test_validator_options_reach_the_batch(
     runner: CliRunner, clean_env: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ARANDU_JUDGE_VALIDATOR_API_KEY", "test-key")
     batch = mocker.patch("arandu.qa.batch.run_batch_cep_generation")
 
     result = runner.invoke(

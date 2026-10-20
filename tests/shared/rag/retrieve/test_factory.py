@@ -75,9 +75,9 @@ class TestAtlasRagArmFailureModes:
         precompute_dir = tmp_path / "run_x" / "kg" / "outputs" / "atlas_output" / "precompute"
         precompute_dir.mkdir(parents=True)
         (precompute_dir / "manifest.json").write_text("{}")
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_ATLAS_RAG_API_KEY", raising=False)
 
-        with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        with pytest.raises(RuntimeError, match="ARANDU_ATLAS_RAG_API_KEY"):
             build_retriever("atlas_rag", pipeline_id="run_x", base_dir=tmp_path)
 
 
@@ -154,7 +154,7 @@ class TestAtlasRagArmConstructs:
         precompute_dir = tmp_path / "run_x" / "kg" / "outputs" / "atlas_output" / "precompute"
         precompute_dir.mkdir(parents=True)
         (precompute_dir / "manifest.json").write_text("{}")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_ATLAS_RAG_API_KEY", "test-key")
 
         sentinel_encoder = object()
         with (

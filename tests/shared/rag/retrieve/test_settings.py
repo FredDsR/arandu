@@ -68,7 +68,7 @@ class TestAtlasRagSettings:
         s = AtlasRagRetrieveSettings(_env_file=None)
         assert s.provider == "openai"
         assert s.model_id == "gemini-2.5-flash"
-        assert s.api_key_env == "GEMINI_API_KEY"
+        assert s.api_key is None
         assert "generativelanguage.googleapis.com" in (s.base_url or "")
         assert s.keyword == "transcriptions.json"
         assert s.include_events is True

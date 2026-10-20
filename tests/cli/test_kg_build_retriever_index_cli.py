@@ -75,15 +75,15 @@ class TestKgBuildRetrieverIndexCli:
         results_base: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Gemini is the default provider; without GEMINI_API_KEY the build
-        # must refuse before invoking the (expensive) atlas-rag path.
+        # Gemini is the default provider; without ARANDU_EMBEDDER_API_KEY the
+        # build must refuse before invoking the (expensive) atlas-rag path.
         _seed_atlas_kg(results_base)
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("ARANDU_EMBEDDER_API_KEY", raising=False)
 
         result = runner.invoke(app, ["kg-build-retriever-index", "--id", "run_x"])
 
         assert result.exit_code == 1
-        assert "GEMINI_API_KEY" in result.output
+        assert "ARANDU_EMBEDDER_API_KEY" in result.output
 
     def test_existing_manifest_skipped_without_rebuild(
         self,
@@ -104,7 +104,7 @@ class TestKgBuildRetrieverIndexCli:
             "sentence_encoder_model": "gemini-embedding-001",
         }
         (precompute / "manifest.json").write_text(json.dumps(compatible_manifest))
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_EMBEDDER_API_KEY", "test-key")
 
         with patch("arandu.kg.retriever_index.AtlasRagRetriever.build_index") as mock_build:
             result = runner.invoke(app, ["kg-build-retriever-index", "--id", "run_x"])
@@ -133,7 +133,7 @@ class TestKgBuildRetrieverIndexCli:
             "sentence_encoder_model": "gemini-embedding-001",
         }
         (precompute / "manifest.json").write_text(json.dumps(stale_manifest))
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_EMBEDDER_API_KEY", "test-key")
 
         with patch("arandu.kg.retriever_index.AtlasRagRetriever.build_index") as mock_build:
             result = runner.invoke(
@@ -156,7 +156,7 @@ class TestKgBuildRetrieverIndexCli:
         precompute = atlas_dir / "precompute"
         precompute.mkdir()
         (precompute / "manifest.json").write_text(json.dumps({"sentinel": True}))
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_EMBEDDER_API_KEY", "test-key")
 
         with (
             patch("arandu.kg.retriever_index.build_embedder") as mock_build_embedder,
@@ -181,7 +181,7 @@ class TestKgBuildRetrieverIndexCli:
     ) -> None:
         # No precompute/manifest yet → must invoke the build path.
         atlas_dir = _seed_atlas_kg(results_base)
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("ARANDU_EMBEDDER_API_KEY", "test-key")
 
         with (
             patch("arandu.kg.retriever_index.build_embedder") as mock_build_embedder,

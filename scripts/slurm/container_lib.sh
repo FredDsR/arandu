@@ -174,7 +174,8 @@ arandu_run_worker() {
         gpu_args+=("--device" "nvidia.com/gpu=all")
     fi
 
-    # Forward all pipeline and authentication env vars
+    # Forward all pipeline and authentication env vars (per-client LLM keys
+    # are ARANDU_<STAGE>_API_KEY, so ARANDU_ covers them).
     local env_args=()
     while IFS= read -r var; do
         [ -n "$var" ] && env_args+=("-e" "$var")

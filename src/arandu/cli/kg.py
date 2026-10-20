@@ -96,6 +96,7 @@ def build_kg(
     """
     from arandu.kg.batch import run_batch_kg_construction
     from arandu.kg.config import KGConfig
+    from arandu.shared.llm_client import resolve_api_key
 
     # Load config with defaults from environment variables
     kg_config = KGConfig()
@@ -148,6 +149,13 @@ def build_kg(
         except (ValueError, ValidationError) as e:
             print_error(f"Invalid KG configuration: {e}")
             raise typer.Exit(code=1) from e
+
+    # Fail on a missing API key before the input preparation, not after it.
+    try:
+        resolve_api_key(kg_config.provider, kg_config.api_key, key_var="ARANDU_KG_API_KEY")
+    except (ValueError, RuntimeError) as e:
+        print_error(str(e))
+        raise typer.Exit(code=1) from e
 
     # Display configuration
     console.print("\n[bold]Knowledge Graph Construction Configuration[/bold]\n")

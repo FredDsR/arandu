@@ -339,22 +339,12 @@ class TestLLMConfig:
         for local dev) by pointing ``LLMConfig`` at an empty tmp file and
         unsetting the relevant env vars.
         """
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("ARANDU_LLM_BASE_URL", raising=False)
         empty_env = tmp_path / ".env"
         empty_env.write_text("")
         config = LLMConfig(_env_file=str(empty_env))
 
-        assert config.openai_api_key is None
         assert config.base_url is None
-
-    def test_openai_api_key_from_env(self, monkeypatch: MonkeyPatch) -> None:
-        """Test OpenAI API key loaded from environment."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key-123")
-
-        config = LLMConfig()
-
-        assert config.openai_api_key == "sk-test-key-123"
 
     def test_base_url_from_env(self, monkeypatch: MonkeyPatch) -> None:
         """Test base URL loaded from environment."""

@@ -10,7 +10,7 @@ drift, formulaic Whisper hallucinations).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from arandu.shared.config import get_llm_config
 from arandu.shared.judge import (
@@ -21,7 +21,7 @@ from arandu.shared.judge import (
     JudgeStep,
     LLMCriterionFactory,
 )
-from arandu.shared.llm_client import LLMClient, LLMProvider, parse_provider
+from arandu.shared.llm_client import LLMClient, LLMProvider, parse_provider, resolve_api_key
 from arandu.transcription.criteria import (
     ContentDensityCriterion,
     ContentLengthFloorCriterion,
@@ -31,6 +31,8 @@ from arandu.transcription.criteria import (
 )
 
 if TYPE_CHECKING:
+    from pydantic import SecretStr
+
     from arandu.shared.judge.schemas import JudgePipelineResult
 
 
@@ -39,6 +41,8 @@ def build_validator_client(
     *,
     provider: str | None = None,
     base_url: str | None = None,
+    api_key: SecretStr | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> LLMClient:
     """Build an ``LLMClient`` for the ``TranscriptionJudge`` LLM stage.
 
@@ -57,6 +61,10 @@ def build_validator_client(
         model_id: Model identifier (e.g. ``'qwen3:14b'``, ``'gemini-2.5-flash'``).
         provider: Optional provider name. ``'openai'`` / ``'ollama'`` / ``'custom'``.
         base_url: Optional explicit base URL override.
+        api_key: The validator's own key (``ARANDU_JUDGE_VALIDATOR_API_KEY``),
+            required unless the provider is ollama.
+        extra_body: Provider-specific fields merged into every request body
+            (e.g. ``{"reasoning_effort": "none"}`` to switch off thinking).
 
     Returns:
         A configured ``LLMClient`` instance ready to pass as
@@ -65,6 +73,7 @@ def build_validator_client(
     Raises:
         ValueError: If ``provider`` is unrecognised, or if the resolved
             provider is ``custom`` with no base URL configured.
+        RuntimeError: If a cloud provider has no API key.
     """
     llm_config = get_llm_config()
     env_base_url = llm_config.base_url
@@ -98,7 +107,9 @@ def build_validator_client(
     return LLMClient(
         provider=provider_enum,
         model_id=model_id,
+        api_key=resolve_api_key(provider_enum, api_key, key_var="ARANDU_JUDGE_VALIDATOR_API_KEY"),
         base_url=resolved_base_url,
+        extra_body=extra_body,
     )
 
 

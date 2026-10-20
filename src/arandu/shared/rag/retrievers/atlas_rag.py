@@ -73,6 +73,7 @@ class AtlasRagRetriever:
         sentence_encoder: Any,
         sentence_encoder_model: str,
         keyword: str = "transcriptions.json",
+        reasoning_effort: str | None = None,
         include_events: bool = True,
         include_concept: bool = True,
         retriever_id: str | None = None,
@@ -97,6 +98,8 @@ class AtlasRagRetriever:
                 used at :meth:`build_index` time.
             keyword: atlas-rag's filename pattern; defaults to project
                 convention ``"transcriptions.json"``.
+            reasoning_effort: Sent with every NER/filter request when set
+                (e.g. ``"none"`` switches off thinking on DeepSeek).
             include_events / include_concept: Mirror of the index-build
                 flags; controls which node types are referenced.
             retriever_id: Optional override of
@@ -174,6 +177,7 @@ class AtlasRagRetriever:
         self._inner = self._build_inner_retriever(
             llm_client=llm_client,
             llm_model_id=llm_model_id,
+            reasoning_effort=reasoning_effort,
             sentence_encoder=sentence_encoder,
             data=data,
         )
@@ -528,16 +532,19 @@ class AtlasRagRetriever:
         *,
         llm_client: Any,
         llm_model_id: str,
+        reasoning_effort: str | None,
         sentence_encoder: Any,
         data: dict[str, Any],
     ) -> Any:
         """Construct the upstream HippoRAGRetriever; atlas-rag is imported here."""
         from atlas_rag.llm_generator import LLMGenerator
+        from atlas_rag.llm_generator.generation_config import GenerationConfig
         from atlas_rag.retriever import HippoRAGRetriever
 
         llm_generator = LLMGenerator(
             client=llm_client,
             model_name=llm_model_id,
+            default_config=GenerationConfig(reasoning_effort=reasoning_effort),
         )
         retriever = HippoRAGRetriever(
             llm_generator=llm_generator,

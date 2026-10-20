@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import shutil
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
     from arandu.shared.schemas import TranscriptionRecord
 
 from arandu.kg.schemas import KGConstructionResult
-from arandu.shared.llm_client import create_llm_client
+from arandu.shared.llm_client import create_llm_client, resolve_api_key
 from arandu.shared.llm_settings import REASONING_MODEL_MAX_TOKENS
 from arandu.utils.paths import get_project_root
 
@@ -196,7 +197,6 @@ def _patched_csvs_to_temp_graphml(
         triple_edge_file: Path to the triple edges CSV.
         config: atlas-rag ``ProcessingConfig`` instance.
     """
-    import os
     import pickle
 
     import networkx as nx
@@ -533,12 +533,19 @@ class AtlasRagConstructor:
         return create_llm_client(
             provider=self._config.provider,
             model_id=self._config.model_id,
+            api_key=resolve_api_key(
+                self._config.provider, self._config.api_key, key_var="ARANDU_KG_API_KEY"
+            ),
             base_url=self._config.base_url
             or (self._config.ollama_url if self._config.provider == "ollama" else None),
         )
 
     def _build_generation_config(self) -> Any:
         """Build an atlas-rag ``GenerationConfig`` from KGConfig settings.
+
+        atlas-rag sends its own requests from the raw OpenAI client, so the
+        ``reasoning_effort`` of ``KGConfig.extra_body`` travels here rather
+        than through the ``LLMClient``.
 
         Returns:
             A ``GenerationConfig`` instance with temperature from KGConfig.
@@ -548,6 +555,7 @@ class AtlasRagConstructor:
         return GenerationConfig(
             temperature=self._config.temperature,
             max_tokens=self._opts["max_new_tokens"],
+            reasoning_effort=(self._config.extra_body or {}).get("reasoning_effort"),
         )
 
     def _build_processing_config(

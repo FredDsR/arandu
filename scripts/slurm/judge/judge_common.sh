@@ -28,7 +28,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/etno-kgc-preprocessing}"
 
 # Validator settings — default to the local Ollama sidecar. Setting these
 # explicitly shields the job from whatever lives in the repo's .env (which
-# may point OPENAI_API_KEY / ARANDU_LLM_BASE_URL at a cloud provider).
+# may point ARANDU_LLM_BASE_URL at a cloud provider).
 export ARANDU_JUDGE_VALIDATOR_MODEL="${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}"
 export ARANDU_JUDGE_VALIDATOR_PROVIDER="${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}"
 export ARANDU_JUDGE_VALIDATOR_BASE_URL="${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}"

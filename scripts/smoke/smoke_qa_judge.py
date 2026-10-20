@@ -6,7 +6,7 @@ pipeline works end-to-end with a real provider.
 
 Usage:
     # With Gemini (OpenAI-compatible)
-    GEMINI_API_KEY=your-key uv run python scripts/smoke/smoke_qa_judge.py
+    ARANDU_JUDGE_VALIDATOR_API_KEY=your-key uv run python scripts/smoke/smoke_qa_judge.py
 
     # With Ollama
     uv run python scripts/smoke/smoke_qa_judge.py --provider ollama --model qwen3:14b
@@ -51,19 +51,21 @@ def main() -> None:
 
     # Resolve base URL
     base_url = args.base_url
+    api_key = None
     if base_url is None and args.provider == "custom":
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = os.environ.get("ARANDU_JUDGE_VALIDATOR_API_KEY")
         if not api_key:
-            console.print("[red]Set GEMINI_API_KEY or use --provider ollama[/red]")
+            console.print("[red]Set ARANDU_JUDGE_VALIDATOR_API_KEY or use --provider ollama[/red]")
             sys.exit(1)
         base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
-        os.environ["OPENAI_API_KEY"] = api_key
 
     if args.provider == "ollama":
         base_url = base_url or "http://localhost:11434/v1"
 
     # Create client and judge
-    client = create_llm_client(provider=args.provider, model_id=args.model, base_url=base_url)
+    client = create_llm_client(
+        provider=args.provider, model_id=args.model, api_key=api_key, base_url=base_url
+    )
     judge = QAJudge(validator_client=client, cep_config=CEPConfig())
 
     # Sample files

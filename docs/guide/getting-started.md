@@ -119,9 +119,14 @@ ollama serve
 
 ### Using OpenAI
 
+Each LLM client has its own key variable, for example:
+
 ```bash
-export OPENAI_API_KEY=sk-...
+export ARANDU_QA_API_KEY=sk-...               # CEP generation
+export ARANDU_JUDGE_VALIDATOR_API_KEY=sk-...  # judges and the CEP gate
 ```
+
+See [Configuration](configuration.md#api-keys) for the full list.
 
 ## What's Next?
 

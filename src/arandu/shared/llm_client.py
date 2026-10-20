@@ -1,19 +1,18 @@
 """Unified LLM client using OpenAI SDK with configurable base_url.
 
-Supports OpenAI, Ollama, and any OpenAI-compatible provider through
-the OpenAI SDK's base_url parameter.
+Supports OpenAI, Ollama, and any OpenAI-compatible provider (Gemini,
+DeepSeek, Maritaca, Qwen, ...) through the OpenAI SDK's base_url parameter.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from openai import APIStatusError, BadRequestError, OpenAI, RateLimitError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 from tenacity import (
     RetryCallState,
     retry,
@@ -67,6 +66,14 @@ def is_rate_limit_error(exc: Exception) -> bool:
     return isinstance(exc, RateLimitError)
 
 
+#: Request fields ``generate`` sets itself. ``extra_body`` is merged into the
+#: request body after them, so allowing these keys would override the typed
+#: values (and the run snapshot would record the wrong ones).
+_RESERVED_REQUEST_FIELDS = frozenset(
+    {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+)
+
+
 class StructuredOutputError(Exception):
     """Raised when structured output parsing fails after all retries."""
 
@@ -115,6 +122,7 @@ class LLMClient:
         model_id: str,
         api_key: str | None = None,
         base_url: str | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the LLM client.
 
@@ -123,9 +131,24 @@ class LLMClient:
             model_id: The model identifier (e.g., "gpt-4", "llama3.1:8b").
             api_key: API key for authentication. Optional for Ollama.
             base_url: Custom base URL. If not provided, uses provider default.
+            extra_body: Provider-specific fields merged into every request
+                body, e.g. ``{"reasoning_effort": "none"}`` to switch off
+                thinking on DeepSeek/OpenAI/Mistral, or
+                ``{"enable_thinking": False}`` on Qwen.
+
+        Raises:
+            ValueError: If ``extra_body`` sets a field ``generate`` controls.
         """
+        reserved = sorted(set(extra_body or {}) & _RESERVED_REQUEST_FIELDS)
+        if reserved:
+            raise ValueError(
+                f"extra_body must not set {reserved}: they are per-call arguments "
+                f"configured through their own settings, and an override here would "
+                f"silently win over them."
+            )
         self.provider = provider
         self.model_id = model_id
+        self.extra_body = dict(extra_body) if extra_body else None
 
         # Determine base_url: explicit > provider default
         if base_url:
@@ -225,6 +248,9 @@ class LLMClient:
 
         if response_format is not None:
             kwargs["response_format"] = response_format
+
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
 
         response = self.client.chat.completions.create(**kwargs)
 
@@ -442,6 +468,7 @@ def create_llm_client(
     model_id: str,
     api_key: str | None = None,
     base_url: str | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> LLMClient:
     """Factory function to create an LLM client.
 
@@ -451,6 +478,7 @@ def create_llm_client(
         model_id: The model identifier.
         api_key: API key for authentication.
         base_url: Custom base URL for the API endpoint.
+        extra_body: Provider-specific fields merged into every request body.
 
     Returns:
         Configured LLMClient instance.
@@ -467,7 +495,43 @@ def create_llm_client(
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
+        extra_body=extra_body,
     )
+
+
+def resolve_api_key(
+    provider: LLMProvider | str,
+    api_key: SecretStr | None,
+    *,
+    key_var: str,
+) -> str | None:
+    """Resolve the API key of one stage's client, failing fast when it is missing.
+
+    Each client has its own key variable (``ARANDU_QA_API_KEY``,
+    ``ARANDU_JUDGE_VALIDATOR_API_KEY``, ...) and there is no shared fallback:
+    a key never reaches a provider it was not set for. Ollama needs no key and
+    gets ``None``.
+
+    Args:
+        provider: The client's provider.
+        api_key: The stage's own key, or ``None`` when unset.
+        key_var: Env var of the stage's own key, named in the error message.
+
+    Returns:
+        The key to send, or ``None`` for ollama.
+
+    Raises:
+        ValueError: If the provider is unknown.
+        RuntimeError: If a cloud provider has no key.
+    """
+    if parse_provider(provider) is LLMProvider.OLLAMA:
+        return None
+    if api_key is None or not api_key.get_secret_value():
+        raise RuntimeError(
+            f"LLM provider {str(provider)!r} needs an API key: set {key_var}, "
+            f"or switch the provider to 'ollama'."
+        )
+    return api_key.get_secret_value()
 
 
 def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
@@ -488,19 +552,12 @@ def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
     Raises:
         ValueError: If the provider is unknown, or ``provider == "custom"``
             without a ``base_url``.
-        RuntimeError: If a cloud provider's API-key env var is unset.
+        RuntimeError: If a cloud provider has no API key.
     """
     prefix = settings.model_config.get("env_prefix") or "ARANDU_LLM_"
 
     provider_enum = parse_provider(settings.provider)
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        raise RuntimeError(
-            f"LLM provider {settings.provider!r} requires {settings.api_key_env} to be set. "
-            f"Set it, point {prefix}API_KEY_ENV at the right variable, or switch "
-            f"{prefix}PROVIDER to 'ollama'."
-        )
+    api_key = resolve_api_key(provider_enum, settings.api_key, key_var=f"{prefix}API_KEY")
 
     # The 'custom' provider exists to target a non-default OpenAI-compatible
     # endpoint; without an explicit base URL the LLMClient would silently fall
@@ -516,4 +573,5 @@ def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
         model_id=settings.model_id,
         api_key=api_key,
         base_url=settings.base_url,
+        extra_body=settings.extra_body,
     )

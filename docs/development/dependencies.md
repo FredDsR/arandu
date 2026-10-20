@@ -363,7 +363,7 @@ For **general use**:
 - `gpt-4`
 - `gpt-3.5-turbo`
 
-**Authentication**: Requires `OPENAI_API_KEY` environment variable
+**Authentication**: each LLM client reads its own `ARANDU_<STAGE>_API_KEY` (see [Configuration](../guide/configuration.md#api-keys))
 
 **Documentation**: https://platform.openai.com/docs/api-reference
 

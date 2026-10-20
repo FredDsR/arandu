@@ -533,12 +533,23 @@ class TestBuildInnerRetrieverEdgeFaissShim:
 
         fake_retriever_mod = types.ModuleType("atlas_rag.retriever")
         fake_retriever_mod.HippoRAGRetriever = _FakeHippoRAGRetriever  # type: ignore[attr-defined]
+        generator_kwargs: dict[str, object] = {}
+
+        def _fake_llm_generator(**kw: object) -> MagicMock:
+            generator_kwargs.update(kw)
+            return MagicMock()
+
         fake_llm_mod = types.ModuleType("atlas_rag.llm_generator")
-        fake_llm_mod.LLMGenerator = lambda **kw: MagicMock()  # type: ignore[attr-defined]
+        fake_llm_mod.LLMGenerator = _fake_llm_generator  # type: ignore[attr-defined]
+        fake_gen_config_mod = types.ModuleType("atlas_rag.llm_generator.generation_config")
+        fake_gen_config_mod.GenerationConfig = types.SimpleNamespace  # type: ignore[attr-defined]
         fake_pkg = types.ModuleType("atlas_rag")
         monkeypatch.setitem(sys.modules, "atlas_rag", fake_pkg)
         monkeypatch.setitem(sys.modules, "atlas_rag.retriever", fake_retriever_mod)
         monkeypatch.setitem(sys.modules, "atlas_rag.llm_generator", fake_llm_mod)
+        monkeypatch.setitem(
+            sys.modules, "atlas_rag.llm_generator.generation_config", fake_gen_config_mod
+        )
 
         sentinel_index = object()
         data = {"edge_faiss_index": sentinel_index, "text_dict": {}}
@@ -546,10 +557,13 @@ class TestBuildInnerRetrieverEdgeFaissShim:
         retriever = AtlasRagRetriever._build_inner_retriever(
             llm_client=MagicMock(),
             llm_model_id="m",
+            reasoning_effort="none",
             sentence_encoder=MagicMock(),
             data=data,
         )
 
+        # The configured reasoning_effort reaches atlas-rag's generator config.
+        assert generator_kwargs["default_config"].reasoning_effort == "none"
         # Upstream __init__ left it unset; the wrapper injected the prebuilt one.
         assert retriever.edge_faiss_index is sentinel_index
         # The faiss index is injected, NOT smuggled through the data dict the

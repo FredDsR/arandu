@@ -17,8 +17,10 @@ produced by a prior `arandu build-kg`). If the `precompute/` subdir is missing
 
 Usage:
     # Gemini (default; both LLM + embeddings via Gemini)
-    GEMINI_API_KEY=... uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py
-    GEMINI_API_KEY=... uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py \\
+    ARANDU_ATLAS_RAG_API_KEY=... ARANDU_EMBEDDER_API_KEY=... \\
+        uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py
+    ARANDU_ATLAS_RAG_API_KEY=... ARANDU_EMBEDDER_API_KEY=... \\
+        uv run --extra kg python scripts/smoke/smoke_atlas_rag_retriever.py \\
         --kg-dir results/test-kg-04/kg/outputs/atlas_output \\
         --llm-model gemini-2.5-flash \\
         --embedding-model text-embedding-004 \\
@@ -122,9 +124,10 @@ def main() -> None:
     console = Console()
 
     if args.provider == "gemini":
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            console.print("[red]GEMINI_API_KEY not set.[/red]")
+        api_key = os.environ.get("ARANDU_ATLAS_RAG_API_KEY")
+        embedder_key = os.environ.get("ARANDU_EMBEDDER_API_KEY")
+        if not api_key or not embedder_key:
+            console.print("[red]Set ARANDU_ATLAS_RAG_API_KEY and ARANDU_EMBEDDER_API_KEY.[/red]")
             raise SystemExit(2)
     else:
         api_key = os.environ.get("ARANDU_OLLAMA_API_KEY", "ollama")
@@ -136,7 +139,7 @@ def main() -> None:
     # honours Gemini's Retry-After header on 429s; this lets the pacing layer
     # be a soft hint without us hand-coding backoff.
     if args.provider == "gemini":
-        embedder_client = OpenAI(api_key=api_key, base_url=args.llm_base_url, max_retries=8)
+        embedder_client = OpenAI(api_key=embedder_key, base_url=args.llm_base_url, max_retries=8)
         encoder = GeminiEmbedder(embedder_client, args.embedding_model)
     else:
         encoder = make_sentence_transformers_encoder(args.embedding_model)
