@@ -281,11 +281,14 @@ def iter_cep_pairs(cep_dir: Path, *, strict: bool = False) -> Iterator[CEPPairRe
 
     Yields:
         One :class:`CEPPairRef` per pair. Unless ``strict``, unreadable or
-        invalid files are logged and skipped. A file whose ids repeat ids of an
-        earlier file (two records with the same ``source_file_id``) is logged;
-        its pairs are still yielded, and id-keyed consumers keep the later one.
+        invalid files are logged and skipped.
 
     Raises:
+        ValueError: Always, if a file repeats ``qa_pair_id``s of an earlier file
+            (two records with the same ``source_file_id``). Consumers disagree on
+            which copy wins (the retrieve checkpoint keeps the first, id-keyed
+            lookups the last), so a run would pair one file's question with the
+            other's context and gold answer.
         OSError: With ``strict``, if a file cannot be read.
         ValueError: With ``strict``, if a file is not valid UTF-8 or not a
             valid :class:`QARecordCEP` (``ValidationError`` is a subclass).
@@ -305,12 +308,9 @@ def iter_cep_pairs(cep_dir: Path, *, strict: bool = False) -> Iterator[CEPPairRe
         ]
         repeated = seen.intersection(ids)
         if repeated:
-            logger.warning(
-                "CEP file %s repeats %d qa_pair_ids of an earlier file "
-                "(duplicate source_file_id %r?); id-keyed lookups keep this file's pairs.",
-                path,
-                len(repeated),
-                record.source_file_id,
+            raise ValueError(
+                f"CEP file {path} repeats {len(repeated)} qa_pair_ids of an earlier file "
+                f"(duplicate source_file_id {record.source_file_id!r}); remove one copy."
             )
         seen.update(ids)
         for idx, (qa_pair_id, pair) in enumerate(zip(ids, record.qa_pairs, strict=True)):

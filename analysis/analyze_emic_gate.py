@@ -41,6 +41,7 @@ from analysis.analyze_judge_retest import (
     load_replica,
     paired_bootstrap,
     residual_pairs,
+    run_arms,
     useful_set,
 )
 
@@ -99,11 +100,12 @@ def _arm_rows(aggs: dict[str, Any]) -> dict[str, Any]:
 def analyse(reps: list[dict[str, Any]], n_boot: int, seed: int) -> dict[str, Any]:
     sets = [gate_sets(r) for r in reps]
     c0 = reps[0]["cep"]
+    arms = run_arms(reps)
     res: dict[str, Any] = {"tau_emic": TAU_EMIC, "scenarios": {}}
     for name in ("published", "emic_gate"):
         canon = sets[0][name]
         per_rep = [
-            _arm_rows(arm_aggregates(r["answers"]["records"], r["cep"], s[name]))
+            _arm_rows(arm_aggregates(r["answers"]["records"], r["cep"], s[name], arms=arms))
             for r, s in zip(reps, sets, strict=True)
         ]
         res["scenarios"][name] = {
@@ -112,7 +114,9 @@ def analyse(reps: list[dict[str, Any]], n_boot: int, seed: int) -> dict[str, Any
                 yield_block(r["cep"], s[name]) for r, s in zip(reps, sets, strict=True)
             ],
             "overlap_all_replicas": len(set.intersection(*(s[name] for s in sets))),
-            "arms_canonical": _arm_rows(arm_aggregates(reps[0]["answers"]["records"], c0, canon)),
+            "arms_canonical": _arm_rows(
+                arm_aggregates(reps[0]["answers"]["records"], c0, canon, arms=arms)
+            ),
             "arms_by_replica_own_set": per_rep,
             "boot_fixed": paired_bootstrap(reps, [canon] * len(reps), n_boot, seed)["bm25_minus"],
             "boot_own": paired_bootstrap(reps, [s[name] for s in sets], n_boot, seed)["bm25_minus"],

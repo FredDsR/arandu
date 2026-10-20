@@ -94,12 +94,15 @@ from arandu.shared.rag.analysis.metrics import aggregate_arm
 from arandu.shared.rag.schemas import AnswerRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
 TAU = DEFAULT_THRESHOLD
 TAU_EMIC = 4
 ARMS = ["null", "bm25", "khop_passage", "khop_triple", "atlas_rag", "oracle"]
 GRAPH_ARMS = ["khop_passage", "khop_triple", "atlas_rag"]
+# Arms added after the first runs; listed only when a replica has records for them.
+OPTIONAL_ARMS = frozenset({"oracle"})
+COVERAGE_CRITERIA = frozenset({"passage_coverage", "passage_coverage_pass"})
 BLOOM = ["remember", "understand", "analyze", "evaluate"]
 HIGHER = ["understand", "analyze", "evaluate"]
 GATE_CRITERIA = ["faithfulness", "bloom_calibration", "informativeness", "self_containedness"]
@@ -112,13 +115,33 @@ RESIDUAL_CHUNK_CHARS = 100
 # --------------------------------------------------------------------------- #
 
 
-def present_arms(keys: Iterable[tuple[str, str]]) -> list[str]:
-    """The arms of ``ARMS`` with at least one ``(arm, qa_pair_id)`` key, in ``ARMS`` order.
+def run_arms(reps: Iterable[dict[str, Any]]) -> list[str]:
+    """The arms every table of this run lists, in ``ARMS`` order.
 
-    Runs made before an arm existed (e.g. ``oracle``) get no empty row for it.
+    Computed once over all replicas so every replica's table has the same keys:
+    a core arm is always listed (``n/a`` where a replica lacks it, which
+    ``conclusions`` relies on), and an optional arm (``oracle``) only when some
+    replica has records for it, so runs made before it existed get no empty row.
     """
-    seen = {arm for arm, _ in keys}
-    return [arm for arm in ARMS if arm in seen]
+    seen = {arm for rep in reps for arm, _ in rep["answers"]["records"]}
+    return [arm for arm in ARMS if arm not in OPTIONAL_ARMS or arm in seen]
+
+
+def excluded_from_pool(arm: str, crit: str | None) -> bool:
+    """Whether ``arm``'s records stay out of a pooled stratum for ``crit``.
+
+    The null arm is constant (always abstains, coverage 0) and is never pooled.
+    The oracle is pooled except for the coverage criteria: its passages are the
+    gold chunk, so its coverage is near-constant and would inflate a pooled
+    coefficient, while its correctness and faithfulness verdicts vary per item.
+    ``crit`` is ``None`` for the label and abstention-decision blocks.
+    """
+    return arm == "null" or (arm == "oracle" and crit in COVERAGE_CRITERIA)
+
+
+def pool_keys(keys: Iterable[tuple[str, str]], crit: str | None) -> list[tuple[str, str]]:
+    """The ``(arm, qa_pair_id)`` keys of a pooled stratum that enter ``crit``'s coefficient."""
+    return [k for k in keys if not excluded_from_pool(k[0], crit)]
 
 
 def _sha(obj: Any) -> str:
@@ -582,8 +605,13 @@ def arm_aggregates(
     cep: dict[str, dict[str, Any]],
     useful: set[str],
     restrict: set[tuple[str, str]] | None = None,
+    *,
+    arms: Sequence[str],
 ) -> dict[str, Any]:
     """Published retrieval table over ``useful`` (+ nonans probes with a seed in it).
+
+    ``arms`` is the run's arm set from :func:`run_arms`, the same for every
+    replica so the tables keep one shape.
 
     ``useful`` is any pair set: the gate-approved higher-order pairs (the
     paper's table), every candidate above Remember, or the whole dataset. Each
@@ -593,7 +621,7 @@ def arm_aggregates(
     """
     out = {}
     levels = [lvl for lvl in BLOOM if any(cep[p]["bloom"] == lvl for p in useful)]
-    for arm in present_arms(records):
+    for arm in arms:
         ans = []
         non = []
         for (a, pid), rec in records.items():
@@ -1402,8 +1430,9 @@ def answers_section(
     the 2,670 pairs plus the 334 unanswerable probes), ``candidates`` (probes
     whose pair, or seed pair for an unanswerable probe, is above Remember,
     whatever the gate said) and ``useful`` (canonical useful set of replica 1,
-    secondary). Each is pooled over the retrieval arms and split by arm; the
-    total and candidates strata are also split by Bloom level. Only replicas
+    secondary). Each is pooled over the arms :func:`excluded_from_pool` keeps
+    (every arm but null; the oracle too, except for the coverage criteria) and
+    split by arm; the total and candidates strata are also split by Bloom level. Only replicas
     whose round finished enter; a partial round adds a scope restricted to the
     records every replica re-judged.
     """
@@ -1443,25 +1472,26 @@ def answers_section(
             "abstain_decision": {},
             "transitions": {},
         }
-        # The null arm is constant (always abstains, coverage 0) and would inflate a
-        # pooled coefficient, so the pooled strata leave it out. The oracle stays in:
-        # its coverage is near-constant, but its correctness and faithfulness verdicts
-        # vary per item and are the most informative answerable-side ones.
+        # Pooled strata hold every arm's records; excluded_from_pool drops the
+        # control arms per criterion. Per-arm strata keep every arm.
         strata: dict[str, list[tuple[str, str]]] = {}
+        pooled: set[str] = set()
         for stratum, pred in preds.items():
             ks = [k for k in sk if pred(k)]
-            strata[stratum] = [k for k in ks if k[0] != "null"]
-            for arm in present_arms(sk):
+            strata[stratum] = ks
+            pooled.add(stratum)
+            for arm in run_arms(reps):
                 strata[f"{stratum}.{arm}"] = [k for k in ks if k[0] == arm]
             if stratum != "useful":
                 for lvl in BLOOM if stratum == "total" else HIGHER:
-                    strata[f"{stratum}.{lvl}"] = [
-                        k for k in ks if k[0] != "null" and level(k) == lvl
-                    ]
+                    strata[f"{stratum}.{lvl}"] = [k for k in ks if level(k) == lvl]
+                    pooled.add(f"{stratum}.{lvl}")
+
         for crit in [*ANS_CRITERIA, "passage_coverage_pass"]:
             nominal = crit == "passage_coverage_pass"
             block["criteria"][crit] = {}
-            for name, ks in strata.items():
+            for name in strata:
+                ks = pool_keys(strata[name], crit) if name in pooled else strata[name]
                 units = [
                     [
                         (lambda v: v if nominal else to_ord(v))(
@@ -1480,7 +1510,8 @@ def answers_section(
                     n_boot,
                     rng,
                 )
-        for name, ks in strata.items():
+        for name in strata:
+            ks = pool_keys(strata[name], None) if name in pooled else strata[name]
             lab_units = []
             dec_units = []
             for k in ks:
@@ -1653,6 +1684,7 @@ def aggregates_section(reps: list[dict[str, Any]], n_boot: int, seed: int) -> di
     answers) and C (own useful set and own answers).
     """
     done = complete_answer_replicas(reps)
+    arms = run_arms(reps)
     approved = [{p for p, m in rep["cep"].items() if m["approved"]} for rep in reps]
     useful = [useful_set(rep["cep"], a) for rep, a in zip(reps, approved, strict=True)]
     c0 = reps[0]["cep"]
@@ -1676,12 +1708,16 @@ def aggregates_section(reps: list[dict[str, Any]], n_boot: int, seed: int) -> di
     out["emic_median"] = emic_aggregates(med, c0, approved[0])
     # Gate-free strata: answer judge noise only.
     out["fixed_strata"] = {
-        name: {f"A r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, ids) for i in done}
+        name: {
+            f"A r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, ids, arms=arms)
+            for i in done
+        }
         for name, ids in fixed.items()
     }
     # A: answer judge noise, canonical useful set.
     out["A_answers_fixed_useful"] = {
-        f"r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, useful[0]) for i in done
+        f"r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, useful[0], arms=arms)
+        for i in done
     }
     # A (subset): records re-judged by every replica (only when a round is partial).
     partial = [i for i in range(len(reps)) if i not in done]
@@ -1695,22 +1731,23 @@ def aggregates_section(reps: list[dict[str, Any]], n_boot: int, seed: int) -> di
             "n_records": len(sub),
             **{
                 f"r{i + 1}": arm_aggregates(
-                    reps[i]["answers"]["records"], c0, useful[0], restrict=sub
+                    reps[i]["answers"]["records"], c0, useful[0], restrict=sub, arms=arms
                 )
                 for i in range(len(reps))
             },
         }
     # B: gate noise, canonical answers.
     out["B_gate_useful_canonical_answers"] = {
-        f"U{i + 1}": arm_aggregates(reps[0]["answers"]["records"], c0, useful[i])
+        f"U{i + 1}": arm_aggregates(reps[0]["answers"]["records"], c0, useful[i], arms=arms)
         for i in range(len(reps))
     }
     out["B_majority_useful_canonical_answers"] = arm_aggregates(
-        reps[0]["answers"]["records"], c0, useful_set(c0, maj)
+        reps[0]["answers"]["records"], c0, useful_set(c0, maj), arms=arms
     )
     # C: both (own useful set, own answers), complete replicas only.
     out["C_own_useful_own_answers"] = {
-        f"r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, useful[i]) for i in done
+        f"r{i + 1}": arm_aggregates(reps[i]["answers"]["records"], c0, useful[i], arms=arms)
+        for i in done
     }
     useful_scen: dict[str, dict[str, Any]] = {}
     for i in done:
@@ -1759,7 +1796,7 @@ def sanity_section(reps: list[dict[str, Any]]) -> dict[str, Any]:
     useful = useful_set(r1["cep"], approved)
     return {
         "gate": gate_aggregates(r1["cep"], approved),
-        "arms": arm_aggregates(r1["answers"]["records"], r1["cep"], useful),
+        "arms": arm_aggregates(r1["answers"]["records"], r1["cep"], useful, arms=run_arms(reps)),
         "emic": emic_aggregates(r1["emic"], r1["cep"], approved),
     }
 
