@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from arandu.shared.llm_client import reasoning_effort_from_extra_body
+from arandu.shared.llm_settings import validate_atlas_extra_body
 
 if TYPE_CHECKING:
     from typing import Self
@@ -86,8 +86,9 @@ class AtlasRagRetrieveSettings(BaseSettings):
             (set ``base_url`` to the Gemini URL when using it).
         model_id: Model identifier passed to the LLMClient (e.g.
             ``"gemini-2.5-flash"`` on Gemini, ``"qwen3:14b"`` on Ollama).
-        api_key_env: Name of the env var holding the LLM API key. The
-            CLI reads this env var when constructing the LLMClient.
+        api_key: API key of the NER/filter client
+            (``ARANDU_ATLAS_RAG_API_KEY``). Falls back to ``GEMINI_API_KEY``,
+            the project's cloud path for this arm; ignored for ollama.
         base_url: Optional explicit base URL. Required for ``custom``
             provider; ignored for ``openai``/``ollama`` defaults.
         extra_body: Extra request fields for the NER/filter LLM, as JSON.
@@ -111,9 +112,9 @@ class AtlasRagRetrieveSettings(BaseSettings):
         default="gemini-2.5-flash",
         description="Model identifier (e.g. gemini-2.5-flash, qwen3:14b).",
     )
-    api_key_env: str = Field(
-        default="GEMINI_API_KEY",
-        description="Env var name holding the LLM API key.",
+    api_key: SecretStr | None = Field(
+        default=None,
+        description="API key of the NER/filter client; falls back to GEMINI_API_KEY.",
     )
     base_url: str | None = Field(
         default=None,
@@ -156,8 +157,7 @@ class AtlasRagRetrieveSettings(BaseSettings):
     @classmethod
     def _validate_extra_body(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
         """Reject extra_body keys atlas-rag cannot forward."""
-        reasoning_effort_from_extra_body(v, consumer="ARANDU_ATLAS_RAG_")
-        return v
+        return validate_atlas_extra_body(v, consumer="ARANDU_ATLAS_RAG_")
 
     @model_validator(mode="after")
     def _default_base_url_per_provider(self) -> Self:

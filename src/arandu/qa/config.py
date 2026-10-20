@@ -5,10 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from arandu.shared.llm_settings import EXTRA_BODY_DESCRIPTION, REASONING_MODEL_MAX_TOKENS
+from arandu.shared.llm_settings import (
+    API_KEY_DESCRIPTION,
+    EXTRA_BODY_DESCRIPTION,
+    REASONING_MODEL_MAX_TOKENS,
+)
 
 # Upper bound on the per-chunk Bloom ladder (sum of bloom_distribution counts).
 # Each pair is one LLM call per chunk, so an unbounded sum would let a typo
@@ -47,10 +51,7 @@ class QAConfig(BaseSettings):
         default=None,
         description="Custom base URL for OpenAI-compatible endpoints",
     )
-    api_key_env: str = Field(
-        default="OPENAI_API_KEY",
-        description="Env var holding the API key (ignored for ollama)",
-    )
+    api_key: SecretStr | None = Field(default=None, description=API_KEY_DESCRIPTION)
     extra_body: dict[str, Any] | None = Field(default=None, description=EXTRA_BODY_DESCRIPTION)
 
     # Generation settings
@@ -303,10 +304,7 @@ class JudgeConfig(BaseSettings):
             "own defaults regardless of ARANDU_LLM_BASE_URL."
         ),
     )
-    validator_api_key_env: str = Field(
-        default="OPENAI_API_KEY",
-        description="Env var holding the validator's API key (ignored for ollama)",
-    )
+    validator_api_key: SecretStr | None = Field(default=None, description=API_KEY_DESCRIPTION)
     validator_extra_body: dict[str, Any] | None = Field(
         default=None, description=EXTRA_BODY_DESCRIPTION
     )

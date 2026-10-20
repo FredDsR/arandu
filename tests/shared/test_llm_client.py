@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from pydantic import BaseModel as _PydanticBaseModel
+from pydantic import SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from arandu.shared.llm_client import (
@@ -19,9 +20,9 @@ from arandu.shared.llm_client import (
     StructuredOutputError,
     build_llm_client_from_settings,
     create_llm_client,
-    reasoning_effort_from_extra_body,
+    resolve_api_key,
 )
-from arandu.shared.llm_settings import LLMSettings
+from arandu.shared.llm_settings import LLMSettings, validate_atlas_extra_body
 from arandu.utils.text import GenerateResult
 
 
@@ -684,7 +685,7 @@ class TestLLMSettings:
         s = LLMSettings()
         assert s.provider == "ollama"
         assert s.model_id == "qwen3:14b"
-        assert s.api_key_env == "OPENAI_API_KEY"
+        assert s.api_key is None
         assert s.base_url is None
         assert s.temperature == 0.2
         assert s.max_tokens == 8192
@@ -740,7 +741,7 @@ class TestBuildLlmClientFromSettings:
     ) -> None:
         """A missing cloud key points at the settings class's own env prefix."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY_ENV"):
+        with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY"):
             build_llm_client_from_settings(LLMSettings(provider="openai"))
 
     def test_subclass_env_prefix_drives_error_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -750,7 +751,7 @@ class TestBuildLlmClientFromSettings:
             model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_PROVIDER"):
+        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_API_KEY"):
             build_llm_client_from_settings(_StageSettings(provider="openai"))
 
     def test_custom_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -764,7 +765,7 @@ class TestBuildLlmClientFromSettings:
         bad = LLMSettings.model_construct(
             provider="not_a_provider",
             model_id="x",
-            api_key_env="OPENAI_API_KEY",
+            api_key=None,
             base_url=None,
             temperature=0.2,
             max_tokens=2048,
@@ -991,27 +992,64 @@ class TestExtraBody:
     ) -> None:
         mocker.patch("arandu.shared.llm_client.OpenAI")
         monkeypatch.setenv("ARANDU_LLM_EXTRA_BODY", '{"enable_thinking": false}')
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        monkeypatch.setenv("ARANDU_LLM_API_KEY", "sk-stage")
 
-        settings = LLMSettings(
-            provider="custom", base_url="https://api.example/v1", api_key_env="DEEPSEEK_API_KEY"
-        )
+        settings = LLMSettings(provider="custom", base_url="https://api.example/v1")
         client = build_llm_client_from_settings(settings)
 
         assert client.extra_body == {"enable_thinking": False}
 
+    def test_extra_body_cannot_override_typed_fields(self, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        with pytest.raises(ValueError, match="max_tokens"):
+            LLMClient(LLMProvider.OLLAMA, "qwen3:14b", extra_body={"max_tokens": 512})
 
-class TestReasoningEffortFromExtraBody:
+
+class TestResolveApiKey:
+    """Each client has its own key; OPENAI_API_KEY is the fallback; ollama needs none."""
+
+    def test_ollama_gets_no_key_even_when_one_is_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        assert resolve_api_key("ollama", SecretStr("sk-x"), key_var="K") is None
+
+    def test_stage_key_wins_over_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        assert resolve_api_key("custom", SecretStr("sk-stage"), key_var="K") == "sk-stage"
+
+    def test_falls_back_to_openai_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        assert resolve_api_key("openai", None, key_var="K") == "sk-openai"
+
+    def test_empty_stage_key_counts_as_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        assert resolve_api_key("custom", SecretStr(""), key_var="K") == "sk-openai"
+
+    def test_missing_key_names_the_stage_variable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_QA_API_KEY"):
+            resolve_api_key("custom", None, key_var="ARANDU_QA_API_KEY")
+
+    def test_custom_fallback_variable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+        key = resolve_api_key("openai", None, key_var="K", fallback_var="GEMINI_API_KEY")
+        assert key == "g-key"
+
+    def test_key_is_masked_in_json_snapshots(self) -> None:
+        """Run snapshots dump configs in JSON mode; the key must not reach them."""
+        from arandu.qa.config import JudgeConfig
+
+        dumped = JudgeConfig(validator_api_key="sk-secret").model_dump_json()
+        assert "sk-secret" not in dumped
+
+
+class TestValidateAtlasExtraBody:
     """atlas-rag consumers accept only reasoning_effort from extra_body."""
 
-    def test_none_and_empty_yield_none(self) -> None:
-        assert reasoning_effort_from_extra_body(None, consumer="X_") is None
-        assert reasoning_effort_from_extra_body({}, consumer="X_") is None
-
-    def test_returns_reasoning_effort(self) -> None:
+    def test_none_and_reasoning_effort_pass_through(self) -> None:
+        assert validate_atlas_extra_body(None, consumer="X_") is None
         body = {"reasoning_effort": "none"}
-        assert reasoning_effort_from_extra_body(body, consumer="X_") == "none"
+        assert validate_atlas_extra_body(body, consumer="X_") == body
 
     def test_other_keys_rejected_with_prefix(self) -> None:
         with pytest.raises(ValueError, match="ARANDU_KG_EXTRA_BODY"):
-            reasoning_effort_from_extra_body({"enable_thinking": False}, consumer="ARANDU_KG_")
+            validate_atlas_extra_body({"enable_thinking": False}, consumer="ARANDU_KG_")

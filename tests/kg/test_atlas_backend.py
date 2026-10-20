@@ -720,9 +720,9 @@ class TestBuildLLMClient:
     """Tests for _build_llm_client (delegates to unified LLMClient)."""
 
     @pytest.fixture(autouse=True)
-    def _no_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Keep a developer's real OPENAI_API_KEY out of the expected calls."""
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def _fallback_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pin the OPENAI_API_KEY fallback so a developer's real key stays out."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
 
     def test_ollama_provider(self, _mock_atlas_rag: dict, mocker: MockerFixture) -> None:
         """Test LLM client construction for Ollama provider."""
@@ -756,7 +756,7 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="custom",
             model_id=config.model_id,
-            api_key=None,
+            api_key="sk-openai",
             base_url="http://my-api:8000/v1",
         )
 
@@ -775,15 +775,14 @@ class TestBuildLLMClient:
         mock_create.assert_called_once_with(
             provider="custom",
             model_id=config.model_id,
-            api_key=None,
+            api_key="sk-openai",
             base_url=None,
         )
 
-    def test_api_key_read_from_configured_env_var(
+    def test_own_api_key_wins_over_openai_api_key(
         self, _mock_atlas_rag: dict, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The key comes from KGConfig.api_key_env, not implicitly from OPENAI_API_KEY."""
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        """KGConfig.api_key (ARANDU_KG_API_KEY) is sent instead of OPENAI_API_KEY."""
         mock_create = mocker.patch("arandu.kg.atlas_backend.create_llm_client")
 
         from arandu.kg.atlas_backend import AtlasRagConstructor
@@ -791,7 +790,7 @@ class TestBuildLLMClient:
         config = KGConfig(
             provider="custom",
             base_url="https://api.deepseek.com",
-            api_key_env="DEEPSEEK_API_KEY",
+            api_key="sk-deepseek",
         )
         AtlasRagConstructor(config)._build_llm_client()
 

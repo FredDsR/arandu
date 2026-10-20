@@ -174,13 +174,12 @@ arandu_run_worker() {
         gpu_args+=("--device" "nvidia.com/gpu=all")
     fi
 
-    # Forward all pipeline and authentication env vars. Any *_API_KEY passes,
-    # so a stage whose ARANDU_<STAGE>_API_KEY_ENV names DEEPSEEK_API_KEY,
-    # GEMINI_API_KEY, MARITACA_API_KEY, ... finds its key inside the container.
+    # Forward all pipeline and authentication env vars (per-client LLM keys
+    # are ARANDU_<STAGE>_API_KEY, so ARANDU_ covers them).
     local env_args=()
     while IFS= read -r var; do
         [ -n "$var" ] && env_args+=("-e" "$var")
-    done < <(compgen -v | grep -E '^(ARANDU_|OPENAI_|NVIDIA_|CUDA_|HF_HOME|TRANSFORMERS_CACHE|PIPELINE_ID)|_API_KEY$')
+    done < <(compgen -v | grep -E '^(ARANDU_|OPENAI_|NVIDIA_|CUDA_|HF_HOME|TRANSFORMERS_CACHE|PIPELINE_ID)')
 
     # Mounts
     local vol_args=(

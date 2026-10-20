@@ -134,7 +134,7 @@ class TestBuildLlmClientFailures:
         settings = AnswererSettings.model_construct(
             provider="not_a_real_provider",
             model_id="x",
-            api_key_env="OPENAI_API_KEY",
+            api_key=None,
             base_url=None,
             temperature=0.2,
             max_tokens=1024,
@@ -151,7 +151,7 @@ class TestBuildLlmClientFailures:
     ) -> None:
         _seed_retrieve_outputs(tmp_path)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        settings = AnswererSettings(provider="openai", api_key_env="OPENAI_API_KEY")
+        settings = AnswererSettings(provider="openai")
         with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
             run_answer_batch(pipeline_id="run_x", settings=settings, base_dir=tmp_path)
 

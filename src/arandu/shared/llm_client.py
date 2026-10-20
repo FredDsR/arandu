@@ -13,7 +13,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from openai import APIStatusError, BadRequestError, OpenAI, RateLimitError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 from tenacity import (
     RetryCallState,
     retry,
@@ -65,6 +65,14 @@ def is_rate_limit_error(exc: Exception) -> bool:
         True when the error is a rate limit.
     """
     return isinstance(exc, RateLimitError)
+
+
+#: Request fields ``generate`` sets itself. ``extra_body`` is merged into the
+#: request body after them, so allowing these keys would override the typed
+#: values (and the run snapshot would record the wrong ones).
+_RESERVED_REQUEST_FIELDS = frozenset(
+    {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+)
 
 
 class StructuredOutputError(Exception):
@@ -128,7 +136,17 @@ class LLMClient:
                 body, e.g. ``{"reasoning_effort": "none"}`` to switch off
                 thinking on DeepSeek/OpenAI/Mistral, or
                 ``{"enable_thinking": False}`` on Qwen.
+
+        Raises:
+            ValueError: If ``extra_body`` sets a field ``generate`` controls.
         """
+        reserved = sorted(set(extra_body or {}) & _RESERVED_REQUEST_FIELDS)
+        if reserved:
+            raise ValueError(
+                f"extra_body must not set {reserved}: they are per-call arguments "
+                f"configured through their own settings, and an override here would "
+                f"silently win over them."
+            )
         self.provider = provider
         self.model_id = model_id
         self.extra_body = dict(extra_body) if extra_body else None
@@ -482,37 +500,44 @@ def create_llm_client(
     )
 
 
-def reasoning_effort_from_extra_body(
-    extra_body: dict[str, Any] | None, *, consumer: str
+def resolve_api_key(
+    provider: LLMProvider | str,
+    api_key: SecretStr | None,
+    *,
+    key_var: str,
+    fallback_var: str = "OPENAI_API_KEY",
 ) -> str | None:
-    """Return the ``reasoning_effort`` of an ``extra_body`` for atlas-rag consumers.
+    """Resolve the API key of one stage's client, failing fast when it is missing.
 
-    atlas-rag builds its own requests from a raw OpenAI client and forwards
-    only the fields of its ``GenerationConfig``, so of an ``extra_body`` it can
-    carry ``reasoning_effort`` alone. Any other key would be dropped silently,
-    which for a switch like Qwen's ``enable_thinking`` changes what the model
-    does; it is rejected instead.
+    Each client has its own key variable (``ARANDU_QA_API_KEY``,
+    ``ARANDU_JUDGE_VALIDATOR_API_KEY``, ...). When it is unset the client falls
+    back to ``fallback_var``, so a run that only exports ``OPENAI_API_KEY``
+    keeps working. Ollama needs no key and gets ``None``.
 
     Args:
-        extra_body: The stage's configured extra request fields.
-        consumer: Env-var prefix of the stage, named in the error message.
+        provider: The client's provider.
+        api_key: The stage's own key, or ``None`` when unset.
+        key_var: Env var of the stage's own key, named in the error message.
+        fallback_var: Env var read when the stage has no key of its own.
 
     Returns:
-        The ``reasoning_effort`` value, or ``None`` when not configured.
+        The key to send, or ``None`` for ollama.
 
     Raises:
-        ValueError: If ``extra_body`` has keys other than ``reasoning_effort``.
+        ValueError: If the provider is unknown.
+        RuntimeError: If a cloud provider has neither key.
     """
-    if not extra_body:
+    if parse_provider(provider) is LLMProvider.OLLAMA:
         return None
-    unsupported = sorted(set(extra_body) - {"reasoning_effort"})
-    if unsupported:
-        raise ValueError(
-            f"{consumer}EXTRA_BODY keys {unsupported} are not supported: atlas-rag "
-            f"forwards only 'reasoning_effort'. Use a provider that switches thinking "
-            f"off through reasoning_effort (e.g. DeepSeek, OpenAI, Mistral)."
+    if api_key is not None and api_key.get_secret_value():
+        return api_key.get_secret_value()
+    fallback = os.environ.get(fallback_var)
+    if not fallback:
+        raise RuntimeError(
+            f"LLM provider {str(provider)!r} needs an API key: set {key_var} "
+            f"(or {fallback_var}), or switch the provider to 'ollama'."
         )
-    return extra_body.get("reasoning_effort")
+    return fallback
 
 
 def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
@@ -533,19 +558,12 @@ def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
     Raises:
         ValueError: If the provider is unknown, or ``provider == "custom"``
             without a ``base_url``.
-        RuntimeError: If a cloud provider's API-key env var is unset.
+        RuntimeError: If a cloud provider has no API key.
     """
     prefix = settings.model_config.get("env_prefix") or "ARANDU_LLM_"
 
     provider_enum = parse_provider(settings.provider)
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        raise RuntimeError(
-            f"LLM provider {settings.provider!r} requires {settings.api_key_env} to be set. "
-            f"Set it, point {prefix}API_KEY_ENV at the right variable, or switch "
-            f"{prefix}PROVIDER to 'ollama'."
-        )
+    api_key = resolve_api_key(provider_enum, settings.api_key, key_var=f"{prefix}API_KEY")
 
     # The 'custom' provider exists to target a non-default OpenAI-compatible
     # endpoint; without an explicit base URL the LLMClient would silently fall

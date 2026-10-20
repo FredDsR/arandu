@@ -21,10 +21,10 @@ _MISSING = object()
 #: Substrings that mark an environment variable name as carrying a credential.
 #: Matched case-insensitively against the whole variable name.
 #:
-#: The list is deliberately broad and has no allowlist. Some captured names hold
-#: a variable *name* rather than a secret (``ARANDU_*_API_KEY_ENV`` points at the
-#: variable holding the key), and redacting those is harmless; carving out an
-#: exception for them is what would eventually let a real secret through.
+#: The list is deliberately broad and has no allowlist: it is what keeps the
+#: per-client LLM keys (``ARANDU_<STAGE>_API_KEY``) out of the snapshot.
+#: Redacting a harmless name that happens to match is cheap; carving out an
+#: exception is what would eventually let a real secret through.
 SECRET_ENV_NAME_MARKERS: tuple[str, ...] = (
     "TOKEN",
     "SECRET",

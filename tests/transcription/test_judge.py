@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from pydantic import SecretStr
 
 from arandu.shared.judge import BaseJudge
 from arandu.shared.judge.criterion import RangeCriterionResponse
@@ -175,6 +176,11 @@ class TestTranscriptionJudgeLLMStage:
 
 class TestBuildValidatorClient:
     """Tests for the build_validator_client factory helper."""
+
+    @pytest.fixture(autouse=True)
+    def _fallback_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Cloud providers need a key; pin the OPENAI_API_KEY fallback."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     def test_infers_ollama_when_no_base_url(self, mocker: MockerFixture) -> None:
         mocker.patch(
@@ -453,17 +459,17 @@ class TestJudgeTranscriptionCLI:
 class TestBuildValidatorClientCredentials:
     """The validator reads its key from a configurable env var and forwards extra_body."""
 
-    def test_api_key_env_and_extra_body(
+    def test_own_api_key_and_extra_body(
         self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
         openai_cls = mocker.patch("arandu.shared.llm_client.OpenAI")
 
         client = build_validator_client(
             "deepseek-flash",
             provider="custom",
             base_url="https://api.deepseek.com",
-            api_key_env="DEEPSEEK_API_KEY",
+            api_key=SecretStr("sk-deepseek"),
             extra_body={"reasoning_effort": "none"},
         )
 

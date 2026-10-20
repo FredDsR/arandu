@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from arandu.shared.llm_client import reasoning_effort_from_extra_body
+from arandu.shared.llm_settings import API_KEY_DESCRIPTION, validate_atlas_extra_body
 
 
 class KGConfig(BaseSettings):
@@ -53,10 +53,7 @@ class KGConfig(BaseSettings):
         default=None,
         description="Custom base URL for OpenAI-compatible endpoints",
     )
-    api_key_env: str = Field(
-        default="OPENAI_API_KEY",
-        description="Env var holding the API key (ignored for ollama)",
-    )
+    api_key: SecretStr | None = Field(default=None, description=API_KEY_DESCRIPTION)
     extra_body: dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -90,8 +87,7 @@ class KGConfig(BaseSettings):
     @classmethod
     def validate_extra_body(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
         """Reject extra_body keys atlas-rag cannot forward, before any LLM spend."""
-        reasoning_effort_from_extra_body(v, consumer="ARANDU_KG_")
-        return v
+        return validate_atlas_extra_body(v, consumer="ARANDU_KG_")
 
     @field_validator("language")
     @classmethod

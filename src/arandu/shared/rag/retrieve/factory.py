@@ -9,7 +9,6 @@ encoder for atlas-rag, …).
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -21,9 +20,8 @@ from arandu.shared.embeddings import EmbedderSettings, build_embedder
 from arandu.shared.io import resolve_transcription_path
 from arandu.shared.llm_client import (
     LLMClient,
-    LLMProvider,
     parse_provider,
-    reasoning_effort_from_extra_body,
+    resolve_api_key,
 )
 from arandu.shared.rag.retrieve.settings import (
     AtlasRagRetrieveSettings,
@@ -287,18 +285,14 @@ def _build_atlas_rag(
         )
 
     # Settings validator has already lowercased `provider` and applied
-    # the per-provider base_url default; here we coerce to the enum and
-    # use it for the API-key check so the comparison is exhaustive
-    # rather than string-fragile.
+    # the per-provider base_url default.
     provider_enum = parse_provider(settings.provider)
-
-    api_key = os.environ.get(settings.api_key_env)
-    if not api_key and provider_enum is not LLMProvider.OLLAMA:
-        # Ollama lets a bogus key through; cloud providers don't.
-        raise RuntimeError(
-            f"atlas_rag arm requested but {settings.api_key_env} is unset. "
-            f"Set it or switch ARANDU_ATLAS_RAG_PROVIDER to 'ollama'."
-        )
+    api_key = resolve_api_key(
+        provider_enum,
+        settings.api_key,
+        key_var="ARANDU_ATLAS_RAG_API_KEY",
+        fallback_var="GEMINI_API_KEY",
+    )
 
     llm_client = LLMClient(
         provider=provider_enum,
@@ -312,9 +306,7 @@ def _build_atlas_rag(
         kg_outputs_dir=atlas_output_dir,
         llm_client=llm_client.client,
         llm_model_id=llm_client.model_id,
-        reasoning_effort=reasoning_effort_from_extra_body(
-            settings.extra_body, consumer="ARANDU_ATLAS_RAG_"
-        ),
+        reasoning_effort=(settings.extra_body or {}).get("reasoning_effort"),
         sentence_encoder=encoder,
         sentence_encoder_model=embedder_settings.model,
         keyword=settings.keyword,

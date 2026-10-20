@@ -146,6 +146,7 @@ def generate_cep_qa(
     """
     from arandu.qa.batch import build_gate_validator_client, run_batch_cep_generation
     from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig, require_gate_validator
+    from arandu.shared.llm_client import resolve_api_key
 
     # Load configs with defaults from environment variables
     qa_config = QAConfig()
@@ -227,9 +228,17 @@ def generate_cep_qa(
     if cep_config.scaffolding_gate_active:
         try:
             build_gate_validator_client(judge_config)
-        except Exception as e:  # ValueError, or the SDK's error for a missing API key
+        except Exception as e:  # ValueError, or RuntimeError for a missing API key
             print_error(f"Invalid scaffolding gate validator: {e}")
             raise typer.Exit(code=1) from e
+
+    # The generator client is built inside each worker process, where a missing
+    # key would break the pool instead of naming the variable to set.
+    try:
+        resolve_api_key(qa_config.provider, qa_config.api_key, key_var="ARANDU_QA_API_KEY")
+    except (ValueError, RuntimeError) as e:
+        print_error(f"Invalid generation client: {e}")
+        raise typer.Exit(code=1) from e
 
     # Validate configs
     if qa_config.workers < 1:
@@ -426,10 +435,10 @@ def judge_qa(
             model_id=resolved_model,
             provider=provider or judge_config.validator_provider,
             base_url=base_url or judge_config.validator_base_url,
-            api_key_env=judge_config.validator_api_key_env,
+            api_key=judge_config.validator_api_key,
             extra_body=judge_config.validator_extra_body,
         )
-    except ValueError as exc:
+    except (ValueError, RuntimeError) as exc:
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
 

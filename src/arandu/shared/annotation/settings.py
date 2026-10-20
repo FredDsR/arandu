@@ -32,12 +32,11 @@ class LabelStudioSettings(BaseSettings):
     ``ARANDU_LABEL_STUDIO_TOKEN`` environment variable out of the environment
     snapshot every stage writes into its ``run_metadata.json``.
 
-    ``token`` is a :class:`~pydantic.SecretStr`, not a plain ``str``: this is
-    the first settings class in this codebase to hold a live secret value
-    (``LLMSettings`` only stores an env-var *name*, ``api_key_env``, never the
-    key itself). ``SecretStr`` keeps the token out of Pydantic's default repr
-    and out of ``model_dump()``, so a future stray ``logger.info(settings)`` or
-    an unhandled exception that renders the object cannot print it. Callers
+    ``token`` is a :class:`~pydantic.SecretStr`, not a plain ``str``, like the
+    per-client ``api_key`` of the LLM settings. ``SecretStr`` keeps the token
+    out of Pydantic's default repr and out of ``model_dump()``, so a future
+    stray ``logger.info(settings)`` or an unhandled exception that renders the
+    object cannot print it. Callers
     that need the raw value call ``token.get_secret_value()`` at the point of
     use (see :func:`arandu.shared.annotation.client.build_client_from_settings`).
 

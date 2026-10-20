@@ -644,10 +644,10 @@ def judge_transcription(
                 model_id=resolved_model,
                 provider=validator_provider or judge_config.validator_provider,
                 base_url=validator_base_url or judge_config.validator_base_url,
-                api_key_env=judge_config.validator_api_key_env,
+                api_key=judge_config.validator_api_key,
                 extra_body=judge_config.validator_extra_body,
             )
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             print_error(str(exc))
             raise typer.Exit(code=1) from exc
         if not validator_client.is_available():
