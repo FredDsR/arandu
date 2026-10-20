@@ -106,5 +106,14 @@ class TestIterCepPairs:
         with pytest.raises(ValueError):
             list(iter_cep_pairs(tmp_path, strict=True))
 
+    @pytest.mark.parametrize("strict", [False, True])
+    def test_repeated_ids_across_files_raise(self, tmp_path: Path, strict: bool) -> None:
+        # Two files for the same source collide on every id; no copy is "right".
+        _write_record(tmp_path, "a", [_pair("A0?", "c0")])
+        (tmp_path / "zz_copy_cep_qa.json").write_text((tmp_path / "a_cep_qa.json").read_text())
+
+        with pytest.raises(ValueError, match="repeats 1 qa_pair_ids"):
+            list(iter_cep_pairs(tmp_path, strict=strict))
+
     def test_missing_dir_yields_nothing(self, tmp_path: Path) -> None:
         assert list(iter_cep_pairs(tmp_path / "absent")) == []

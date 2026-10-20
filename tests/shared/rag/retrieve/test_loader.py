@@ -203,6 +203,75 @@ class TestLoadQuestionsNonAnswerable:
         assert na_item.parent_qa_pair_id is None
         assert na_item.source_qa_pair_id is None
 
+    def test_nonanswerable_items_without_parent_are_flagged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(cep_dir, "src_a", [_qa_pair("CEP question?")])
+        na_dir = tmp_path / "nonanswerable"
+        na_dir.mkdir()
+        item = {"qa_pair_id": "swap:0001", "question": "Q?", "source_file_id": "src_a"}
+        (na_dir / "items.json").write_text(json.dumps({"items": [item]}))
+
+        with caplog.at_level("WARNING", logger="arandu.shared.rag.retrieve.loader"):
+            load_questions(cep_dir, na_dir)
+
+        messages = [r.message for r in caplog.records]
+        assert any("1 without parent_qa_pair_id, 0 with an unknown" in m for m in messages)
+
+    def test_nonanswerable_items_with_unknown_parent_are_flagged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(cep_dir, "src_a", [_qa_pair("CEP question?", chunk_id="c0")])
+        na_dir = tmp_path / "nonanswerable"
+        na_dir.mkdir()
+        items = [
+            {
+                "qa_pair_id": "ok",
+                "question": "Q1?",
+                "source_file_id": "src_a",
+                "parent_qa_pair_id": "src_a:c0:0",
+            },
+            {
+                "qa_pair_id": "bad",
+                "question": "Q2?",
+                "source_file_id": "src_a",
+                "parent_qa_pair_id": "src_z:c9:0",
+            },
+        ]
+        (na_dir / "items.json").write_text(json.dumps({"items": items}))
+
+        with caplog.at_level("WARNING", logger="arandu.shared.rag.retrieve.loader"):
+            load_questions(cep_dir, na_dir)
+
+        messages = [r.message for r in caplog.records]
+        assert any("1 of 2 non-answerable" in m and "1 with an unknown" in m for m in messages)
+
+    def test_resolved_parents_log_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        # The parent is judge-rejected: not a question, but still a CEP pair.
+        _write_cep_record(cep_dir, "src_a", [_qa_pair("CEP?", chunk_id="c0", passed=False)])
+        na_dir = tmp_path / "nonanswerable"
+        na_dir.mkdir()
+        item = {
+            "qa_pair_id": "ok",
+            "question": "Q?",
+            "source_file_id": "src_a",
+            "parent_qa_pair_id": "src_a:c0:0",
+        }
+        (na_dir / "items.json").write_text(json.dumps({"items": [item]}))
+
+        with caplog.at_level("WARNING", logger="arandu.shared.rag.retrieve.loader"):
+            load_questions(cep_dir, na_dir)
+
+        assert not caplog.records
+
     def test_nonanswerable_parent_link_sets_source_qa_pair_id(self, tmp_path: Path) -> None:
         cep_dir = tmp_path / "cep"
         cep_dir.mkdir()

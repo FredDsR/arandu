@@ -23,8 +23,10 @@ from pydantic import AliasChoices, BaseModel, Field, ValidationError
 from arandu.qa.schemas import iter_cep_pairs
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
+
+    from arandu.qa.schemas import CEPPairRef
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +138,12 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
             f"CEP outputs not found at {cep_dir}. Run `arandu generate-cep-qa` first."
         )
 
-    questions: list[QuestionRecord] = list(_iter_cep_questions(cep_dir))
+    refs = list(iter_cep_pairs(cep_dir))
+    questions: list[QuestionRecord] = list(_iter_cep_questions(refs))
     if nonanswerable_dir is not None and nonanswerable_dir.exists():
-        questions.extend(_iter_nonanswerable_questions(nonanswerable_dir))
+        nonanswerable = list(_iter_nonanswerable_questions(nonanswerable_dir))
+        _warn_unresolved_parents(nonanswerable, {ref.qa_pair_id for ref in refs})
+        questions.extend(nonanswerable)
     else:
         logger.debug(
             "Non-answerable dir absent (%s); only CEP questions will be retrieved.",
@@ -147,7 +152,7 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
     return questions
 
 
-def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
+def _iter_cep_questions(refs: Iterable[CEPPairRef]) -> Iterator[QuestionRecord]:
     """Yield one :class:`QuestionRecord` per judge-valid ``QAPairCEP`` in the dir.
 
     Each on-disk file is a :class:`QARecordCEP` holding many pairs. The
@@ -163,7 +168,7 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
     middle does not shift the ids of the pairs after it. Unjudged pairs
     (``is_valid`` is None, e.g. a run where judge-qa has not run) are kept.
     """
-    for ref in iter_cep_pairs(cep_dir):
+    for ref in refs:
         if ref.pair.is_judge_rejected:
             continue
         yield QuestionRecord(
@@ -173,6 +178,28 @@ def _iter_cep_questions(cep_dir: Path) -> Iterator[QuestionRecord]:
             source="cep",
             source_file_id=ref.record.source_file_id,
             chunker_id=ref.record.chunker_id,
+        )
+
+
+def _warn_unresolved_parents(items: list[QuestionRecord], cep_ids: set[str]) -> None:
+    """Log once when non-answerable items do not resolve to a CEP pair of this run.
+
+    An item resolves when its ``parent_qa_pair_id`` names a pair in ``cep_ids``
+    (every CEP pair, judge-rejected ones included). An unresolved item has no
+    source context, so a provenance-keyed arm (the oracle) fails on it; flagging
+    it here reports the cause once instead of as one failure per item.
+    """
+    missing = sum(1 for q in items if not q.parent_qa_pair_id)
+    unknown = sum(1 for q in items if q.parent_qa_pair_id and q.parent_qa_pair_id not in cep_ids)
+    if missing or unknown:
+        logger.warning(
+            "%d of %d non-answerable items do not resolve to a CEP pair of this run "
+            "(%d without parent_qa_pair_id, %d with an unknown parent); "
+            "they have no source context for the oracle arm.",
+            missing + unknown,
+            len(items),
+            missing,
+            unknown,
         )
 
 
