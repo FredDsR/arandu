@@ -56,7 +56,9 @@ from analysis.analyze_judge_retest import (
     HIGHER,
     TAU,
     TAU_EMIC,
+    add_probe_filter_args,
     load_replica,
+    probe_exclusion,
     residual_pairs,
     useful_set,
 )
@@ -311,11 +313,14 @@ def main() -> None:
     parser.add_argument("--out-md", type=Path, required=True)
     parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=20261005)
+    add_probe_filter_args(parser)
     args = parser.parse_args()
 
+    exclude = probe_exclusion(args)
     gate_from = {int(k): Path(v) for k, v in (g.split("=", 1) for g in args.gate_from)}
     reps = [
-        load_replica(p, args.cache_dir, gate_from.get(i + 1)) for i, p in enumerate(args.replica)
+        load_replica(p, args.cache_dir, gate_from.get(i + 1), exclude)
+        for i, p in enumerate(args.replica)
     ]
     res = analyse(reps, args.n_boot, args.seed)
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
