@@ -147,6 +147,27 @@ class TestLoadQuestionsCepOnly:
         assert [q.qa_pair_id for q in questions] == ["src_a:chk:0", "src_a:chk:2"]
         assert [q.question for q in questions] == ["Approved 0?", "Approved 2?"]
 
+    def test_include_rejected_keeps_judge_rejected_pairs(self, tmp_path: Path) -> None:
+        cep_dir = tmp_path / "cep"
+        cep_dir.mkdir()
+        _write_cep_record(
+            cep_dir,
+            source_file_id="src_a",
+            qa_pairs=[
+                _qa_pair("Approved 0?", chunk_id="chk", passed=True),
+                _qa_pair("Rejected 1?", chunk_id="chk", passed=False),
+                _qa_pair("Approved 2?", chunk_id="chk", passed=True),
+            ],
+        )
+
+        questions = load_questions(cep_dir, include_rejected=True)
+
+        assert [q.qa_pair_id for q in questions] == [
+            "src_a:chk:0",
+            "src_a:chk:1",
+            "src_a:chk:2",
+        ]
+
     def test_unjudged_pairs_kept(self, tmp_path: Path) -> None:
         # Unjudged pairs (validation absent, is_valid is None) are NOT rejected,
         # so a run where judge-qa has not run still retrieves every pair.

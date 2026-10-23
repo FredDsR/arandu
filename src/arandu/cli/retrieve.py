@@ -76,6 +76,13 @@ def retrieve(
             ),
         ),
     ] = False,
+    include_rejected: Annotated[
+        bool,
+        typer.Option(
+            "--include-rejected",
+            help=("Include CEP QA pairs rejected by judge-qa instead of filtering them out."),
+        ),
+    ] = False,
 ) -> None:
     """Run Phase C retrievers over a populated run.
 
@@ -101,6 +108,8 @@ def retrieve(
 
     print_info(f"Run: {pipeline_id}")
     print_info(f"Arms: {', '.join(selected_arms)}")
+    if include_rejected:
+        print_info("Including judge-rejected CEP pairs (--include-rejected)")
     if "bm25" in selected_arms:
         print_info(f"BM25 chunker: {bm25_settings.chunker_id}")
     if any(a.startswith("khop_") for a in selected_arms):
@@ -120,6 +129,7 @@ def retrieve(
             khop_settings=khop_settings,
             atlas_rag_settings=atlas_rag_settings,
             rebuild_index=rebuild_index,
+            include_rejected=include_rejected,
         )
     except FileNotFoundError as exc:
         print_error(str(exc))

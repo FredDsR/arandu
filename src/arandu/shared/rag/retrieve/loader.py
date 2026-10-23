@@ -114,7 +114,12 @@ class QuestionRecord(BaseModel):
         return self.parent_qa_pair_id
 
 
-def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list[QuestionRecord]:
+def load_questions(
+    cep_dir: Path,
+    nonanswerable_dir: Path | None = None,
+    *,
+    include_rejected: bool = False,
+) -> list[QuestionRecord]:
     """Walk the CEP + non-answerable output directories into a flat question list.
 
     Args:
@@ -123,6 +128,10 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
             CEP is required for any retrieve run.
         nonanswerable_dir: ``results/<id>/non_answerable/outputs/``. When
             ``None`` or non-existent, silently skipped.
+        include_rejected: When ``True``, include CEP pairs rejected by the
+            ``judge-qa`` stage (``is_judge_rejected``) instead of dropping
+            them. Useful when backfilling an arm over a run whose other arms
+            were retrieved before gate verdicts were applied.
 
     Returns:
         Flat list of :class:`QuestionRecord` rows. CEP rows first, in
@@ -139,7 +148,9 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
         )
 
     refs = list(iter_cep_pairs(cep_dir))
-    questions: list[QuestionRecord] = list(_iter_cep_questions(refs))
+    questions: list[QuestionRecord] = list(
+        _iter_cep_questions(refs, include_rejected=include_rejected)
+    )
     if nonanswerable_dir is not None and nonanswerable_dir.exists():
         nonanswerable = list(_iter_nonanswerable_questions(nonanswerable_dir))
         _warn_unresolved_parents(nonanswerable, {ref.qa_pair_id for ref in refs})
@@ -152,8 +163,10 @@ def load_questions(cep_dir: Path, nonanswerable_dir: Path | None = None) -> list
     return questions
 
 
-def _iter_cep_questions(refs: Iterable[CEPPairRef]) -> Iterator[QuestionRecord]:
-    """Yield one :class:`QuestionRecord` per judge-valid ``QAPairCEP`` in the dir.
+def _iter_cep_questions(
+    refs: Iterable[CEPPairRef], *, include_rejected: bool = False
+) -> Iterator[QuestionRecord]:
+    """Yield one :class:`QuestionRecord` per ``QAPairCEP`` in the dir.
 
     Each on-disk file is a :class:`QARecordCEP` holding many pairs. The
     composite ``qa_pair_id`` follows the schema's documented form:
@@ -161,15 +174,16 @@ def _iter_cep_questions(refs: Iterable[CEPPairRef]) -> Iterator[QuestionRecord]:
     position within the record, so the id stays stable across reruns
     that produce the same file.
 
-    Pairs the judge-qa stage rejected (``is_judge_rejected``) are skipped so
-    the RAG benchmark evaluates only the approved question set, matching the
-    canonical drop-rule the chunk/kg consumers already use. ``idx`` is still
-    taken over ALL pairs (not the surviving subset), so a rejected pair in the
-    middle does not shift the ids of the pairs after it. Unjudged pairs
-    (``is_valid`` is None, e.g. a run where judge-qa has not run) are kept.
+    Unless ``include_rejected`` is ``True``, pairs the judge-qa stage rejected
+    (``is_judge_rejected``) are skipped so the RAG benchmark evaluates only the
+    approved question set, matching the canonical drop-rule the chunk/kg
+    consumers already use. ``idx`` is still taken over ALL pairs (not the
+    surviving subset), so a rejected pair in the middle does not shift the ids
+    of the pairs after it. Unjudged pairs (``is_valid`` is None, e.g. a run
+    where judge-qa has not run) are kept.
     """
     for ref in refs:
-        if ref.pair.is_judge_rejected:
+        if not include_rejected and ref.pair.is_judge_rejected:
             continue
         yield QuestionRecord(
             qa_pair_id=ref.qa_pair_id,
