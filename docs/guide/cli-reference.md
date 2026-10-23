@@ -387,7 +387,7 @@ These commands implement the Phase C retrieval-augmented-generation evaluation c
 | `build-kg` | Build a knowledge graph from transcription records |
 | `kg-link-passages` | Map atlas-rag passages back to char offsets in source `TranscriptionRecord` space |
 | `kg-build-retriever-index` | Build the atlas-rag retriever's precomputed index for a run |
-| `retrieve` | Run Phase C retrievers over a populated run |
+| `retrieve` | Run Phase C retrievers over a populated run (`--arm` selects arms; `--include-rejected` keeps `judge-qa`-rejected CEP pairs) |
 | `answer` | Run the Answerer LLM over every `RetrievalRecord` in a populated run |
 | `rag-analysis` | Aggregate judged answers and emit `report.json` + `tables.md` |
 
@@ -395,14 +395,17 @@ These commands implement the Phase C retrieval-augmented-generation evaluation c
 ```bash
 # Build the KG and retriever index for a run
 arandu build-kg results/ --id project-001
-arandu kg-link-passages project-001
-arandu kg-build-retriever-index project-001
+arandu kg-link-passages --id project-001
+arandu kg-build-retriever-index --id project-001
 
 # Retrieve, answer, judge, analyze
-arandu retrieve project-001
-arandu answer project-001
-arandu judge-answers project-001
-arandu rag-analysis project-001
+arandu retrieve --id project-001
+arandu answer --id project-001
+arandu judge-answers --id project-001
+arandu rag-analysis --id project-001
+
+# Backfill a single arm (e.g. oracle) over all CEP pairs, including judge-qa rejected ones
+arandu retrieve --id project-001 --arm oracle --include-rejected
 ```
 
 ---

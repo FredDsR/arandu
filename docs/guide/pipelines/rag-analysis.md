@@ -138,7 +138,11 @@ an upper bound too, and its `chunk_id` uses the same `cep_4k` namespace as
 `bm25` (default view), which makes the two directly comparable. The oracle
 looks items up by `qa_pair_id`, never by question text, because distinct
 pairs can share a question (26 question texts in `thesis-run-02` repeat
-across chunks). It needs only the `cep/` stage.
+across chunks). It needs only the `cep/` stage. When backfilling `oracle`
+onto a run whose `cep/outputs/` already carries `judge-qa` verdicts while the
+other arms were retrieved over all CEP pairs, pass `--include-rejected` to
+`arandu retrieve --id <id> --arm oracle --include-rejected` so every pair is
+covered.
 
 To place an arm between the bounds, compare its KC with the `null` and
 `oracle` rows of Table 1, or with the same rows of the Bloom and
