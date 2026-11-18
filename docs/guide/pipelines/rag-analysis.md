@@ -9,6 +9,9 @@ can compare across the six retriever arms, identified by their canonical ids:
 (k-hop over the atlas-rag KG, using lemmatized smoothed-IDF seed weighting and
 seed-proximity scoring), `null` (no-retrieval baseline) and `oracle`
 (gold-context upper bound, see [The two control arms](#the-two-control-arms)).
+The optional dense arms (`dense` and the named configurations such as
+`dense_mpnet128` or `dense_bgem3_512`, see [Dense arms](#dense-arms)) appear
+only in runs that retrieved with them.
 
 > **What changed (2026-05-26)**: Phase C `rag-analysis` is the retrieval-arm
 > comparison. It superseded an earlier QA/KG metrics pipeline (the classic
@@ -147,6 +150,34 @@ covered.
 To place an arm between the bounds, compare its KC with the `null` and
 `oracle` rows of Table 1, or with the same rows of the Bloom and
 question-type tables.
+
+### Dense arms
+
+A dense arm is the embedding counterpart of `bm25`. It indexes the same
+`cep_4k` chunks and returns the same `chunk_id`s, so its evidence unit, the
+text that reaches the answerer and the rank of a pair's source chunk compare
+directly with `bm25` and `oracle`.
+
+A sentence encoder reads far less than a 4,000-character chunk (128 tokens for
+`paraphrase-multilingual-mpnet-base-v2`), so each chunk is cut into windows of
+the encoder's own tokens, with 25% overlap by default. A chunk scores the best
+cosine similarity of its windows (`retriever_meta.best_subpassage` names that
+window). Long-input encoders can also read each chunk whole.
+
+- `dense` reads its configuration from `ARANDU_DENSE_*`
+  (`DenseRetrieveSettings`). Its default encoder is the one `atlas_rag` uses,
+  so the two arms differ only by the graph.
+- The named arms in `DENSE_PRESETS` fix the encoder, the window (the encoder
+  input per window in tokens, or `whole`) and the prompts:
+  `dense_mpnet128`, `dense_bgem3_{128,256,512,whole}`,
+  `dense_e5_{128,256,512}` (`multilingual-e5-large-instruct`, instruction on
+  the query side only) and `dense_qwen3_{128,256,512,whole}`
+  (`Qwen3-Embedding-0.6B`, instruction on the query side only). Each is its
+  own arm directory, so several can coexist in one run.
+
+Every configuration persists its index under
+`retrieve/indexes/dense_<chunker>__<model>__<window>/` with a manifest
+(encoder, window, overlap, passage prompt, sub-passage count, SHA-256).
 
 ---
 

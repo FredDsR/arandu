@@ -6,9 +6,13 @@ import pytest
 
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
+    DENSE_PRESETS,
+    KNOWN_ARMS,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
+    DenseRetrieveSettings,
     KHopRetrieveSettings,
+    is_dense_arm,
 )
 
 
@@ -26,6 +30,7 @@ class TestArmCatalog:
             "khop_triple",
             "null",
             "oracle",
+            "dense",
         )
 
 
@@ -37,6 +42,54 @@ class TestBm25Settings:
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ARANDU_BM25_CHUNKER_ID", "bm25_512t")
         assert Bm25RetrieveSettings().chunker_id == "bm25_512t"
+
+
+class TestDenseSettings:
+    def test_defaults(self) -> None:
+        s = DenseRetrieveSettings(_env_file=None)
+        assert s.chunker_id == "cep_4k"
+        # Same encoder as atlas_rag, so the two arms differ only by the graph.
+        assert s.model == "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+        assert s.window_tokens is None
+        assert s.overlap_ratio == 0.25
+        assert s.unit == "parent"
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ARANDU_DENSE_MODEL", "BAAI/bge-m3")
+        monkeypatch.setenv("ARANDU_DENSE_WINDOW_TOKENS", "512")
+        monkeypatch.setenv("ARANDU_DENSE_UNIT", "subpassage")
+        s = DenseRetrieveSettings()
+        assert (s.model, s.window_tokens, s.unit) == ("BAAI/bge-m3", 512, "subpassage")
+
+    def test_presets_override_encoder_and_keep_the_rest(self) -> None:
+        base = DenseRetrieveSettings(_env_file=None, overlap_ratio=0.2, device="cpu")
+        qwen = base.for_arm("dense_qwen3_whole")
+        assert qwen.model == "Qwen/Qwen3-Embedding-0.6B"
+        assert qwen.whole_chunk is True
+        assert qwen.query_prompt.startswith("Instruct: ")
+        assert qwen.query_prompt.endswith("\nQuery:")
+        assert (qwen.overlap_ratio, qwen.device) == (0.2, "cpu")
+        assert base.for_arm("dense") is base
+        mpnet = base.for_arm("dense_mpnet128")
+        assert (mpnet.window_tokens, mpnet.query_prompt) == (128, "")
+
+    def test_e5_prompt_on_query_side_only(self) -> None:
+        e5 = DenseRetrieveSettings(_env_file=None).for_arm("dense_e5_512")
+        assert e5.query_prompt.endswith("\nQuery: ")
+        assert e5.passage_prompt == ""
+
+    def test_preset_arms_are_known_but_not_default(self) -> None:
+        for arm in DENSE_PRESETS:
+            assert is_dense_arm(arm)
+            assert arm in KNOWN_ARMS
+            assert arm not in ALL_ARMS
+        assert not is_dense_arm("bm25")
+        with pytest.raises(ValueError, match="not a dense arm"):
+            DenseRetrieveSettings(_env_file=None).for_arm("bm25")
+
+    def test_invalid_overlap_rejected(self) -> None:
+        with pytest.raises(ValueError, match="less than 1"):
+            DenseRetrieveSettings(overlap_ratio=1.0)
 
 
 class TestKHopSettings:

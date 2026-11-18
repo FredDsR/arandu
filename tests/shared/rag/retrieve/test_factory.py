@@ -8,19 +8,27 @@ Locks the dispatch + failure-mode surface. End-to-end retrieve behaviour
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import networkx as nx
 import pytest
 
+from arandu.shared.chunking.schemas import Chunk, ChunkSet
 from arandu.shared.embeddings import EmbedderSettings
-from arandu.shared.rag.retrieve.factory import _build_chunk_resolver, build_retriever
+from arandu.shared.rag.retrieve.factory import (
+    _build_chunk_resolver,
+    build_retriever,
+    dense_index_dir,
+)
 from arandu.shared.rag.retrieve.settings import (
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
+    DenseRetrieveSettings,
     KHopRetrieveSettings,
 )
+from arandu.shared.rag.retrievers.dense import MANIFEST_FILENAME, DenseRetriever
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
@@ -198,6 +206,99 @@ class TestBm25Arm:
                 settings=Bm25RetrieveSettings(chunker_id="cep_4k"),
                 base_dir=tmp_path,
             )
+
+
+class TestDenseArm:
+    def test_missing_chunks_raises_before_loading_encoder(self, tmp_path: Path) -> None:
+        with (
+            patch("arandu.shared.rag.retrieve.factory.SentenceTransformerEncoder") as enc_cls,
+            pytest.raises(FileNotFoundError, match="Chunks not found"),
+        ):
+            build_retriever(
+                "dense",
+                pipeline_id="run_x",
+                settings=DenseRetrieveSettings(),
+                base_dir=tmp_path,
+            )
+        enc_cls.assert_not_called()
+
+    def test_index_dir_is_per_encoder(self, tmp_path: Path) -> None:
+        mpnet = dense_index_dir(tmp_path, "run_x", DenseRetrieveSettings(_env_file=None))
+        bge = dense_index_dir(tmp_path, "run_x", DenseRetrieveSettings(model="BAAI/bge-m3"))
+        assert mpnet.name == "dense_cep_4k__paraphrase-multilingual-mpnet-base-v2__wmax"
+        assert bge.name == "dense_cep_4k__bge-m3__wmax"
+        base = DenseRetrieveSettings(_env_file=None)
+        assert dense_index_dir(tmp_path, "r", base.for_arm("dense_bgem3_512")).name == (
+            "dense_cep_4k__bge-m3__w512"
+        )
+        assert dense_index_dir(tmp_path, "r", base.for_arm("dense_qwen3_whole")).name == (
+            "dense_cep_4k__Qwen3-Embedding-0.6B__whole"
+        )
+        assert mpnet.parent == tmp_path / "run_x" / "retrieve" / "indexes"
+
+    def test_builds_index_then_loads(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
+        from tests.shared.rag.retrievers.test_dense import FakeEncoder
+
+        text = "alfa beta gama delta epsilon enchente itaqui"
+        write_transcription_record(tmp_path / "run_x" / "transcription" / "outputs", "src_a", text)
+        chunk = Chunk(
+            chunk_id="chk0",
+            source_file_id="src_a",
+            chunker_id="cep_4k",
+            start_char=0,
+            end_char=len(text),
+        )
+        chunk_dir = tmp_path / "run_x" / "chunk" / "outputs" / "cep_4k"
+        chunk_dir.mkdir(parents=True)
+        (chunk_dir / "src_a.json").write_text(
+            ChunkSet(
+                source_file_id="src_a",
+                source_filename="src_a.mp3",
+                source_text_sha256="0" * 64,
+                views={"cep_4k": [chunk]},
+                generated_at=datetime.now(UTC),
+            ).model_dump_json()
+        )
+        settings = DenseRetrieveSettings(model="fake/bow")
+        with patch(
+            "arandu.shared.rag.retrieve.factory.SentenceTransformerEncoder",
+            return_value=FakeEncoder(),
+        ):
+            retriever = build_retriever(
+                "dense", pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+        assert isinstance(retriever, DenseRetriever)
+        assert retriever.retriever_id == "dense_cep_4k"
+        manifest = json.loads(
+            (dense_index_dir(tmp_path, "run_x", settings) / MANIFEST_FILENAME).read_text()
+        )
+        assert manifest["chunk_ids"] == ["chk0"]
+
+    def test_preset_arm_applies_encoder_and_prompts(self, tmp_path: Path) -> None:
+        (tmp_path / "run_x" / "chunk" / "outputs" / "cep_4k").mkdir(parents=True)
+        # An index already on disk: the factory loads it instead of building.
+        settings = DenseRetrieveSettings(_env_file=None)
+        index_dir = dense_index_dir(tmp_path, "run_x", settings.for_arm("dense_e5_256"))
+        index_dir.mkdir(parents=True)
+        (index_dir / "embeddings.npy").write_bytes(b"")
+        with (
+            patch("arandu.shared.rag.retrieve.factory.SentenceTransformerEncoder") as enc_cls,
+            patch("arandu.shared.rag.retrieve.factory.DenseRetriever") as ret_cls,
+        ):
+            build_retriever(
+                "dense_e5_256",
+                pipeline_id="run_x",
+                settings=settings,
+                base_dir=tmp_path,
+            )
+        assert enc_cls.call_args.args == ("intfloat/multilingual-e5-large-instruct",)
+        assert enc_cls.call_args.kwargs["query_prompt"].startswith("Instruct: ")
+        assert enc_cls.call_args.kwargs["passage_prompt"] == ""
+        kwargs = ret_cls.call_args.kwargs
+        assert kwargs["window_tokens"] == 256
+        assert kwargs["retriever_id"] == "dense_e5_256_cep_4k"
 
 
 class TestChunkResolverFilename:

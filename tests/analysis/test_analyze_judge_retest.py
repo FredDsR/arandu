@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 CORE_ARMS = ["null", "bm25", "khop_passage", "khop_triple", "atlas_rag"]
+WITH_ORACLE = [*CORE_ARMS, "oracle"]
 
 
 def _rep(*arms: str) -> dict:
@@ -32,10 +33,25 @@ class TestRunArms:
 
     def test_oracle_in_any_replica_is_listed_for_all(self) -> None:
         # Mixed rounds (one replica predates the oracle) must share one arm set.
-        assert run_arms([_rep("bm25"), _rep("bm25", "oracle")]) == ARMS
+        assert run_arms([_rep("bm25"), _rep("bm25", "oracle")]) == WITH_ORACLE
 
     def test_order_follows_arms(self) -> None:
-        assert run_arms([_rep("oracle", "atlas_rag")]) == ARMS
+        assert run_arms([_rep("oracle", "atlas_rag")]) == WITH_ORACLE
+
+    def test_dense_listed_only_when_present(self) -> None:
+        # Runs made before the dense arm get no empty dense row.
+        assert "dense" not in run_arms([_rep("bm25", "oracle")])
+        assert run_arms([_rep("bm25"), _rep("dense", "oracle")]) == [
+            *CORE_ARMS[:2],
+            "dense",
+            *CORE_ARMS[2:],
+            "oracle",
+        ]
+        assert ARMS.index("dense") == ARMS.index("bm25") + 1
+
+    def test_two_dense_configurations_coexist(self) -> None:
+        arms = run_arms([_rep("dense_bgem3_512", "dense_mpnet128")])
+        assert arms == [*CORE_ARMS[:2], "dense_mpnet128", "dense_bgem3_512", *CORE_ARMS[2:]]
 
 
 class TestPooling:
@@ -51,7 +67,7 @@ class TestPooling:
         assert excluded_from_pool("oracle", "passage_coverage_pass")
 
     def test_retrieval_arms_always_pooled(self) -> None:
-        for arm in ("bm25", "khop_passage", "khop_triple", "atlas_rag"):
+        for arm in ("bm25", "dense", "khop_passage", "khop_triple", "atlas_rag"):
             assert not excluded_from_pool(arm, "passage_coverage")
 
     def test_pool_keys_filters_per_criterion(self) -> None:

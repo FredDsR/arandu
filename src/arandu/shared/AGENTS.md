@@ -17,7 +17,7 @@ transcription, and rag at once.
 | `checkpoint.py` | `CheckpointManager`: batched save-interval state for resume |
 | `schemas.py` | `InputRecord`, `TranscriptionRecord`, `SourceMetadata`, `JudgeResultMixin`, run/pipeline metadata |
 | `judge/` | The multi-stage judge: `JudgePipeline` → `JudgeStage` (filter/score/always) → `JudgeStep` → criteria; `LLMCriterion` + factory |
-| `rag/` | Phase C: `retrieve/` (factory over bm25/atlas_rag/khop_passage/khop_triple/null/oracle), `answer/`, `judge_answers/`, `analysis/`, `retrievers/` |
+| `rag/` | Phase C: `retrieve/` (factory over bm25/dense/atlas_rag/khop_passage/khop_triple/null/oracle), `answer/`, `judge_answers/`, `analysis/`, `retrievers/` |
 | `agreement/`, `chunking/`, `embeddings/`, `emic/`, `human_eval/` | Krippendorff/Scott/Cohen agreement; chunk registry+chonkie; sentence-transformer wrappers; emic categories; human-eval sampling |
 
 ## Patterns to follow

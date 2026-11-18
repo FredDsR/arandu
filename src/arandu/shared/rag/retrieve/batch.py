@@ -15,14 +15,16 @@ from pydantic import BaseModel, Field
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.rag.retrieve.factory import build_retriever
+from arandu.shared.rag.retrieve.factory import RetrieveSettings, build_retriever
 from arandu.shared.rag.retrieve.loader import load_questions
 from arandu.shared.rag.retrieve.settings import (
-    ALL_ARMS,
+    KNOWN_ARMS,
     ArmName,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
+    DenseRetrieveSettings,
     KHopRetrieveSettings,
+    is_dense_arm,
 )
 from arandu.shared.rag.schemas import RetrievalQuery, RetrievalRecord
 from arandu.shared.results_manager import ResultsManager
@@ -92,6 +94,7 @@ def run_retrieve_batch(
     khop_settings: KHopRetrieveSettings | None = None,
     atlas_rag_settings: AtlasRagRetrieveSettings | None = None,
     embedder_settings: EmbedderSettings | None = None,
+    dense_settings: DenseRetrieveSettings | None = None,
     rebuild_index: bool = False,
     include_rejected: bool = False,
     base_dir: Path | None = None,
@@ -122,8 +125,11 @@ def run_retrieve_batch(
             Ignored by the other arms. Defaults are instantiated inside
             :func:`build_retriever` from ``ARANDU_EMBEDDER_*`` when
             omitted.
+        dense_settings: Dense arm settings (chunker view, encoder,
+            window, overlap, returned unit). Defaults instantiated from
+            env (``ARANDU_DENSE_*``) when omitted.
         rebuild_index: Force arm-side index rebuilds where supported
-            (BM25 only; k-hop arms build state in-memory; atlas-rag's
+            (BM25 and dense; k-hop arms build state in-memory; atlas-rag's
             precompute is rebuilt via
             ``arandu kg-build-retriever-index --rebuild``).
         include_rejected: When ``True``, retrieve over all CEP pairs in the
@@ -144,9 +150,9 @@ def run_retrieve_batch(
         raise ValueError("Must request at least one arm; got empty list.")
     if top_k < 1:
         raise ValueError(f"top_k must be >= 1, got {top_k}.")
-    unknown = [a for a in arms if a not in ALL_ARMS]
+    unknown = [a for a in arms if a not in KNOWN_ARMS]
     if unknown:
-        raise ValueError(f"Unknown arm(s) {unknown!r}. Valid arms: {list(ALL_ARMS)}.")
+        raise ValueError(f"Unknown arm(s) {unknown!r}. Valid arms: {list(KNOWN_ARMS)}.")
 
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
     cep_dir = base / pipeline_id / "cep" / "outputs"
@@ -192,6 +198,7 @@ def run_retrieve_batch(
             khop_settings=khop_settings,
             atlas_rag_settings=atlas_rag_settings,
             embedder_settings=embedder_settings,
+            dense_settings=dense_settings,
             base_dir=base,
             rebuild_index=rebuild_index,
         )
@@ -262,6 +269,7 @@ def _build_with_logging(
     khop_settings: KHopRetrieveSettings | None,
     atlas_rag_settings: AtlasRagRetrieveSettings | None,
     embedder_settings: EmbedderSettings | None,
+    dense_settings: DenseRetrieveSettings | None,
     base_dir: Path,
     rebuild_index: bool,
 ) -> Retriever | None:
@@ -272,13 +280,15 @@ def _build_with_logging(
     the batch runner continue with the next arm rather than aborting
     the whole run.
     """
-    settings: Bm25RetrieveSettings | KHopRetrieveSettings | AtlasRagRetrieveSettings | None = None
+    settings: RetrieveSettings | None = None
     if arm == "bm25":
         settings = bm25_settings
     elif arm in ("khop_passage", "khop_triple"):
         settings = khop_settings
     elif arm == "atlas_rag":
         settings = atlas_rag_settings
+    elif is_dense_arm(arm):
+        settings = dense_settings
 
     try:
         return build_retriever(

@@ -2,8 +2,10 @@
 
 Three retriever families produce three chunk_id namespaces:
 
-- **BM25** emits chunks from a :class:`ChunkSet` view; the text is the
-  source transcription sliced by ``(start_char, end_char)``.
+- **BM25** and **dense** (default ``parent`` unit) emit chunks from a
+  :class:`ChunkSet` view; the text is the source transcription sliced by
+  ``(start_char, end_char)``. Dense's ``subpassage`` unit carries its
+  windows inline in ``payload`` instead.
 - **atlas-rag / khop_passage** emit synthesised passage_ids of the form
   ``"<source_file_id>:<chunk_index>"`` that join to the
   :class:`PassageOffsetSidecar` from PR #100. The text is again the

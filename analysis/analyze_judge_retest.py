@@ -93,6 +93,7 @@ from arandu.shared.agreement.coefficients import (
 from arandu.shared.emic.schemas import EmicSourceScores
 from arandu.shared.rag.analysis.classifier import classify_record
 from arandu.shared.rag.analysis.metrics import aggregate_arm
+from arandu.shared.rag.retrieve.settings import DENSE_PRESETS
 from arandu.shared.rag.schemas import AnswerRecord
 
 if TYPE_CHECKING:
@@ -100,10 +101,19 @@ if TYPE_CHECKING:
 
 TAU = DEFAULT_THRESHOLD
 TAU_EMIC = 4
-ARMS = ["null", "bm25", "khop_passage", "khop_triple", "atlas_rag", "oracle"]
+ARMS = [
+    "null",
+    "bm25",
+    "dense",
+    *DENSE_PRESETS,
+    "khop_passage",
+    "khop_triple",
+    "atlas_rag",
+    "oracle",
+]
 GRAPH_ARMS = ["khop_passage", "khop_triple", "atlas_rag"]
 # Arms added after the first runs; listed only when a replica has records for them.
-OPTIONAL_ARMS = frozenset({"oracle"})
+OPTIONAL_ARMS = frozenset({"dense", *DENSE_PRESETS, "oracle"})
 COVERAGE_CRITERIA = frozenset({"passage_coverage", "passage_coverage_pass"})
 BLOOM = ["remember", "understand", "analyze", "evaluate"]
 HIGHER = ["understand", "analyze", "evaluate"]
@@ -127,7 +137,7 @@ def run_arms(reps: Iterable[dict[str, Any]]) -> list[str]:
 
     Computed once over all replicas so every replica's table has the same keys:
     a core arm is always listed (``n/a`` where a replica lacks it, which
-    ``conclusions`` relies on), and an optional arm (``oracle``) only when some
+    ``conclusions`` relies on), and an optional arm (``dense``, ``oracle``) only when some
     replica has records for it, so runs made before it existed get no empty row.
     """
     seen = {arm for rep in reps for arm, _ in rep["answers"]["records"]}
