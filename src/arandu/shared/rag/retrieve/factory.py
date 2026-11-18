@@ -8,6 +8,7 @@ encoder for atlas-rag, …).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,7 @@ from arandu.shared.llm_client import (
     resolve_api_key,
 )
 from arandu.shared.rag.retrieve.settings import (
+    DEFAULT_DENSE_OVERLAP,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
     DenseRetrieveSettings,
@@ -215,8 +217,11 @@ def dense_index_dir(base_dir: Path, pipeline_id: str, settings: DenseRetrieveSet
 
     ``<base_dir>/<pipeline_id>/retrieve/indexes/dense_<chunker_id>__<model>__<window>/``
     with ``<window>`` one of ``w<tokens>``, ``wmax`` (encoder input) or
-    ``whole``: indexes of different encoders and windows stay apart, so
-    adding a configuration never overwrites another one's index.
+    ``whole``. A non-default overlap adds ``__o<percent>`` and a passage
+    prompt adds ``__p<hash>`` (first 8 hex digits of its SHA-256), so every
+    setting that changes the embeddings is in the name and adding a
+    configuration never overwrites another one's index. The query prompt
+    and the returned unit do not change the index and stay out of it.
     """
     model_slug = settings.model.rstrip("/").rsplit("/", 1)[-1]
     if settings.whole_chunk:
@@ -226,6 +231,11 @@ def dense_index_dir(base_dir: Path, pipeline_id: str, settings: DenseRetrieveSet
     else:
         window = f"w{settings.window_tokens}"
     name = f"dense_{settings.chunker_id}__{model_slug}__{window}"
+    if settings.overlap_ratio != DEFAULT_DENSE_OVERLAP:
+        name += f"__o{round(settings.overlap_ratio * 100)}"
+    if settings.passage_prompt:
+        digest = hashlib.sha256(settings.passage_prompt.encode("utf-8")).hexdigest()[:8]
+        name += f"__p{digest}"
     return base_dir / pipeline_id / "retrieve" / "indexes" / name
 
 

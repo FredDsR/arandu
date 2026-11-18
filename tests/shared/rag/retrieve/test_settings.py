@@ -6,6 +6,8 @@ import pytest
 
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
+    DEFAULT_ARMS,
+    DEFAULT_DENSE_ARMS,
     DENSE_PRESETS,
     KNOWN_ARMS,
     AtlasRagRetrieveSettings,
@@ -32,6 +34,20 @@ class TestArmCatalog:
             "oracle",
             "dense",
         )
+
+    def test_default_arms_add_two_dense_presets(self) -> None:
+        assert DEFAULT_DENSE_ARMS == ("dense_mpnet128", "dense_bgem3_256")
+        assert DEFAULT_ARMS == (
+            "bm25",
+            "atlas_rag",
+            "khop_passage",
+            "khop_triple",
+            "null",
+            "oracle",
+            "dense_mpnet128",
+            "dense_bgem3_256",
+        )
+        assert set(DEFAULT_ARMS) <= set(KNOWN_ARMS)
 
 
 class TestBm25Settings:
@@ -61,14 +77,30 @@ class TestDenseSettings:
         s = DenseRetrieveSettings()
         assert (s.model, s.window_tokens, s.unit) == ("BAAI/bge-m3", 512, "subpassage")
 
-    def test_presets_override_encoder_and_keep_the_rest(self) -> None:
-        base = DenseRetrieveSettings(_env_file=None, overlap_ratio=0.2, device="cpu")
+    def test_presets_fix_identity_and_keep_device_and_batch(self) -> None:
+        # Env values that would change the index or the records must not
+        # reach a named arm; only device and batch size do.
+        base = DenseRetrieveSettings(
+            _env_file=None,
+            chunker_id="other",
+            overlap_ratio=0.5,
+            passage_prompt="passage: ",
+            unit="subpassage",
+            device="cpu",
+            batch_size=4,
+        )
         qwen = base.for_arm("dense_qwen3_whole")
         assert qwen.model == "Qwen/Qwen3-Embedding-0.6B"
         assert qwen.whole_chunk is True
         assert qwen.query_prompt.startswith("Instruct: ")
         assert qwen.query_prompt.endswith("\nQuery:")
-        assert (qwen.overlap_ratio, qwen.device) == (0.2, "cpu")
+        assert (qwen.chunker_id, qwen.overlap_ratio, qwen.passage_prompt, qwen.unit) == (
+            "cep_4k",
+            0.25,
+            "",
+            "parent",
+        )
+        assert (qwen.device, qwen.batch_size) == ("cpu", 4)
         assert base.for_arm("dense") is base
         mpnet = base.for_arm("dense_mpnet128")
         assert (mpnet.window_tokens, mpnet.query_prompt) == (128, "")
@@ -78,7 +110,7 @@ class TestDenseSettings:
         assert e5.query_prompt.endswith("\nQuery: ")
         assert e5.passage_prompt == ""
 
-    def test_preset_arms_are_known_but_not_default(self) -> None:
+    def test_preset_arms_are_known(self) -> None:
         for arm in DENSE_PRESETS:
             assert is_dense_arm(arm)
             assert arm in KNOWN_ARMS

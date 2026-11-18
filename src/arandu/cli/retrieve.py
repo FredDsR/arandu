@@ -16,6 +16,7 @@ import typer
 from arandu.shared.rag.retrieve.batch import run_retrieve_batch
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
+    DEFAULT_ARMS,
     DENSE_PRESETS,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
@@ -28,7 +29,7 @@ from arandu.utils.logger import print_error, print_info, print_success, print_wa
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_ARMS: tuple[str, ...] = ALL_ARMS
+_DEFAULT_ARMS: tuple[str, ...] = DEFAULT_ARMS
 
 
 def retrieve(

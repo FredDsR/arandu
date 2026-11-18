@@ -7,6 +7,7 @@ one :class:`RetrievalRecord` per pair. Checkpoint keys are composite
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -206,6 +207,12 @@ def run_retrieve_batch(
             # Arm-build failure already logged; skip every question for it.
             failed += len(questions)
             continue
+        if is_dense_arm(arm) and not _dense_config_matches(
+            results_mgr.outputs_dir / arm,
+            (dense_settings or DenseRetrieveSettings()).for_arm(arm),
+        ):
+            failed += len(questions)
+            continue
 
         for question in questions:
             ckpt_key = _checkpoint_key(arm, question.qa_pair_id)
@@ -299,7 +306,10 @@ def _build_with_logging(
             base_dir=base_dir,
             rebuild_index=rebuild_index,
         )
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+    # OSError covers encoder loads that fail on the network or on a bad model
+    # name (huggingface_hub and requests errors derive from it), so one dense
+    # arm that cannot load its encoder does not stop the others.
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
         logger.error("Failed to build %s arm for pipeline %s: %s", arm, pipeline_id, exc)
         return None
 
@@ -330,6 +340,51 @@ def _retrieve_one(
         # by design - arms without the attribute contribute {}.
         retriever_meta=dict(getattr(retriever, "last_retrieve_meta", None) or {}),
     )
+
+
+# Dense settings that change the index or the records of an arm. Device and
+# batch size do not, so a resume may change them.
+_DENSE_IDENTITY_FIELDS = (
+    "chunker_id",
+    "model",
+    "window_tokens",
+    "whole_chunk",
+    "overlap_ratio",
+    "query_prompt",
+    "passage_prompt",
+    "unit",
+)
+DENSE_CONFIG_FILENAME = "dense_config.json"
+
+
+def _dense_config_matches(arm_dir: Path, settings: DenseRetrieveSettings) -> bool:
+    """Record a dense arm's configuration in its output dir, or check it against the recorded one.
+
+    The checkpoint key is ``<arm>::<qa_pair_id>``, so a resume under other
+    ``ARANDU_DENSE_*`` values would add records of a second configuration to
+    the same directory. The first run writes ``dense_config.json``; a later
+    run whose configuration differs is refused (logged, arm skipped).
+    """
+    current = {f: getattr(settings, f) for f in _DENSE_IDENTITY_FIELDS}
+    path = arm_dir / DENSE_CONFIG_FILENAME
+    if path.exists():
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+        if recorded != current:
+            diff = {k: (recorded.get(k), v) for k, v in current.items() if recorded.get(k) != v}
+            logger.error(
+                "Dense arm %s: configuration differs from the one its outputs were "
+                "retrieved with (%s: recorded, requested = %s). Skipping the arm; use a "
+                "new run id or remove %s to start over.",
+                arm_dir.name,
+                path,
+                diff,
+                arm_dir,
+            )
+            return False
+        return True
+    arm_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    return True
 
 
 def _checkpoint_key(arm: ArmName, qa_pair_id: str) -> str:

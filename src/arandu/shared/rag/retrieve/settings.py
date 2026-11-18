@@ -28,9 +28,10 @@ if TYPE_CHECKING:
 
 _GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-ArmName = Literal["bm25", "atlas_rag", "khop_passage", "khop_triple", "null", "oracle", "dense"]
-# Arm names include the named dense configurations (DENSE_PRESETS), which a
-# Literal cannot list; KNOWN_ARMS is the runtime catalog.
+# An arm name. Plain ``str`` because the named dense configurations
+# (DENSE_PRESETS) are data, not a fixed list; KNOWN_ARMS is the catalog the
+# batch runner validates against.
+ArmName = str
 
 # Stable ordering — drives the CLI's default arm set + the iteration
 # order in the batch runner. Keeps benchmark output reproducible.
@@ -50,6 +51,9 @@ ALL_ARMS: tuple[ArmName, ...] = (
     "dense",
 )
 
+
+# Share of a dense window repeated by the next one, unless set otherwise.
+DEFAULT_DENSE_OVERLAP = 0.25
 
 MPNET_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 BGE_M3_MODEL = "BAAI/bge-m3"
@@ -73,12 +77,18 @@ QWEN3_QUERY_PROMPT = f"Instruct: {DENSE_TASK}\nQuery:"
 def _preset(
     model: str, window: int | None, query_prompt: str = "", *, whole: bool = False
 ) -> dict[str, Any]:
+    # Every field that changes the index or the returned records is fixed here,
+    # so a preset arm always means the same configuration whatever the
+    # ARANDU_DENSE_* environment says; only device and batch size are left to it.
     return {
+        "chunker_id": "cep_4k",
         "model": model,
         "window_tokens": window,
         "whole_chunk": whole,
+        "overlap_ratio": DEFAULT_DENSE_OVERLAP,
         "query_prompt": query_prompt,
         "passage_prompt": "",
+        "unit": "parent",
     }
 
 
@@ -100,9 +110,20 @@ DENSE_PRESETS: dict[str, dict[str, Any]] = {
     "dense_qwen3_whole": _preset(QWEN3_EMBEDDING_MODEL, None, QWEN3_QUERY_PROMPT, whole=True),
 }
 
-# Every arm name the retrieve stage accepts. The dense presets are opt-in
-# (``--arm dense_bgem3_512``); they stay out of the default set.
+# Every arm name the retrieve stage accepts.
 KNOWN_ARMS: tuple[str, ...] = (*ALL_ARMS, *DENSE_PRESETS)
+
+# Dense configurations in the default arm set: dense_mpnet128 shares
+# atlas_rag's encoder (the graph's contribution reads off the difference) and
+# dense_bgem3_256 is the strongest configuration of the retrieval-only grid.
+DEFAULT_DENSE_ARMS: tuple[str, ...] = ("dense_mpnet128", "dense_bgem3_256")
+
+# The arms ``arandu retrieve`` runs without ``--arm``. The plain ``dense`` arm
+# (free-form, read from ARANDU_DENSE_*) and the other presets are opt-in.
+DEFAULT_ARMS: tuple[str, ...] = (
+    *(a for a in ALL_ARMS if a != "dense"),
+    *DEFAULT_DENSE_ARMS,
+)
 
 
 class Bm25RetrieveSettings(BaseSettings):
@@ -128,11 +149,11 @@ class Bm25RetrieveSettings(BaseSettings):
 class DenseRetrieveSettings(BaseSettings):
     """Knobs for the dense (embedding) arms.
 
-    The plain ``dense`` arm reads these from ``ARANDU_DENSE_*``. Its default
-    encoder is the one atlas-rag uses, so it differs from atlas-rag only by
-    the graph. The named arms of :data:`DENSE_PRESETS` override the encoder,
-    window and prompts and keep the rest (chunker view, overlap, unit,
-    device, batch size).
+    The plain ``dense`` arm reads every field from ``ARANDU_DENSE_*``. Its
+    default encoder is the mpnet model the project's atlas-rag index uses.
+    The named arms of :data:`DENSE_PRESETS` fix every field that changes the
+    index or the records (chunker view, encoder, window, overlap, prompts,
+    unit) and take only ``device`` and ``batch_size`` from the environment.
 
     Attributes:
         chunker_id: ChunkSet view to index, as for BM25 (``"cep_4k"``).
@@ -165,7 +186,7 @@ class DenseRetrieveSettings(BaseSettings):
     )
     whole_chunk: bool = Field(default=False, description="Encode each chunk whole.")
     overlap_ratio: float = Field(
-        default=0.25,
+        default=DEFAULT_DENSE_OVERLAP,
         ge=0.0,
         lt=1.0,
         description="Share of each window repeated by the next window.",

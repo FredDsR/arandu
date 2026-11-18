@@ -236,6 +236,22 @@ class TestDenseArm:
         )
         assert mpnet.parent == tmp_path / "run_x" / "retrieve" / "indexes"
 
+    def test_index_dir_names_overlap_and_passage_prompt(self, tmp_path: Path) -> None:
+        # Settings that change the embeddings must give another directory.
+        plain = DenseRetrieveSettings(_env_file=None, window_tokens=256)
+        half = DenseRetrieveSettings(_env_file=None, window_tokens=256, overlap_ratio=0.5)
+        prompt = DenseRetrieveSettings(_env_file=None, window_tokens=256, passage_prompt="p: ")
+        other = DenseRetrieveSettings(_env_file=None, window_tokens=256, passage_prompt="q: ")
+        names = {dense_index_dir(tmp_path, "r", s).name for s in (plain, half, prompt, other)}
+        assert len(names) == 4
+        assert dense_index_dir(tmp_path, "r", half).name.endswith("__w256__o50")
+        assert "__w256__p" in dense_index_dir(tmp_path, "r", prompt).name
+        # Query prompt and unit do not change the index.
+        same = DenseRetrieveSettings(
+            _env_file=None, window_tokens=256, query_prompt="q: ", unit="subpassage"
+        )
+        assert dense_index_dir(tmp_path, "r", same) == dense_index_dir(tmp_path, "r", plain)
+
     def test_builds_index_then_loads(
         self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
     ) -> None:
