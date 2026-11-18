@@ -49,6 +49,7 @@ class RetrieveBatchConfig(BaseModel):
         arms: Ordered list of arm names this run targeted.
         top_k: Passages per question per arm.
         rebuild_index: Whether arm-side indexes were forcibly rebuilt.
+        include_rejected: Whether judge-rejected CEP pairs were included.
 
     """
 
@@ -56,6 +57,7 @@ class RetrieveBatchConfig(BaseModel):
     arms: list[str]
     top_k: int = Field(..., gt=0)
     rebuild_index: bool = False
+    include_rejected: bool = False
 
 
 class RetrieveBatchResult(BaseModel):
@@ -91,6 +93,7 @@ def run_retrieve_batch(
     atlas_rag_settings: AtlasRagRetrieveSettings | None = None,
     embedder_settings: EmbedderSettings | None = None,
     rebuild_index: bool = False,
+    include_rejected: bool = False,
     base_dir: Path | None = None,
 ) -> RetrieveBatchResult:
     """Drive retrieval across one or more arms over a run's CEP + non-answerable items.
@@ -123,6 +126,8 @@ def run_retrieve_batch(
             (BM25 only; k-hop arms build state in-memory; atlas-rag's
             precompute is rebuilt via
             ``arandu kg-build-retriever-index --rebuild``).
+        include_rejected: When ``True``, retrieve over all CEP pairs in the
+            run, including those rejected by ``judge-qa``.
         base_dir: Override the project ``results/`` root.
 
     Returns:
@@ -147,7 +152,7 @@ def run_retrieve_batch(
     cep_dir = base / pipeline_id / "cep" / "outputs"
     nonanswerable_dir = base / pipeline_id / PipelineType.NON_ANSWERABLE.value / "outputs"
 
-    questions = load_questions(cep_dir, nonanswerable_dir)
+    questions = load_questions(cep_dir, nonanswerable_dir, include_rejected=include_rejected)
     if not questions:
         logger.warning(
             "No questions found for pipeline %s (CEP dir empty). Returning empty result.",
@@ -159,6 +164,7 @@ def run_retrieve_batch(
         arms=list(arms),
         top_k=top_k,
         rebuild_index=rebuild_index,
+        include_rejected=include_rejected,
     )
     results_mgr = ResultsManager(
         base,

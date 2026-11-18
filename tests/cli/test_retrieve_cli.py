@@ -69,6 +69,24 @@ class TestRetrieveCli:
         assert len(list(outputs.glob("*.json"))) == 1
         assert "Wrote 1 RetrievalRecord" in result.output
 
+    def test_include_rejected_flag_includes_rejected_pairs(
+        self, runner: CliRunner, results_base: Path
+    ) -> None:
+        _seed_cep(results_base)
+        cep_file = results_base / "run_x" / "cep" / "outputs" / "src_a_cep_qa.json"
+        record = json.loads(cep_file.read_text())
+        record["qa_pairs"][0]["validation"] = {"stage_results": {}, "passed": False}
+        cep_file.write_text(json.dumps(record))
+
+        result = runner.invoke(
+            app, ["retrieve", "--id", "run_x", "--arm", "oracle", "--include-rejected"]
+        )
+
+        assert result.exit_code == 0, result.output
+        outputs = results_base / "run_x" / "retrieve" / "outputs" / "oracle" / "cep"
+        assert len(list(outputs.glob("*.json"))) == 1
+        assert "Wrote 1 RetrievalRecord" in result.output
+
     def test_default_arms_includes_four(self, runner: CliRunner, results_base: Path) -> None:
         # With no --arm, the CLI runs the 4 non-atlas_rag arms. Three of
         # them (bm25 / khop_passage / khop_triple) fail at construction
