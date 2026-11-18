@@ -13,11 +13,11 @@
 #SBATCH --signal=B:TERM@60
 
 # Phase C, incremental: retrieve only the dense arms named in DENSE_ARMS
-# (space-separated, e.g. "dense_mpnet128 dense_bgem3_256") over every CEP pair
+# (space-separated; default: the two dense arms of the default arm set) over every CEP pair
 # and probe, rejected pairs included, as the canonical arms were. The encoder
 # runs in-process on the GPU; no LLM, so no ollama sidecar. Each arm writes only
 # retrieve/outputs/<arm>/ and its own index; existing checkpoint keys are kept.
-DENSE_ARMS="${DENSE_ARMS:?DENSE_ARMS must list the dense arms to retrieve}"
+DENSE_ARMS="${DENSE_ARMS:-dense_mpnet128 dense_bgem3_256}"
 ARM_ARGS=""
 for arm in $DENSE_ARMS; do
     ARM_ARGS="$ARM_ARGS --arm $arm"
