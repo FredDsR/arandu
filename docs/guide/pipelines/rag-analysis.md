@@ -4,11 +4,15 @@ Interpret the cross-arm comparison report produced by `arandu rag-analysis`.
 
 This is the **last** stage of the Phase C RAG-evaluation pipeline. It reads
 the judged answers from `arandu judge-answers` and emits per-arm tables you
-can compare across the six retriever arms, identified by their canonical ids:
+can compare across the retriever arms, identified by their canonical ids:
 `bm25` (lexical), `atlas_rag` (HippoRAG-style), `khop_passage` and `khop_triple`
 (k-hop over the atlas-rag KG, using lemmatized smoothed-IDF seed weighting and
 seed-proximity scoring), `null` (no-retrieval baseline) and `oracle`
 (gold-context upper bound, see [The two control arms](#the-two-control-arms)).
+The default arm set also has two dense arms, `dense_mpnet128` and
+`dense_bgem3_256`; the plain `dense` arm and the other named configurations
+are opt-in (see [Dense arms](#dense-arms)). Dense arms appear only in runs that
+retrieved with them.
 
 > **What changed (2026-05-26)**: Phase C `rag-analysis` is the retrieval-arm
 > comparison. It superseded an earlier QA/KG metrics pipeline (the classic
@@ -147,6 +151,52 @@ covered.
 To place an arm between the bounds, compare its KC with the `null` and
 `oracle` rows of Table 1, or with the same rows of the Bloom and
 question-type tables.
+
+### Dense arms
+
+A dense arm is the embedding counterpart of `bm25`. It indexes the same
+`cep_4k` chunks and returns the same `chunk_id`s, so its evidence unit, the
+text that reaches the answerer and the rank of a pair's source chunk compare
+directly with `bm25` and `oracle`.
+
+A sentence encoder reads far less than a 4,000-character chunk (128 tokens for
+`paraphrase-multilingual-mpnet-base-v2`), so each chunk is cut into windows of
+the encoder's own tokens, with 25% overlap by default. A chunk scores the best
+cosine similarity of its windows (`retriever_meta.best_subpassage` names that
+window). Long-input encoders can also read each chunk whole.
+
+- `dense_mpnet128` and `dense_bgem3_256` are in the default arm set.
+  `dense_mpnet128` uses the encoder of the project's `atlas_rag` index, so the
+  two arms differ only by the graph; `dense_bgem3_256` is the strongest
+  configuration of the retrieval-only grid.
+- `dense` (opt-in) reads its configuration from `ARANDU_DENSE_*`
+  (`DenseRetrieveSettings`, see the [configuration reference](../configuration.md#denseretrievesettings)).
+- The named arms in `DENSE_PRESETS` fix every setting that changes the index
+  or the records (chunker view, encoder, window, overlap, prompts, unit) and
+  read only `ARANDU_DENSE_DEVICE` and `ARANDU_DENSE_BATCH_SIZE`. The window is
+  the encoder input per window in tokens, or `whole`:
+  `dense_mpnet128`, `dense_bgem3_{128,256,512,whole}`,
+  `dense_e5_{128,256,512}` (`multilingual-e5-large-instruct`, instruction on
+  the query side only) and `dense_qwen3_{128,256,512,whole}`
+  (`Qwen3-Embedding-0.6B`, instruction on the query side only). Each is its
+  own arm directory, so several can coexist in one run.
+
+Every configuration persists its index under
+`retrieve/indexes/dense_<chunker>__<model>__<window>/` with a manifest
+(encoder, window, overlap, passage prompt, sub-passage count, SHA-256). A
+non-default overlap adds `__o<percent>` to the directory name and a passage
+prompt adds `__p<hash>`, so two configurations never share an index.
+
+The first retrieve of a dense arm writes its configuration to
+`retrieve/outputs/<arm>/dense_config.json`. A later run of the same arm with a
+different configuration (for example another `ARANDU_DENSE_UNIT` for `dense`)
+is refused and the arm is skipped, so one arm directory never mixes records of
+two configurations.
+
+To add the default dense arms to a finished run on the cluster, run
+`scripts/slurm/rag/submit-dense-chain.sh`: it backs up the checkpoints and
+chains retrieve, answer and judge-answers; the answer and judge stages resume
+from their checkpoints and process only the new records.
 
 ---
 

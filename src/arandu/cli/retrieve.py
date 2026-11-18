@@ -16,16 +16,20 @@ import typer
 from arandu.shared.rag.retrieve.batch import run_retrieve_batch
 from arandu.shared.rag.retrieve.settings import (
     ALL_ARMS,
+    DEFAULT_ARMS,
+    DENSE_PRESETS,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
+    DenseRetrieveSettings,
     KHopRetrieveSettings,
+    is_dense_arm,
 )
 from arandu.utils.logger import print_error, print_info, print_success, print_warning
 
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_ARMS: tuple[str, ...] = ALL_ARMS
+_DEFAULT_ARMS: tuple[str, ...] = DEFAULT_ARMS
 
 
 def retrieve(
@@ -42,7 +46,7 @@ def retrieve(
             "--id",
             help=(
                 "Pipeline ID for the run. The cep/ stage must already be populated; "
-                "each arm has its own prerequisites (chunk/ for bm25, kg/ for k-hop; "
+                "each arm has its own prerequisites (chunk/ for bm25 and dense, kg/ for k-hop; "
                 "oracle and null need only cep/)."
             ),
         ),
@@ -52,7 +56,8 @@ def retrieve(
         typer.Option(
             "--arm",
             help=(
-                f"Retriever arm; repeatable. Known: {', '.join(ALL_ARMS)}. "
+                f"Retriever arm; repeatable. Known: {', '.join(ALL_ARMS)}; named dense "
+                f"configurations: {', '.join(DENSE_PRESETS)}. "
                 f"Defaults to: {', '.join(_DEFAULT_ARMS)}."
             ),
         ),
@@ -71,7 +76,7 @@ def retrieve(
         typer.Option(
             "--rebuild-index",
             help=(
-                "Force-rebuild arm-side indexes (BM25 pickle only; "
+                "Force-rebuild arm-side indexes (BM25 pickle, dense embeddings; "
                 "k-hop arms build state in-memory at construction)."
             ),
         ),
@@ -97,14 +102,15 @@ def retrieve(
     ``RetrievalRecord.qa_pair_id`` field inside each file preserves the
     original colons.
 
-    Arm-specific knobs (chunker view, k-hop radius, ...) are read from
-    ``ARANDU_BM25_*`` / ``ARANDU_KHOP_*`` env vars; see the per-arm
-    settings classes for the fields.
+    Arm-specific knobs (chunker view, k-hop radius, encoder, ...) are read
+    from ``ARANDU_BM25_*`` / ``ARANDU_KHOP_*`` / ``ARANDU_DENSE_*`` env vars;
+    see the per-arm settings classes for the fields.
     """
     selected_arms = list(arms) if arms else list(_DEFAULT_ARMS)
     bm25_settings = Bm25RetrieveSettings()
     khop_settings = KHopRetrieveSettings()
     atlas_rag_settings = AtlasRagRetrieveSettings() if "atlas_rag" in selected_arms else None
+    dense_settings = DenseRetrieveSettings()
 
     print_info(f"Run: {pipeline_id}")
     print_info(f"Arms: {', '.join(selected_arms)}")
@@ -114,6 +120,13 @@ def retrieve(
         print_info(f"BM25 chunker: {bm25_settings.chunker_id}")
     if any(a.startswith("khop_") for a in selected_arms):
         print_info(f"K-hop: k_hop={khop_settings.k_hop}, top_k_seeds={khop_settings.top_k_seeds}")
+    for arm in (a for a in selected_arms if is_dense_arm(a)):
+        cfg = dense_settings.for_arm(arm)
+        window = "whole chunk" if cfg.whole_chunk else (cfg.window_tokens or "encoder max")
+        print_info(
+            f"{arm}: model={cfg.model}, chunker={cfg.chunker_id}, window_tokens={window}, "
+            f"overlap_ratio={cfg.overlap_ratio}, unit={cfg.unit}"
+        )
     if atlas_rag_settings is not None:
         print_info(
             f"atlas_rag LLM: provider={atlas_rag_settings.provider}, "
@@ -128,6 +141,7 @@ def retrieve(
             bm25_settings=bm25_settings,
             khop_settings=khop_settings,
             atlas_rag_settings=atlas_rag_settings,
+            dense_settings=dense_settings,
             rebuild_index=rebuild_index,
             include_rejected=include_rejected,
         )

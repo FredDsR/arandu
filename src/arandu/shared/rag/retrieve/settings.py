@@ -28,7 +28,10 @@ if TYPE_CHECKING:
 
 _GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-ArmName = Literal["bm25", "atlas_rag", "khop_passage", "khop_triple", "null", "oracle"]
+# An arm name. Plain ``str`` because the named dense configurations
+# (DENSE_PRESETS) are data, not a fixed list; KNOWN_ARMS is the catalog the
+# batch runner validates against.
+ArmName = str
 
 # Stable ordering — drives the CLI's default arm set + the iteration
 # order in the batch runner. Keeps benchmark output reproducible.
@@ -45,6 +48,81 @@ ALL_ARMS: tuple[ArmName, ...] = (
     "khop_triple",
     "null",
     "oracle",
+    "dense",
+)
+
+
+# Share of a dense window repeated by the next one, unless set otherwise.
+DEFAULT_DENSE_OVERLAP = 0.25
+
+MPNET_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+BGE_M3_MODEL = "BAAI/bge-m3"
+E5_INSTRUCT_MODEL = "intfloat/multilingual-e5-large-instruct"
+QWEN3_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+
+# One task instruction for the instruction-tuned encoders; both model cards
+# recommend a one-sentence task description in English.
+DENSE_TASK = (
+    "Given a question about an oral history interview, "
+    "retrieve the transcript passages that answer the question"
+)
+# multilingual-e5-large-instruct: "Instruct: {task}\nQuery: {query}" on the
+# query side only; passages go in without a prefix.
+E5_QUERY_PROMPT = f"Instruct: {DENSE_TASK}\nQuery: "
+# Qwen3-Embedding: "Instruct: {task}\nQuery:{query}" on the query side only
+# (the model card's format has no space after the colon).
+QWEN3_QUERY_PROMPT = f"Instruct: {DENSE_TASK}\nQuery:"
+
+
+def _preset(
+    model: str, window: int | None, query_prompt: str = "", *, whole: bool = False
+) -> dict[str, Any]:
+    # Every field that changes the index or the returned records is fixed here,
+    # so a preset arm always means the same configuration whatever the
+    # ARANDU_DENSE_* environment says; only device and batch size are left to it.
+    return {
+        "chunker_id": "cep_4k",
+        "model": model,
+        "window_tokens": window,
+        "whole_chunk": whole,
+        "overlap_ratio": DEFAULT_DENSE_OVERLAP,
+        "query_prompt": query_prompt,
+        "passage_prompt": "",
+        "unit": "parent",
+    }
+
+
+# Named dense configurations, each its own arm (output directory), so two of
+# them can coexist in one run. The suffix is the encoder input per window in
+# tokens, or ``whole`` for one window per chunk.
+DENSE_PRESETS: dict[str, dict[str, Any]] = {
+    "dense_mpnet128": _preset(MPNET_MODEL, 128),
+    "dense_bgem3_128": _preset(BGE_M3_MODEL, 128),
+    "dense_bgem3_256": _preset(BGE_M3_MODEL, 256),
+    "dense_bgem3_512": _preset(BGE_M3_MODEL, 512),
+    "dense_bgem3_whole": _preset(BGE_M3_MODEL, None, whole=True),
+    "dense_e5_128": _preset(E5_INSTRUCT_MODEL, 128, E5_QUERY_PROMPT),
+    "dense_e5_256": _preset(E5_INSTRUCT_MODEL, 256, E5_QUERY_PROMPT),
+    "dense_e5_512": _preset(E5_INSTRUCT_MODEL, 512, E5_QUERY_PROMPT),
+    "dense_qwen3_128": _preset(QWEN3_EMBEDDING_MODEL, 128, QWEN3_QUERY_PROMPT),
+    "dense_qwen3_256": _preset(QWEN3_EMBEDDING_MODEL, 256, QWEN3_QUERY_PROMPT),
+    "dense_qwen3_512": _preset(QWEN3_EMBEDDING_MODEL, 512, QWEN3_QUERY_PROMPT),
+    "dense_qwen3_whole": _preset(QWEN3_EMBEDDING_MODEL, None, QWEN3_QUERY_PROMPT, whole=True),
+}
+
+# Every arm name the retrieve stage accepts.
+KNOWN_ARMS: tuple[str, ...] = (*ALL_ARMS, *DENSE_PRESETS)
+
+# Dense configurations in the default arm set: dense_mpnet128 shares
+# atlas_rag's encoder (the graph's contribution reads off the difference) and
+# dense_bgem3_256 is the strongest configuration of the retrieval-only grid.
+DEFAULT_DENSE_ARMS: tuple[str, ...] = ("dense_mpnet128", "dense_bgem3_256")
+
+# The arms ``arandu retrieve`` runs without ``--arm``. The plain ``dense`` arm
+# (free-form, read from ARANDU_DENSE_*) and the other presets are opt-in.
+DEFAULT_ARMS: tuple[str, ...] = (
+    *(a for a in ALL_ARMS if a != "dense"),
+    *DEFAULT_DENSE_ARMS,
 )
 
 
@@ -66,6 +144,83 @@ class Bm25RetrieveSettings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(env_prefix="ARANDU_BM25_", extra="ignore")
+
+
+class DenseRetrieveSettings(BaseSettings):
+    """Knobs for the dense (embedding) arms.
+
+    The plain ``dense`` arm reads every field from ``ARANDU_DENSE_*``. Its
+    default encoder is the mpnet model the project's atlas-rag index uses.
+    The named arms of :data:`DENSE_PRESETS` fix every field that changes the
+    index or the records (chunker view, encoder, window, overlap, prompts,
+    unit) and take only ``device`` and ``batch_size`` from the environment.
+
+    Attributes:
+        chunker_id: ChunkSet view to index, as for BM25 (``"cep_4k"``).
+        model: ``sentence_transformers`` model name.
+        window_tokens: Encoder input per sub-passage, special tokens and
+            passage prompt included (``128`` is a full mpnet input).
+            ``None`` (default) uses the encoder's ``max_seq_length``.
+        whole_chunk: Encode each chunk whole instead of in windows (for
+            long-input encoders such as bge-m3 and Qwen3-Embedding).
+        overlap_ratio: Share of a window repeated by the next one.
+        query_prompt: Text prepended to each question (instruction-tuned
+            encoders such as e5-instruct and Qwen3-Embedding).
+        passage_prompt: Text prepended to each sub-passage.
+        unit: ``"parent"`` returns the chunks (same ``chunk_id`` as BM25),
+            ``"subpassage"`` returns the windows inline.
+        device: Torch device; ``None`` lets sentence-transformers pick. A
+            CUDA out-of-memory error moves the encoder to the CPU.
+        batch_size: Texts per forward pass.
+    """
+
+    chunker_id: str = Field(
+        default="cep_4k",
+        description="Chunker view to index (must exist under chunk/outputs/).",
+    )
+    model: str = Field(default=MPNET_MODEL, description="sentence-transformers model name.")
+    window_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="Encoder input tokens per sub-passage; unset = encoder max_seq_length.",
+    )
+    whole_chunk: bool = Field(default=False, description="Encode each chunk whole.")
+    overlap_ratio: float = Field(
+        default=DEFAULT_DENSE_OVERLAP,
+        ge=0.0,
+        lt=1.0,
+        description="Share of each window repeated by the next window.",
+    )
+    query_prompt: str = Field(default="", description="Text prepended to each question.")
+    passage_prompt: str = Field(default="", description="Text prepended to each sub-passage.")
+    unit: Literal["parent", "subpassage"] = Field(
+        default="parent",
+        description="Returned unit: parent chunks (max over sub-passages) or sub-passages.",
+    )
+    device: str | None = Field(
+        default=None,
+        description="Torch device for the encoder (cpu, cuda); unset = auto.",
+    )
+    batch_size: int = Field(default=16, ge=1, description="Encoder batch size.")
+
+    model_config = SettingsConfigDict(env_prefix="ARANDU_DENSE_", extra="ignore")
+
+    def for_arm(self, arm: str) -> DenseRetrieveSettings:
+        """Return the settings of dense arm ``arm``: a preset applied over these.
+
+        Raises:
+            ValueError: If ``arm`` is not a dense arm.
+        """
+        if arm == "dense":
+            return self
+        if arm not in DENSE_PRESETS:
+            raise ValueError(f"{arm!r} is not a dense arm.")
+        return self.model_copy(update=DENSE_PRESETS[arm])
+
+
+def is_dense_arm(arm: str) -> bool:
+    """Whether ``arm`` is the plain ``dense`` arm or one of :data:`DENSE_PRESETS`."""
+    return arm == "dense" or arm in DENSE_PRESETS
 
 
 class AtlasRagRetrieveSettings(BaseSettings):

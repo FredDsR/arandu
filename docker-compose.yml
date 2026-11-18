@@ -597,6 +597,18 @@ services:
       # avoids paid Gemini embeddings. Multilingual for the PT-BR corpus.
       - ARANDU_EMBEDDER_PROVIDER=${ARANDU_EMBEDDER_PROVIDER:-sentence_transformers}
       - ARANDU_EMBEDDER_MODEL=${ARANDU_EMBEDDER_MODEL:-sentence-transformers/paraphrase-multilingual-mpnet-base-v2}
+      # Dense retrieve arms (DenseRetrieveSettings); unset = class defaults.
+      # Named arms (--arm dense_bgem3_512, ...) read only DEVICE and BATCH_SIZE.
+      - ARANDU_DENSE_CHUNKER_ID
+      - ARANDU_DENSE_MODEL
+      - ARANDU_DENSE_WINDOW_TOKENS
+      - ARANDU_DENSE_WHOLE_CHUNK
+      - ARANDU_DENSE_OVERLAP_RATIO
+      - ARANDU_DENSE_QUERY_PROMPT
+      - ARANDU_DENSE_PASSAGE_PROMPT
+      - ARANDU_DENSE_UNIT
+      - ARANDU_DENSE_DEVICE
+      - ARANDU_DENSE_BATCH_SIZE
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
 

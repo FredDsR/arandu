@@ -95,6 +95,10 @@ PIPELINE_ID=<run-id> [overrides] sbatch [--exclude=<nodes>] scripts/slurm/<step>
 | `EMIC_RERUN` | `0` | Discard the emic checkpoint and re-score every source |
 | `ARANDU_EMIC_JUDGE_WORKERS` | 4 (tupi script) | Client-side concurrency; `OLLAMA_NUM_PARALLEL` follows it unless overridden |
 | `OLLAMA_NUM_PARALLEL`, `OLLAMA_CONTEXT_LENGTH` | per step script | Ollama sidecar slots and per-slot context, passed to `arandu_start_ollama` (3rd and 4th args). Exporting them is not enough: the sidecar only sees what the call passes. cep: workers / 16384; judge: 2 / 32768; kg: 3 / 32768 |
+| `RETRIEVE_INCLUDE_REJECTED` | `0` | `1` makes `rag/retrieve.slurm` keep the CEP pairs judge-qa rejected (`--include-rejected`), as the arms of thesis-run-02 were retrieved |
+| `DENSE_ARMS` | `dense_mpnet128 dense_bgem3_256` | Dense arms for `rag/retrieve-dense.slurm` and `rag/submit-dense-chain.sh` (space-separated) |
+| `N_ANSWER_JOBS`, `N_JUDGE_JOBS` | `1`, `2` | `rag/submit-dense-chain.sh`: answer and judge-answers jobs in the chain; each extra job resumes the checkpoint after the previous one (24h wall) |
+| `BACKUP_TAG` | `pre-dense` | `rag/submit-dense-chain.sh`: suffix of the checkpoint backups it writes before submitting |
 | `MIN_DISK_GB` | 15 | Disk-floor preflight on the Docker root partition |
 | `USE_GPU_OLLAMA` | set by partition script | Selects `kg-gpu` vs `kg` compose profile |
 

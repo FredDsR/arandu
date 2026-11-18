@@ -8,6 +8,7 @@ encoder for atlas-rag, …).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -24,9 +25,12 @@ from arandu.shared.llm_client import (
     resolve_api_key,
 )
 from arandu.shared.rag.retrieve.settings import (
+    DEFAULT_DENSE_OVERLAP,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
+    DenseRetrieveSettings,
     KHopRetrieveSettings,
+    is_dense_arm,
 )
 from arandu.shared.rag.retrievers.atlas_rag import (
     MANIFEST_FILENAME,
@@ -34,6 +38,11 @@ from arandu.shared.rag.retrievers.atlas_rag import (
     AtlasRagRetriever,
 )
 from arandu.shared.rag.retrievers.bm25 import BM25Retriever
+from arandu.shared.rag.retrievers.dense import (
+    EMBEDDINGS_FILENAME,
+    DenseRetriever,
+    SentenceTransformerEncoder,
+)
 from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
 from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
 from arandu.shared.rag.retrievers.null import NullRetriever
@@ -52,7 +61,9 @@ logger = logging.getLogger(__name__)
 _BM25_INDEX_FILENAME = "bm25.pkl"
 
 
-RetrieveSettings = Bm25RetrieveSettings | KHopRetrieveSettings | AtlasRagRetrieveSettings
+RetrieveSettings = (
+    Bm25RetrieveSettings | KHopRetrieveSettings | AtlasRagRetrieveSettings | DenseRetrieveSettings
+)
 
 
 def build_retriever(
@@ -68,13 +79,16 @@ def build_retriever(
 
     Args:
         arm: One of ``"bm25"``, ``"atlas_rag"``, ``"khop_passage"``,
-            ``"khop_triple"``, ``"null"``, ``"oracle"``.
+            ``"khop_triple"``, ``"null"``, ``"oracle"``, ``"dense"`` or a
+            named dense configuration from ``DENSE_PRESETS``.
         pipeline_id: The run identifier; all paths resolve relative to
             ``<base_dir>/<pipeline_id>/``.
         settings: Arm-specific settings instance. For ``null`` and
             ``oracle``, ignored.
             For ``bm25``, must be :class:`Bm25RetrieveSettings`; for
-            k-hop arms, :class:`KHopRetrieveSettings`; for atlas-rag,
+            dense arms, :class:`DenseRetrieveSettings` (a preset arm
+            applies its encoder/window/prompts over it); for k-hop arms,
+            :class:`KHopRetrieveSettings`; for atlas-rag,
             :class:`AtlasRagRetrieveSettings`. Defaults are instantiated
             when omitted.
         embedder_settings: Sentence-encoder choice (atlas-rag arm only,
@@ -85,7 +99,8 @@ def build_retriever(
             queries at retrieve time.
         base_dir: Project ``results/`` root. Defaults to
             ``ResultsConfig().base_dir``.
-        rebuild_index: Force-rebuild arm-side indexes (BM25 pickle only;
+        rebuild_index: Force-rebuild arm-side indexes (BM25 pickle and
+            dense embedding matrix;
             no-op for k-hop and null, which build their state in-memory
             from the KG/graphml at construction; for atlas-rag the
             precompute is the responsibility of
@@ -120,6 +135,18 @@ def build_retriever(
             pipeline_id=pipeline_id,
             base_dir=base,
             chunker_id=bm25_settings.chunker_id,
+            rebuild_index=rebuild_index,
+        )
+
+    if is_dense_arm(arm):
+        dense_settings = (
+            settings if isinstance(settings, DenseRetrieveSettings) else DenseRetrieveSettings()
+        )
+        return _build_dense(
+            arm=arm,
+            pipeline_id=pipeline_id,
+            base_dir=base,
+            settings=dense_settings.for_arm(arm),
             rebuild_index=rebuild_index,
         )
 
@@ -172,30 +199,113 @@ def _build_bm25(
     co-located with the retrieve stage's outputs so the index follows
     the same run-id lifecycle as the rest of the benchmark artifacts.
     """
+    chunk_dir = _require_chunk_dir(base_dir, pipeline_id, chunker_id)
+    index_dir = base_dir / pipeline_id / "retrieve" / "indexes" / f"bm25_{chunker_id}"
+    if rebuild_index or not (index_dir / _BM25_INDEX_FILENAME).exists():
+        BM25Retriever.build_index(
+            chunks=_load_nonempty_chunks(chunk_dir, chunker_id),
+            resolver=_build_chunk_resolver(pipeline_id=pipeline_id, base_dir=base_dir),
+            index_dir=index_dir,
+            chunker_id=chunker_id,
+        )
+
+    return BM25Retriever(index_dir=index_dir, chunker_id=chunker_id)
+
+
+def dense_index_dir(base_dir: Path, pipeline_id: str, settings: DenseRetrieveSettings) -> Path:
+    """Where the dense index for ``settings`` lives in a run.
+
+    ``<base_dir>/<pipeline_id>/retrieve/indexes/dense_<chunker_id>__<model>__<window>/``
+    with ``<window>`` one of ``w<tokens>``, ``wmax`` (encoder input) or
+    ``whole``. A non-default overlap adds ``__o<percent>`` and a passage
+    prompt adds ``__p<hash>`` (first 8 hex digits of its SHA-256), so every
+    setting that changes the embeddings is in the name and adding a
+    configuration never overwrites another one's index. The query prompt
+    and the returned unit do not change the index and stay out of it.
+    """
+    model_slug = settings.model.rstrip("/").rsplit("/", 1)[-1]
+    if settings.whole_chunk:
+        window = "whole"
+    elif settings.window_tokens is None:
+        window = "wmax"
+    else:
+        window = f"w{settings.window_tokens}"
+    name = f"dense_{settings.chunker_id}__{model_slug}__{window}"
+    if settings.overlap_ratio != DEFAULT_DENSE_OVERLAP:
+        name += f"__o{round(settings.overlap_ratio * 100)}"
+    if settings.passage_prompt:
+        digest = hashlib.sha256(settings.passage_prompt.encode("utf-8")).hexdigest()[:8]
+        name += f"__p{digest}"
+    return base_dir / pipeline_id / "retrieve" / "indexes" / name
+
+
+def _build_dense(
+    *,
+    arm: str,
+    pipeline_id: str,
+    base_dir: Path,
+    settings: DenseRetrieveSettings,
+    rebuild_index: bool,
+) -> DenseRetriever:
+    """Load the encoder, build the dense index when needed, and return the retriever.
+
+    The index is built when it is missing or ``rebuild_index`` is set; an
+    existing index whose manifest disagrees with ``settings`` (window,
+    overlap) makes :class:`DenseRetriever` raise instead of being replaced.
+    """
+    chunk_dir = _require_chunk_dir(base_dir, pipeline_id, settings.chunker_id)
+    encoder = SentenceTransformerEncoder(
+        settings.model,
+        query_prompt=settings.query_prompt,
+        passage_prompt=settings.passage_prompt,
+        device=settings.device,
+        batch_size=settings.batch_size,
+    )
+    index_dir = dense_index_dir(base_dir, pipeline_id, settings)
+    if rebuild_index or not (index_dir / EMBEDDINGS_FILENAME).exists():
+        DenseRetriever.build_index(
+            chunks=_load_nonempty_chunks(chunk_dir, settings.chunker_id),
+            resolver=_build_chunk_resolver(pipeline_id=pipeline_id, base_dir=base_dir),
+            index_dir=index_dir,
+            chunker_id=settings.chunker_id,
+            encoder=encoder,
+            window_tokens=settings.window_tokens,
+            whole_chunk=settings.whole_chunk,
+            overlap_ratio=settings.overlap_ratio,
+        )
+
+    return DenseRetriever(
+        index_dir=index_dir,
+        encoder=encoder,
+        chunker_id=settings.chunker_id,
+        window_tokens=settings.window_tokens,
+        whole_chunk=settings.whole_chunk,
+        overlap_ratio=settings.overlap_ratio,
+        unit=settings.unit,
+        retriever_id=f"{arm}_{settings.chunker_id}",
+    )
+
+
+def _require_chunk_dir(base_dir: Path, pipeline_id: str, chunker_id: str) -> Path:
+    """Return the chunk outputs of ``chunker_id``, or raise if the view was never chunked."""
     chunk_dir = base_dir / pipeline_id / "chunk" / "outputs" / chunker_id
     if not chunk_dir.exists():
         raise FileNotFoundError(
             f"Chunks not found for chunker_id {chunker_id!r} under {chunk_dir}. "
             f"Run `arandu chunk --id {pipeline_id} --view {chunker_id}` first."
         )
+    return chunk_dir
 
-    index_dir = base_dir / pipeline_id / "retrieve" / "indexes" / f"bm25_{chunker_id}"
-    if rebuild_index or not (index_dir / _BM25_INDEX_FILENAME).exists():
-        chunks = _load_chunks(chunk_dir, chunker_id)
-        if not chunks:
-            raise FileNotFoundError(
-                f"No chunks found in {chunk_dir} for chunker_id {chunker_id!r}. "
-                f"The chunking stage produced no output for this view."
-            )
-        resolver = _build_chunk_resolver(pipeline_id=pipeline_id, base_dir=base_dir)
-        BM25Retriever.build_index(
-            chunks=chunks,
-            resolver=resolver,
-            index_dir=index_dir,
-            chunker_id=chunker_id,
+
+def _load_nonempty_chunks(chunk_dir: Path, chunker_id: str) -> list[Chunk]:
+    """:func:`_load_chunks`, raising when the view produced no chunk."""
+    chunks = _load_chunks(chunk_dir, chunker_id)
+    if not chunks:
+        raise FileNotFoundError(
+            f"No chunks found in {chunk_dir} for chunker_id {chunker_id!r}. "
+            f"The chunking stage produced no output for this view."
         )
-
-    return BM25Retriever(index_dir=index_dir, chunker_id=chunker_id)
+    return chunks
 
 
 def _load_chunks(chunk_dir: Path, chunker_id: str) -> list[Chunk]:

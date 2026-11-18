@@ -11,10 +11,11 @@ Complete reference for all configuration settings in the Arandu pipeline.
 5. [JudgeConfig](#judgeconfig)
 6. [EmicJudgeSettings](#emicjudgesettings)
 7. [KGConfig](#kgconfig)
-8. [LLMConfig](#llmconfig)
-9. [ResultsConfig](#resultsconfig)
-10. [Environment Variables](#environment-variables)
-11. [Configuration Examples](#configuration-examples)
+8. [DenseRetrieveSettings](#denseretrievesettings)
+9. [LLMConfig](#llmconfig)
+10. [ResultsConfig](#resultsconfig)
+11. [Environment Variables](#environment-variables)
+12. [Configuration Examples](#configuration-examples)
 
 ---
 
@@ -379,6 +380,37 @@ config = KGConfig(
 
 ---
 
+## DenseRetrieveSettings
+
+Settings of the dense (embedding) retrieve arms. The plain `dense` arm reads every
+field below. The named arms (`dense_mpnet128`, `dense_bgem3_256`, ...; `DENSE_PRESETS`)
+fix every field that changes the index or the records and read only `device` and
+`batch_size`. See [Dense arms](pipelines/rag-analysis.md#dense-arms).
+
+**Module**: `arandu.shared.rag.retrieve.settings` &nbsp;|&nbsp; **Environment Prefix**: `ARANDU_DENSE_`
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `chunker_id` | `str` | `"cep_4k"` | Chunker view to index (must exist under `chunk/outputs/`) |
+| `model` | `str` | `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` | sentence-transformers model name |
+| `window_tokens` | `int \| None` | `None` | Encoder input tokens per window, special tokens and passage prompt included; unset = encoder `max_seq_length` |
+| `whole_chunk` | `bool` | `False` | Encode each chunk as one window |
+| `overlap_ratio` | `float` | `0.25` | Share of each window repeated by the next one |
+| `query_prompt` | `str` | `""` | Text prepended to each question |
+| `passage_prompt` | `str` | `""` | Text prepended to each window |
+| `unit` | `"parent" \| "subpassage"` | `"parent"` | Returned unit: the chunks (same `chunk_id` as BM25) or the windows |
+| `device` | `str \| None` | `None` | Torch device (`cpu`, `cuda`); unset = auto. A CUDA out-of-memory error moves the encoder to the CPU |
+| `batch_size` | `int` | `16` | Texts per forward pass |
+
+**Environment Variables**:
+```bash
+export ARANDU_DENSE_MODEL=BAAI/bge-m3
+export ARANDU_DENSE_WINDOW_TOKENS=256
+export ARANDU_DENSE_DEVICE=cpu
+```
+
+---
+
 ## LLMConfig
 
 Shared LLM settings across pipelines. It holds no API key: each LLM client reads its own
@@ -443,6 +475,7 @@ Configuration settings are loaded from environment variables with config-specifi
 | `CEPConfig` | `ARANDU_CEP_` | `ARANDU_CEP_MAX_SCAFFOLDING_PAIRS` |
 | `JudgeConfig` | `ARANDU_JUDGE_` | `ARANDU_JUDGE_VALIDATOR_MODEL` |
 | `KGConfig` | `ARANDU_KG_` | `ARANDU_KG_PROVIDER` |
+| `DenseRetrieveSettings` | `ARANDU_DENSE_` | `ARANDU_DENSE_MODEL` |
 | `LLMConfig` | (No prefix) | `ARANDU_LLM_BASE_URL` |
 | `ResultsConfig` | `ARANDU_RESULTS_` | `ARANDU_RESULTS_BASE_DIR` |
 
@@ -493,6 +526,14 @@ export ARANDU_KG_API_KEY=sk-...
 export ARANDU_KG_MODEL_ID=gpt-4o
 export ARANDU_KG_LANGUAGE=pt
 export ARANDU_KG_OLLAMA_URL=http://localhost:11434/v1
+```
+
+**DenseRetrieveSettings** (`ARANDU_DENSE_`):
+```bash
+export ARANDU_DENSE_MODEL=BAAI/bge-m3
+export ARANDU_DENSE_WINDOW_TOKENS=256
+export ARANDU_DENSE_OVERLAP_RATIO=0.25
+export ARANDU_DENSE_DEVICE=cuda
 ```
 
 **LLMConfig** (No prefix, uses aliases):

@@ -7,6 +7,7 @@ one :class:`RetrievalRecord` per pair. Checkpoint keys are composite
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -15,14 +16,16 @@ from pydantic import BaseModel, Field
 
 from arandu.shared.checkpoint import CheckpointManager
 from arandu.shared.config import ResultsConfig
-from arandu.shared.rag.retrieve.factory import build_retriever
+from arandu.shared.rag.retrieve.factory import RetrieveSettings, build_retriever
 from arandu.shared.rag.retrieve.loader import load_questions
 from arandu.shared.rag.retrieve.settings import (
-    ALL_ARMS,
+    KNOWN_ARMS,
     ArmName,
     AtlasRagRetrieveSettings,
     Bm25RetrieveSettings,
+    DenseRetrieveSettings,
     KHopRetrieveSettings,
+    is_dense_arm,
 )
 from arandu.shared.rag.schemas import RetrievalQuery, RetrievalRecord
 from arandu.shared.results_manager import ResultsManager
@@ -92,6 +95,7 @@ def run_retrieve_batch(
     khop_settings: KHopRetrieveSettings | None = None,
     atlas_rag_settings: AtlasRagRetrieveSettings | None = None,
     embedder_settings: EmbedderSettings | None = None,
+    dense_settings: DenseRetrieveSettings | None = None,
     rebuild_index: bool = False,
     include_rejected: bool = False,
     base_dir: Path | None = None,
@@ -122,8 +126,11 @@ def run_retrieve_batch(
             Ignored by the other arms. Defaults are instantiated inside
             :func:`build_retriever` from ``ARANDU_EMBEDDER_*`` when
             omitted.
+        dense_settings: Dense arm settings (chunker view, encoder,
+            window, overlap, returned unit). Defaults instantiated from
+            env (``ARANDU_DENSE_*``) when omitted.
         rebuild_index: Force arm-side index rebuilds where supported
-            (BM25 only; k-hop arms build state in-memory; atlas-rag's
+            (BM25 and dense; k-hop arms build state in-memory; atlas-rag's
             precompute is rebuilt via
             ``arandu kg-build-retriever-index --rebuild``).
         include_rejected: When ``True``, retrieve over all CEP pairs in the
@@ -144,9 +151,9 @@ def run_retrieve_batch(
         raise ValueError("Must request at least one arm; got empty list.")
     if top_k < 1:
         raise ValueError(f"top_k must be >= 1, got {top_k}.")
-    unknown = [a for a in arms if a not in ALL_ARMS]
+    unknown = [a for a in arms if a not in KNOWN_ARMS]
     if unknown:
-        raise ValueError(f"Unknown arm(s) {unknown!r}. Valid arms: {list(ALL_ARMS)}.")
+        raise ValueError(f"Unknown arm(s) {unknown!r}. Valid arms: {list(KNOWN_ARMS)}.")
 
     base = base_dir if base_dir is not None else ResultsConfig().base_dir
     cep_dir = base / pipeline_id / "cep" / "outputs"
@@ -192,11 +199,18 @@ def run_retrieve_batch(
             khop_settings=khop_settings,
             atlas_rag_settings=atlas_rag_settings,
             embedder_settings=embedder_settings,
+            dense_settings=dense_settings,
             base_dir=base,
             rebuild_index=rebuild_index,
         )
         if retriever is None:
             # Arm-build failure already logged; skip every question for it.
+            failed += len(questions)
+            continue
+        if is_dense_arm(arm) and not _dense_config_matches(
+            results_mgr.outputs_dir / arm,
+            (dense_settings or DenseRetrieveSettings()).for_arm(arm),
+        ):
             failed += len(questions)
             continue
 
@@ -262,6 +276,7 @@ def _build_with_logging(
     khop_settings: KHopRetrieveSettings | None,
     atlas_rag_settings: AtlasRagRetrieveSettings | None,
     embedder_settings: EmbedderSettings | None,
+    dense_settings: DenseRetrieveSettings | None,
     base_dir: Path,
     rebuild_index: bool,
 ) -> Retriever | None:
@@ -272,13 +287,15 @@ def _build_with_logging(
     the batch runner continue with the next arm rather than aborting
     the whole run.
     """
-    settings: Bm25RetrieveSettings | KHopRetrieveSettings | AtlasRagRetrieveSettings | None = None
+    settings: RetrieveSettings | None = None
     if arm == "bm25":
         settings = bm25_settings
     elif arm in ("khop_passage", "khop_triple"):
         settings = khop_settings
     elif arm == "atlas_rag":
         settings = atlas_rag_settings
+    elif is_dense_arm(arm):
+        settings = dense_settings
 
     try:
         return build_retriever(
@@ -289,7 +306,10 @@ def _build_with_logging(
             base_dir=base_dir,
             rebuild_index=rebuild_index,
         )
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+    # OSError covers encoder loads that fail on the network or on a bad model
+    # name (huggingface_hub and requests errors derive from it), so one dense
+    # arm that cannot load its encoder does not stop the others.
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
         logger.error("Failed to build %s arm for pipeline %s: %s", arm, pipeline_id, exc)
         return None
 
@@ -320,6 +340,51 @@ def _retrieve_one(
         # by design - arms without the attribute contribute {}.
         retriever_meta=dict(getattr(retriever, "last_retrieve_meta", None) or {}),
     )
+
+
+# Dense settings that change the index or the records of an arm. Device and
+# batch size do not, so a resume may change them.
+_DENSE_IDENTITY_FIELDS = (
+    "chunker_id",
+    "model",
+    "window_tokens",
+    "whole_chunk",
+    "overlap_ratio",
+    "query_prompt",
+    "passage_prompt",
+    "unit",
+)
+DENSE_CONFIG_FILENAME = "dense_config.json"
+
+
+def _dense_config_matches(arm_dir: Path, settings: DenseRetrieveSettings) -> bool:
+    """Record a dense arm's configuration in its output dir, or check it against the recorded one.
+
+    The checkpoint key is ``<arm>::<qa_pair_id>``, so a resume under other
+    ``ARANDU_DENSE_*`` values would add records of a second configuration to
+    the same directory. The first run writes ``dense_config.json``; a later
+    run whose configuration differs is refused (logged, arm skipped).
+    """
+    current = {f: getattr(settings, f) for f in _DENSE_IDENTITY_FIELDS}
+    path = arm_dir / DENSE_CONFIG_FILENAME
+    if path.exists():
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+        if recorded != current:
+            diff = {k: (recorded.get(k), v) for k, v in current.items() if recorded.get(k) != v}
+            logger.error(
+                "Dense arm %s: configuration differs from the one its outputs were "
+                "retrieved with (%s: recorded, requested = %s). Skipping the arm; use a "
+                "new run id or remove %s to start over.",
+                arm_dir.name,
+                path,
+                diff,
+                arm_dir,
+            )
+            return False
+        return True
+    arm_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    return True
 
 
 def _checkpoint_key(arm: ArmName, qa_pair_id: str) -> str:

@@ -10,13 +10,19 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
 from arandu.shared.rag.retrieve.batch import (
     CHECKPOINT_FILENAME,
+    DENSE_CONFIG_FILENAME,
+    _dense_config_matches,
     run_retrieve_batch,
 )
+from arandu.shared.rag.retrieve.factory import build_retriever
+from arandu.shared.rag.retrieve.settings import DenseRetrieveSettings
+from arandu.shared.rag.retrievers.null import NullRetriever
 from arandu.shared.rag.schemas import RetrievalRecord
 
 if TYPE_CHECKING:
@@ -205,6 +211,62 @@ class TestPerArmFailureIsolation:
         assert result.retrievals_failed >= 2  # bm25 x2 questions
         null_outputs = tmp_path / "run_x" / "retrieve" / "outputs" / "null" / "cep"
         assert len(list(null_outputs.glob("*.json"))) == 2
+
+
+class TestDenseArmGuards:
+    def test_encoder_load_oserror_does_not_block_other_arms(self, tmp_path: Path) -> None:
+        # A model that cannot be downloaded raises OSError from
+        # sentence-transformers; the other arms must still run.
+        _seed_cep(tmp_path)
+        real_build = build_retriever
+
+        def build(arm: str, **kwargs: object) -> object:
+            if arm == "dense_mpnet128":
+                raise OSError("not a valid model identifier")
+            return real_build(arm, **kwargs)
+
+        with patch("arandu.shared.rag.retrieve.batch.build_retriever", side_effect=build):
+            result = run_retrieve_batch(
+                pipeline_id="run_x",
+                arms=["dense_mpnet128", "null"],
+                top_k=5,
+                base_dir=tmp_path,
+            )
+        assert result.retrievals_written == 2
+        assert result.retrievals_failed == 2
+
+    def test_dense_config_recorded_then_checked(self, tmp_path: Path) -> None:
+        arm_dir = tmp_path / "dense"
+        base = DenseRetrieveSettings(_env_file=None)
+        assert _dense_config_matches(arm_dir, base)
+        recorded = json.loads((arm_dir / DENSE_CONFIG_FILENAME).read_text())
+        assert recorded["unit"] == "parent"
+        assert "device" not in recorded
+        # Device and batch size may change on resume; the unit may not.
+        assert _dense_config_matches(arm_dir, base.model_copy(update={"device": "cpu"}))
+        assert not _dense_config_matches(arm_dir, base.model_copy(update={"unit": "subpassage"}))
+
+    def test_resume_with_other_config_skips_the_arm(self, tmp_path: Path) -> None:
+        _seed_cep(tmp_path)
+        arm_dir = tmp_path / "run_x" / "retrieve" / "outputs" / "dense"
+        arm_dir.mkdir(parents=True)
+        (arm_dir / DENSE_CONFIG_FILENAME).write_text(
+            json.dumps({"unit": "subpassage"}), encoding="utf-8"
+        )
+        with patch(
+            "arandu.shared.rag.retrieve.batch.build_retriever",
+            return_value=NullRetriever(),
+        ):
+            result = run_retrieve_batch(
+                pipeline_id="run_x",
+                arms=["dense"],
+                top_k=5,
+                base_dir=tmp_path,
+                dense_settings=DenseRetrieveSettings(_env_file=None),
+            )
+        assert result.retrievals_written == 0
+        assert result.retrievals_failed == 2
+        assert not list((arm_dir).glob("cep/*.json"))
 
 
 class TestRunRetrieveBatchOracleArm:
