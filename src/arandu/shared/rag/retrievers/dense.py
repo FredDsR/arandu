@@ -42,6 +42,7 @@ import numpy as np
 from arandu.shared.rag.schemas import RetrievedPassage
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from arandu.shared.chunking.resolver import ChunkResolver
@@ -81,6 +82,10 @@ class DenseEncoder(Protocol):
 
     def token_spans(self, text: str) -> list[tuple[int, int]]:
         """Return the ``(start_char, end_char)`` span of each token of ``text``."""
+        ...
+
+    def count_tokens(self, text: str) -> int:
+        """Return how many tokens the encoder reads for ``text``, special tokens excluded."""
         ...
 
     def encode(self, texts: list[str], *, query: bool) -> np.ndarray:
@@ -150,6 +155,18 @@ class SentenceTransformerEncoder:
             verbose=False,
         )
         return [(int(s), int(e)) for s, e in enc["offset_mapping"] if e > s]
+
+    def count_tokens(self, text: str) -> int:
+        """Return the tokens the encoder reads for ``text``, special tokens excluded.
+
+        Unlike :meth:`token_spans`, zero-width tokens (a lone word-start
+        marker) count, since they take a place in the encoder input.
+        """
+        return len(
+            self._tokenizer(text, add_special_tokens=False, truncation=False, verbose=False)[
+                "input_ids"
+            ]
+        )
 
     def encode(self, texts: list[str], *, query: bool) -> np.ndarray:
         """Encode ``texts`` into L2-normalized ``float32`` rows."""
@@ -258,6 +275,51 @@ def split_windows(
         start += stride
 
 
+def fit_windows(
+    text: str,
+    token_spans: list[tuple[int, int]],
+    window: int,
+    overlap: int,
+    count_tokens: Callable[[str], int],
+) -> list[tuple[int, int]]:
+    """Cut ``text`` into overlapping windows that each fit ``window`` tokens when re-tokenized.
+
+    The windows are cut on the tokens of the whole chunk, but the encoder
+    tokenizes each window's text on its own. A window that starts or ends
+    inside a word can come out longer (a word piece gains a word-start
+    marker), and the encoder would then drop its last tokens. Each window
+    is therefore checked with ``count_tokens`` and shortened from the end
+    until it fits; the next window starts ``overlap`` tokens before the
+    shortened end, so every token stays covered. With no shortening the
+    windows are those of :func:`split_windows`.
+
+    Args:
+        text: The chunk text the spans index into.
+        token_spans: ``(start_char, end_char)`` per token of ``text``.
+        window: Content tokens per window.
+        overlap: Tokens shared by consecutive windows (``< window``).
+        count_tokens: Tokens the encoder reads for a string.
+
+    Returns:
+        ``(start_char, end_char)`` per window; ``[]`` for no tokens.
+    """
+    n = len(token_spans)
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while start < n:
+        end = min(start + window, n)
+        while (
+            end - start > 1
+            and count_tokens(text[token_spans[start][0] : token_spans[end - 1][1]]) > window
+        ):
+            end -= 1
+        spans.append((token_spans[start][0], token_spans[end - 1][1]))
+        if end == n:
+            break
+        start = max(end - overlap, start + 1)
+    return spans
+
+
 def _derive_retriever_id(chunker_id: str) -> str:
     """``dense_<chunker_id>``, mirroring BM25's ``bm25_<chunker_id>``."""
     prefix = f"{RETRIEVER_FAMILY}_"
@@ -274,12 +336,22 @@ def _sha256(*paths: Path) -> str:
 def _index_shape(
     encoder: DenseEncoder, window_tokens: int | None, whole_chunk: bool, overlap_ratio: float
 ) -> dict[str, object]:
-    """The manifest fields that identify how the sub-passages were cut."""
+    """The manifest fields that identify how the sub-passages were cut.
+
+    ``windowing`` names the cutting rule: ``"fit"`` for :func:`fit_windows`
+    (windows checked against the re-tokenized length). An index built
+    before that rule has no such field and must be rebuilt.
+    """
     if whole_chunk:
         return {"window_tokens": WHOLE_CHUNK, "content_tokens": None, "overlap_tokens": 0}
     content, overlap = resolve_window(encoder, window_tokens, overlap_ratio)
     window = encoder.max_seq_length if window_tokens is None else window_tokens
-    return {"window_tokens": window, "content_tokens": content, "overlap_tokens": overlap}
+    return {
+        "window_tokens": window,
+        "content_tokens": content,
+        "overlap_tokens": overlap,
+        "windowing": "fit",
+    }
 
 
 class DenseRetriever:
@@ -402,8 +474,12 @@ class DenseRetriever:
                 used = len(tokens) + encoder.num_special_tokens + prompt_tokens
                 truncated += used > encoder.max_seq_length
             else:
-                spans = split_windows(
-                    tokens, int(shape["content_tokens"]), int(shape["overlap_tokens"])
+                spans = fit_windows(
+                    text,
+                    tokens,
+                    int(shape["content_tokens"]),
+                    int(shape["overlap_tokens"]),
+                    encoder.count_tokens,
                 )
             if not spans:
                 empty_chunks += 1

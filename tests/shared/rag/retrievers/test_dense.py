@@ -22,6 +22,7 @@ from arandu.shared.rag.retrievers.dense import (
     MANIFEST_FILENAME,
     SUBPASSAGES_FILENAME,
     DenseRetriever,
+    fit_windows,
     resolve_window,
     split_windows,
 )
@@ -50,6 +51,9 @@ class FakeEncoder:
 
     def token_spans(self, text: str) -> list[tuple[int, int]]:
         return [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+
+    def count_tokens(self, text: str) -> int:
+        return len(self.token_spans(text))
 
     def encode(self, texts: list[str], *, query: bool) -> np.ndarray:
         prompt = self.query_prompt if query else self.passage_prompt
@@ -115,6 +119,29 @@ class TestSplitWindows:
 
     def test_empty(self) -> None:
         assert split_windows([], 4, 1) == []
+
+    def test_fit_windows_matches_split_when_nothing_grows(self) -> None:
+        text = "a b c d e"
+        spans = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9)]
+        count = lambda t: len(t.split())  # noqa: E731
+        assert fit_windows(text, spans, 2, 1, count) == split_windows(spans, 2, 1)
+        assert fit_windows(text, [], 2, 1, count) == []
+
+    def test_fit_windows_shortens_and_keeps_every_token(self) -> None:
+        # A window holding "c" re-tokenizes one token longer (a word piece
+        # that gains a word-start marker), so it must end before "c" and the
+        # next window must still start early enough to cover it.
+        text = "a b c d e"
+        spans = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9)]
+
+        def count(t: str) -> int:
+            return len(t.split()) + ("c" in t.split())
+
+        windows = fit_windows(text, spans, 3, 1, count)
+        assert all(count(text[s:e]) <= 3 for s, e in windows)
+        covered = {i for s, e in windows for i, (a, b) in enumerate(spans) if s <= a and b <= e}
+        assert covered == set(range(len(spans)))
+        assert windows[0] == (0, 3)  # "a b": "a b c" would need 4 tokens
 
 
 class TestResolveWindow:
