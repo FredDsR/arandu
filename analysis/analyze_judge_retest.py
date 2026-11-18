@@ -82,6 +82,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from analysis._judge_common import DEFAULT_THRESHOLD, approved_ids, pair_scores
+from arandu.qa.non_answerable.corpus_index import load_kg_node_set
+from arandu.qa.non_answerable.schemas import NonAnswerableDataset
 from arandu.qa.schemas import iter_cep_pairs
 from arandu.shared.agreement.coefficients import (
     cohen_kappa_weighted,
@@ -109,6 +111,11 @@ GATE_CRITERIA = ["faithfulness", "bloom_calibration", "informativeness", "self_c
 ANS_CRITERIA = ["abstention", "passage_coverage", "answer_correctness", "answer_faithfulness"]
 LABELS = ["TA", "TC", "FA", "FC"]
 RESIDUAL_CHUNK_CHARS = 100
+# Probe set and graph the KG-collision filter checks (see kg_collision_probes).
+NONANS_DATASET = Path("results/thesis-run-02/non_answerable/outputs/dataset.json")
+KG_GRAPHML = Path(
+    "results/thesis-run-02/kg/outputs/atlas_output/kg_graphml/transcriptions.json_graph.graphml"
+)
 
 # --------------------------------------------------------------------------- #
 # Loading
@@ -222,8 +229,56 @@ def _criterion(rec: AnswerRecord, name: str) -> float | None:
     return None
 
 
-def load_answers(root: Path) -> dict[str, Any]:
-    """Judged AnswerRecords keyed by (arm, qa_pair_id), plus checkpoint membership."""
+def kg_collision_probes(dataset: Path, graphml: Path) -> frozenset[str]:
+    """Unanswerable probes whose replacement entity is a KG node label.
+
+    The generator's KG absence gate compared replacements with hashed node ids
+    until the label was read from the ATLAS ``id`` attribute, so these probes
+    passed a check they fail. The comparison is the generator's own
+    (``_is_valid_swap``): exact label after lower-case and strip.
+    """
+    labels = load_kg_node_set(graphml)
+    items = NonAnswerableDataset.load(dataset).items
+    return frozenset(
+        it.qa_pair_id
+        for it in items
+        if it.swapped_entity.replacement_entity.strip().lower() in labels
+    )
+
+
+def add_probe_filter_args(parser: argparse.ArgumentParser) -> None:
+    """CLI options of the KG-collision probe filter, shared by the analyses."""
+    parser.add_argument(
+        "--nonans-dataset",
+        type=Path,
+        default=NONANS_DATASET,
+        help="Unanswerable probe dataset checked against the KG labels.",
+    )
+    parser.add_argument(
+        "--kg-graphml",
+        type=Path,
+        default=KG_GRAPHML,
+        help="KG whose labels the probes are checked against.",
+    )
+    parser.add_argument(
+        "--keep-kg-collisions",
+        action="store_true",
+        help="Keep probes whose replacement is a KG label (results as first published).",
+    )
+
+
+def probe_exclusion(args: argparse.Namespace) -> frozenset[str]:
+    """Probe ids to drop from every analysis, per the filter options."""
+    if args.keep_kg_collisions:
+        return frozenset()
+    return kg_collision_probes(args.nonans_dataset, args.kg_graphml)
+
+
+def load_answers(root: Path, exclude: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """Judged AnswerRecords keyed by (arm, qa_pair_id), plus checkpoint membership.
+
+    Records whose ``qa_pair_id`` is in ``exclude`` are skipped and counted.
+    """
     ckpt_path = root / "judge_answers_checkpoint.json"
     ckpt_raw = json.loads(ckpt_path.read_text()) if ckpt_path.exists() else None
     ckpt = set(ckpt_raw["completed_files"]) if ckpt_raw is not None else None
@@ -231,9 +286,13 @@ def load_answers(root: Path) -> dict[str, Any]:
     facts: dict[tuple[str, str], dict[str, Any]] = {}
     files_by_arm_kind: Counter[str] = Counter()
     dup_keys = 0
+    excluded = 0
     for path in sorted((root / "outputs").glob("*/*/*.json")):
         arm, kind = path.parts[-3], path.parts[-2]
         rec = AnswerRecord.load(path)
+        if rec.qa_pair_id in exclude:
+            excluded += 1
+            continue
         key = (arm, rec.qa_pair_id)
         files_by_arm_kind[f"{arm}/{kind}"] += 1
         dup_keys += key in recs
@@ -260,10 +319,16 @@ def load_answers(root: Path) -> dict[str, Any]:
         "checkpoint_started_at": None if ckpt_raw is None else ckpt_raw.get("started_at"),
         "files_by_arm_kind": dict(sorted(files_by_arm_kind.items())),
         "duplicate_keys": dup_keys,
+        "excluded_records": excluded,
     }
 
 
-def load_replica(path: Path, cache_dir: Path | None, gate_from: Path | None) -> dict[str, Any]:
+def load_replica(
+    path: Path,
+    cache_dir: Path | None,
+    gate_from: Path | None,
+    exclude: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     """Load one replica directory (optionally pickled to ``cache_dir``).
 
     ``gate_from`` is an alternative export of the same round from which the gate
@@ -276,7 +341,8 @@ def load_replica(path: Path, cache_dir: Path | None, gate_from: Path | None) -> 
     cache = None
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        tag = f"{path.resolve()}|{gate_root.resolve()}|v2"
+        excl = hashlib.sha1("\n".join(sorted(exclude)).encode()).hexdigest()
+        tag = f"{path.resolve()}|{gate_root.resolve()}|{excl}|v3"
         cache = cache_dir / f"{hashlib.sha1(tag.encode()).hexdigest()}.pkl"
         if cache.exists():
             return pickle.loads(cache.read_bytes())
@@ -314,7 +380,7 @@ def load_replica(path: Path, cache_dir: Path | None, gate_from: Path | None) -> 
         "cep": cep,
         "emic": emic,
         "emic_counts": emic_counts,
-        "answers": load_answers(path / "judge_answers"),
+        "answers": load_answers(path / "judge_answers", exclude),
         "meta": meta,
         "gate_source": gate_source,
         "history": sorted(p.name for p in (gate_root / "judge_qa" / "history").glob("*.json"))
@@ -2363,6 +2429,7 @@ def main() -> None:
     parser.add_argument(
         "--repo", type=Path, default=Path("."), help="arandu checkout whose prompts are digested."
     )
+    add_probe_filter_args(parser)
     args = parser.parse_args()
     if len(args.replica) < 2:
         parser.error("need at least two replicas")
@@ -2370,10 +2437,15 @@ def main() -> None:
     for item in args.gate_from:
         n, _, d = item.partition("=")
         gate_from[int(n) - 1] = Path(d)
-    reps = [load_replica(p, args.cache_dir, gate_from.get(i)) for i, p in enumerate(args.replica)]
+    exclude = probe_exclusion(args)
+    reps = [
+        load_replica(p, args.cache_dir, gate_from.get(i), exclude)
+        for i, p in enumerate(args.replica)
+    ]
     rng = np.random.default_rng(args.seed)
     res: dict[str, Any] = {
         "replicas": [str(p) for p in args.replica],
+        "excluded_probes": sorted(exclude),
         "gate_from": {f"r{i + 1}": str(d) for i, d in gate_from.items()},
         "n_boot": args.n_boot,
         "seed": args.seed,

@@ -45,9 +45,12 @@ def _fold(text: str) -> str:
 def load_kg_node_set(graphml_path: Path) -> set[str]:
     """Load the lower-cased label set from a KG GraphML file.
 
-    Falls back to the node id when a node carries no ``label`` attribute.
-    Returns an empty set (with a warning) if NetworkX or the file is
-    unavailable - the corpus index still provides an absence check.
+    The surface label is read from the ``label`` attribute or, as the AutoSchemaKG
+    (ATLAS) export writes it, from a node attribute named ``id`` (GraphML key
+    ``d0``); there the XML node id is a SHA-256 hash, so it is only a last-resort
+    fallback for a node carrying neither attribute. Returns an empty set (with a
+    warning) if NetworkX or the file is unavailable - the corpus index still
+    provides an absence check.
 
     Args:
         graphml_path: Path to ``kg_graphml/<keyword>_graph.graphml``.
@@ -64,7 +67,16 @@ def load_kg_node_set(graphml_path: Path) -> set[str]:
         logger.warning("KG GraphML absent at %s; KG node absence check disabled.", graphml_path)
         return set()
     graph = nx.read_graphml(str(graphml_path))
-    return {_normalize(data.get("label") or node_id) for node_id, data in graph.nodes(data=True)}
+    return {_normalize(_node_label(node_id, data)) for node_id, data in graph.nodes(data=True)}
+
+
+def _node_label(node_id: str, data: dict[str, object]) -> str:
+    """Surface label of a GraphML node: ``label``, then the ``id`` attribute, then the node id."""
+    for attr in ("label", "id"):
+        value = data.get(attr)
+        if isinstance(value, str) and value.strip():
+            return value
+    return node_id
 
 
 class SourceCorpusIndex:

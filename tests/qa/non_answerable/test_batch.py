@@ -104,6 +104,26 @@ def test_kg_gate_reads_atlas_output_path(
     assert result.seeds_failed == 2
 
 
+def test_kg_gate_matches_atlas_id_attribute(
+    tmp_path: Path, cep_dir: Path, patched_llm: _FakeLLM
+) -> None:
+    # Real ATLAS GraphML: the node id is a SHA-256 hash and the surface text
+    # lives in a node attribute named ``id``. A gate keyed on the node id would
+    # compare "joana" against the hash and let every swap through.
+    import networkx as nx
+
+    base = tmp_path / "results"
+    kg_dir = base / "run-x" / "kg" / "outputs" / "atlas_output" / "kg_graphml"
+    kg_dir.mkdir(parents=True)
+    graph = nx.DiGraph()
+    graph.add_node("ea541850" + "0" * 56, id="Joana", type="entity")
+    nx.write_graphml(graph, str(kg_dir / "transcriptions.json_graph.graphml"))
+
+    result = run_generate_non_answerable_batch("run-x", base_dir=base, settings=_settings())
+    assert result.items_built == 0
+    assert result.seeds_failed == 2
+
+
 def test_resume_skips_completed_seeds(tmp_path: Path, cep_dir: Path, patched_llm: _FakeLLM) -> None:
     base = tmp_path / "results"
     first = run_generate_non_answerable_batch("run-x", base_dir=base, settings=_settings())

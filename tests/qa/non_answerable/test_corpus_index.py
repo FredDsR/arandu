@@ -34,6 +34,27 @@ class TestLoadKgNodeSet:
         nx.write_graphml(graph, str(path))
         assert "cheia2024" in load_kg_node_set(path)
 
+    def test_reads_atlas_id_attribute_not_hashed_node_id(self, tmp_path: Path) -> None:
+        # The ATLAS export keys nodes by a SHA-256 hash and stores the surface
+        # label in a node attribute named ``id`` (GraphML key d0). The label set
+        # must hold that text, never the hash, or the KG absence gate is a no-op.
+        graph = nx.DiGraph()
+        graph.add_node("8c94882" + "0" * 57, id="Entrevistado", type="entity")
+        graph.add_node("ea54185" + "0" * 57, id="Enchente de 2020", type="event")
+        graph.add_node("e688602" + "0" * 57, id="  comunidade de pescadores ", type="concept")
+        path = tmp_path / "transcriptions.json_graph.graphml"
+        nx.write_graphml(graph, str(path))
+        nodes = load_kg_node_set(path)
+        assert nodes == {"entrevistado", "enchente de 2020", "comunidade de pescadores"}
+
+    def test_label_attribute_wins_over_id_attribute(self, tmp_path: Path) -> None:
+        graph = nx.DiGraph()
+        graph.add_node("n0", label="Maria", id="maria_node")
+        graph.add_node("n1", id="", label="")  # blank attributes fall back to the node id
+        path = tmp_path / "g.graphml"
+        nx.write_graphml(graph, str(path))
+        assert load_kg_node_set(path) == {"maria", "n1"}
+
     def test_absent_file_returns_empty(self, tmp_path: Path) -> None:
         assert load_kg_node_set(tmp_path / "missing.graphml") == set()
 
