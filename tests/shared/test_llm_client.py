@@ -1,0 +1,1044 @@
+"""Tests for LLM client."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from unittest.mock import Mock
+
+import pytest
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
+
+from pydantic import BaseModel as _PydanticBaseModel
+from pydantic import SecretStr
+from pydantic_settings import SettingsConfigDict
+
+from arandu.shared.llm_client import (
+    LLMClient,
+    LLMProvider,
+    StructuredOutputError,
+    build_llm_client_from_settings,
+    create_llm_client,
+    resolve_api_key,
+)
+from arandu.shared.llm_settings import LLMSettings, validate_atlas_extra_body
+from arandu.utils.text import GenerateResult
+
+
+class TestLLMClient:
+    """Tests for LLMClient class."""
+
+    def test_initialization_openai(self, mocker: MockerFixture) -> None:
+        """Test LLMClient initialization with OpenAI provider."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = LLMClient(
+            provider=LLMProvider.OPENAI,
+            model_id="gpt-4",
+            api_key="sk-test-key",
+        )
+
+        assert client.provider == LLMProvider.OPENAI
+        assert client.model_id == "gpt-4"
+        assert client.base_url is None
+        mock_openai.assert_called_once_with(api_key="sk-test-key", base_url=None)
+
+    def test_initialization_ollama_default_api_key(self, mocker: MockerFixture) -> None:
+        """Test LLMClient initialization with Ollama provider and default API key."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        assert client.provider == LLMProvider.OLLAMA
+        assert client.model_id == "llama3.1:8b"
+        assert client.base_url == "http://localhost:11434/v1"
+        mock_openai.assert_called_once_with(api_key="ollama", base_url="http://localhost:11434/v1")
+
+    def test_initialization_ollama_custom_api_key(self, mocker: MockerFixture) -> None:
+        """Test LLMClient initialization with Ollama provider and custom API key."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+            api_key="custom-key",
+        )
+
+        assert client.base_url == "http://localhost:11434/v1"
+        mock_openai.assert_called_once_with(
+            api_key="custom-key", base_url="http://localhost:11434/v1"
+        )
+
+    def test_initialization_custom_provider(self, mocker: MockerFixture) -> None:
+        """Test LLMClient initialization with custom provider."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = LLMClient(
+            provider=LLMProvider.CUSTOM,
+            model_id="custom-model",
+            api_key="custom-key",
+            base_url="http://localhost:8000/v1",
+        )
+
+        assert client.provider == LLMProvider.CUSTOM
+        assert client.model_id == "custom-model"
+        assert client.base_url == "http://localhost:8000/v1"
+        mock_openai.assert_called_once_with(
+            api_key="custom-key", base_url="http://localhost:8000/v1"
+        )
+
+    def test_initialization_custom_base_url_override(self, mocker: MockerFixture) -> None:
+        """Test that explicit base_url overrides provider default."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+            base_url="http://custom-ollama:11434/v1",
+        )
+
+        assert client.base_url == "http://custom-ollama:11434/v1"
+        mock_openai.assert_called_once_with(
+            api_key="ollama", base_url="http://custom-ollama:11434/v1"
+        )
+
+    def test_is_available_success(self, mocker: MockerFixture) -> None:
+        """Test is_available returns True when models.list succeeds."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_client.models.list.return_value = []
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        assert client.is_available() is True
+        mock_client.models.list.assert_called_once()
+
+    def test_is_available_failure(self, mocker: MockerFixture) -> None:
+        """Test is_available returns False when models.list fails."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_client.models.list.side_effect = Exception("Connection error")
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        assert client.is_available() is False
+
+    def test_generate_basic(self, mocker: MockerFixture) -> None:
+        """Test basic text generation."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        # Mock the response structure
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Paris is the capital of France."
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        result = client.generate("What is the capital of France?")
+
+        assert isinstance(result, GenerateResult)
+        assert result.content == "Paris is the capital of France."
+        assert result.thinking is None
+        mock_client.chat.completions.create.assert_called_once()
+
+        # Verify the call arguments
+        call_args = mock_client.chat.completions.create.call_args
+        assert call_args.kwargs["model"] == "llama3.1:8b"
+        assert call_args.kwargs["temperature"] == 0.7
+        assert len(call_args.kwargs["messages"]) == 1
+        assert call_args.kwargs["messages"][0]["role"] == "user"
+        assert call_args.kwargs["messages"][0]["content"] == "What is the capital of France?"
+
+    def test_generate_with_system_prompt(self, mocker: MockerFixture) -> None:
+        """Test text generation with system prompt."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        result = client.generate(
+            "What is the capital of France?",
+            system_prompt="You are a geography expert.",
+        )
+
+        assert result.content == "Test response"
+
+        # Verify the call arguments include system prompt
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a geography expert."
+        assert messages[1]["role"] == "user"
+
+    def test_generate_with_custom_temperature(self, mocker: MockerFixture) -> None:
+        """Test text generation with custom temperature."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        client.generate("Test prompt", temperature=0.9)
+
+        # Verify temperature is set correctly
+        call_args = mock_client.chat.completions.create.call_args
+        assert call_args.kwargs["temperature"] == 0.9
+
+    def test_generate_with_max_tokens(self, mocker: MockerFixture) -> None:
+        """Test text generation with max_tokens limit."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        client.generate("Test prompt", max_tokens=100)
+
+        # Verify max_tokens is set correctly
+        call_args = mock_client.chat.completions.create.call_args
+        assert call_args.kwargs["max_tokens"] == 100
+
+    def test_generate_with_response_format(self, mocker: MockerFixture) -> None:
+        """Test that response_format is passed to API when provided."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '{"key": "value"}'
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        client.generate("Test prompt", response_format={"type": "json_object"})
+
+        call_args = mock_client.chat.completions.create.call_args
+        assert call_args.kwargs["response_format"] == {"type": "json_object"}
+
+    def test_generate_without_response_format(self, mocker: MockerFixture) -> None:
+        """Test that response_format is omitted from API when None."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        client.generate("Test prompt")
+
+        call_args = mock_client.chat.completions.create.call_args
+        assert "response_format" not in call_args.kwargs
+
+    def test_generate_empty_content(self, mocker: MockerFixture) -> None:
+        """Test text generation when response content is None."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = None
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.content == ""
+        assert result.thinking is None
+
+    def test_generate_retry_on_failure(self, mocker: MockerFixture) -> None:
+        """Test that generate retries on failure (tenacity decorator)."""
+        # Skip retry delays for faster tests
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        # First two calls fail, third succeeds
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Success"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+
+        mock_client.chat.completions.create.side_effect = [
+            Exception("API Error 1"),
+            Exception("API Error 2"),
+            mock_response,
+        ]
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        result = client.generate("Test prompt")
+
+        # Should succeed after retries
+        assert result.content == "Success"
+        assert mock_client.chat.completions.create.call_count == 3
+
+    def test_generate_survives_sustained_rate_limiting(self, mocker: MockerFixture) -> None:
+        """generate retries past the old 3-attempt budget under sustained 429s.
+
+        Cloud endpoints enforce per-minute quotas, so a burst of rate-limit
+        errors must not exhaust the retry budget after a few attempts (which
+        would surface as RetryError and a dropped result). Five failures
+        followed by a success must still resolve.
+        """
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Recovered"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+
+        mock_client.chat.completions.create.side_effect = [
+            Exception("429 rate limit 1"),
+            Exception("429 rate limit 2"),
+            Exception("429 rate limit 3"),
+            Exception("429 rate limit 4"),
+            Exception("429 rate limit 5"),
+            mock_response,
+        ]
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="llama3.1:8b")
+
+        result = client.generate("Test prompt")
+
+        assert result.content == "Recovered"
+        assert mock_client.chat.completions.create.call_count == 6
+
+    def test_long_backoff_only_for_rate_limit(self, mocker: MockerFixture) -> None:
+        """The 60s jittered backoff applies to RateLimitError only.
+
+        Other transient errors recover quickly, so they must not sit through a
+        per-minute reset window; they get the short backoff instead.
+        """
+        from openai import RateLimitError
+
+        from arandu.shared import llm_client
+
+        rate_limit_wait = mocker.patch.object(llm_client, "_RATE_LIMIT_WAIT", return_value=42.0)
+        transient_wait = mocker.patch.object(llm_client, "_TRANSIENT_WAIT", return_value=1.0)
+
+        # Bypass RateLimitError.__init__ (needs an httpx response) — only the
+        # type matters for the isinstance dispatch.
+        rate_limit_exc = RateLimitError.__new__(RateLimitError)
+
+        rate_state = Mock()
+        rate_state.outcome.exception.return_value = rate_limit_exc
+        other_state = Mock()
+        other_state.outcome.exception.return_value = ValueError("network blip")
+
+        assert llm_client._wait_by_error(rate_state) == 42.0
+        assert llm_client._wait_by_error(other_state) == 1.0
+        rate_limit_wait.assert_called_once_with(rate_state)
+        transient_wait.assert_called_once_with(other_state)
+
+    def test_generate_extracts_thinking(self, mocker: MockerFixture) -> None:
+        """Test that generate extracts thinking from <think> tags."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '<think>reasoning</think>{"key": 1}'
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking == "reasoning"
+        assert result.content == '{"key": 1}'
+
+    def test_generate_no_thinking(self, mocker: MockerFixture) -> None:
+        """Test that generate returns thinking=None for non-thinking models."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Plain text response"
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking is None
+        assert result.content == "Plain text response"
+
+    def test_generate_empty_response_with_thinking(self, mocker: MockerFixture) -> None:
+        """Test that generate handles None content with thinking extraction."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = None
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.content == ""
+        assert result.thinking is None
+
+    def test_generate_ollama_reasoning_field(self, mocker: MockerFixture) -> None:
+        """Test that generate extracts thinking from Ollama's 'reasoning' field."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '{"faithfulness": 0.9}'
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = "Step 1: Check context..."
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking == "Step 1: Check context..."
+        assert result.content == '{"faithfulness": 0.9}'
+
+    def test_generate_model_extra_reasoning(self, mocker: MockerFixture) -> None:
+        """Test that generate extracts thinking from model_extra dict."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '{"key": 1}'
+        mock_response.choices[0].message.reasoning_content = None
+        mock_response.choices[0].message.reasoning = None
+        mock_response.choices[0].message.model_extra = {"reasoning": "From extras"}
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="qwen3:14b",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking == "From extras"
+        assert result.content == '{"key": 1}'
+
+    def test_generate_reasoning_content_takes_precedence(self, mocker: MockerFixture) -> None:
+        """Test that reasoning_content takes precedence over reasoning field."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '{"key": 1}'
+        mock_response.choices[0].message.reasoning_content = "OpenAI reasoning"
+        mock_response.choices[0].message.reasoning = "Ollama reasoning"
+        mock_response.choices[0].message.model_extra = None
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        client = LLMClient(
+            provider=LLMProvider.OPENAI,
+            model_id="o1-mini",
+            api_key="sk-test",
+        )
+
+        result = client.generate("Test prompt")
+
+        assert result.thinking == "OpenAI reasoning"
+
+    def test_repr(self, mocker: MockerFixture) -> None:
+        """Test string representation of LLMClient."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = LLMClient(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        repr_str = repr(client)
+
+        assert "LLMClient" in repr_str
+        assert "ollama" in repr_str
+        assert "llama3.1:8b" in repr_str
+        assert "http://localhost:11434/v1" in repr_str
+
+
+class TestCreateLLMClient:
+    """Tests for create_llm_client factory function."""
+
+    def test_create_with_enum(self, mocker: MockerFixture) -> None:
+        """Test creating client with LLMProvider enum."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = create_llm_client(
+            provider=LLMProvider.OLLAMA,
+            model_id="llama3.1:8b",
+        )
+
+        assert isinstance(client, LLMClient)
+        assert client.provider == LLMProvider.OLLAMA
+        assert client.model_id == "llama3.1:8b"
+
+    def test_create_with_string_lowercase(self, mocker: MockerFixture) -> None:
+        """Test creating client with lowercase string provider."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = create_llm_client(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+
+        assert isinstance(client, LLMClient)
+        assert client.provider == LLMProvider.OLLAMA
+
+    def test_create_with_string_uppercase(self, mocker: MockerFixture) -> None:
+        """Test creating client with uppercase string provider."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = create_llm_client(
+            provider="OPENAI",
+            model_id="gpt-4",
+            api_key="sk-test",
+        )
+
+        assert isinstance(client, LLMClient)
+        assert client.provider == LLMProvider.OPENAI
+
+    def test_create_with_invalid_string(self, mocker: MockerFixture) -> None:
+        """Test creating client with invalid string provider raises ValueError."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        with pytest.raises(ValueError) as exc_info:
+            create_llm_client(
+                provider="invalid_provider",
+                model_id="some-model",
+            )
+
+        assert "Invalid provider" in str(exc_info.value)
+        assert "invalid_provider" in str(exc_info.value)
+
+    def test_create_with_all_parameters(self, mocker: MockerFixture) -> None:
+        """Test creating client with all parameters."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        client = create_llm_client(
+            provider="custom",
+            model_id="custom-model",
+            api_key="custom-key",
+            base_url="http://localhost:8000/v1",
+        )
+
+        assert isinstance(client, LLMClient)
+        assert client.provider == LLMProvider.CUSTOM
+        assert client.model_id == "custom-model"
+        assert client.base_url == "http://localhost:8000/v1"
+
+
+class TestLLMProvider:
+    """Tests for LLMProvider enum."""
+
+    def test_enum_values(self) -> None:
+        """Test LLMProvider enum values."""
+        assert LLMProvider.OPENAI.value == "openai"
+        assert LLMProvider.OLLAMA.value == "ollama"
+        assert LLMProvider.CUSTOM.value == "custom"
+
+    def test_enum_from_string(self) -> None:
+        """Test creating LLMProvider from string."""
+        assert LLMProvider("openai") == LLMProvider.OPENAI
+        assert LLMProvider("ollama") == LLMProvider.OLLAMA
+        assert LLMProvider("custom") == LLMProvider.CUSTOM
+
+    def test_enum_invalid_string(self) -> None:
+        """Test creating LLMProvider from invalid string raises ValueError."""
+        with pytest.raises(ValueError):
+            LLMProvider("invalid")
+
+
+class TestLLMSettings:
+    """Tests for the canonical LLMSettings class."""
+
+    def test_defaults(self) -> None:
+        """Global defaults match the project's ollama/qwen3 baseline."""
+        s = LLMSettings()
+        assert s.provider == "ollama"
+        assert s.model_id == "qwen3:14b"
+        assert s.api_key is None
+        assert s.base_url is None
+        assert s.temperature == 0.2
+        assert s.max_tokens == 8192
+        assert s.language == "pt"
+
+    def test_provider_normalized_to_lowercase(self) -> None:
+        """The shared validator lowercases the provider so env-var case can't break dispatch."""
+        assert LLMSettings(provider="OpenAI").provider == "openai"
+
+    def test_per_instance_env_prefix_isolates_stages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A per-instance ``_env_prefix`` lets one class serve independently-configured stages."""
+        monkeypatch.setenv("ARANDU_STAGEX_MODEL_ID", "stage-x-model")
+        monkeypatch.setenv("ARANDU_STAGEX_PROVIDER", "OPENAI")
+        s = LLMSettings(_env_prefix="ARANDU_STAGEX_")
+        assert s.model_id == "stage-x-model"
+        assert s.provider == "openai"  # still normalized
+
+    def test_subclass_inherits_extra_ignore_and_validator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A subclass that sets only ``env_prefix`` still inherits ``extra="ignore"``.
+
+        Stage subclasses (answerer/judge/non-answerable/emic) drop ``extra`` from
+        their own ``model_config`` and rely on config-merge inheritance from the
+        base. Guard that an unknown env var is ignored (not rejected) and that
+        the provider normalizer still fires, so a future pydantic change that
+        broke the merge would fail here instead of silently flipping to
+        ``extra="forbid"``.
+        """
+
+        class _StageSettings(LLMSettings):
+            model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
+
+        monkeypatch.setenv("ARANDU_TESTSTAGE_PROVIDER", "OpenAI")
+        monkeypatch.setenv("ARANDU_TESTSTAGE_BOGUS_UNKNOWN", "x")  # must be ignored, not raise
+        s = _StageSettings()
+        assert s.provider == "openai"  # inherited validator applied
+        assert _StageSettings.model_config.get("extra") == "ignore"  # merged from base
+        assert _StageSettings.model_config.get("env_prefix") == "ARANDU_TESTSTAGE_"
+
+
+class TestBuildLlmClientFromSettings:
+    """Tests for the shared settings -> LLMClient builder."""
+
+    def test_ollama_needs_no_api_key(self, mocker: MockerFixture) -> None:
+        """Ollama gets a free pass on the API-key requirement."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        client = build_llm_client_from_settings(LLMSettings(provider="ollama"))
+        assert client.provider is LLMProvider.OLLAMA
+
+    def test_cloud_missing_key_raises_with_default_prefix_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing cloud key points at the settings class's own env prefix."""
+        monkeypatch.delenv("ARANDU_LLM_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_LLM_API_KEY"):
+            build_llm_client_from_settings(LLMSettings(provider="openai"))
+
+    def test_subclass_env_prefix_drives_error_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Error hints use the settings subclass's own env_prefix, derived automatically."""
+
+        class _StageSettings(LLMSettings):
+            model_config = SettingsConfigDict(env_prefix="ARANDU_TESTSTAGE_")
+
+        monkeypatch.delenv("ARANDU_TESTSTAGE_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="ARANDU_TESTSTAGE_API_KEY"):
+            build_llm_client_from_settings(_StageSettings(provider="openai"))
+
+    def test_custom_without_base_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The custom provider must have an explicit base_url to avoid leaking to OpenAI."""
+        with pytest.raises(ValueError, match="provider='custom' requires a base URL"):
+            build_llm_client_from_settings(LLMSettings(provider="custom", api_key="test"))
+
+    def test_unknown_provider_raises(self) -> None:
+        """An invalid provider surfaces the valid set."""
+        bad = LLMSettings.model_construct(
+            provider="not_a_provider",
+            model_id="x",
+            api_key=None,
+            base_url=None,
+            temperature=0.2,
+            max_tokens=2048,
+            language="pt",
+        )
+        with pytest.raises(ValueError, match="Invalid provider"):
+            build_llm_client_from_settings(bad)
+
+
+class TestIsRateLimitError:
+    def test_openai_rate_limit_error_is_classified(self) -> None:
+        import httpx
+        from openai import RateLimitError
+
+        from arandu.shared.llm_client import is_rate_limit_error
+
+        response = httpx.Response(429, request=httpx.Request("POST", "http://x"))
+        exc = RateLimitError("quota", response=response, body=None)
+        assert is_rate_limit_error(exc) is True
+
+    def test_other_errors_are_not_classified(self) -> None:
+        from arandu.shared.llm_client import is_rate_limit_error
+
+        assert is_rate_limit_error(ValueError("nope")) is False
+
+
+def _mock_completion(content: str) -> Mock:
+    response = Mock()
+    response.choices = [Mock()]
+    response.choices[0].message.content = content
+    response.choices[0].message.reasoning_content = None
+    response.choices[0].message.reasoning = None
+    response.choices[0].message.model_extra = None
+    return response
+
+
+class _StructuredDemo(_PydanticBaseModel):
+    score: float
+    rationale: str
+
+
+def _bad_request(msg: str = "response_format not supported") -> Exception:
+    import httpx
+    from openai import BadRequestError
+
+    response = httpx.Response(400, request=httpx.Request("POST", "http://x"))
+    return BadRequestError(msg, response=response, body=None)
+
+
+class TestGenerateStructuredSchemaEnforcement:
+    def _client(self, mocker: MockerFixture) -> tuple:
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="qwen3:14b")
+        return client, mock_client
+
+    def test_sends_json_schema_response_format(self, mocker: MockerFixture) -> None:
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.return_value = _mock_completion(
+            '{"score": 0.8, "rationale": "ok"}'
+        )
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.8
+        fmt = mock_client.chat.completions.create.call_args.kwargs["response_format"]
+        assert fmt["type"] == "json_schema"
+        assert fmt["json_schema"]["name"] == "_StructuredDemo"
+        assert fmt["json_schema"]["schema"] == _StructuredDemo.model_json_schema()
+
+    def test_falls_back_to_json_object_when_schema_rejected(self, mocker: MockerFixture) -> None:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = [
+            _bad_request(),
+            _mock_completion('{"score": 0.7, "rationale": "ok"}'),
+        ]
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.7
+        second_fmt = mock_client.chat.completions.create.call_args_list[1].kwargs["response_format"]
+        assert second_fmt == {"type": "json_object"}
+
+    def test_fallback_is_remembered_for_subsequent_calls(self, mocker: MockerFixture) -> None:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = [
+            _bad_request(),
+            _mock_completion('{"score": 0.7, "rationale": "ok"}'),
+            _mock_completion('{"score": 0.9, "rationale": "ok"}'),
+        ]
+
+        client.generate_structured("p", _StructuredDemo)
+        client.generate_structured("p2", _StructuredDemo)
+
+        third_fmt = mock_client.chat.completions.create.call_args_list[2].kwargs["response_format"]
+        assert third_fmt == {"type": "json_object"}
+
+    def test_bad_request_is_not_retried_by_tenacity(self, mocker: MockerFixture) -> None:
+        # Deterministic 4xx errors must not burn the 6-attempt backoff
+        # budget; they propagate immediately (the schema fallback layer
+        # handles the response_format case).
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _bad_request("bad prompt")
+
+        from openai import BadRequestError
+
+        with pytest.raises(BadRequestError):
+            client.generate("p", response_format={"type": "json_object"})
+
+        assert mock_client.chat.completions.create.call_count == 1
+
+
+def _server_error(msg: str = "schema grammar failed") -> Exception:
+    import httpx
+    from openai import InternalServerError
+
+    response = httpx.Response(500, request=httpx.Request("POST", "http://x"))
+    return InternalServerError(msg, response=response, body=None)
+
+
+class TestSchemaFallbackHardening:
+    def _client(self, mocker: MockerFixture) -> tuple:
+        mocker.patch("tenacity.nap.time.sleep", return_value=None)
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        client = LLMClient(provider=LLMProvider.OLLAMA, model_id="qwen3:14b")
+        return client, mock_client
+
+    def test_unrelated_bad_request_does_not_disable_schema(self, mocker: MockerFixture) -> None:
+        # Both schema AND json_object probes 400 (e.g. context overflow):
+        # the request is bad, not the schema. Surface a StructuredOutputError
+        # (uniform caller contract) and keep schema enforcement enabled.
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _bad_request("context too long")
+
+        with pytest.raises(StructuredOutputError):
+            client.generate_structured("p", _StructuredDemo, max_retries=1)
+
+        assert client._json_schema_supported is True
+
+    def test_bad_request_with_schema_disabled_raises_structured_error(
+        self, mocker: MockerFixture
+    ) -> None:
+        # When the client already fell back, a 400 on json_object must not
+        # escape as a bare BadRequestError (callers catch StructuredOutputError).
+        client, mock_client = self._client(mocker)
+        client._json_schema_supported = False
+        mock_client.chat.completions.create.side_effect = _bad_request("bad prompt")
+
+        with pytest.raises(StructuredOutputError):
+            client.generate_structured("p", _StructuredDemo, max_retries=0)
+
+    def test_server_error_on_schema_falls_back_without_latching(
+        self, mocker: MockerFixture
+    ) -> None:
+        # Some ollama builds reject schema grammars with 5xx, not 400. Fall
+        # back for THIS call, but a transient 500 must not permanently
+        # disable schema enforcement.
+        client, mock_client = self._client(mocker)
+        server_failures = [_server_error()] * 6  # tenacity budget for the schema attempt
+        mock_client.chat.completions.create.side_effect = [
+            *server_failures,
+            _mock_completion('{"score": 0.6, "rationale": "ok"}'),
+        ]
+
+        result = client.generate_structured("p", _StructuredDemo)
+
+        assert result.score == 0.6
+        assert client._json_schema_supported is True
+        fallback_fmt = mock_client.chat.completions.create.call_args_list[6].kwargs[
+            "response_format"
+        ]
+        assert fallback_fmt == {"type": "json_object"}
+
+    def test_server_error_on_both_paths_reraises_original(self, mocker: MockerFixture) -> None:
+        from openai import InternalServerError
+
+        client, mock_client = self._client(mocker)
+        mock_client.chat.completions.create.side_effect = _server_error("infra down")
+
+        with pytest.raises(InternalServerError):
+            client.generate_structured("p", _StructuredDemo)
+
+
+class TestExtraBody:
+    """extra_body carries provider-specific switches (e.g. thinking off) into every request."""
+
+    @staticmethod
+    def _mock_client(mocker: MockerFixture) -> Mock:
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        message = Mock(content="ok", reasoning_content=None, reasoning=None, model_extra=None)
+        mock_client.chat.completions.create.return_value = Mock(choices=[Mock(message=message)])
+        mock_openai.return_value = mock_client
+        return mock_client
+
+    def test_generate_forwards_extra_body(self, mocker: MockerFixture) -> None:
+        mock_client = self._mock_client(mocker)
+        client = LLMClient(
+            LLMProvider.CUSTOM,
+            "deepseek-flash",
+            api_key="sk",
+            base_url="https://api.deepseek.com",
+            extra_body={"reasoning_effort": "none"},
+        )
+
+        client.generate("p")
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert kwargs["extra_body"] == {"reasoning_effort": "none"}
+
+    def test_generate_omits_extra_body_by_default(self, mocker: MockerFixture) -> None:
+        mock_client = self._mock_client(mocker)
+        LLMClient(LLMProvider.OLLAMA, "qwen3:14b").generate("p")
+
+        assert "extra_body" not in mock_client.chat.completions.create.call_args.kwargs
+
+    def test_settings_extra_body_parsed_from_env_and_forwarded(
+        self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        monkeypatch.setenv("ARANDU_LLM_EXTRA_BODY", '{"enable_thinking": false}')
+        monkeypatch.setenv("ARANDU_LLM_API_KEY", "sk-stage")
+
+        settings = LLMSettings(provider="custom", base_url="https://api.example/v1")
+        client = build_llm_client_from_settings(settings)
+
+        assert client.extra_body == {"enable_thinking": False}
+
+    def test_extra_body_cannot_override_typed_fields(self, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        with pytest.raises(ValueError, match="max_tokens"):
+            LLMClient(LLMProvider.OLLAMA, "qwen3:14b", extra_body={"max_tokens": 512})
+
+
+class TestResolveApiKey:
+    """Each client has its own key, with no shared fallback; ollama needs none."""
+
+    def test_ollama_gets_no_key(self) -> None:
+        assert resolve_api_key("ollama", SecretStr("sk-x"), key_var="K") is None
+
+    def test_returns_the_stage_key(self) -> None:
+        assert resolve_api_key("custom", SecretStr("sk-stage"), key_var="K") == "sk-stage"
+
+    @pytest.mark.parametrize("api_key", [None, SecretStr("")])
+    def test_missing_key_raises_without_fallback(
+        self, monkeypatch: pytest.MonkeyPatch, api_key: SecretStr | None
+    ) -> None:
+        """OPENAI_API_KEY and GEMINI_API_KEY are never read in place of the stage key."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+        with pytest.raises(RuntimeError, match="ARANDU_QA_API_KEY"):
+            resolve_api_key("custom", api_key, key_var="ARANDU_QA_API_KEY")
+
+    def test_key_is_masked_in_json_snapshots(self) -> None:
+        """Run snapshots dump configs in JSON mode; the key must not reach them."""
+        from arandu.qa.config import JudgeConfig
+
+        dumped = JudgeConfig(validator_api_key="sk-secret").model_dump_json()
+        assert "sk-secret" not in dumped
+
+
+class TestValidateAtlasExtraBody:
+    """atlas-rag consumers accept only reasoning_effort from extra_body."""
+
+    def test_none_and_reasoning_effort_pass_through(self) -> None:
+        assert validate_atlas_extra_body(None, consumer="X_") is None
+        body = {"reasoning_effort": "none"}
+        assert validate_atlas_extra_body(body, consumer="X_") == body
+
+    def test_other_keys_rejected_with_prefix(self) -> None:
+        with pytest.raises(ValueError, match="ARANDU_KG_EXTRA_BODY"):
+            validate_atlas_extra_body({"enable_thinking": False}, consumer="ARANDU_KG_")

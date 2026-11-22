@@ -1,0 +1,662 @@
+"""Tests for ``shared/rag/retrievers/atlas_rag.py`` — atlas-rag HippoRAG wrapper (spec §4.4).
+
+The wrapper logic is what's tested here: adapter shape, validation, and
+behaviour at the boundary with atlas-rag. Atlas-rag's own retrieval
+quality is NOT re-tested — that's upstream's job. Real-KG smoke is
+exercised separately via a script against ``results/test-kg-04``.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
+
+import pytest
+
+from arandu.shared.rag.protocol import Retriever
+from arandu.shared.rag.retrievers.atlas_rag import (
+    PRECOMPUTE_DIR_NAME,
+    AtlasRagRetriever,
+    _atlas_results_to_retrieved_passages,
+)
+from arandu.shared.rag.schemas import RetrievalQuery
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+# -- pure adapter ---------------------------------------------------------
+
+
+class TestAtlasResultsToRetrievedPassages:
+    """The adapter from atlas-rag's `(passage_id, score)` pairs to our schema."""
+
+    def test_emits_one_passage_per_id(self) -> None:
+        passages = _atlas_results_to_retrieved_passages(
+            [("src_a:0", 0.91), ("src_b:1", 0.72), ("src_c:0", 0.05)]
+        )
+        assert len(passages) == 3
+        assert [p.chunk_id for p in passages] == ["src_a:0", "src_b:1", "src_c:0"]
+
+    def test_ranks_are_zero_indexed_consecutive(self) -> None:
+        passages = _atlas_results_to_retrieved_passages([("x", 0.5), ("y", 0.3), ("z", 0.1)])
+        assert [p.rank for p in passages] == [0, 1, 2]
+
+    def test_scores_pass_through_as_float(self) -> None:
+        passages = _atlas_results_to_retrieved_passages([("x", 0.91), ("y", 0.42)])
+        assert passages[0].score == pytest.approx(0.91)
+        assert passages[1].score == pytest.approx(0.42)
+        assert all(isinstance(p.score, float) for p in passages)
+
+    def test_retriever_meta_records_score_method(self) -> None:
+        passages = _atlas_results_to_retrieved_passages([("x", 0.9)])
+        assert passages[0].retriever_meta == {"score_method": "hipporag"}
+
+    def test_empty_input_returns_empty_list(self) -> None:
+        assert _atlas_results_to_retrieved_passages([]) == []
+
+
+# -- constructor validation ----------------------------------------------
+
+
+class TestAtlasRagRetrieverConstructorValidation:
+    """Surfaces failure modes before the heavy atlas-rag machinery runs."""
+
+    def test_missing_kg_outputs_dir_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match="kg outputs"):
+            AtlasRagRetriever(
+                kg_outputs_dir=tmp_path / "nonexistent",
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_missing_precompute_dir_raises(self, tmp_path: Path) -> None:
+        kg_outputs_dir = tmp_path / "atlas_output"
+        kg_outputs_dir.mkdir()
+        # Has the dir but no precompute/ subdir — index has not been built.
+        with pytest.raises(FileNotFoundError, match="precompute"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_missing_manifest_raises(self, tmp_path: Path) -> None:
+        kg_outputs_dir = tmp_path / "atlas_output"
+        precompute = kg_outputs_dir / PRECOMPUTE_DIR_NAME
+        precompute.mkdir(parents=True)
+        # Has the dir but no manifest — atlas-rag's create_embeddings_and_index
+        # was never run via our wrapper.
+        with pytest.raises(FileNotFoundError, match="manifest"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+
+# -- retriever_id naming -------------------------------------------------
+
+
+class TestAtlasRagRetrieverId:
+    """`retriever_id` follows BM25's family-prefix convention."""
+
+    def test_default_id_uses_family_prefix(self) -> None:
+        # `atlas_rag_hipporag` distinguishes from a future atlas_rag arm
+        # (e.g. SimpleTextRetriever) that might share the chunker view.
+        assert AtlasRagRetriever.RETRIEVER_FAMILY == "atlas_rag"
+        assert AtlasRagRetriever.DEFAULT_RETRIEVER_ID == "atlas_rag_hipporag"
+
+
+# -- Retriever Protocol conformance --------------------------------------
+
+
+class TestAtlasRagRetrieverProtocol:
+    """The wrapper satisfies the `Retriever` Protocol structural contract."""
+
+    def test_class_advertises_protocol_attrs(self) -> None:
+        # Structural check: class-level retriever_id attribute + retrieve method.
+        # (Full Protocol isinstance() needs a constructed instance; covered by
+        # the smoke script against test-kg-04.)
+        assert hasattr(AtlasRagRetriever, "retrieve")
+        assert callable(AtlasRagRetriever.retrieve)
+
+
+# -- retrieve() adapter behaviour (with mocked inner retriever) ----------
+
+
+class TestAtlasRagRetrieverRetrieve:
+    """`retrieve()` calls the score-capturing path and adapts the result."""
+
+    def test_returns_retrieved_passages_in_descending_score_order(self) -> None:
+        # Bypass __init__ — we are testing only the adapter glue, not the
+        # heavy PPR pipeline. `_retrieve_with_scores` is the seam between
+        # the upstream HippoRAG call and our schema.
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        instance._retrieve_with_scores = MagicMock(  # type: ignore[method-assign]
+            return_value=[("p1", 0.9), ("p2", 0.5), ("p3", 0.1)]
+        )
+
+        results = instance.retrieve(RetrievalQuery(question="some question"), top_k=3)
+
+        instance._retrieve_with_scores.assert_called_once_with("some question", top_k=3)
+        assert [r.chunk_id for r in results] == ["p1", "p2", "p3"]
+        assert [r.rank for r in results] == [0, 1, 2]
+        assert results[0].score == pytest.approx(0.9)
+        assert all(r.retriever_meta == {"score_method": "hipporag"} for r in results)
+
+    def test_satisfies_retriever_protocol_with_mocked_seam(self) -> None:
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        instance._retrieve_with_scores = MagicMock(return_value=[])  # type: ignore[method-assign]
+        assert isinstance(instance, Retriever)
+
+    def test_top_k_zero_returns_empty_without_calling_inner(self) -> None:
+        # Uniform contract across all retriever arms: top_k <= 0 → [].
+        # The bridge loop's `len(out) >= 0` would have short-circuited
+        # AFTER appending one record (silent contract violation). The
+        # early guard also avoids calling the expensive PPR seam.
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        instance._retrieve_with_scores = MagicMock(  # type: ignore[method-assign]
+            return_value=[("p1", 0.9)]
+        )
+        assert instance.retrieve(RetrievalQuery(question="some question"), top_k=0) == []
+        instance._retrieve_with_scores.assert_not_called()
+
+
+# -- chunk_id namespace bridge (PR #102 follow-up to PR #101) ------------
+
+
+class TestAtlasRagPassageIdBridge:
+    """``_bridge_to_atlas_passage_ids`` swaps KG passage text for the sidecar's passage_id form.
+
+    `RetrievedPassage.chunk_id` is documented as "Reference into the source
+    ChunkSet" — a stable identifier. Upstream HippoRAG returns passage TEXT
+    (via `text_id_to_node_name`), so the bridge step looks up that text in
+    the ``passage_text → "<source_file_id>:<chunk_index>"`` map built from
+    the same JSONL iterator that powers `arandu kg-link-passages`.
+    """
+
+    def _make_instance(
+        self, text_to_passage_id: dict[str, str], text_id_to_node_name: dict[str, str]
+    ) -> AtlasRagRetriever:
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        instance._text_to_passage_id = text_to_passage_id
+        inner = MagicMock()
+        inner.text_id_to_node_name = text_id_to_node_name
+        instance._inner = inner
+        return instance
+
+    def test_bridge_swaps_text_for_synthesized_passage_id(self) -> None:
+        # Upstream returned 2 KG passage hashes; bridge maps each via
+        # text_id_to_node_name → passage text → text_to_passage_id.
+        instance = self._make_instance(
+            text_to_passage_id={
+                "passage A text": "src_a:0",
+                "passage B text": "src_b:1",
+            },
+            text_id_to_node_name={
+                "kg_pa": "passage A text",
+                "kg_pb": "passage B text",
+            },
+        )
+        out = instance._bridge_to_atlas_passage_ids([("kg_pa", 0.9), ("kg_pb", 0.5)], top_k=5)
+        assert out == [("src_a:0", 0.9), ("src_b:1", 0.5)]
+
+    def test_bridge_drops_unmapped_passages(self) -> None:
+        # kg_pb text is missing from the bridge map (corpus-snapshot drift,
+        # e.g. KG built but JSONL pruned). Must be dropped — surfacing an
+        # opaque KG hash would break the downstream judges' offset join.
+        instance = self._make_instance(
+            text_to_passage_id={"passage A text": "src_a:0"},
+            text_id_to_node_name={
+                "kg_pa": "passage A text",
+                "kg_pb": "passage B text",
+            },
+        )
+        out = instance._bridge_to_atlas_passage_ids([("kg_pa", 0.9), ("kg_pb", 0.5)], top_k=5)
+        assert out == [("src_a:0", 0.9)]
+
+    def test_bridge_walks_past_unmapped_to_reach_top_k(self) -> None:
+        # If the top-ranked passages are un-bridgeable, the bridge must keep
+        # walking down the list until it has `top_k` successful bridges (or
+        # the ranking is exhausted). Otherwise a sparse bridge map could
+        # silently shrink the result set.
+        instance = self._make_instance(
+            text_to_passage_id={"good": "src_good:0"},
+            text_id_to_node_name={
+                "kg_bad1": "missing1",
+                "kg_bad2": "missing2",
+                "kg_good": "good",
+            },
+        )
+        out = instance._bridge_to_atlas_passage_ids(
+            [("kg_bad1", 0.9), ("kg_bad2", 0.7), ("kg_good", 0.5)], top_k=1
+        )
+        assert out == [("src_good:0", 0.5)]
+
+    def test_bridge_respects_top_k(self) -> None:
+        instance = self._make_instance(
+            text_to_passage_id={
+                "t1": "src_a:0",
+                "t2": "src_a:1",
+                "t3": "src_a:2",
+            },
+            text_id_to_node_name={"k1": "t1", "k2": "t2", "k3": "t3"},
+        )
+        out = instance._bridge_to_atlas_passage_ids(
+            [("k1", 0.9), ("k2", 0.7), ("k3", 0.5)], top_k=2
+        )
+        assert len(out) == 2
+        assert [pid for pid, _ in out] == ["src_a:0", "src_a:1"]
+
+
+# -- manifest integrity (Copilot review on PR #101) ----------------------
+
+
+def _write_minimal_precompute(
+    tmp_path: Path,
+    *,
+    sentence_encoder_model: str = "m",
+    keyword: str = "transcriptions.json",
+    include_events: bool = True,
+    include_concept: bool = True,
+    write_graphml_sha: bool = True,
+    write_artifact_sha: bool = True,
+    write_kg_extraction: bool = True,
+    graphml_bytes: bytes = b"<graphml>fake</graphml>",
+) -> Path:
+    """Build a minimal kg_outputs_dir with manifest + (optional) sha fields.
+
+    Used to drive the integrity-check tests without paying the embedding
+    build cost. The pickles are placeholder bytes — the constructor will
+    surface sha mismatches before any `pickle.load` runs.
+    """
+    import hashlib
+    import json
+
+    kg_outputs_dir = tmp_path / "atlas_output"
+    precompute = kg_outputs_dir / "precompute"
+    (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
+    precompute.mkdir(parents=True)
+    if write_kg_extraction:
+        extraction = kg_outputs_dir / "kg_extraction"
+        extraction.mkdir(parents=True)
+        (extraction / "records.json").write_text(
+            json.dumps({"id": "src_x", "original_text": "placeholder passage text"}) + "\n"
+        )
+
+    graphml_path = kg_outputs_dir / "kg_graphml" / f"{keyword}_graph.graphml"
+    graphml_path.write_bytes(graphml_bytes)
+
+    encoder_short = sentence_encoder_model.split("/")[-1]
+    flags = f"event{include_events}_concept{include_concept}"
+    artifacts = {
+        "node_embeddings": precompute / f"{keyword}_{flags}_{encoder_short}_node_embeddings.pkl",
+        "edge_embeddings": precompute / f"{keyword}_{flags}_{encoder_short}_edge_embeddings.pkl",
+        "node_list": precompute / f"{keyword}_{flags}_node_list.pkl",
+        "edge_list": precompute / f"{keyword}_{flags}_edge_list.pkl",
+        "text_embeddings": precompute / f"{keyword}_{encoder_short}_text_embeddings.pkl",
+        "text_dict": precompute / f"{keyword}_original_text_dict_with_node_id.pkl",
+    }
+    # Placeholder pickle bodies; never reach `pickle.load` if sha check fires first.
+    placeholder = b"placeholder-pickle-bytes"
+    for path in artifacts.values():
+        path.write_bytes(placeholder)
+    # The edge faiss index must exist for `_load_data_dict`'s presence check;
+    # it is not sha-verified (not a pickle) and these integrity tests fail at
+    # the pickle sha/load step before `faiss.read_index` is ever reached.
+    (precompute / f"{keyword}_{flags}_{encoder_short}_edge_faiss.index").write_bytes(placeholder)
+
+    manifest: dict[str, object] = {
+        "kg_outputs_dir": str(kg_outputs_dir),
+        "keyword": keyword,
+        "include_events": include_events,
+        "include_concept": include_concept,
+        "sentence_encoder_model": sentence_encoder_model,
+        "built_at": "2026-05-20T00:00:00Z",
+    }
+    if write_graphml_sha:
+        manifest["graphml_sha256"] = hashlib.sha256(graphml_bytes).hexdigest()
+    if write_artifact_sha:
+        manifest["artifact_sha256"] = {
+            label: hashlib.sha256(path.read_bytes()).hexdigest()
+            for label, path in artifacts.items()
+        }
+    (precompute / "manifest.json").write_text(json.dumps(manifest))
+    return kg_outputs_dir
+
+
+class TestAtlasRagManifestIntegrity:
+    """Drift detection: stale precompute or tampered pickles must fail loudly."""
+
+    def test_graphml_sha_mismatch_raises(self, tmp_path: Path) -> None:
+        # Manifest records a graphml sha; the on-disk graphml has different
+        # bytes. The constructor must refuse to load before touching any
+        # pickle (the precompute is stale relative to the rebuilt KG).
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Tamper with the graphml after building the manifest.
+        graphml = kg_outputs_dir / "kg_graphml" / "transcriptions.json_graph.graphml"
+        graphml.write_bytes(b"<graphml>DIFFERENT</graphml>")
+
+        with pytest.raises(ValueError, match="graphml sha256 mismatch"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_manifest_without_graphml_sha_rejected(self, tmp_path: Path) -> None:
+        # Hand-edited / pre-integrity-check manifests must be rejected; silent
+        # loading would defeat the drift-detection guarantee.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_graphml_sha=False)
+        with pytest.raises(ValueError, match="no 'graphml_sha256'"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_tampered_pickle_raises_before_load(self, tmp_path: Path) -> None:
+        # An attacker (or a partial-copy) flips bytes in one pickle but the
+        # graphml is intact. sha check must fire BEFORE pickle.load — i.e.
+        # we never execute the tampered payload's __reduce__.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Append a byte to one pickle after the manifest was written.
+        tampered = next((kg_outputs_dir / "precompute").glob("*node_embeddings.pkl"))
+        tampered.write_bytes(tampered.read_bytes() + b"\x00")
+
+        with pytest.raises(ValueError, match="sha256 mismatch"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_build_index_rejects_invalid_combo_before_calling_upstream(
+        self, tmp_path: Path
+    ) -> None:
+        # atlas-rag's create_embeddings_and_index raises a cryptic ValueError
+        # on the (False, True) combo deep in its body; defend with a clearer
+        # error before we even try to call it.
+        kg_outputs_dir = tmp_path / "atlas_output"
+        (kg_outputs_dir / "kg_graphml").mkdir(parents=True)
+        (kg_outputs_dir / "kg_graphml" / "transcriptions.json_graph.graphml").write_bytes(
+            b"<graphml/>"
+        )
+
+        with pytest.raises(ValueError, match="does not support"):
+            AtlasRagRetriever.build_index(
+                kg_outputs_dir=kg_outputs_dir,
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+                include_events=False,
+                include_concept=True,
+            )
+
+    def test_patch_orphan_file_ids_injects_sentinel(self) -> None:
+        # Real-world: `kg/atlas_backend.py` with qwen3:14b PT prompts emits
+        # event nodes without a `file_id` attribute (4446 of 4451 in
+        # test-kg-04). atlas-rag's HippoRAGRetriever.__init__ reads
+        # `node["file_id"]` unconditionally and crashes with KeyError;
+        # injecting the `concept_file` sentinel keeps PPR working without
+        # polluting passage scoring (the retriever already filters that
+        # sentinel in its passage-aggregation loop).
+        import networkx as nx
+
+        kg = nx.DiGraph()
+        kg.add_node("entity_a", type="entity", file_id="src_a")
+        kg.add_node("event_orphan", type="event")  # NO file_id
+        kg.add_node("event_with_src", type="event", file_id="src_b")
+        kg.add_node("passage_a", type="passage", file_id="src_a")
+
+        patched = AtlasRagRetriever._patch_orphan_file_ids(kg)
+
+        assert patched == 1
+        assert kg.nodes["event_orphan"]["file_id"] == "concept_file"
+        # Pre-existing values must be untouched.
+        assert kg.nodes["entity_a"]["file_id"] == "src_a"
+        assert kg.nodes["event_with_src"]["file_id"] == "src_b"
+        assert kg.nodes["passage_a"]["file_id"] == "src_a"
+
+    def test_patch_orphan_file_ids_no_op_when_all_present(self) -> None:
+        import networkx as nx
+
+        kg = nx.DiGraph()
+        kg.add_node("n1", type="entity", file_id="src_a")
+        kg.add_node("n2", type="passage", file_id="src_b")
+        assert AtlasRagRetriever._patch_orphan_file_ids(kg) == 0
+
+    def test_manifest_without_artifact_sha_rejected(self, tmp_path: Path) -> None:
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_artifact_sha=False)
+        with pytest.raises(ValueError, match="no sha256 for artifact"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_missing_kg_extraction_dir_raises(self, tmp_path: Path) -> None:
+        # Without kg_extraction/, the passage_text → passage_id bridge is
+        # empty and every retrieval silently drops all results. The
+        # constructor must fail fast so the stable chunk_id contract that
+        # downstream judges (passage_offsets.json sidecar) depend on stays
+        # observable.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path, write_kg_extraction=False)
+        with pytest.raises(FileNotFoundError, match="kg_extraction"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+    def test_empty_kg_extraction_raises(self, tmp_path: Path) -> None:
+        # kg_extraction/ exists but has no parseable records → the
+        # passage_text→passage_id map is empty. Same failure mode as a
+        # missing dir, surfaced loudly so the operator sees it.
+        kg_outputs_dir = _write_minimal_precompute(tmp_path)
+        # Wipe the placeholder record we wrote in the fixture.
+        for f in (kg_outputs_dir / "kg_extraction").glob("*.json"):
+            f.unlink()
+        with pytest.raises(ValueError, match="no parseable records"):
+            AtlasRagRetriever(
+                kg_outputs_dir=kg_outputs_dir,
+                llm_client=MagicMock(),
+                llm_model_id="qwen3:14b",
+                sentence_encoder=MagicMock(),
+                sentence_encoder_model="m",
+            )
+
+
+# -- edge faiss index shim (dry-run bug #6, 2026-06-08) ------------------
+
+
+class TestEdgeFaissIndexPath:
+    """The prebuilt edge-faiss-index filename must mirror upstream exactly."""
+
+    def test_mirrors_upstream_create_graph_index_filename(self, tmp_path: Path) -> None:
+        # Must match atlas_rag.vectorstore.create_graph_index's
+        # `..._edge_faiss.index` so we read the index build_index wrote.
+        # encoder_short strips any namespace prefix (org/model -> model).
+        path = AtlasRagRetriever._edge_faiss_index_path(
+            precompute_dir=tmp_path,
+            keyword="transcriptions.json",
+            sentence_encoder_model="org/gemini-embedding-001",
+            include_events=True,
+            include_concept=True,
+        )
+        assert path == (
+            tmp_path
+            / "transcriptions.json_eventTrue_conceptTrue_gemini-embedding-001_edge_faiss.index"
+        )
+
+
+class TestBuildInnerRetrieverEdgeFaissShim:
+    """`_build_inner_retriever` injects edge_faiss_index onto the retriever.
+
+    Our pinned atlas-rag's ``HippoRAGRetriever.__init__`` sets
+    ``edge_embeddings`` but not ``edge_faiss_index``, yet ``query2edge`` under
+    the default config searches the latter and crashes (dry-run bug #6). The
+    wrapper patches it post-construction. This runs without the ``kg`` extra
+    by faking the atlas_rag import targets.
+    """
+
+    def test_injects_prebuilt_edge_faiss_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import sys
+        import types
+
+        captured: dict[str, object] = {}
+
+        class _FakeHippoRAGRetriever:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+                # Mimic the upstream bug: edge_faiss_index is NOT set here.
+
+        fake_retriever_mod = types.ModuleType("atlas_rag.retriever")
+        fake_retriever_mod.HippoRAGRetriever = _FakeHippoRAGRetriever  # type: ignore[attr-defined]
+        generator_kwargs: dict[str, object] = {}
+
+        def _fake_llm_generator(**kw: object) -> MagicMock:
+            generator_kwargs.update(kw)
+            return MagicMock()
+
+        fake_llm_mod = types.ModuleType("atlas_rag.llm_generator")
+        fake_llm_mod.LLMGenerator = _fake_llm_generator  # type: ignore[attr-defined]
+        fake_gen_config_mod = types.ModuleType("atlas_rag.llm_generator.generation_config")
+        fake_gen_config_mod.GenerationConfig = types.SimpleNamespace  # type: ignore[attr-defined]
+        fake_pkg = types.ModuleType("atlas_rag")
+        monkeypatch.setitem(sys.modules, "atlas_rag", fake_pkg)
+        monkeypatch.setitem(sys.modules, "atlas_rag.retriever", fake_retriever_mod)
+        monkeypatch.setitem(sys.modules, "atlas_rag.llm_generator", fake_llm_mod)
+        monkeypatch.setitem(
+            sys.modules, "atlas_rag.llm_generator.generation_config", fake_gen_config_mod
+        )
+
+        sentinel_index = object()
+        data = {"edge_faiss_index": sentinel_index, "text_dict": {}}
+
+        retriever = AtlasRagRetriever._build_inner_retriever(
+            llm_client=MagicMock(),
+            llm_model_id="m",
+            reasoning_effort="none",
+            sentence_encoder=MagicMock(),
+            data=data,
+        )
+
+        # The configured reasoning_effort reaches atlas-rag's generator config.
+        assert generator_kwargs["default_config"].reasoning_effort == "none"
+        # Upstream __init__ left it unset; the wrapper injected the prebuilt one.
+        assert retriever.edge_faiss_index is sentinel_index
+        # The faiss index is injected, NOT smuggled through the data dict the
+        # upstream constructor reads (it ignores the key in this version).
+        assert "edge_faiss_index" in captured["data"]  # type: ignore[operator]
+
+
+# -- seeding fallback (edge-filter -> node path -> honest zero) ----------
+
+
+class TestAtlasRagSeedingFallback:
+    """Zero-mass edge-filter seeding falls back to the node path, then to []."""
+
+    def _instance(self) -> AtlasRagRetriever:
+        instance = AtlasRagRetriever.__new__(AtlasRagRetriever)
+        instance.retriever_id = "atlas_rag_test"
+        return instance
+
+    def test_edge_filter_mass_uses_primary_path(self) -> None:
+        instance = self._instance()
+        inner = MagicMock()
+        inner.inference_config.is_filter_edges = True
+        inner.inference_config.topk_nodes = 5
+        inner.q2kg_fn.return_value = {"n1": 0.7}
+        instance._inner = inner
+
+        personalization, seed_path = instance._resolve_personalization("q")
+
+        assert personalization == {"n1": 0.7}
+        assert seed_path == "edge_filter"
+        inner.retrieve_personalization_dict.assert_not_called()
+
+    @pytest.mark.parametrize("empty", [{}, {"n1": 0.0}])
+    def test_zero_mass_falls_back_to_node_path(self, empty: dict) -> None:
+        # The LLM edge filter can reject every candidate fact (observed for
+        # 14/46 dry-run questions); upstream's node path is the retriever's
+        # own degradation chain and must seed the walk instead.
+        instance = self._instance()
+        inner = MagicMock()
+        inner.inference_config.is_filter_edges = True
+        inner.inference_config.topk_nodes = 5
+        inner.q2kg_fn.return_value = empty
+        inner.retrieve_personalization_dict.return_value = {"n2": 1.0}
+        instance._inner = inner
+
+        personalization, seed_path = instance._resolve_personalization("q")
+
+        assert personalization == {"n2": 1.0}
+        assert seed_path == "node_fallback"
+        inner.retrieve_personalization_dict.assert_called_once_with("q", topN=5)
+
+    def test_both_paths_empty_is_ungrounded(self) -> None:
+        instance = self._instance()
+        inner = MagicMock()
+        inner.inference_config.is_filter_edges = True
+        inner.inference_config.topk_nodes = 5
+        inner.q2kg_fn.return_value = {}
+        inner.retrieve_personalization_dict.return_value = {}
+        instance._inner = inner
+
+        personalization, seed_path = instance._resolve_personalization("q")
+
+        assert personalization == {}
+        assert seed_path == "ungrounded"
+
+    def test_ungrounded_retrieve_returns_empty_and_tags_meta(self) -> None:
+        # No ZeroDivisionError crash: the question yields an empty passage
+        # list (the answerer will abstain) and the record-level meta says why.
+        instance = self._instance()
+        instance._resolve_personalization = MagicMock(  # type: ignore[method-assign]
+            return_value=({}, "ungrounded")
+        )
+
+        scored = instance._retrieve_with_scores("q", top_k=5)
+
+        assert scored == []
+        assert instance.last_retrieve_meta == {"seed_path": "ungrounded"}
+
+
+def test_retrieve_one_copies_last_retrieve_meta_into_record() -> None:
+    from arandu.shared.rag.retrieve.batch import _retrieve_one
+
+    retriever = MagicMock()
+    retriever.retrieve.return_value = []
+    retriever.retriever_id = "atlas_rag_test"
+    retriever.last_retrieve_meta = {"seed_path": "node_fallback"}
+    question = MagicMock()
+    question.qa_pair_id = "s:c:0"
+    question.source_qa_pair_id = "s:c:0"
+    question.question = "q?"
+    question.chunker_id = "cep_4k"
+    question.is_answerable = True
+
+    record = _retrieve_one(retriever=retriever, arm="atlas_rag", question=question, top_k=5)
+
+    assert record.retriever_meta == {"seed_path": "node_fallback"}

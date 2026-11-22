@@ -1,0 +1,59 @@
+"""Source metadata enrichment for transcription records.
+
+Provides the convenience function for attaching extracted metadata
+to TranscriptionRecord instances.  Mutates the record in-place.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+from arandu.metadata.extractor import GDriveCatalogExtractor
+
+if TYPE_CHECKING:
+    from arandu.metadata.protocol import MetadataExtractor
+    from arandu.shared.schemas import TranscriptionRecord
+
+logger = logging.getLogger(__name__)
+
+
+def enrich_with_source_metadata(
+    record: TranscriptionRecord,
+    catalog_row: dict[str, str],
+    *,
+    extractor: MetadataExtractor | None = None,
+) -> TranscriptionRecord:
+    """Extract and attach source metadata to a transcription record.
+
+    Mutates the record in-place.
+
+    Args:
+        record: TranscriptionRecord to enrich with source metadata.
+        catalog_row: Raw catalog row dictionary (from CSV DictReader).
+        extractor: Optional pre-instantiated extractor. If None, uses
+            GDriveCatalogExtractor with defaults.
+
+    Returns:
+        The same record (mutated in-place) for chaining.
+    """
+    if extractor is None:
+        extractor = GDriveCatalogExtractor()
+
+    metadata = extractor.extract(catalog_row)
+    record.source_metadata = metadata
+
+    if metadata.extraction_confidence >= 0.5:
+        logger.info(
+            f"Extracted metadata for {record.file_id}: "
+            f"participant={metadata.participant_name}, "
+            f"location={metadata.location}, "
+            f"confidence={metadata.extraction_confidence}"
+        )
+    else:
+        logger.debug(
+            f"Low-confidence metadata for {record.file_id}: "
+            f"confidence={metadata.extraction_confidence}"
+        )
+
+    return record

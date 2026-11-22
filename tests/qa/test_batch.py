@@ -1,0 +1,1464 @@
+"""Tests for QA batch processing module."""
+
+from __future__ import annotations
+
+import json
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import Mock
+
+import pytest
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
+
+from arandu.qa.batch import (
+    QAGenerationTask,
+    TaskLoadResult,
+    _init_cep_worker,
+    generate_cep_qa_for_transcription,
+    load_transcription_tasks,
+    run_batch_cep_generation,
+)
+from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig
+from arandu.qa.schemas import QAPairCEP
+from arandu.shared.judge.schemas import CriterionScore, JudgePipelineResult, JudgeStepResult
+from arandu.shared.results_manager import ResultsManager
+
+
+@pytest.fixture(autouse=True)
+def _gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing batch tests predate the scaffolding gate; gate tests opt back in."""
+    monkeypatch.setenv("ARANDU_CEP_ENABLE_SCAFFOLDING_GATE", "false")
+
+
+class _ThreadPoolCompat(ThreadPoolExecutor):
+    """ThreadPoolExecutor that ignores mp_context for test compatibility."""
+
+    def __init__(self, *args: object, mp_context: object = None, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+
+
+_DEFAULT_TRANSCRIPTION_TEXT = (
+    # 200+ chars / 30+ words so the batch loader's defensive content-length
+    # floor (which mirrors ContentLengthFloorCriterion's defaults) doesn't
+    # drop test fixtures that are unjudged-by-design.
+    "Esta é uma transcrição completa o suficiente para passar pelo piso de "
+    "comprimento de conteúdo do juiz, com um número razoável de palavras e "
+    "caracteres para os testes de carga em lote do pipeline de geração de "
+    "perguntas e respostas."
+)
+
+
+def _validation_payload(passed: bool) -> dict:
+    """Minimal canonical validation payload for test fixtures.
+
+    The batch loader keys filtering off ``data["validation"]["passed"]``,
+    not the computed ``is_valid`` mirror, so tests that previously set
+    ``is_valid`` on raw dicts must now embed a real validation payload.
+    """
+    return {"passed": passed, "stage_results": {}}
+
+
+def create_test_enriched_data(
+    file_id: str = "test123",
+    name: str = "test.mp3",
+    transcription_text: str = _DEFAULT_TRANSCRIPTION_TEXT,
+) -> dict:
+    """Create a complete TranscriptionRecord test data dictionary.
+
+    Args:
+        file_id: Unique file identifier.
+        name: Filename.
+        transcription_text: Transcription text (default is a realistic
+            Portuguese sentence that clears the content-length floor; pass
+            an explicit short string to exercise the defensive skip path).
+
+    Returns:
+        Complete TranscriptionRecord data dictionary.
+    """
+    return {
+        "file_id": file_id,
+        "name": name,
+        "mimeType": "audio/mpeg",
+        "parents": ["folder_id"],
+        "webContentLink": "https://drive.google.com/test",
+        "transcription_text": transcription_text,
+        "detected_language": "pt",
+        "language_probability": 0.95,
+        "model_id": "openai/whisper-large-v3",
+        "compute_device": "cpu",
+        "processing_duration_sec": 30.0,
+        "transcription_status": "completed",
+    }
+
+
+class TestQAGenerationTask:
+    """Tests for QAGenerationTask dataclass."""
+
+    def test_task_creation(self, tmp_path: Path) -> None:
+        """Test creating QAGenerationTask with valid fields."""
+        transcription_file = tmp_path / "test_transcription.json"
+        output_file = tmp_path / "test_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=transcription_file,
+            file_id="test123",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        assert task.transcription_file == transcription_file
+        assert task.file_id == "test123"
+        assert task.filename == "test.mp3"
+        assert task.output_file == output_file
+
+    def test_task_field_accessibility(self, tmp_path: Path) -> None:
+        """Test that all fields are accessible."""
+        task = QAGenerationTask(
+            transcription_file=tmp_path / "in.json",
+            file_id="abc",
+            filename="file.mp3",
+            output_file=tmp_path / "out.json",
+        )
+
+        # Access all fields
+        assert isinstance(task.transcription_file, Path)
+        assert isinstance(task.file_id, str)
+        assert isinstance(task.filename, str)
+        assert isinstance(task.output_file, Path)
+
+
+class TestLoadTranscriptionTasks:
+    """Tests for load_transcription_tasks function."""
+
+    def test_empty_directory(self, tmp_path: Path) -> None:
+        """Test that empty directory returns empty result."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert isinstance(result, TaskLoadResult)
+        assert len(result.tasks) == 0
+        assert result.total_found == 0
+        assert result.skipped_invalid == 0
+
+    def test_valid_transcription_files(self, tmp_path: Path) -> None:
+        """Test discovering valid transcription files.
+
+        Each fixture carries a ``validation`` payload with ``passed=True``
+        so the loader treats it as judged-and-passed; the defensive
+        content-length floor only applies to unjudged transcripts.
+        """
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+        output_dir.mkdir()
+
+        # Create valid transcription files (judged + passed)
+        file1 = input_dir / "file1_transcription.json"
+        data1 = create_test_enriched_data(
+            file_id="id1",
+            name="interview1.mp3",
+            transcription_text="This is a test transcription.",
+        )
+        data1["validation"] = _validation_payload(passed=True)
+        file1.write_text(json.dumps(data1))
+
+        file2 = input_dir / "file2_transcription.json"
+        data2 = create_test_enriched_data(
+            file_id="id2",
+            name="interview2.mp3",
+            transcription_text="Another transcription.",
+        )
+        data2["validation"] = _validation_payload(passed=True)
+        file2.write_text(json.dumps(data2))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 2
+        assert all(isinstance(task, QAGenerationTask) for task in result.tasks)
+
+    def test_mixed_valid_invalid_files(self, tmp_path: Path) -> None:
+        """Test that invalid files are skipped with warnings."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Valid file
+        valid = input_dir / "valid_transcription.json"
+        valid.write_text(json.dumps(create_test_enriched_data(file_id="id1", name="test.mp3")))
+
+        # Invalid JSON file
+        invalid = input_dir / "invalid_transcription.json"
+        invalid.write_text("not valid json {")
+
+        # Non-transcription file (should be ignored by glob)
+        other = input_dir / "other_file.json"
+        other.write_text(json.dumps({"data": "test"}))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        # Should only get the valid transcription file
+        assert len(result.tasks) == 1
+        assert result.tasks[0].file_id == "id1"
+
+    def test_invalid_json_files(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Test handling of corrupt JSON files."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        corrupt = input_dir / "corrupt_transcription.json"
+        corrupt.write_text("{ corrupt json")
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 0
+        assert "Skipping invalid file" in caplog.text
+
+    def test_file_id_extraction(self, tmp_path: Path) -> None:
+        """Test that file_id is correctly extracted from JSON."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        file = input_dir / "test_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    file_id="extracted_id_123",
+                    name="test.mp3",
+                )
+            )
+        )
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].file_id == "extracted_id_123"
+
+    def test_output_filename_generation(self, tmp_path: Path) -> None:
+        """Test that output filename is {file_id}_cep_qa.json by default."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        file = input_dir / "anything_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    file_id="myid",
+                    name="original.mp3",
+                )
+            )
+        )
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].output_file == output_dir / "myid_cep_qa.json"
+
+    def test_skips_invalid_transcriptions(self, tmp_path: Path) -> None:
+        """Transcriptions whose validation reports passed=False are skipped."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Judged + passed
+        valid_data = create_test_enriched_data(file_id="valid1", name="valid.mp3")
+        valid_data["validation"] = _validation_payload(passed=True)
+        (input_dir / "valid1_transcription.json").write_text(json.dumps(valid_data))
+
+        # Judged + rejected
+        invalid_data = create_test_enriched_data(file_id="invalid1", name="invalid.mp3")
+        invalid_data["validation"] = _validation_payload(passed=False)
+        (input_dir / "invalid1_transcription.json").write_text(json.dumps(invalid_data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].file_id == "valid1"
+
+    def test_includes_unchecked_transcriptions(self, tmp_path: Path) -> None:
+        """Test that transcriptions with is_valid=None (unchecked) are included."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Unchecked transcription (is_valid=None)
+        unchecked_data = create_test_enriched_data(file_id="unchecked1", name="unchecked.mp3")
+        unchecked_data["is_valid"] = None
+        (input_dir / "unchecked1_transcription.json").write_text(json.dumps(unchecked_data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].file_id == "unchecked1"
+
+    def test_includes_transcriptions_without_is_valid_field(self, tmp_path: Path) -> None:
+        """Test that transcriptions missing the is_valid field are included."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Transcription without is_valid key at all
+        data = create_test_enriched_data(file_id="no_field", name="old.mp3")
+        data.pop("is_valid", None)
+        (input_dir / "no_field_transcription.json").write_text(json.dumps(data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].file_id == "no_field"
+
+    def test_filters_mixed_validity(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Test filtering with a mix of judged-passed, judged-rejected, and unjudged."""
+        caplog.set_level("INFO")
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # Judged + passed
+        d1 = create_test_enriched_data(file_id="ok1", name="ok1.mp3")
+        d1["validation"] = _validation_payload(passed=True)
+        (input_dir / "ok1_transcription.json").write_text(json.dumps(d1))
+
+        # Judged + rejected
+        d2 = create_test_enriched_data(file_id="bad1", name="bad1.mp3")
+        d2["validation"] = _validation_payload(passed=False)
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(d2))
+
+        # Judged + rejected
+        d3 = create_test_enriched_data(file_id="bad2", name="bad2.mp3")
+        d3["validation"] = _validation_payload(passed=False)
+        (input_dir / "bad2_transcription.json").write_text(json.dumps(d3))
+
+        # Unjudged (no validation payload)
+        d4 = create_test_enriched_data(file_id="unk1", name="unk1.mp3")
+        (input_dir / "unk1_transcription.json").write_text(json.dumps(d4))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        task_ids = {t.file_id for t in result.tasks}
+        assert task_ids == {"ok1", "unk1"}
+        assert "2 skipped as invalid" in caplog.text
+
+    def test_skipped_invalid_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that skipped invalid transcriptions are logged."""
+        caplog.set_level("INFO")
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        invalid_data = create_test_enriched_data(file_id="bad1", name="bad.mp3")
+        invalid_data["validation"] = _validation_payload(passed=False)
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(invalid_data))
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert len(result.tasks) == 0
+        assert "Skipping invalid transcription" in caplog.text
+
+    def test_output_filename_custom_suffix(self, tmp_path: Path) -> None:
+        """Test that output_suffix parameter controls the filename suffix."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        file = input_dir / "anything_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    file_id="myid",
+                    name="original.mp3",
+                )
+            )
+        )
+
+        result = load_transcription_tasks(input_dir, output_dir, output_suffix="_custom.json")
+
+        assert len(result.tasks) == 1
+        assert result.tasks[0].output_file == output_dir / "myid_custom.json"
+
+    def test_result_metadata_counts(self, tmp_path: Path) -> None:
+        """Test that TaskLoadResult exposes correct total_found and skipped_invalid."""
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "output"
+        input_dir.mkdir()
+
+        # 2 valid, 1 invalid, 1 corrupt JSON = 4 total files found
+        d1 = create_test_enriched_data(file_id="v1", name="v1.mp3")
+        d1["validation"] = _validation_payload(passed=True)
+        (input_dir / "v1_transcription.json").write_text(json.dumps(d1))
+
+        d2 = create_test_enriched_data(file_id="v2", name="v2.mp3")
+        (input_dir / "v2_transcription.json").write_text(json.dumps(d2))
+
+        d3 = create_test_enriched_data(file_id="bad1", name="bad1.mp3")
+        d3["validation"] = _validation_payload(passed=False)
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(d3))
+
+        (input_dir / "corrupt_transcription.json").write_text("{ bad json")
+
+        result = load_transcription_tasks(input_dir, output_dir)
+
+        assert result.total_found == 4
+        assert result.skipped_invalid == 1
+        assert len(result.tasks) == 2
+
+
+class TestInitCEPWorker:
+    """Tests for _init_cep_worker initialization function."""
+
+    def test_init_cep_worker_without_validation(self, mocker: MockerFixture) -> None:
+        """Test CEP worker initialization without validation enabled."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+
+        # Mock CEPQAGenerator
+        mock_cep_generator_class = mocker.patch("arandu.qa.cep.CEPQAGenerator")
+        mock_cep_generator = Mock()
+        mock_cep_generator_class.return_value = mock_cep_generator
+
+        # Reset global state
+        import arandu.qa.batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+        cep_config = CEPConfig()
+
+        _init_cep_worker(
+            qa_config_dict=qa_config.model_dump(),
+            cep_config_dict=cep_config.model_dump(),
+            judge_config_dict=JudgeConfig().model_dump(),
+        )
+
+        assert qa_batch_module._worker_cep_generator is not None
+
+
+class TestGenerateCEPQAForTranscription:
+    """Tests for generate_cep_qa_for_transcription function."""
+
+    def test_generate_cep_qa_success(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test successful CEP QA generation."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test transcription", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import arandu.qa.batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        input_file = tmp_path / "test_transcription.json"
+        input_file.write_text(
+            json.dumps(
+                {
+                    "file_id": "cep_test123",
+                    "name": "test.mp3",
+                    "mimeType": "audio/mpeg",
+                    "parents": ["folder_id"],
+                    "webContentLink": "https://drive.google.com/test",
+                    "transcription_text": "This is a test transcription about climate. " * 20,
+                    "detected_language": "pt",
+                    "language_probability": 0.95,
+                    "model_id": "openai/whisper-large-v3",
+                    "compute_device": "cpu",
+                    "processing_duration_sec": 30.0,
+                    "transcription_status": "completed",
+                }
+            )
+        )
+
+        output_file = tmp_path / "cep_test_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="cep_test123",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        ).model_dump()
+
+        cep_config_dict = CEPConfig().model_dump()
+
+        file_id, success, message = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict, JudgeConfig().model_dump()
+        )
+
+        assert file_id == "cep_test123"
+        assert success is True
+        assert message == "Success"
+        assert output_file.exists()
+
+    def test_generate_cep_qa_generic_exception(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test CEP QA generation with generic exception (file not found)."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        # Reset global state
+        import arandu.qa.batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        # Non-existent file
+        input_file = tmp_path / "nonexistent.json"
+        output_file = tmp_path / "output_cep_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="test_cep",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(provider="ollama", model_id="llama3.1:8b").model_dump()
+        cep_config_dict = CEPConfig().model_dump()
+
+        file_id, success, message = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict, JudgeConfig().model_dump()
+        )
+
+        assert file_id == "test_cep"
+        assert success is False
+        assert len(message) > 0
+
+    def test_generate_cep_qa_with_validation_enabled(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test CEP QA generation with validation enabled."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What is this about?", "answer": "test transcription",
+             "confidence": 0.9, "bloom_level": "understand",
+             "reasoning_trace": "Direct recall from text"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Reset global state
+        import arandu.qa.batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        input_file = tmp_path / "test_transcription.json"
+        input_file.write_text(
+            json.dumps(
+                {
+                    "file_id": "cep_validated",
+                    "name": "test.mp3",
+                    "mimeType": "audio/mpeg",
+                    "parents": ["folder_id"],
+                    "webContentLink": "https://drive.google.com/test",
+                    "transcription_text": (
+                        "This is a long transcription about climate events. " * 30
+                    ),
+                    "detected_language": "pt",
+                    "language_probability": 0.95,
+                    "model_id": "openai/whisper-large-v3",
+                    "compute_device": "cpu",
+                    "processing_duration_sec": 30.0,
+                    "transcription_status": "completed",
+                }
+            )
+        )
+
+        output_file = tmp_path / "cep_validated_qa.json"
+
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="cep_validated",
+            filename="test.mp3",
+            output_file=output_file,
+        )
+
+        qa_config_dict = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        ).model_dump()
+
+        cep_config_dict = CEPConfig().model_dump()
+
+        file_id, success, _ = generate_cep_qa_for_transcription(
+            task, qa_config_dict, cep_config_dict, JudgeConfig().model_dump()
+        )
+
+        assert file_id == "cep_validated"
+        assert success is True
+        assert output_file.exists()
+
+
+class TestRunBatchCEPGeneration:
+    """Tests for run_batch_cep_generation function."""
+
+    @pytest.fixture(autouse=True)
+    def setup_versioning(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Configure versioned results for CEP batch tests."""
+        import arandu.qa.batch as qa_batch_module
+
+        qa_batch_module._worker_cep_generator = None
+
+        self.results_dir = (tmp_path / "results").resolve()
+
+        mock_rc = mocker.patch("arandu.qa.batch.ResultsConfig")
+        mock_rc.return_value.enable_versioning = True
+        mock_rc.return_value.base_dir = tmp_path / "results"
+
+        mocker.patch.object(ResultsManager, "_generate_pipeline_id", return_value="test_run")
+        mocker.patch("arandu.qa.batch.ProcessPoolExecutor", _ThreadPoolCompat)
+
+        self.run_dir = self.results_dir / "test_run" / "cep"
+        self.outputs_dir = self.run_dir / "outputs"
+        self.versioned_checkpoint = self.run_dir / "cep_checkpoint.json"
+
+    def test_run_metadata_records_disabled_gate(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        run_batch_cep_generation(
+            input_dir,
+            tmp_path / "out",
+            QAConfig(provider="ollama", model_id="llama3.1:8b"),
+            CEPConfig(),
+            num_workers=1,
+        )
+
+        metadata = json.loads((self.run_dir / "run_metadata.json").read_text())
+        assert metadata["config"]["config_values"]["scaffolding_gate"] == {"enabled": False}
+
+    def test_active_gate_without_validator_fails_before_any_run_dir(self, tmp_path: Path) -> None:
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        with pytest.raises(ValueError, match="ARANDU_JUDGE_VALIDATOR_MODEL"):
+            run_batch_cep_generation(
+                input_dir,
+                tmp_path / "out",
+                QAConfig(provider="ollama", model_id="llama3.1:8b"),
+                CEPConfig(enable_scaffolding_gate=True),
+                num_workers=1,
+                judge_config=JudgeConfig(validator_model=None),
+            )
+
+        assert not self.results_dir.exists()
+
+    def _seed_output(self, *, gated: bool | None) -> Path:
+        """Write a prior CEP output (and run_metadata.json) under the versioned run."""
+        self.outputs_dir.mkdir(parents=True)
+        body: dict = {"qa_pairs": []}
+        if gated is not None:
+            body["scaffolding_gate_enabled"] = gated
+        (self.outputs_dir / "a_cep_qa.json").write_text(json.dumps(body))
+        metadata = self.run_dir / "run_metadata.json"
+        metadata.write_text('{"sentinel": true}')
+        return metadata
+
+    def _resume(self, tmp_path: Path, *, gate: bool, rebuild: bool = False) -> None:
+        input_dir = tmp_path / "input"
+        input_dir.mkdir(exist_ok=True)
+        run_batch_cep_generation(
+            input_dir,
+            tmp_path / "out",
+            QAConfig(provider="ollama", model_id="llama3.1:8b"),
+            CEPConfig(enable_scaffolding_gate=gate),
+            num_workers=1,
+            pipeline_id="test_run",
+            rebuild=rebuild,
+            judge_config=JudgeConfig(validator_model="judge-model"),
+        )
+
+    def test_resume_under_different_gate_regime_is_refused(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        metadata = self._seed_output(gated=True)
+
+        with pytest.raises(ValueError, match=r"1 existing.*--rebuild.*--id"):
+            self._resume(tmp_path, gate=False)
+
+        assert metadata.read_text() == '{"sentinel": true}'
+
+    def test_missing_gate_key_counts_as_gate_off(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=None)
+
+        with pytest.raises(ValueError, match="gate"):
+            self._resume(tmp_path, gate=True)
+
+    def test_resume_under_same_gate_regime_proceeds(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        metadata = self._seed_output(gated=True)
+
+        self._resume(tmp_path, gate=True)
+
+        assert metadata.read_text() != '{"sentinel": true}'
+
+    def test_truncated_file_is_skipped_and_same_regime_proceeds(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+        (self.outputs_dir / "b_cep_qa.json").write_text('{"qa_pairs": [')
+
+        self._resume(tmp_path, gate=True)
+
+    def test_truncated_file_does_not_hide_a_mismatching_one(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+        (self.outputs_dir / "b_cep_qa.json").write_text('{"qa_pairs": [')
+
+        with pytest.raises(ValueError, match="1 existing"):
+            self._resume(tmp_path, gate=False)
+
+    def test_non_dict_file_is_skipped(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+        (self.outputs_dir / "b_cep_qa.json").write_text("[]")
+
+        self._resume(tmp_path, gate=True)
+
+    def test_unversioned_resume_under_different_gate_regime_is_refused(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        mocker.patch("arandu.qa.batch.ResultsConfig").return_value.enable_versioning = False
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "a_cep_qa.json").write_text(json.dumps({"scaffolding_gate_enabled": True}))
+
+        with pytest.raises(ValueError, match="--rebuild"):
+            self._resume(tmp_path, gate=False)
+
+    def test_rebuild_ignores_gate_regime_mismatch_and_clears(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        self._seed_output(gated=True)
+
+        self._resume(tmp_path, gate=False, rebuild=True)
+
+        assert not (self.outputs_dir / "a_cep_qa.json").exists()
+
+    def test_run_metadata_snapshots_active_gate(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        run_batch_cep_generation(
+            input_dir,
+            tmp_path / "out",
+            QAConfig(provider="ollama", model_id="llama3.1:8b"),
+            CEPConfig(enable_scaffolding_gate=True),
+            num_workers=1,
+            judge_config=JudgeConfig(validator_model="judge-model", temperature=0.1),
+        )
+
+        metadata = json.loads((self.run_dir / "run_metadata.json").read_text())
+        gate = metadata["config"]["config_values"]["scaffolding_gate"]
+        assert gate["enabled"] is True
+        assert gate["judge"]["validator_model"] == "judge-model"
+        assert gate["judge"]["temperature"] == 0.1
+        assert gate["resolved_provider"] == "ollama"
+        assert gate["resolved_base_url"] == "http://localhost:11434/v1"
+        assert set(gate["criteria"]) == {
+            "faithfulness",
+            "bloom_calibration",
+            "informativeness",
+            "self_containedness",
+        }
+        assert all(c["sha256"] for c in gate["criteria"].values())
+        assert gate["bloom_descriptions_sha256"]
+
+    def test_run_batch_cep_creates_output_dir(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        """Test that output directory is created for CEP batch."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert self.outputs_dir.exists()
+
+    def test_run_batch_cep_rebuild_clears_stale_outputs(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """rebuild=True drops stale CEP pair files before generating."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Pre-seed a stale pair file + checkpoint in the versioned outputs, as a
+        # prior (e.g. pre-dedup) run would have left behind.
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        stale = self.outputs_dir / "stale_id_cep_qa.json"
+        stale.write_text("{}")
+        self.versioned_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text("{}")
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        # Empty input -> early exit after the rebuild wipe runs.
+        run_batch_cep_generation(
+            input_dir, output_dir, qa_config, cep_config, num_workers=1, rebuild=True
+        )
+
+        assert not stale.exists()
+        assert self.outputs_dir.exists()
+
+    def test_run_batch_cep_no_rebuild_keeps_stale_outputs(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Without rebuild, a resumed run leaves prior pair files in place."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
+        stale = self.outputs_dir / "stale_id_cep_qa.json"
+        stale.write_text("{}")
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert stale.exists()
+
+    def test_run_batch_cep_no_tasks_early_exit(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test early exit when no transcription files found for CEP."""
+        caplog.set_level("INFO")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert "no tasks" in caplog.text.lower()
+
+    def test_run_batch_cep_all_completed_early_exit(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test early exit when all CEP files already completed."""
+        caplog.set_level("INFO")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create transcription file
+        file = input_dir / "test_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    file_id="cep_id1",
+                    name="test.mp3",
+                )
+            )
+        )
+
+        # Mock checkpoint to report file as already completed
+        mocker.patch(
+            "arandu.qa.batch.CheckpointManager.is_completed",
+            return_value=True,
+        )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert "already processed" in caplog.text.lower() or "all files" in caplog.text.lower()
+
+    def test_run_batch_cep_sequential_processing(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test CEP sequential processing with single worker."""
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(2):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        file_id=f"cep_id{i}",
+                        name=f"test{i}.mp3",
+                        transcription_text="Test transcription text. " * 20,
+                    )
+                )
+            )
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check outputs were created in versioned directory
+        assert (self.outputs_dir / "cep_id0_cep_qa.json").exists()
+        assert (self.outputs_dir / "cep_id1_cep_qa.json").exists()
+
+    def test_run_batch_cep_sequential_with_failures(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Test CEP sequential processing with failures."""
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        # Mock generate to succeed for one, fail for another
+        mock_gen = mocker.patch("arandu.qa.batch.generate_cep_qa_for_transcription")
+        mock_gen.side_effect = [
+            ("valid_cep", True, "Success"),
+            ("invalid_cep", False, "Too short"),
+        ]
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(2):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        file_id=f"{'valid' if i == 0 else 'invalid'}_cep",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check versioned checkpoint records failure
+        checkpoint_data = json.loads(self.versioned_checkpoint.read_text())
+        assert "invalid_cep" in checkpoint_data["failed_files"]
+
+    def test_run_batch_cep_final_summary_logged(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that CEP final summary is logged."""
+        caplog.set_level("INFO")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        file = input_dir / "test_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    file_id="cep_test",
+                    name="test.mp3",
+                    transcription_text="Test transcription text. " * 20,
+                )
+            )
+        )
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check summary was logged
+        assert "Batch CEP QA generation completed" in caplog.text
+
+    def test_run_batch_cep_workers_greater_than_cpu_count(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP batch logs when workers > CPU count."""
+        caplog.set_level("INFO")
+
+        # Mock cpu_count to return small number
+        mocker.patch("arandu.qa.batch.mp.cpu_count", return_value=2)
+
+        # Mock generate to succeed
+        mock_gen = mocker.patch("arandu.qa.batch.generate_cep_qa_for_transcription")
+        mock_gen.return_value = ("id1", True, "Success")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create 5 test files
+        for i in range(5):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        file_id=f"cep_id{i}",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        # Use 4 workers (more than mocked cpu_count of 2)
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=4)
+
+        # Check that info about workers > CPU count was logged
+        assert "more than" in caplog.text.lower() and "cpu" in caplog.text.lower()
+
+    def test_run_batch_cep_invalid_file_skipped(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that invalid transcription files are skipped during CEP task loading."""
+        caplog.set_level("WARNING")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create invalid JSON file
+        invalid_file = input_dir / "invalid_transcription.json"
+        invalid_file.write_text("{ not valid json")
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check that warning was logged
+        assert "skipping invalid file" in caplog.text.lower()
+
+    def test_run_batch_cep_parallel_with_exception(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP parallel processing handles future.result() exceptions."""
+        caplog.set_level("INFO")
+
+        mock_executor_class = mocker.patch("arandu.qa.batch.ProcessPoolExecutor")
+        mock_executor = Mock()
+        mock_executor.__enter__ = Mock(return_value=mock_executor)
+        mock_executor.__exit__ = Mock(return_value=False)
+
+        mock_future1 = Mock()
+        mock_future1.result.side_effect = RuntimeError("CEP Worker crashed")
+
+        mock_executor.submit.return_value = mock_future1
+
+        mocker.patch(
+            "arandu.qa.batch.as_completed",
+            return_value=iter([mock_future1]),
+        )
+
+        mock_executor_class.return_value = mock_executor
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Create test files
+        for i in range(3):
+            file = input_dir / f"file{i}_transcription.json"
+            file.write_text(
+                json.dumps(
+                    create_test_enriched_data(
+                        file_id=f"cep_id{i}",
+                        name=f"test{i}.mp3",
+                    )
+                )
+            )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        # Use 2+ workers to trigger parallel path
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=2)
+
+        # Check that exception was logged
+        assert "exception" in caplog.text.lower() or "failed" in caplog.text.lower()
+
+    def test_run_batch_cep_final_summary_with_failures(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Records below the content-length floor are reported as skipped.
+
+        With the defensive length floor in the batch loader, sub-floor
+        transcriptions are dropped before reaching the generator; the
+        final summary should reflect that with a "skipped as invalid"
+        log entry.
+        """
+        caplog.set_level("INFO")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Sub-floor transcription (1 word, 5 chars). is_valid is left
+        # unset so the loader's defensive floor applies.
+        file = input_dir / "fail_transcription.json"
+        file.write_text(
+            json.dumps(
+                create_test_enriched_data(
+                    file_id="fail_cep",
+                    name="fail.mp3",
+                    transcription_text="Short",
+                )
+            )
+        )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Check summary mentions a skipped/failed file (skip path is the
+        # new outcome for sub-floor records; "failed" is the legacy path
+        # for genuine generator errors).
+        log_lower = caplog.text.lower()
+        assert "skipped" in log_lower or "failed" in log_lower
+
+    def test_run_batch_cep_zero_total_files(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test CEP final summary when total is zero."""
+        caplog.set_level("INFO")
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Pre-create versioned run dir with empty checkpoint
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.versioned_checkpoint.write_text(
+            json.dumps(
+                {
+                    "total_files": 0,
+                    "completed_files": [],
+                    "failed_files": {},
+                }
+            )
+        )
+
+        qa_config = QAConfig(provider="ollama", model_id="llama3.1:8b")
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        # Should exit early
+        assert "no tasks" in caplog.text.lower()
+
+    def test_run_batch_cep_logs_skipped_invalid(
+        self, tmp_path: Path, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that the final summary includes skipped invalid count."""
+        caplog.set_level("INFO")
+        mock_openai = mocker.patch("arandu.shared.llm_client.OpenAI")
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = """[
+            {"question": "What?", "answer": "test", "confidence": 0.9,
+             "bloom_level": "understand", "reasoning_trace": "Direct recall"}
+        ]"""
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        input_dir = tmp_path / "input"
+        output_dir = tmp_path / "cep_output"
+        input_dir.mkdir()
+
+        # Valid transcription
+        valid_data = create_test_enriched_data(
+            file_id="ok1", name="ok.mp3", transcription_text="Test text. " * 20
+        )
+        valid_data["validation"] = _validation_payload(passed=True)
+        (input_dir / "ok1_transcription.json").write_text(json.dumps(valid_data))
+
+        # Invalid transcription (should be skipped)
+        bad_data = create_test_enriched_data(file_id="bad1", name="bad.mp3")
+        bad_data["validation"] = _validation_payload(passed=False)
+        (input_dir / "bad1_transcription.json").write_text(json.dumps(bad_data))
+
+        qa_config = QAConfig(
+            provider="ollama",
+            model_id="llama3.1:8b",
+        )
+        cep_config = CEPConfig()
+
+        run_batch_cep_generation(input_dir, output_dir, qa_config, cep_config, num_workers=1)
+
+        assert "Skipped invalid transcriptions: 1" in caplog.text
+
+
+class TestBuildCEPGenerator:
+    """_build_cep_generator wires the scaffolding gate from JudgeConfig."""
+
+    def test_builds_qajudge_when_gate_active(self, mocker: MockerFixture) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        build_client = mocker.patch("arandu.transcription.judge.build_validator_client")
+        judge_cls = mocker.patch("arandu.qa.cep.judge.QAJudge")
+        cep = CEPConfig(enable_scaffolding_gate=True, enable_scaffolding_context=True)
+        judge = JudgeConfig(
+            validator_model="judge-model",
+            validator_provider="ollama",
+            validator_base_url="http://judge:11434/v1",
+        )
+
+        generator = _build_cep_generator(QAConfig(provider="ollama"), cep, judge)
+
+        build_client.assert_called_once_with(
+            "judge-model",
+            provider="ollama",
+            base_url="http://judge:11434/v1",
+            api_key=None,
+            extra_body=None,
+        )
+        judge_cls.assert_called_once_with(
+            validator_client=build_client.return_value, cep_config=cep, judge_config=judge
+        )
+        assert generator._bloom_generator.validator is judge_cls.return_value
+
+    def test_generation_client_uses_its_own_key_and_extra_body(
+        self, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        openai_cls = mocker.patch("arandu.shared.llm_client.OpenAI")
+        qa = QAConfig(
+            provider="custom",
+            model_id="deepseek-flash",
+            base_url="https://api.deepseek.com",
+            api_key="sk-deepseek",
+            extra_body={"reasoning_effort": "none"},
+        )
+        cep = CEPConfig(enable_scaffolding_gate=False)
+
+        generator = _build_cep_generator(qa, cep, JudgeConfig())
+
+        assert openai_cls.call_args.kwargs["api_key"] == "sk-deepseek"
+        assert generator.llm_client.extra_body == {"reasoning_effort": "none"}
+
+    def test_build_cep_generator_skips_validator_without_scaffolding(
+        self, mocker: MockerFixture
+    ) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        build_client = mocker.patch("arandu.transcription.judge.build_validator_client")
+        cep = CEPConfig(enable_scaffolding_gate=True, enable_scaffolding_context=False)
+
+        generator = _build_cep_generator(
+            QAConfig(provider="ollama"), cep, JudgeConfig(validator_model=None)
+        )
+
+        build_client.assert_not_called()
+        assert generator._bloom_generator.validator is None
+
+    def test_raises_when_gate_active_without_model(self, mocker: MockerFixture) -> None:
+        from arandu.qa.batch import _build_cep_generator
+
+        mocker.patch("arandu.shared.llm_client.OpenAI")
+        cep = CEPConfig(enable_scaffolding_gate=True, enable_scaffolding_context=True)
+
+        with pytest.raises(ValueError, match="ARANDU_JUDGE_VALIDATOR_MODEL"):
+            _build_cep_generator(
+                QAConfig(provider="ollama"), cep, JudgeConfig(validator_model=None)
+            )
+
+
+class TestScaffoldingGateRecordAndMetadata:
+    """The worker stamps the validator model; the run snapshots the gate."""
+
+    def test_worker_stamps_validator_model_when_gated(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        import arandu.qa.batch as qa_batch_module
+
+        record = mocker.Mock()
+        record.scaffolding_gate_enabled = True
+        record.qa_pairs = []
+        generator = mocker.Mock()
+        generator.generate_qa_pairs.return_value = record
+        qa_batch_module._worker_cep_generator = generator
+        mocker.patch("arandu.qa.batch.TranscriptionRecord")
+        input_file = tmp_path / "t.json"
+        input_file.write_text("{}")
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="f1",
+            filename="t.mp3",
+            output_file=tmp_path / "out" / "f1_cep_qa.json",
+        )
+
+        try:
+            _, success, _ = generate_cep_qa_for_transcription(
+                task,
+                QAConfig().model_dump(),
+                CEPConfig().model_dump(),
+                JudgeConfig(validator_model="judge-model").model_dump(),
+            )
+        finally:
+            qa_batch_module._worker_cep_generator = None
+
+        assert success is True
+        assert record.validator_model_id == "judge-model"
+        record.save.assert_called_once_with(task.output_file)
+
+    @staticmethod
+    def _pair(question: str, *, verdict: str | None) -> QAPairCEP:
+        validation = None
+        if verdict is not None:
+            error = "llm down" if verdict == "error" else None
+            criterion = CriterionScore(score=1.0, threshold=0.5, rationale="r", error=error)
+            step = JudgeStepResult(criterion_scores={"faithfulness": criterion})
+            validation = JudgePipelineResult(stage_results={"cep_validation": step}, passed=True)
+        return QAPairCEP(
+            question=question,
+            answer="a",
+            context="c",
+            question_type="factual",
+            confidence=0.9,
+            bloom_level="remember",
+            validation=validation,
+        )
+
+    def _run_worker(
+        self, tmp_path: Path, mocker: MockerFixture, *, gated: bool, verdicts: list[str | None]
+    ) -> tuple[bool, str, Path]:
+        import arandu.qa.batch as qa_batch_module
+
+        record = mocker.Mock()
+        record.scaffolding_gate_enabled = gated
+        record.qa_pairs = [self._pair(f"q{i}", verdict=v) for i, v in enumerate(verdicts)]
+        generator = mocker.Mock()
+        generator.generate_qa_pairs.return_value = record
+        qa_batch_module._worker_cep_generator = generator
+        mocker.patch("arandu.qa.batch.TranscriptionRecord")
+        input_file = tmp_path / "t.json"
+        input_file.write_text("{}")
+        task = QAGenerationTask(
+            transcription_file=input_file,
+            file_id="f1",
+            filename="t.mp3",
+            output_file=tmp_path / "out" / "f1_cep_qa.json",
+        )
+        try:
+            _, success, message = generate_cep_qa_for_transcription(
+                task,
+                QAConfig().model_dump(),
+                CEPConfig().model_dump(),
+                JudgeConfig(validator_model="judge-model").model_dump(),
+            )
+        finally:
+            qa_batch_module._worker_cep_generator = None
+        self.record = record
+        return success, message, task.output_file
+
+    def test_gated_record_without_any_clean_verdict_fails_and_is_not_saved(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        success, message, _ = self._run_worker(
+            tmp_path, mocker, gated=True, verdicts=[None, "error"]
+        )
+
+        assert success is False
+        assert "no clean verdict for 2 pairs" in message
+        assert "validator model" in message
+        self.record.save.assert_not_called()
+
+    def test_gated_record_with_one_clean_verdict_is_saved(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        success, _, _ = self._run_worker(tmp_path, mocker, gated=True, verdicts=["ok", "error"])
+
+        assert success is True
+        self.record.save.assert_called_once()
+
+    def test_ungated_record_with_unjudged_pairs_is_saved(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        success, _, _ = self._run_worker(tmp_path, mocker, gated=False, verdicts=[None, None])
+
+        assert success is True
+        self.record.save.assert_called_once()

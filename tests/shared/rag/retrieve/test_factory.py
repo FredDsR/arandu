@@ -1,0 +1,353 @@
+"""Tests for ``shared/rag/retrieve/factory.py`` — per-arm retriever construction.
+
+Locks the dispatch + failure-mode surface. End-to-end retrieve behaviour
+(query → passages) is covered by the per-retriever tests in
+``tests/shared/rag/retrievers/``.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+from unittest.mock import patch
+
+import networkx as nx
+import pytest
+
+from arandu.shared.chunking.schemas import Chunk, ChunkSet
+from arandu.shared.embeddings import EmbedderSettings
+from arandu.shared.rag.retrieve.factory import (
+    _build_chunk_resolver,
+    build_retriever,
+    dense_index_dir,
+)
+from arandu.shared.rag.retrieve.settings import (
+    AtlasRagRetrieveSettings,
+    Bm25RetrieveSettings,
+    DenseRetrieveSettings,
+    KHopRetrieveSettings,
+)
+from arandu.shared.rag.retrievers.dense import MANIFEST_FILENAME, DenseRetriever
+from arandu.shared.rag.retrievers.khop_subgraph import KHopSubgraphRetriever
+from arandu.shared.rag.retrievers.khop_triple import KHopTripleRetriever
+from arandu.shared.rag.retrievers.null import NullRetriever
+from arandu.shared.rag.retrievers.oracle import OracleRetriever
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests.conftest import TranscriptionRecordWriter
+
+
+class TestOracleArm:
+    def test_builds_from_cep_outputs(self, tmp_path: Path) -> None:
+        (tmp_path / "run_x" / "cep" / "outputs").mkdir(parents=True)
+        retriever = build_retriever("oracle", pipeline_id="run_x", base_dir=tmp_path)
+        assert isinstance(retriever, OracleRetriever)
+
+    def test_missing_cep_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match="CEP outputs not found"):
+            build_retriever("oracle", pipeline_id="never_built", base_dir=tmp_path)
+
+
+class TestNullArm:
+    def test_returns_null_retriever_without_paths(self, tmp_path: Path) -> None:
+        # Null arm needs no on-disk artifacts — useful smoke for the
+        # CLI's "always at least the null arm runs" contract.
+        retriever = build_retriever("null", pipeline_id="any", base_dir=tmp_path)
+        assert isinstance(retriever, NullRetriever)
+
+
+class TestAtlasRagArmFailureModes:
+    """The atlas_rag arm needs precompute + LLM API key; failures surface clearly."""
+
+    def test_missing_kg_raises_file_not_found(self, tmp_path: Path) -> None:
+        # No KG built for this pipeline_id at all.
+        with pytest.raises(FileNotFoundError, match="atlas-rag KG outputs not found"):
+            build_retriever("atlas_rag", pipeline_id="never_built", base_dir=tmp_path)
+
+    def test_missing_precompute_raises_file_not_found(self, tmp_path: Path) -> None:
+        # KG built but `arandu kg-build-retriever-index` was never run.
+        _seed_khop_kg(tmp_path, "run_x")  # creates kg/outputs/atlas_output/ + kg_graphml
+        with pytest.raises(FileNotFoundError, match="precompute manifest not found"):
+            build_retriever("atlas_rag", pipeline_id="run_x", base_dir=tmp_path)
+
+    def test_missing_api_key_raises_runtime_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # KG + precompute present; LLM provider is the cloud default but
+        # the API key env var is unset. Surface a clear error instead of
+        # constructing an unusable LLMClient.
+        _seed_khop_kg(tmp_path, "run_x")
+        precompute_dir = tmp_path / "run_x" / "kg" / "outputs" / "atlas_output" / "precompute"
+        precompute_dir.mkdir(parents=True)
+        (precompute_dir / "manifest.json").write_text("{}")
+        monkeypatch.delenv("ARANDU_ATLAS_RAG_API_KEY", raising=False)
+
+        with pytest.raises(RuntimeError, match="ARANDU_ATLAS_RAG_API_KEY"):
+            build_retriever("atlas_rag", pipeline_id="run_x", base_dir=tmp_path)
+
+
+class TestUnknownArm:
+    def test_unknown_arm_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Unknown arm"):
+            build_retriever("does_not_exist", pipeline_id="any", base_dir=tmp_path)  # type: ignore[arg-type]
+
+
+def _seed_khop_kg(base: Path, pipeline_id: str, keyword: str = "transcriptions.json") -> Path:
+    """Lay out a minimal atlas-rag KG tree with a real graphml file."""
+    kg_outputs_dir = base / pipeline_id / "kg" / "outputs" / "atlas_output"
+    graphml_dir = kg_outputs_dir / "kg_graphml"
+    extraction_dir = kg_outputs_dir / "kg_extraction"
+    graphml_dir.mkdir(parents=True)
+    extraction_dir.mkdir(parents=True)
+
+    kg = nx.DiGraph()
+    kg.add_node("e_a", type="entity", id="entidade a", file_id="src_a")
+    kg.add_node("p_a", type="passage", id="texto teste", file_id="src_a")
+    kg.add_edge("e_a", "p_a", relation="mentions")
+    nx.write_graphml(kg, graphml_dir / f"{keyword}_graph.graphml")
+
+    (extraction_dir / "qwen3.json").write_text(
+        json.dumps({"id": "src_a", "original_text": "texto teste"}) + "\n"
+    )
+    return kg_outputs_dir
+
+
+class TestKHopArms:
+    def test_khop_passage_constructs_retriever(self, tmp_path: Path) -> None:
+        _seed_khop_kg(tmp_path, "run_x")
+        retriever = build_retriever(
+            "khop_passage",
+            pipeline_id="run_x",
+            settings=KHopRetrieveSettings(k_hop=2, max_postings=10),
+            base_dir=tmp_path,
+        )
+        assert isinstance(retriever, KHopSubgraphRetriever)
+
+    def test_khop_triple_constructs_retriever(self, tmp_path: Path) -> None:
+        _seed_khop_kg(tmp_path, "run_x")
+        retriever = build_retriever(
+            "khop_triple",
+            pipeline_id="run_x",
+            settings=KHopRetrieveSettings(k_hop=2, max_postings=10),
+            base_dir=tmp_path,
+        )
+        assert isinstance(retriever, KHopTripleRetriever)
+
+    def test_khop_missing_kg_raises(self, tmp_path: Path) -> None:
+        # No KG built for this pipeline_id at all.
+        with pytest.raises(FileNotFoundError, match="atlas-rag KG outputs not found"):
+            build_retriever(
+                "khop_passage",
+                pipeline_id="nonexistent",
+                base_dir=tmp_path,
+            )
+
+
+class TestAtlasRagArmConstructs:
+    """All prerequisites present → :class:`AtlasRagRetriever` is constructed.
+
+    The real AtlasRagRetriever constructor reads pickles + builds an
+    upstream HippoRAGRetriever, which is too heavy for unit tests. We
+    patch the class so the test verifies wiring (LLM client + embedder
+    plumbing, kwarg names) without touching atlas-rag internals.
+    """
+
+    def test_wires_llm_and_embedder_correctly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_khop_kg(tmp_path, "run_x")
+        precompute_dir = tmp_path / "run_x" / "kg" / "outputs" / "atlas_output" / "precompute"
+        precompute_dir.mkdir(parents=True)
+        (precompute_dir / "manifest.json").write_text("{}")
+        monkeypatch.setenv("ARANDU_ATLAS_RAG_API_KEY", "test-key")
+
+        sentinel_encoder = object()
+        with (
+            patch(
+                "arandu.shared.rag.retrieve.factory.build_embedder",
+                return_value=sentinel_encoder,
+            ) as mock_build_embedder,
+            patch("arandu.shared.rag.retrieve.factory.AtlasRagRetriever") as mock_retriever_cls,
+        ):
+            build_retriever(
+                "atlas_rag",
+                pipeline_id="run_x",
+                settings=AtlasRagRetrieveSettings(
+                    provider="openai",
+                    model_id="gemini-2.5-flash",
+                    base_url="https://gemini.example/v1/",
+                ),
+                embedder_settings=EmbedderSettings(model="gemini-embedding-001"),
+                base_dir=tmp_path,
+            )
+
+        mock_build_embedder.assert_called_once()
+        mock_retriever_cls.assert_called_once()
+        kwargs = mock_retriever_cls.call_args.kwargs
+        assert kwargs["kg_outputs_dir"] == tmp_path / "run_x" / "kg" / "outputs" / "atlas_output"
+        assert kwargs["sentence_encoder"] is sentinel_encoder
+        assert kwargs["sentence_encoder_model"] == "gemini-embedding-001"
+        assert kwargs["llm_model_id"] == "gemini-2.5-flash"
+        # llm_client is an openai.OpenAI instance (the .client on LLMClient).
+        # We don't assert its full type — just that it was passed.
+        assert kwargs["llm_client"] is not None
+
+
+class TestBm25Arm:
+    def test_missing_chunks_raises(self, tmp_path: Path) -> None:
+        # No chunks for this chunker_id.
+        with pytest.raises(FileNotFoundError, match="Chunks not found"):
+            build_retriever(
+                "bm25",
+                pipeline_id="run_x",
+                settings=Bm25RetrieveSettings(chunker_id="cep_4k"),
+                base_dir=tmp_path,
+            )
+
+
+class TestDenseArm:
+    def test_missing_chunks_raises_before_loading_encoder(self, tmp_path: Path) -> None:
+        with (
+            patch("arandu.shared.rag.retrieve.factory.SentenceTransformerEncoder") as enc_cls,
+            pytest.raises(FileNotFoundError, match="Chunks not found"),
+        ):
+            build_retriever(
+                "dense",
+                pipeline_id="run_x",
+                settings=DenseRetrieveSettings(),
+                base_dir=tmp_path,
+            )
+        enc_cls.assert_not_called()
+
+    def test_index_dir_is_per_encoder(self, tmp_path: Path) -> None:
+        mpnet = dense_index_dir(tmp_path, "run_x", DenseRetrieveSettings(_env_file=None))
+        bge = dense_index_dir(tmp_path, "run_x", DenseRetrieveSettings(model="BAAI/bge-m3"))
+        assert mpnet.name == "dense_cep_4k__paraphrase-multilingual-mpnet-base-v2__wmax"
+        assert bge.name == "dense_cep_4k__bge-m3__wmax"
+        base = DenseRetrieveSettings(_env_file=None)
+        assert dense_index_dir(tmp_path, "r", base.for_arm("dense_bgem3_512")).name == (
+            "dense_cep_4k__bge-m3__w512"
+        )
+        assert dense_index_dir(tmp_path, "r", base.for_arm("dense_qwen3_whole")).name == (
+            "dense_cep_4k__Qwen3-Embedding-0.6B__whole"
+        )
+        assert mpnet.parent == tmp_path / "run_x" / "retrieve" / "indexes"
+
+    def test_index_dir_names_overlap_and_passage_prompt(self, tmp_path: Path) -> None:
+        # Settings that change the embeddings must give another directory.
+        plain = DenseRetrieveSettings(_env_file=None, window_tokens=256)
+        half = DenseRetrieveSettings(_env_file=None, window_tokens=256, overlap_ratio=0.5)
+        prompt = DenseRetrieveSettings(_env_file=None, window_tokens=256, passage_prompt="p: ")
+        other = DenseRetrieveSettings(_env_file=None, window_tokens=256, passage_prompt="q: ")
+        names = {dense_index_dir(tmp_path, "r", s).name for s in (plain, half, prompt, other)}
+        assert len(names) == 4
+        assert dense_index_dir(tmp_path, "r", half).name.endswith("__w256__o50")
+        assert "__w256__p" in dense_index_dir(tmp_path, "r", prompt).name
+        # Query prompt and unit do not change the index.
+        same = DenseRetrieveSettings(
+            _env_file=None, window_tokens=256, query_prompt="q: ", unit="subpassage"
+        )
+        assert dense_index_dir(tmp_path, "r", same) == dense_index_dir(tmp_path, "r", plain)
+
+    def test_builds_index_then_loads(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
+        from tests.shared.rag.retrievers.test_dense import FakeEncoder
+
+        text = "alfa beta gama delta epsilon enchente itaqui"
+        write_transcription_record(tmp_path / "run_x" / "transcription" / "outputs", "src_a", text)
+        chunk = Chunk(
+            chunk_id="chk0",
+            source_file_id="src_a",
+            chunker_id="cep_4k",
+            start_char=0,
+            end_char=len(text),
+        )
+        chunk_dir = tmp_path / "run_x" / "chunk" / "outputs" / "cep_4k"
+        chunk_dir.mkdir(parents=True)
+        (chunk_dir / "src_a.json").write_text(
+            ChunkSet(
+                source_file_id="src_a",
+                source_filename="src_a.mp3",
+                source_text_sha256="0" * 64,
+                views={"cep_4k": [chunk]},
+                generated_at=datetime.now(UTC),
+            ).model_dump_json()
+        )
+        settings = DenseRetrieveSettings(model="fake/bow")
+        with patch(
+            "arandu.shared.rag.retrieve.factory.SentenceTransformerEncoder",
+            return_value=FakeEncoder(),
+        ):
+            retriever = build_retriever(
+                "dense", pipeline_id="run_x", settings=settings, base_dir=tmp_path
+            )
+        assert isinstance(retriever, DenseRetriever)
+        assert retriever.retriever_id == "dense_cep_4k"
+        manifest = json.loads(
+            (dense_index_dir(tmp_path, "run_x", settings) / MANIFEST_FILENAME).read_text()
+        )
+        assert manifest["chunk_ids"] == ["chk0"]
+
+    def test_preset_arm_applies_encoder_and_prompts(self, tmp_path: Path) -> None:
+        (tmp_path / "run_x" / "chunk" / "outputs" / "cep_4k").mkdir(parents=True)
+        # An index already on disk: the factory loads it instead of building.
+        settings = DenseRetrieveSettings(_env_file=None)
+        index_dir = dense_index_dir(tmp_path, "run_x", settings.for_arm("dense_e5_256"))
+        index_dir.mkdir(parents=True)
+        (index_dir / "embeddings.npy").write_bytes(b"")
+        with (
+            patch("arandu.shared.rag.retrieve.factory.SentenceTransformerEncoder") as enc_cls,
+            patch("arandu.shared.rag.retrieve.factory.DenseRetriever") as ret_cls,
+        ):
+            build_retriever(
+                "dense_e5_256",
+                pipeline_id="run_x",
+                settings=settings,
+                base_dir=tmp_path,
+            )
+        assert enc_cls.call_args.args == ("intfloat/multilingual-e5-large-instruct",)
+        assert enc_cls.call_args.kwargs["query_prompt"].startswith("Instruct: ")
+        assert enc_cls.call_args.kwargs["passage_prompt"] == ""
+        kwargs = ret_cls.call_args.kwargs
+        assert kwargs["window_tokens"] == 256
+        assert kwargs["retriever_id"] == "dense_e5_256_cep_4k"
+
+
+class TestChunkResolverFilename:
+    """`_build_chunk_resolver` resolves the transcription stage's filename (bug #5).
+
+    The transcription stage writes ``<file_id>_transcription.json``; the bm25
+    arm's chunk text loader built ``<file_id>.json`` and 404'd on every chunk
+    in the first real end-to-end run (dry-run 2026-06-08). It now tries the
+    suffixed form first, with the bare form as a legacy fallback.
+    """
+
+    def test_loads_transcription_suffixed_file(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
+        outputs = tmp_path / "run_x" / "transcription" / "outputs"
+        write_transcription_record(outputs, "src_a", "texto êmico")
+        resolver = _build_chunk_resolver(pipeline_id="run_x", base_dir=tmp_path)
+        assert resolver._loader("src_a") == "texto êmico"
+
+    def test_loads_legacy_bare_file(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
+        outputs = tmp_path / "run_x" / "transcription" / "outputs"
+        write_transcription_record(outputs, "src_a", "legado", suffix="")
+        resolver = _build_chunk_resolver(pipeline_id="run_x", base_dir=tmp_path)
+        assert resolver._loader("src_a") == "legado"
+
+    def test_missing_file_error_names_both_candidates(
+        self, tmp_path: Path, write_transcription_record: TranscriptionRecordWriter
+    ) -> None:
+        outputs = tmp_path / "run_x" / "transcription" / "outputs"
+        # Dir exists (so the resolver builds) but the file_id is absent.
+        write_transcription_record(outputs, "other", "x")
+        resolver = _build_chunk_resolver(pipeline_id="run_x", base_dir=tmp_path)
+        with pytest.raises(FileNotFoundError, match=r"_transcription\.json and src_a\.json"):
+            resolver._loader("src_a")

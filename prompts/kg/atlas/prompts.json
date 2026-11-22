@@ -1,0 +1,14 @@
+{
+  "en": {
+    "system": "You are a helpful assistant who always responds in a valid array of JSON objects without any explanation.",
+    "entity_relation": "Given the following text, extract all entity-relation triples. Each triple should have a Head (subject entity, a noun), a Relation (verb or relational phrase), and a Tail (object entity, a noun). Return ONLY a JSON array of objects with keys \"Head\", \"Relation\", \"Tail\". No additional text.\n\nText:\n{text}",
+    "event_entity": "Given the following text, identify all events and the entities that participate in each event. An event is described by a sentence or clause. Return ONLY a JSON array of objects with keys \"Event\" (a sentence describing the event) and \"Entity\" (a list of participating entity names). No additional text.\n\nText:\n{text}",
+    "event_relation": "Given the following text, identify temporal or causal relationships between events. Return ONLY a JSON array of objects with keys \"Head\" (an event sentence), \"Relation\" (a temporal or causal relationship like 'caused', 'led to', 'happened before'), and \"Tail\" (another event sentence). No additional text.\n\nText:\n{text}"
+  },
+  "pt": {
+    "system": "Você é um assistente prestativo que sempre responde com um array válido de objetos JSON, sem nenhuma explicação adicional.",
+    "entity_relation": "Dado o texto a seguir, extraia todas as triplas entidade-relação. Cada tripla deve ter um Head (entidade sujeito, um substantivo), uma Relation (verbo ou frase relacional) e um Tail (entidade objeto, um substantivo). Retorne APENAS um array JSON de objetos com as chaves \"Head\", \"Relation\", \"Tail\". Sem texto adicional.\n\nTexto:\n{text}",
+    "event_entity": "Dado o texto a seguir, identifique todos os eventos e as entidades que participam de cada evento. Um evento é descrito por uma sentença ou cláusula. Retorne APENAS um array JSON de objetos com as chaves \"Event\" (uma sentença descrevendo o evento) e \"Entity\" (uma lista de nomes de entidades participantes). Sem texto adicional.\n\nTexto:\n{text}",
+    "event_relation": "Dado o texto a seguir, identifique as relações temporais ou causais entre eventos. Retorne APENAS um array JSON de objetos com as chaves \"Head\" (uma sentença de evento), \"Relation\" (uma relação temporal ou causal como 'causou', 'levou a', 'aconteceu antes de') e \"Tail\" (outra sentença de evento). Sem texto adicional.\n\nTexto:\n{text}"
+  }
+}

@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use Arandu in your research, please cite this software and the accompanying article."
+title: "Arandu: Open-World Knowledge Graph Construction and Evaluation from Oral Interviews"
+type: software
+version: "0.1.0"
+license: MIT
+repository-code: "https://github.com/FredDsR/arandu"
+url: "https://github.com/FredDsR/arandu"
+abstract: >-
+  Composable Python pipelines for transcribing oral interviews, generating
+  cognitively stratified question-answer benchmarks grounded in Bloom's revised
+  taxonomy, constructing knowledge graphs with LLMs, and evaluating retrieval
+  strategies via open-world metrics and emic validity.
+keywords:
+  - knowledge graph construction
+  - question answering benchmark
+  - oral interviews
+  - tacit knowledge elicitation
+  - emic validity
+  - LLM-as-a-judge
+  - retrieval-augmented generation
+authors:
+  - family-names: Reckziegel
+    given-names: Frederico Dal Soglio
+    affiliation: "Institute of Informatics, Federal University of Rio Grande do Sul (UFRGS)"
+    orcid: "https://orcid.org/0000-0002-7347-0527"
+  - family-names: Tavares
+    given-names: Anderson Rocha
+    affiliation: "Institute of Informatics, Federal University of Rio Grande do Sul (UFRGS)"
+    orcid: "https://orcid.org/0000-0002-8530-6468"

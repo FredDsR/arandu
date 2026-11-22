@@ -1,0 +1,25 @@
+  flowchart LR
+    classDef src fill:#3B82F6,stroke:#1E40AF,color:#fff,rx:10,ry:10                
+    classDef json fill:#FEF3C7,stroke:#D97706,color:#92400E,rx:6,ry:6
+    classDef kg fill:#C084FC,stroke:#7C3AED,color:#fff,rx:6,ry:6                   
+    classDef final fill:#10B981,stroke:#047857,color:#fff,rx:10,ry:10
+    classDef step fill:#F97316,stroke:#C2410C,color:#fff,rx:10,ry:10
+
+    A["Audio / Video<br/><i>Google Drive</i>"]:::src
+    B["Corpus<br/><i>.json</i>"]:::json
+    C["QA Dataset<br/><i>.json / .jsonl</i>"]:::json
+    D["Knowledge Graph<br/><i>.graphml</i>"]:::kg
+    E["Evaluation Report<br/><i>.json</i>"]:::final
+    
+    TS["<b>Step 1</b><br/>Whisper ASR +<br/>Heuristic Quality Filter"]:::step
+    CES["<b>Step 2.1</b><br/>Cognitive Elicitation<br/>(Bloom + Reasoning +<br/>Validation)"]:::step
+    KGS["<b>Step 2.2</b><br/>AutoSchemaKG<br/>(Triples + Schema<br/>Induction)"]:::step
+    ES["<b>Step 3</b><br/>Evaluation<br/>(Qualitative + Structural<br/>Metrics)"]:::step
+
+    A --> TS --> B
+    B --> CES --> C
+    B --> KGS --> D
+
+    C -- "ground truth" --> ES
+    D -- "to be evaluated" --> ES            
+    ES --> E        

@@ -1,0 +1,568 @@
+"""Module I: Bloom Scaffolding QA Generation.
+
+Generates cognitively calibrated questions using Bloom's taxonomy levels
+for structured cognitive scaffolding.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from string import Template
+from typing import TYPE_CHECKING, Any, Protocol
+
+from pydantic import ValidationError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from arandu.qa.cep.metadata_context import build_pair_judge_context, render_metadata_context
+from arandu.qa.schemas import QAPairCEP
+from arandu.utils.paths import get_project_root
+
+if TYPE_CHECKING:
+    from arandu.qa.config import CEPConfig, QAConfig
+    from arandu.shared.llm_client import LLMClient
+    from arandu.shared.schemas import SourceMetadata
+
+logger = logging.getLogger(__name__)
+
+# QAPairCEP fields filled only by the removed reasoning-enrichment pass.
+_LEGACY_ENRICHMENT_FIELDS = ("reasoning_trace", "is_multi_hop", "hop_count", "tacit_inference")
+
+DEFAULT_CEP_PROMPTS_DIR = get_project_root() / "prompts" / "qa" / "cep"
+
+BLOOM_HIERARCHY: list[str] = [
+    "remember",
+    "understand",
+    "apply",
+    "analyze",
+    "evaluate",
+    "create",
+]
+
+
+class LLMResponseError(Exception):
+    """Recoverable LLM response error (JSON parse, format, or validation failure)."""
+
+
+class PairValidator(Protocol):
+    """Judge a generated pair against its grounding context.
+
+    ``arandu.qa.cep.judge.QAJudge`` satisfies this contract. The returned pair
+    carries the verdict in ``validation``; ``validation is None`` means the
+    pair could not be judged.
+    """
+
+    def validate(self, qa_pair: QAPairCEP, context: str) -> QAPairCEP:
+        """Return ``qa_pair`` with its ``validation`` populated."""
+        ...
+
+
+class BloomScaffoldingGenerator:
+    """Generate QA pairs calibrated to Bloom's taxonomy levels.
+
+    Implements Module I of the CEP pipeline for cognitive scaffolding-based
+    QA generation. Questions are distributed across Bloom levels according
+    to the configured distribution.
+    """
+
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        qa_config: QAConfig,
+        cep_config: CEPConfig,
+        validator: PairValidator | None = None,
+    ) -> None:
+        """Initialize the Bloom scaffolding generator.
+
+        Args:
+            llm_client: LLM client for generation.
+            qa_config: QA configuration.
+            cep_config: CEP configuration.
+            validator: Scaffolding gate. When set, every generated pair is judged
+                right after generation and only approved pairs are shown to later
+                prompts. ``None`` keeps every generated pair as scaffolding.
+        """
+        self.llm_client = llm_client
+        self.qa_config = qa_config
+        self.cep_config = cep_config
+        self.validator = validator
+        self._prompts = self._load_prompts()
+        logger.info(
+            "BloomScaffoldingGenerator initialized with levels: "
+            f"{list(cep_config.bloom_distribution.keys())}, gate={validator is not None}"
+        )
+
+    def _load_prompts(self) -> dict[str, Any]:
+        """Load CEP prompt templates based on language configuration.
+
+        Returns:
+            Dictionary containing prompt templates.
+
+        Raises:
+            FileNotFoundError: If prompt file not found.
+        """
+        lang_dir = DEFAULT_CEP_PROMPTS_DIR / self.cep_config.language
+
+        data_file = lang_dir / "data.json"
+        template_file = lang_dir / "bloom_scaffolding.md"
+
+        if not data_file.exists():
+            raise FileNotFoundError(f"CEP data file not found: {data_file}")
+        if not template_file.exists():
+            raise FileNotFoundError(f"CEP template file not found: {template_file}")
+
+        with open(data_file, encoding="utf-8") as f:
+            data = json.load(f)
+
+        data["_template"] = template_file.read_text(encoding="utf-8")
+
+        logger.debug(f"Loaded CEP prompts from {lang_dir}")
+        return data
+
+    def _format_prior_pairs(self, pairs: list[QAPairCEP]) -> str:
+        """Format prior QA pairs as scaffolding context for the next level.
+
+        Args:
+            pairs: Previously generated QA pairs.
+
+        Returns:
+            Formatted string of prior pairs, or empty string if none.
+        """
+        if not pairs:
+            return ""
+
+        # Take the last N pairs, biasing toward the immediately prior level
+        max_pairs = self.cep_config.max_scaffolding_pairs
+        selected = pairs[-max_pairs:]
+
+        lines = [
+            f"{i + 1}. [{pair.bloom_level.upper()}] Q: {pair.question} A: {pair.answer}"
+            for i, pair in enumerate(selected)
+        ]
+        return "\n".join(lines)
+
+    def _scaffolding_pool(self, pairs: list[QAPairCEP]) -> list[QAPairCEP]:
+        """Select the prior pairs allowed to scaffold the next prompt.
+
+        Without a validator every pair is eligible (legacy behavior). With one,
+        only approved pairs are: an unjudged pair (``is_valid is None``) or a
+        verdict with a criterion error (the ``cep_validation`` filter stage turns
+        it into ``passed=False``) stays out.
+
+        Args:
+            pairs: Pairs generated so far for this chunk, in generation order.
+
+        Returns:
+            The eligible pairs, in the same order.
+        """
+        if self.validator is None:
+            return pairs
+        return [pair for pair in pairs if pair.is_valid is True]
+
+    def _judge(self, pair: QAPairCEP, judge_context: str) -> QAPairCEP:
+        """Run the scaffolding gate on one pair.
+
+        Args:
+            pair: Freshly generated pair (no verdict).
+            judge_context: Grounding built by ``build_pair_judge_context``.
+
+        Returns:
+            The judged pair, or the pair unchanged when there is no validator or
+            the validator raised (it then stays unjudged and is not admitted).
+        """
+        if self.validator is None:
+            return pair
+        try:
+            return self.validator.validate(pair, judge_context)
+        except Exception:
+            logger.warning(
+                "Scaffolding gate failed on a %s pair; keeping it unjudged",
+                pair.bloom_level,
+                exc_info=True,
+            )
+            return pair
+
+    def generate(
+        self,
+        context: str,
+        *,
+        source_metadata: SourceMetadata | None = None,
+    ) -> list[QAPairCEP]:
+        """Generate Bloom-calibrated QA pairs from context.
+
+        The number of pairs per Bloom level is taken directly from the
+        configured ``bloom_distribution`` counts; the total generated is the
+        sum of those counts.
+
+        Args:
+            context: Source text context.
+            source_metadata: Optional source metadata for prompt enrichment.
+
+        Returns:
+            List of QAPairCEP with Bloom levels assigned.
+        """
+        pairs: list[QAPairCEP] = []
+
+        # Same grounding judge-qa uses: the chunk plus the gated metadata block.
+        judge_context = ""
+        if self.validator is not None:
+            judge_context = build_pair_judge_context(
+                context,
+                context,
+                source_metadata,
+                enable_metadata=self.cep_config.enable_source_metadata_context,
+                language=self.cep_config.language,
+            )
+
+        # Pairs per Bloom level come straight from the configured counts
+        level_counts = self._calculate_level_distribution()
+
+        # When scaffolding is enabled, sort levels by Bloom hierarchy
+        if self.cep_config.enable_scaffolding_context:
+            sorted_levels = [
+                (level, level_counts[level]) for level in BLOOM_HIERARCHY if level in level_counts
+            ]
+        else:
+            sorted_levels = list(level_counts.items())
+
+        for level, count in sorted_levels:
+            if count == 0:
+                continue
+
+            prior: list[QAPairCEP] = []
+            if self.cep_config.enable_scaffolding_context:
+                prior = self._scaffolding_pool(pairs)
+                if pairs and not prior:
+                    logger.warning(
+                        "No pair admitted to scaffolding before %s level (%d generated); "
+                        "generating without scaffolding context",
+                        level,
+                        len(pairs),
+                    )
+
+            level_pairs = self._generate_for_level(
+                context,
+                level,
+                count,
+                prior_pairs=prior,
+                source_metadata=source_metadata,
+                judge_context=judge_context,
+            )
+            pairs.extend(level_pairs)
+
+            logger.debug(f"Generated {len(level_pairs)} pairs at {level} level")
+
+        return pairs
+
+    def _calculate_level_distribution(self) -> dict[str, int]:
+        """Return the configured pair count for each Bloom level.
+
+        ``bloom_distribution`` is the single source of truth: its keys are the
+        levels to generate and its values are the absolute per-chunk counts, in
+        configuration order. No rounding or remainder absorption is involved.
+
+        Returns:
+            Dictionary mapping Bloom level to question count.
+        """
+        return dict(self.cep_config.bloom_distribution)
+
+    def _generate_for_level(
+        self,
+        context: str,
+        bloom_level: str,
+        num_questions: int,
+        *,
+        prior_pairs: list[QAPairCEP] | None = None,
+        source_metadata: SourceMetadata | None = None,
+        judge_context: str = "",
+    ) -> list[QAPairCEP]:
+        """Generate QA pairs for a specific Bloom level.
+
+        Generates one QA pair per LLM call to ensure consistent quality and
+        clean attribution of model thinking traces to individual pairs. Each
+        pair goes through the scaffolding gate before a sibling can see it.
+
+        Args:
+            context: Source text context.
+            bloom_level: Bloom taxonomy level.
+            num_questions: Number of questions to generate.
+            prior_pairs: Admitted pairs from lower levels for scaffolding context.
+            source_metadata: Optional source metadata for prompt enrichment.
+            judge_context: Grounding passed to the validator (unused without one).
+
+        Returns:
+            List of QAPairCEP objects, judged when a validator is set.
+        """
+        pairs: list[QAPairCEP] = []
+        all_prior_pairs = prior_pairs if prior_pairs else []
+
+        for pair_index in range(num_questions):
+            # Build scaffolding context from prior pairs (including current level);
+            # downstream formatting may truncate to max_scaffolding_pairs.
+            current_prior = all_prior_pairs + self._scaffolding_pool(pairs)
+
+            prompt = self._build_prompt(
+                context,
+                bloom_level,
+                prior_pairs=current_prior,
+                source_metadata=source_metadata,
+            )
+
+            try:
+                pair = self._generate_single_pair(
+                    prompt=prompt,
+                    context=context,
+                    bloom_level=bloom_level,
+                )
+            except LLMResponseError:
+                logger.warning(
+                    "Retries exhausted for pair %d/%d at %s level; skipping",
+                    pair_index + 1,
+                    num_questions,
+                    bloom_level,
+                    exc_info=True,
+                )
+                continue
+            except Exception as e:
+                logger.error(
+                    "Failed to generate pair %d/%d for %s level: %s",
+                    pair_index + 1,
+                    num_questions,
+                    bloom_level,
+                    e,
+                )
+                continue
+
+            pairs.append(self._judge(pair, judge_context))
+            logger.debug(
+                "Generated pair %d/%d at %s level",
+                pair_index + 1,
+                num_questions,
+                bloom_level,
+            )
+
+        if len(pairs) < num_questions:
+            logger.warning(
+                "Generated %d/%d pairs for %s level (some failed)",
+                len(pairs),
+                num_questions,
+                bloom_level,
+            )
+
+        return pairs
+
+    @retry(
+        retry=retry_if_exception_type(LLMResponseError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
+    def _generate_single_pair(
+        self,
+        prompt: str,
+        context: str,
+        bloom_level: str,
+    ) -> QAPairCEP:
+        """Generate and validate a single QA pair via LLM call.
+
+        Retries up to 3 times on recoverable LLM response errors (JSON parse
+        failures, unexpected formats, validation errors).
+
+        Args:
+            prompt: Formatted prompt string.
+            context: Source text context.
+            bloom_level: Bloom taxonomy level.
+
+        Returns:
+            Validated QAPairCEP object.
+
+        Raises:
+            LLMResponseError: If response cannot be parsed/validated after retries.
+        """
+        result = self.llm_client.generate(
+            prompt=prompt,
+            temperature=self.qa_config.temperature,
+            max_tokens=self.qa_config.max_tokens,
+        )
+
+        if result.thinking:
+            logger.debug(
+                "Thinking captured for %s level (%d chars)",
+                bloom_level,
+                len(result.thinking),
+            )
+
+        return self._parse_response(
+            result.content,
+            context,
+            bloom_level,
+            generation_prompt=prompt,
+            generation_thinking=result.thinking,
+        )
+
+    def _build_prompt(
+        self,
+        context: str,
+        bloom_level: str,
+        *,
+        prior_pairs: list[QAPairCEP] | None = None,
+        source_metadata: SourceMetadata | None = None,
+    ) -> str:
+        """Build prompt for Bloom-calibrated QA generation.
+
+        Args:
+            context: Source text context.
+            bloom_level: Bloom taxonomy level.
+            prior_pairs: Previously generated QA pairs for scaffolding context.
+            source_metadata: Optional source metadata for prompt enrichment.
+
+        Returns:
+            Formatted prompt string.
+        """
+        level_info = self._prompts["bloom_levels"].get(bloom_level, {})
+
+        level_description = level_info.get("description", bloom_level)
+        level_instruction = level_info.get("instruction", "Generate questions.")
+        question_starters = level_info.get("question_starters", [])
+        examples = level_info.get("examples", [])
+
+        # Build output rules
+        output_rules = "\n".join(
+            f"{i + 1}. {rule}" for i, rule in enumerate(self._prompts["output_rules"])
+        )
+
+        # Pre-build conditional sections with localized labels
+        starters_section = ""
+        if question_starters:
+            starters_label = self._prompts.get("starters_label", "Suggested starters")
+            starters_section = f"\n{starters_label}: {', '.join(question_starters)}"
+
+        examples_section = ""
+        if examples:
+            examples_label = self._prompts.get("examples_label", "Question examples")
+            examples_section = f"\n{examples_label}:\n" + "\n".join(f"- {ex}" for ex in examples)
+
+        # Build scaffolding section from prior pairs
+        scaffolding_section = ""
+        if prior_pairs:
+            formatted = self._format_prior_pairs(prior_pairs)
+            if formatted:
+                header = self._prompts.get("scaffolding_header", "")
+                scaffolding_section = f"\n{header}\n{formatted}"
+
+        # Build metadata section (shared gate keeps generation/judge symmetric)
+        metadata_section = render_metadata_context(
+            source_metadata,
+            enable_metadata=self.cep_config.enable_source_metadata_context,
+            language=self.cep_config.language,
+        )
+
+        template = Template(self._prompts["_template"])
+        return template.safe_substitute(
+            bloom_level_upper=bloom_level.upper(),
+            bloom_level=bloom_level,
+            level_description=level_description,
+            context=context,
+            level_instruction=level_instruction,
+            starters_section=starters_section,
+            examples_section=examples_section,
+            scaffolding_section=scaffolding_section,
+            metadata_section=metadata_section,
+            output_rules=output_rules,
+        )
+
+    def _parse_response(
+        self,
+        response: str,
+        context: str,
+        bloom_level: str,
+        *,
+        generation_prompt: str | None = None,
+        generation_thinking: str | None = None,
+    ) -> QAPairCEP:
+        """Parse LLM response into a single QAPairCEP.
+
+        Expects a flat JSON object. Pydantic validates all fields.
+
+        Args:
+            response: Raw LLM response text.
+            context: Source context for enrichment.
+            bloom_level: Bloom level used for generation.
+            generation_prompt: LLM prompt used to generate the response.
+            generation_thinking: Model thinking trace for this pair.
+
+        Returns:
+            Validated QAPairCEP object.
+
+        Raises:
+            LLMResponseError: If JSON parsing or model validation fails.
+        """
+        response = response.strip()
+        if response.startswith("```"):
+            response = re.sub(r"```(?:json)?\n?", "", response)
+
+        logger.debug(
+            "LLM response for %s level (%d chars): %.500s",
+            bloom_level,
+            len(response),
+            response,
+        )
+
+        try:
+            data = json.loads(response)
+        except json.JSONDecodeError as e:
+            raise LLMResponseError(f"Invalid JSON: {e}") from e
+
+        if not isinstance(data, dict):
+            raise LLMResponseError(f"Expected JSON object, got {type(data).__name__}")
+
+        # The generation prompt does not ask for the legacy enrichment fields;
+        # drop any the model emits so new pairs never carry unvalidated labels.
+        for key in _LEGACY_ENRICHMENT_FIELDS:
+            data.pop(key, None)
+
+        question_type = self._bloom_to_question_type(bloom_level)
+
+        try:
+            # Merge: explicit values override any LLM-echoed duplicates
+            return QAPairCEP(
+                **{
+                    **data,
+                    "context": context,
+                    "question_type": question_type,
+                    "bloom_level": bloom_level,
+                    "generation_prompt": generation_prompt,
+                    "generation_thinking": generation_thinking,
+                    # A verdict only comes from the judge, never from the generator.
+                    "validation": None,
+                },
+            )
+        except (ValidationError, TypeError) as e:
+            raise LLMResponseError(f"Validation failed: {e}") from e
+
+    def _bloom_to_question_type(self, bloom_level: str) -> str:
+        """Map Bloom level to legacy question_type for compatibility.
+
+        Args:
+            bloom_level: Bloom taxonomy level.
+
+        Returns:
+            Legacy question_type string.
+        """
+        mapping = {
+            "remember": "factual",
+            "understand": "conceptual",
+            "apply": "conceptual",
+            "analyze": "conceptual",
+            "evaluate": "conceptual",
+            "create": "conceptual",
+        }
+        return mapping.get(bloom_level, "factual")

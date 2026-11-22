@@ -1,0 +1,662 @@
+# Deployment wiring (see scripts/slurm/AGENTS.md "How the layers connect").
+# Each service runs `arandu <command>` off the image ENTRYPOINT; SLURM
+# <step>_common.sh scripts pick a profile and forward ARANDU_<PREFIX>_* env.
+#
+#   profile (CPU / -gpu)   service          command            image
+#   cep    / cep-gpu       arandu-cep       generate-cep-qa    arandu:latest
+#   judge  / judge-gpu     arandu-judge     judge-*            arandu:latest
+#   emic   / emic-gpu      arandu-emic      emic-judge         arandu:latest
+#   kg     / kg-gpu        arandu-kg        build-kg           arandu-kg:latest (Dockerfile.kg, +extra kg)
+#   rag/rag-gpu/rag-cpu   arandu-rag(-cpu) chunk/retrieve/...  arandu-kg:latest
+#   (transcription uses arandu / arandu-cpu / arandu-rocm, no ollama sidecar)
+#
+# An ARANDU_<PREFIX>_* var below only takes effect if it is also a real field on
+# the step's *Config class (qa/kg/shared/config.py); unknown vars are ignored.
+services:
+  arandu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arandu:latest
+    container_name: arandu-${SLURM_JOB_ID:-local}
+
+    # GPU support - NVIDIA runtime
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Environment variables
+    environment:
+      - ARANDU_MODEL_ID=${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}
+      - ARANDU_QUANTIZE=${ARANDU_QUANTIZE:-false}
+      - ARANDU_FORCE_CPU=${ARANDU_FORCE_CPU:-false}
+      - ARANDU_CREDENTIALS=/app/credentials/credentials.json
+      - ARANDU_TOKEN=/app/credentials/token.json
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # Volume mounts
+    volumes:
+      # Input catalog
+      - ${ARANDU_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
+      # Output results
+      - ${ARANDU_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
+      # Google Drive credentials
+      - ${ARANDU_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
+      # Hugging Face cache (persistent model storage)
+      - ${ARANDU_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
+
+    # Working directory
+    working_dir: /app
+
+    # Default command for batch transcription
+    command: >
+      batch-transcribe
+      /app/input/${ARANDU_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
+      --credentials /app/credentials/credentials.json
+      --token /app/credentials/token.json
+      --output-dir /app/results
+      --id ${PIPELINE_ID:-}
+      --workers ${ARANDU_WORKERS:-${WORKERS:-4}}
+
+    # Resource limits (adjust based on partition)
+    shm_size: '16gb'
+
+    # Restart policy (useful for long-running jobs)
+    restart: "no"
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    # Profiles - prevent this GPU service from running with other profiles
+    profiles:
+      - transcribe
+      - gpu
+
+  # CPU-only variant
+  arandu-cpu:
+    extends:
+      service: arandu
+    container_name: arandu-cpu-${SLURM_JOB_ID:-local}
+
+    # Remove GPU reservation for CPU-only execution
+    deploy:
+      resources: {}
+
+    environment:
+      - ARANDU_MODEL_ID=${ARANDU_MODEL_ID:-distil-whisper/distil-large-v3}
+      - ARANDU_QUANTIZE=false
+      - ARANDU_FORCE_CPU=true
+      - ARANDU_CREDENTIALS=/app/credentials/credentials.json
+      - ARANDU_TOKEN=/app/credentials/token.json
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      batch-transcribe
+      /app/input/${ARANDU_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
+      --credentials /app/credentials/credentials.json
+      --token /app/credentials/token.json
+      --output-dir /app/results
+      --workers ${ARANDU_WORKERS:-${WORKERS:-2}}
+      --cpu
+
+    profiles:
+      - cpu
+
+  # AMD GPU variant (ROCm)
+  arandu-rocm:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
+    image: arandu:rocm
+    container_name: arandu-rocm-${SLURM_JOB_ID:-local}
+
+    # AMD GPU device access
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+
+    # Environment variables
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - ARANDU_MODEL_ID=${ARANDU_MODEL_ID:-openai/whisper-large-v3-turbo}
+      - ARANDU_QUANTIZE=false
+      - ARANDU_FORCE_CPU=false
+      - ARANDU_CREDENTIALS=/app/credentials/credentials.json
+      - ARANDU_TOKEN=/app/credentials/token.json
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # Volume mounts
+    volumes:
+      - ${ARANDU_INPUT_DIR:-${INPUT_DIR:-./input}}:/app/input:ro
+      - ${ARANDU_RESULTS_DIR:-${RESULTS_DIR:-./results}}:/app/results:rw
+      - ${ARANDU_CREDENTIALS_DIR:-${CREDENTIALS_DIR:-./}}:/app/credentials:rw
+      - ${ARANDU_HF_CACHE_DIR:-${HF_CACHE_DIR:-./cache/huggingface}}:/app/.cache/huggingface:rw
+
+    # Working directory
+    working_dir: /app
+
+    # Default command for batch transcription
+    command: >
+      batch-transcribe
+      /app/input/${ARANDU_CATALOG_FILE:-${CATALOG_FILE:-catalog.csv}}
+      --credentials /app/credentials/credentials.json
+      --token /app/credentials/token.json
+      --output-dir /app/results
+      --workers ${ARANDU_WORKERS:-${WORKERS:-3}}
+
+    # Resource limits
+    shm_size: '16gb'
+
+    # Restart policy
+    restart: "no"
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - rocm
+
+  # ===========================================================================
+  # Knowledge Graph Construction Pipeline Services
+  # ===========================================================================
+
+  # Ollama LLM Service (sidecar for QA and KG services)
+  # CPU-only by default for maximum compatibility
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-${SLURM_JOB_ID:-local}
+
+    networks:
+      default:
+        aliases:
+          - ollama
+
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      # Serve concurrent requests so the eval stages' client-side workers don't
+      # serialize on a single slot. Measured on qwen3:14b (24GB RTX 4090,
+      # 2026-06-11): 3 slots x 32k ctx = ~25GB total, ~4% CPU spill - works,
+      # but stages with long prompts should override per job, e.g.
+      # judge-answers needs OLLAMA_NUM_PARALLEL=2 OLLAMA_CONTEXT_LENGTH=40960
+      # (khop_passage/atlas_rag judge prompts reach ~25k tokens + 8k output).
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-3}
+      # Bare passthrough: only lands in the container when set at submit
+      # time, so the server default stays untouched for every other stage.
+      - OLLAMA_CONTEXT_LENGTH
+
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
+
+    # Note: No host port binding needed - services communicate via internal Docker network
+    # This avoids port conflicts when multiple SLURM jobs run on the same node
+
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    profiles:
+      - kg
+      - cep
+      - judge
+      - emic
+      - ollama
+
+  # Ollama with GPU support (use --profile ollama-gpu)
+  ollama-gpu:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu-${SLURM_JOB_ID:-local}
+
+    networks:
+      default:
+        aliases:
+          - ollama
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      # Serve concurrent requests so the eval stages' client-side workers don't
+      # serialize on a single slot. Measured on qwen3:14b (24GB RTX 4090,
+      # 2026-06-11): 3 slots x 32k ctx = ~25GB total, ~4% CPU spill - works,
+      # but stages with long prompts should override per job, e.g.
+      # judge-answers needs OLLAMA_NUM_PARALLEL=2 OLLAMA_CONTEXT_LENGTH=40960
+      # (khop_passage/atlas_rag judge prompts reach ~25k tokens + 8k output).
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-3}
+      # Bare passthrough: only lands in the container when set at submit
+      # time, so the server default stays untouched for every other stage.
+      - OLLAMA_CONTEXT_LENGTH
+
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-./cache/ollama}:/root/.ollama:rw
+
+    # Note: No host port binding needed - services communicate via internal Docker network
+    # This avoids port conflicts when multiple SLURM jobs run on the same node
+
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    profiles:
+      - kg-gpu
+      - cep-gpu
+      - judge-gpu
+      - emic-gpu
+      - ollama-gpu
+      - rag-gpu
+
+  # Judge Service (runs any `arandu judge-*` CLI command against results/)
+  # Generic by design: the specific subcommand + args are supplied at run time
+  # via `docker compose run arandu-judge <subcommand> ...`. Used by both
+  # judge-transcription and judge-qa SLURM wrappers.
+  arandu-judge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arandu:latest
+    container_name: arandu-judge-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed on the judge container itself; the LLM lives in the ollama sidecar.
+    deploy: {}
+
+    # Wait for Ollama when using the ollama provider; not required for custom/Gemini.
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false
+
+    environment:
+      # Validator settings — default to the local Ollama sidecar so the Gemini
+      # values that may live in .env (ARANDU_LLM_BASE_URL)
+      # don't leak into SLURM runs.
+      - ARANDU_JUDGE_VALIDATOR_MODEL=${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}
+      - ARANDU_JUDGE_VALIDATOR_PROVIDER=${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}
+      - ARANDU_JUDGE_VALIDATOR_BASE_URL=${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_JUDGE_LANGUAGE=${ARANDU_JUDGE_LANGUAGE:-pt}
+      - ARANDU_JUDGE_TEMPERATURE=${ARANDU_JUDGE_TEMPERATURE:-0.1}
+      - ARANDU_JUDGE_MAX_TOKENS=${ARANDU_JUDGE_MAX_TOKENS:-8192}
+      # JSON request fields, e.g. {"reasoning_effort": "none"} for DeepSeek.
+      - ARANDU_JUDGE_VALIDATOR_EXTRA_BODY
+      - ARANDU_JUDGE_VALIDATOR_API_KEY
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # No `command:` block — rely on the image's `ENTRYPOINT ["arandu"]` and
+    # the `CMD` provided at invocation. SLURM wrappers use `docker compose run
+    # arandu-judge judge-transcription ...` or `... judge-qa ...`.
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '8gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - judge
+      - judge-gpu
+
+  # Emic Validity Judge Service (Phase D, spec §5)
+  #
+  # Separate from arandu-judge on purpose: that service forwards ARANDU_JUDGE_*
+  # only, so running emic-judge through it would leave every ARANDU_EMIC_JUDGE_*
+  # setting silently at its default (the *Config classes use extra="ignore").
+  arandu-emic:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arandu:latest
+    container_name: arandu-emic-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed on this container; the LLM lives in the ollama sidecar.
+    deploy: {}
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false
+
+    environment:
+      # Emic-judge settings default to the local Ollama sidecar so Gemini
+      # values that may live in .env (ARANDU_LLM_BASE_URL)
+      # don't leak into SLURM runs.
+      #
+      # MODEL_ID is a methodological parameter, not a budget knob: these scores
+      # are the study's measurement of emic validity and the human annotation
+      # round reports agreement with them, so a run feeding the agreement study
+      # must pin the model the dissertation describes.
+      - ARANDU_EMIC_JUDGE_MODEL_ID=${ARANDU_EMIC_JUDGE_MODEL_ID:-qwen3:14b}
+      - ARANDU_EMIC_JUDGE_PROVIDER=${ARANDU_EMIC_JUDGE_PROVIDER:-ollama}
+      - ARANDU_EMIC_JUDGE_BASE_URL=${ARANDU_EMIC_JUDGE_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_EMIC_JUDGE_LANGUAGE=${ARANDU_EMIC_JUDGE_LANGUAGE:-pt}
+      - ARANDU_EMIC_JUDGE_TEMPERATURE=${ARANDU_EMIC_JUDGE_TEMPERATURE:-0.1}
+      - ARANDU_EMIC_JUDGE_MAX_TOKENS=${ARANDU_EMIC_JUDGE_MAX_TOKENS:-8192}
+      # Cloud-provider credentials: the stage's own key (no shared fallback).
+      # emic_common.sh skips the ollama sidecar when PROVIDER is not ollama, so
+      # without these a provider=openai/custom run reaches
+      # build_llm_client_from_settings with no key and dies after the image
+      # build and disk preflight.
+      - ARANDU_EMIC_JUDGE_API_KEY
+      - ARANDU_EMIC_JUDGE_EXTRA_BODY
+      # Client-side concurrency. Pair with OLLAMA_NUM_PARALLEL and the per-slot
+      # context VRAM budget; scripts/slurm/emic/tupi.slurm derives the server
+      # slots from this value so they cannot drift.
+      - ARANDU_EMIC_JUDGE_WORKERS=${ARANDU_EMIC_JUDGE_WORKERS:-1}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    # No `command:` block. Relies on the image's `ENTRYPOINT ["arandu"]` and the
+    # CMD provided at invocation. The SLURM wrapper uses
+    # `docker compose run arandu-emic emic-judge --id ... --scope ...`.
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '8gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - emic
+      - emic-gpu
+
+  # CEP QA Generation Service (Cognitive Elicitation Pipeline)
+  arandu-cep:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arandu:latest
+    container_name: arandu-cep-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed (CEP generation is CPU/API-based)
+    deploy: {}
+
+    # Wait for Ollama to be ready when using Ollama provider
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false  # Allow running without Ollama (e.g., with OpenAI)
+
+    environment:
+      - ARANDU_QA_PROVIDER=${ARANDU_QA_PROVIDER:-ollama}
+      - ARANDU_QA_MODEL_ID=${ARANDU_QA_MODEL_ID:-qwen3:14b}
+      # Use Ollama sidecar service by default
+      - ARANDU_QA_OLLAMA_URL=${ARANDU_QA_OLLAMA_URL:-http://ollama:11434/v1}
+      # Cloud endpoint for generation (provider=custom), e.g. https://api.deepseek.com
+      - ARANDU_QA_BASE_URL
+      - ARANDU_QA_API_KEY
+      - ARANDU_QA_EXTRA_BODY
+      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
+      - ARANDU_QA_TEMPERATURE=${ARANDU_QA_TEMPERATURE:-0.7}
+      - ARANDU_QA_WORKERS=${ARANDU_QA_WORKERS:-2}
+      # CEP-specific configuration
+      # Bloom pairs/level as JSON int counts; forwarded from the host when set
+      # (defaults to the 3/1/1/1 split baked into CEPConfig when unset).
+      - ARANDU_CEP_BLOOM_DISTRIBUTION
+      - ARANDU_CEP_LANGUAGE=${ARANDU_CEP_LANGUAGE:-pt}
+      # Scaffolding gate: each pair is judged before it can scaffold later pairs.
+      # Validator settings mirror arandu-judge (local Ollama sidecar by default).
+      - ARANDU_CEP_ENABLE_SCAFFOLDING_GATE=${ARANDU_CEP_ENABLE_SCAFFOLDING_GATE:-true}
+      - ARANDU_JUDGE_VALIDATOR_MODEL=${ARANDU_JUDGE_VALIDATOR_MODEL:-qwen3:14b}
+      - ARANDU_JUDGE_VALIDATOR_PROVIDER=${ARANDU_JUDGE_VALIDATOR_PROVIDER:-ollama}
+      - ARANDU_JUDGE_VALIDATOR_BASE_URL=${ARANDU_JUDGE_VALIDATOR_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_JUDGE_LANGUAGE=${ARANDU_JUDGE_LANGUAGE:-pt}
+      - ARANDU_JUDGE_TEMPERATURE=${ARANDU_JUDGE_TEMPERATURE:-0.1}
+      - ARANDU_JUDGE_MAX_TOKENS=${ARANDU_JUDGE_MAX_TOKENS:-8192}
+      - ARANDU_JUDGE_VALIDATOR_EXTRA_BODY
+      - ARANDU_JUDGE_VALIDATOR_API_KEY
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      generate-cep-qa
+      /app/results
+      --id ${PIPELINE_ID:-}
+      --workers ${ARANDU_QA_WORKERS:-2}
+      ${CEP_REBUILD_FLAG:-}
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - cep
+      - cep-gpu
+
+  # KG Construction Service
+  arandu-kg:
+    build:
+      context: .
+      dockerfile: Dockerfile.kg
+    image: arandu-kg:latest
+    container_name: arandu-kg-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    # No GPU needed (KG construction is CPU/API-based)
+    deploy: {}
+
+    # Wait for Ollama to be ready when using Ollama provider
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false  # Allow running without Ollama (e.g., with OpenAI)
+
+    environment:
+      - ARANDU_KG_PROVIDER=${ARANDU_KG_PROVIDER:-ollama}
+      - ARANDU_KG_MODEL_ID=${ARANDU_KG_MODEL_ID:-llama3.1:8b}
+      # Use Ollama sidecar service by default, or host.docker.internal for external Ollama
+      - ARANDU_KG_OLLAMA_URL=${ARANDU_KG_OLLAMA_URL:-http://ollama:11434/v1}
+      # Cloud endpoint for extraction (provider=custom), e.g. https://api.deepseek.com
+      - ARANDU_KG_BASE_URL
+      - ARANDU_KG_API_KEY
+      # atlas-rag forwards only {"reasoning_effort": ...}
+      - ARANDU_KG_EXTRA_BODY
+      - ARANDU_LLM_BASE_URL=${ARANDU_LLM_BASE_URL:-}
+      - ARANDU_KG_BACKEND=${ARANDU_KG_BACKEND:-atlas}
+      - ARANDU_KG_TEMPERATURE=${ARANDU_KG_TEMPERATURE:-0.5}
+      - ARANDU_KG_LANGUAGE=${ARANDU_KG_LANGUAGE:-pt}
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    command: >
+      build-kg
+      /app/results
+      --id ${PIPELINE_ID:-}
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - kg
+      - kg-gpu
+
+  # Phase C RAG eval-chain Service (chunk / kg-link-passages /
+  # kg-build-retriever-index / generate-non-answerable / retrieve / answer /
+  # judge-answers / rag-analysis). Reuses the kg-extra image (atlas_rag, faiss,
+  # sentence-transformers). No fixed command — the per-stage SLURM script passes
+  # the `arandu` subcommand + flags via `docker compose run --rm arandu-rag ...`
+  # (the image ENTRYPOINT is `arandu`). LLM stages reach the ollama-gpu sidecar
+  # at http://ollama:11434/v1; the embedder (index/retrieve) runs in-process and
+  # uses the GPU reservation below.
+  arandu-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile.kg
+    image: arandu-kg:latest
+    container_name: arandu-rag-${SLURM_JOB_ID:-local}
+    working_dir: /app
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      # Answerer (spec §5.7)
+      - ARANDU_ANSWERER_PROVIDER=${ARANDU_ANSWERER_PROVIDER:-ollama}
+      - ARANDU_ANSWERER_MODEL_ID=${ARANDU_ANSWERER_MODEL_ID:-qwen3:14b}
+      - ARANDU_ANSWERER_BASE_URL=${ARANDU_ANSWERER_BASE_URL:-http://ollama:11434/v1}
+      # Client-side concurrent LLM requests; the wrappers pair this with
+      # matching OLLAMA_NUM_PARALLEL slots + per-slot context VRAM budget.
+      - ARANDU_ANSWERER_WORKERS=${ARANDU_ANSWERER_WORKERS:-1}
+      - ARANDU_ANSWERER_API_KEY
+      - ARANDU_ANSWERER_EXTRA_BODY
+      # Answer judge (spec §6)
+      - ARANDU_JUDGE_ANSWERS_PROVIDER=${ARANDU_JUDGE_ANSWERS_PROVIDER:-ollama}
+      - ARANDU_JUDGE_ANSWERS_MODEL_ID=${ARANDU_JUDGE_ANSWERS_MODEL_ID:-qwen3:14b}
+      - ARANDU_JUDGE_ANSWERS_BASE_URL=${ARANDU_JUDGE_ANSWERS_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_JUDGE_ANSWERS_WORKERS=${ARANDU_JUDGE_ANSWERS_WORKERS:-1}
+      - ARANDU_JUDGE_ANSWERS_API_KEY
+      - ARANDU_JUDGE_ANSWERS_EXTRA_BODY
+      # Non-answerable item generator (entity-perturbation LLM)
+      - ARANDU_NONANSWERABLE_PROVIDER=${ARANDU_NONANSWERABLE_PROVIDER:-ollama}
+      - ARANDU_NONANSWERABLE_MODEL_ID=${ARANDU_NONANSWERABLE_MODEL_ID:-qwen3:14b}
+      - ARANDU_NONANSWERABLE_BASE_URL=${ARANDU_NONANSWERABLE_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_NONANSWERABLE_WORKERS=${ARANDU_NONANSWERABLE_WORKERS:-1}
+      - ARANDU_NONANSWERABLE_API_KEY
+      - ARANDU_NONANSWERABLE_EXTRA_BODY
+      # atlas-rag retrieve arm (NER LLM); other arms need no LLM
+      - ARANDU_ATLAS_RAG_PROVIDER=${ARANDU_ATLAS_RAG_PROVIDER:-ollama}
+      - ARANDU_ATLAS_RAG_MODEL_ID=${ARANDU_ATLAS_RAG_MODEL_ID:-qwen3:14b}
+      - ARANDU_ATLAS_RAG_BASE_URL=${ARANDU_ATLAS_RAG_BASE_URL:-http://ollama:11434/v1}
+      - ARANDU_ATLAS_RAG_API_KEY
+      - ARANDU_ATLAS_RAG_EXTRA_BODY
+      # Gemini embedder key (ARANDU_EMBEDDER_PROVIDER=gemini).
+      - ARANDU_EMBEDDER_API_KEY
+      # Local sentence-transformers embedder (kg-build-retriever-index + retrieve);
+      # avoids paid Gemini embeddings. Multilingual for the PT-BR corpus.
+      - ARANDU_EMBEDDER_PROVIDER=${ARANDU_EMBEDDER_PROVIDER:-sentence_transformers}
+      - ARANDU_EMBEDDER_MODEL=${ARANDU_EMBEDDER_MODEL:-sentence-transformers/paraphrase-multilingual-mpnet-base-v2}
+      # Dense retrieve arms (DenseRetrieveSettings); unset = class defaults.
+      # Named arms (--arm dense_bgem3_512, ...) read only DEVICE and BATCH_SIZE.
+      - ARANDU_DENSE_CHUNKER_ID
+      - ARANDU_DENSE_MODEL
+      - ARANDU_DENSE_WINDOW_TOKENS
+      - ARANDU_DENSE_WHOLE_CHUNK
+      - ARANDU_DENSE_OVERLAP_RATIO
+      - ARANDU_DENSE_QUERY_PROMPT
+      - ARANDU_DENSE_PASSAGE_PROMPT
+      - ARANDU_DENSE_UNIT
+      - ARANDU_DENSE_DEVICE
+      - ARANDU_DENSE_BATCH_SIZE
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '16gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - rag
+      - rag-gpu
+
+  # CPU-only Phase C stages (chunk, kg-link-passages, rag-analysis) — no LLM,
+  # no embedder, so no GPU. Lets these schedule on a CPU slot instead of waiting
+  # behind GPU contention. Same kg-extra image; minimal env.
+  arandu-rag-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.kg
+    image: arandu-kg:latest
+    container_name: arandu-rag-cpu-${SLURM_JOB_ID:-local}
+    working_dir: /app
+    deploy: {}
+
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+
+    volumes:
+      - ${ARANDU_RESULTS_DIR:-./results}:/app/results:rw
+      - ${ARANDU_HF_CACHE_DIR:-./cache/huggingface}:/app/.cache/huggingface:rw
+
+    shm_size: '8gb'
+    restart: "no"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    profiles:
+      - rag-cpu

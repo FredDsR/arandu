@@ -1,0 +1,409 @@
+"""Tests for configuration module."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+from pytest import MonkeyPatch
+
+from arandu.kg.config import KGConfig, get_kg_config
+from arandu.qa.config import CEPConfig, QAConfig, get_cep_config, get_qa_config
+from arandu.shared.config import LLMConfig, get_llm_config
+from arandu.transcription.config import (
+    TranscriberConfig,
+    _get_default_temp_dir,
+    get_transcriber_config,
+)
+
+
+class TestTranscriberConfig:
+    """Tests for TranscriberConfig."""
+
+    def test_default_initialization(self, monkeypatch: MonkeyPatch) -> None:
+        """Test default configuration initialization."""
+        # Override with the default values to test the actual config defaults
+        # (not influenced by .env file)
+        monkeypatch.setenv("ARANDU_MODEL_ID", "openai/whisper-large-v3")
+        monkeypatch.setenv("ARANDU_WORKERS", "1")
+
+        config = TranscriberConfig()
+
+        assert config.model_id == "openai/whisper-large-v3"
+        assert config.language is None
+        assert config.return_timestamps is True
+        assert config.chunk_length_s == 30
+        assert config.stride_length_s == 5
+        assert config.force_cpu is False
+        assert config.quantize is False
+        assert config.quantize_bits == 8
+        assert config.workers == 1
+        assert config.max_retries == 3
+        assert config.retry_delay == 1.0
+
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
+        """Test configuration loading from environment variables."""
+        monkeypatch.setenv("ARANDU_MODEL_ID", "custom/model")
+        monkeypatch.setenv("ARANDU_LANGUAGE", "en")
+        monkeypatch.setenv("ARANDU_FORCE_CPU", "true")
+        monkeypatch.setenv("ARANDU_WORKERS", "4")
+
+        config = TranscriberConfig()
+
+        assert config.model_id == "custom/model"
+        assert config.language == "en"
+        assert config.force_cpu is True
+        assert config.workers == 4
+
+    def test_credentials_file_property(self) -> None:
+        """Test backward compatibility property for credentials_file."""
+        config = TranscriberConfig(credentials="custom_creds.json")
+        assert config.credentials_file == "custom_creds.json"
+
+    def test_token_file_property(self) -> None:
+        """Test backward compatibility property for token_file."""
+        config = TranscriberConfig(token="custom_token.json")
+        assert config.token_file == "custom_token.json"
+
+    def test_temp_dir_default(self) -> None:
+        """Test default temp directory creation."""
+        config = TranscriberConfig()
+        assert "arandu" in config.temp_dir
+
+    def test_path_fields(self) -> None:
+        """Test path configuration fields."""
+        config = TranscriberConfig(
+            input_dir="./test_input",
+            results_dir="./test_results",
+            credentials_dir="./test_creds",
+            hf_cache_dir="./test_cache",
+        )
+
+        assert config.input_dir == "./test_input"
+        assert config.results_dir == "./test_results"
+        assert config.credentials_dir == "./test_creds"
+        assert config.hf_cache_dir == "./test_cache"
+
+
+class TestQAConfig:
+    """Tests for QAConfig."""
+
+    def test_default_initialization(self) -> None:
+        """Test default QA configuration initialization."""
+        config = QAConfig()
+
+        assert config.provider == "ollama"
+        assert config.model_id == "qwen3:14b"
+        assert config.ollama_url == "http://localhost:11434/v1"
+        assert config.base_url is None
+        assert config.temperature == 0.7
+        assert config.max_tokens == 8192
+        assert config.workers == 2
+
+    def test_temperature_boundary_min(self) -> None:
+        """Test minimum boundary for temperature."""
+        config = QAConfig(temperature=0.0)
+        assert config.temperature == 0.0
+
+    def test_temperature_boundary_max(self) -> None:
+        """Test maximum boundary for temperature."""
+        config = QAConfig(temperature=2.0)
+        assert config.temperature == 2.0
+
+    def test_temperature_below_min(self) -> None:
+        """Test validation error when temperature is below minimum."""
+        with pytest.raises(ValidationError) as exc_info:
+            QAConfig(temperature=-0.1)
+        assert "greater than or equal to 0" in str(exc_info.value)
+
+    def test_temperature_above_max(self) -> None:
+        """Test validation error when temperature is above maximum."""
+        with pytest.raises(ValidationError) as exc_info:
+            QAConfig(temperature=2.1)
+        assert "less than or equal to 2" in str(exc_info.value)
+
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
+        """Test QA config loading from environment variables."""
+        monkeypatch.setenv("ARANDU_QA_PROVIDER", "openai")
+        monkeypatch.setenv("ARANDU_QA_MODEL_ID", "gpt-4")
+        monkeypatch.setenv("ARANDU_QA_TEMPERATURE", "0.9")
+
+        config = QAConfig()
+
+        assert config.provider == "openai"
+        assert config.model_id == "gpt-4"
+        assert config.temperature == 0.9
+
+    def test_output_dir_path_type(self) -> None:
+        """Test output_dir is a Path object."""
+        config = QAConfig(output_dir="custom_qa_output")
+        assert isinstance(config.output_dir, Path)
+        assert str(config.output_dir) == "custom_qa_output"
+
+
+class TestKGConfig:
+    """Tests for KGConfig."""
+
+    def test_default_initialization(self) -> None:
+        """Test default KG configuration initialization."""
+        config = KGConfig()
+
+        assert config.provider == "ollama"
+        assert config.model_id == "llama3.1:8b"
+        assert config.ollama_url == "http://localhost:11434/v1"
+        assert config.base_url is None
+        assert config.backend == "atlas"
+        assert config.backend_options == {}
+        assert config.language == "pt"
+
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
+        """Test KG config loading from environment variables."""
+        monkeypatch.setenv("ARANDU_KG_PROVIDER", "openai")
+        monkeypatch.setenv("ARANDU_KG_MODEL_ID", "gpt-3.5-turbo")
+
+        config = KGConfig()
+
+        assert config.provider == "openai"
+        assert config.model_id == "gpt-3.5-turbo"
+
+    def test_backend_field(self) -> None:
+        """Test backend field accepts valid values."""
+        config = KGConfig(backend="atlas")
+        assert config.backend == "atlas"
+
+    def test_invalid_backend_raises(self) -> None:
+        """Test invalid backend value raises ValidationError."""
+        with pytest.raises(ValidationError):
+            KGConfig(backend="nonexistent")
+
+    def test_backend_options_passthrough(self) -> None:
+        """Test backend_options dict is stored as-is."""
+        opts = {"chunk_size": 4096, "batch_size_triple": 5}
+        config = KGConfig(backend_options=opts)
+        assert config.backend_options == opts
+
+    def test_valid_language(self) -> None:
+        """Test valid language codes are accepted."""
+        assert KGConfig(language="pt").language == "pt"
+        assert KGConfig(language="en").language == "en"
+
+    def test_invalid_language_raises(self) -> None:
+        """Test invalid language code raises ValueError."""
+        with pytest.raises(ValidationError, match="Invalid KG language"):
+            KGConfig(language="fr")
+
+
+class TestConfigEnvPrefix:
+    """Test environment variable prefix handling."""
+
+    def test_transcriber_prefix(self, monkeypatch: MonkeyPatch) -> None:
+        """Test ARANDU_ prefix for TranscriberConfig."""
+        monkeypatch.setenv("ARANDU_MODEL_ID", "test-model")
+        config = TranscriberConfig()
+        assert config.model_id == "test-model"
+
+    def test_qa_prefix(self, monkeypatch: MonkeyPatch) -> None:
+        """Test ARANDU_QA_ prefix for QAConfig."""
+        monkeypatch.setenv("ARANDU_QA_MODEL_ID", "test-qa-model")
+        config = QAConfig()
+        assert config.model_id == "test-qa-model"
+
+    def test_kg_prefix(self, monkeypatch: MonkeyPatch) -> None:
+        """Test ARANDU_KG_ prefix for KGConfig."""
+        monkeypatch.setenv("ARANDU_KG_MODEL_ID", "test-kg-model")
+        config = KGConfig()
+        assert config.model_id == "test-kg-model"
+
+    def test_case_insensitive(self, monkeypatch: MonkeyPatch) -> None:
+        """Test case insensitivity of environment variables."""
+        monkeypatch.setenv("arandu_model_id", "lowercase-model")
+        config = TranscriberConfig()
+        assert config.model_id == "lowercase-model"
+
+
+class TestCEPConfig:
+    """Tests for CEPConfig."""
+
+    def test_default_initialization(self) -> None:
+        """Test default CEP configuration initialization."""
+        config = CEPConfig()
+
+        assert config.language == "pt"
+
+    def test_valid_bloom_distribution(self) -> None:
+        """Test valid Bloom distribution with integer pair counts."""
+        config = CEPConfig(
+            bloom_distribution={
+                "remember": 3,
+                "understand": 1,
+                "analyze": 1,
+                "evaluate": 1,
+            }
+        )
+        assert config.bloom_distribution["remember"] == 3
+        assert sum(config.bloom_distribution.values()) == 6
+
+    def test_pairs_per_chunk_sums_distribution(self) -> None:
+        """pairs_per_chunk exposes the per-chunk ladder size (sum of counts)."""
+        config = CEPConfig(
+            bloom_distribution={"remember": 3, "understand": 1, "analyze": 1, "evaluate": 1}
+        )
+        assert config.pairs_per_chunk == 6
+
+    def test_invalid_bloom_distribution_exceeds_max(self) -> None:
+        """Test validation error when the per-chunk ladder exceeds the cap."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"remember": 51})
+        assert "at most" in str(exc_info.value)
+
+    def test_default_bloom_distribution_is_3_1_1_1(self) -> None:
+        """The thesis-run default is the integer 3/1/1/1 split."""
+        config = CEPConfig()
+        assert config.bloom_distribution == {
+            "remember": 3,
+            "understand": 1,
+            "analyze": 1,
+            "evaluate": 1,
+        }
+
+    def test_invalid_bloom_distribution_empty(self) -> None:
+        """Test validation error when the distribution totals zero pairs."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"remember": 0, "understand": 0})
+        assert "at least 1 pair" in str(exc_info.value)
+
+    def test_invalid_bloom_distribution_negative_count(self) -> None:
+        """Test validation error when a level has a negative count."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"remember": -1})
+        assert ">= 0" in str(exc_info.value)
+
+    def test_invalid_bloom_distribution_unknown_level(self) -> None:
+        """Test validation error when a distribution key is not a Bloom level."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(bloom_distribution={"made_up": 1})
+        assert "Invalid Bloom level" in str(exc_info.value)
+
+    def test_valid_language(self) -> None:
+        """Test valid language codes for CEP."""
+        config_pt = CEPConfig(language="pt")
+        config_en = CEPConfig(language="en")
+        assert config_pt.language == "pt"
+        assert config_en.language == "en"
+
+    def test_invalid_language(self) -> None:
+        """Test validation error for invalid CEP language."""
+        with pytest.raises(ValidationError) as exc_info:
+            CEPConfig(language="fr")
+        assert "Invalid CEP language" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            # Scoring: the judge verdict is the conjunction of independent
+            # per-criterion gates (prompts/judge/criteria/<criterion>/config.json),
+            # so a config-level cut or weight would misdescribe the decision.
+            "validation_threshold",
+            "faithfulness_weight",
+            "bloom_calibration_weight",
+            "informativeness_weight",
+            "self_containedness_weight",
+            # The removed reasoning-enrichment pass.
+            "enable_reasoning_traces",
+            "max_hop_count",
+            "reasoning_max_tokens",
+        ],
+    )
+    def test_carries_no_removed_field(self, field: str) -> None:
+        """CEPConfig exposes no scoring or reasoning-enrichment field."""
+        assert field not in CEPConfig.model_fields
+        assert not hasattr(CEPConfig(), field)
+
+    def test_env_var_override(self, monkeypatch: MonkeyPatch) -> None:
+        """Test CEP config loading from environment variables."""
+        monkeypatch.setenv("ARANDU_CEP_MAX_SCAFFOLDING_PAIRS", "5")
+
+        config = CEPConfig()
+
+        assert config.max_scaffolding_pairs == 5
+
+
+class TestLLMConfig:
+    """Tests for LLMConfig."""
+
+    def test_default_initialization(self, monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+        """Test default LLM configuration initialization.
+
+        Isolates from the repo's ``.env`` (which may carry real credentials
+        for local dev) by pointing ``LLMConfig`` at an empty tmp file and
+        unsetting the relevant env vars.
+        """
+        monkeypatch.delenv("ARANDU_LLM_BASE_URL", raising=False)
+        empty_env = tmp_path / ".env"
+        empty_env.write_text("")
+        config = LLMConfig(_env_file=str(empty_env))
+
+        assert config.base_url is None
+
+    def test_base_url_from_env(self, monkeypatch: MonkeyPatch) -> None:
+        """Test base URL loaded from environment."""
+        monkeypatch.setenv("ARANDU_LLM_BASE_URL", "http://custom-llm.example.com")
+
+        config = LLMConfig()
+
+        assert config.base_url == "http://custom-llm.example.com"
+
+
+class TestQAConfigLanguage:
+    """Tests for QAConfig language validation."""
+
+    def test_valid_language_pt(self) -> None:
+        """Test valid Portuguese language code."""
+        config = QAConfig(language="pt")
+        assert config.language == "pt"
+
+    def test_valid_language_en(self) -> None:
+        """Test valid English language code."""
+        config = QAConfig(language="en")
+        assert config.language == "en"
+
+    def test_invalid_language(self) -> None:
+        """Test validation error for invalid QA language."""
+        with pytest.raises(ValidationError) as exc_info:
+            QAConfig(language="de")
+        assert "Invalid QA language" in str(exc_info.value)
+
+
+class TestConfigHelperFunctions:
+    """Tests for configuration helper functions."""
+
+    def test_get_default_temp_dir(self) -> None:
+        """Test _get_default_temp_dir returns arandu path."""
+        temp_dir = _get_default_temp_dir()
+        assert "arandu" in temp_dir
+
+    def test_get_transcriber_config(self) -> None:
+        """Test get_transcriber_config returns TranscriberConfig instance."""
+        config = get_transcriber_config()
+        assert isinstance(config, TranscriberConfig)
+
+    def test_get_qa_config(self) -> None:
+        """Test get_qa_config returns QAConfig instance."""
+        config = get_qa_config()
+        assert isinstance(config, QAConfig)
+
+    def test_get_cep_config(self) -> None:
+        """Test get_cep_config returns CEPConfig instance."""
+        config = get_cep_config()
+        assert isinstance(config, CEPConfig)
+
+    def test_get_kg_config(self) -> None:
+        """Test get_kg_config returns KGConfig instance."""
+        config = get_kg_config()
+        assert isinstance(config, KGConfig)
+
+    def test_get_llm_config(self) -> None:
+        """Test get_llm_config returns LLMConfig instance."""
+        config = get_llm_config()
+        assert isinstance(config, LLMConfig)

@@ -1,0 +1,26 @@
+You are a rigorous evaluator of question-answer pairs. Your task is to assess the SELF-CONTAINEDNESS of the question.
+
+The original text and the answer are intentionally NOT provided: assess the question only by what it contains. Do not use the answer to resolve the question's references; the question must stand on its own.
+
+Question:
+$question
+
+Evaluation Rubric: Self-Containedness
+
+Evaluate whether the question is understandable and answerable without access to the original text.
+
+Scoring levels (choose the closest value):
+
+- 1.0: Completely self-contained; names entities/places/techniques and provides all needed context in the question itself
+- 0.75: Nearly self-contained; minimal implicit references, generally understandable
+- 0.5: Partially self-contained; some elements require the context, indirect references present
+- 0.25: Dependent; frequent references to the text or pronouns without a clear antecedent
+- 0.0: Completely dependent; uses "in the text"/"as mentioned", impossible to answer without the context
+
+Instructions:
+1. Check whether the question names its own entities, places and techniques rather than depending on the text
+2. Identify references to the text ('in the text', 'as mentioned', pronouns without antecedent)
+3. Assign the score of the closest level following the rubric above.
+4. Provide a brief and clear rationale.
+
+Return only a JSON object: {"rationale": "<1-2 sentences>", "score": <0-1>}

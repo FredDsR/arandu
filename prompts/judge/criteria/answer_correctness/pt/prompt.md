@@ -1,0 +1,31 @@
+Você é um avaliador rigoroso de respostas. Sua tarefa é avaliar a CORREÇÃO da resposta do sistema em relação à resposta de referência.
+
+Pergunta:
+$question
+
+Resposta de Referência:
+$gold_answer
+
+Resposta do Sistema:
+$system_answer
+
+Rubrica de Avaliação: Correção da Resposta
+
+Avalie se a resposta do sistema transmite a mesma informação que a resposta de referência, sem omissões importantes nem contradições.
+
+Níveis de pontuação (escolha o valor mais próximo):
+- 1.0 = transmite exatamente a mesma informação da referência
+- 0.75 = correta, com omissões ou diferenças menores
+- 0.5 = parcialmente correta, ou correta mas com omissões importantes
+- 0.25 = majoritariamente incorreta, com algum acerto
+- 0.0 = incorreta ou contradiz a referência
+
+Instruções:
+1. Compare a resposta do sistema com a resposta de referência, ponto a ponto.
+2. Verifique se a informação essencial da referência está presente e correta, e se há contradições.
+3. Precedência: se a resposta contradiz a referência em algum ponto essencial, limite a nota a no máximo 0.25, independentemente de quanta informação correta também contenha.
+4. Não premie comprimento: elaboração ou verbosidade por si só não aumentam a nota; prefira concisão com cobertura completa.
+5. Atribua a nota do nível mais próximo seguindo a rubrica acima.
+6. Forneça uma justificativa breve e clara.
+
+Retorne apenas um objeto JSON: {"rationale": "<1-2 frases>", "score": <0-1>}

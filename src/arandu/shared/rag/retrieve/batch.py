@@ -1,0 +1,403 @@
+"""Batch runner for ``arandu retrieve`` — driver invoked by the CLI.
+
+Iterates ``(arm, question)`` tuples, runs each retrieval, and persists
+one :class:`RetrievalRecord` per pair. Checkpoint keys are composite
+(``"<arm>::<qa_pair_id>"``) so resume works across arm sets.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, Field
+
+from arandu.shared.checkpoint import CheckpointManager
+from arandu.shared.config import ResultsConfig
+from arandu.shared.rag.retrieve.factory import RetrieveSettings, build_retriever
+from arandu.shared.rag.retrieve.loader import load_questions
+from arandu.shared.rag.retrieve.settings import (
+    KNOWN_ARMS,
+    ArmName,
+    AtlasRagRetrieveSettings,
+    Bm25RetrieveSettings,
+    DenseRetrieveSettings,
+    KHopRetrieveSettings,
+    is_dense_arm,
+)
+from arandu.shared.rag.schemas import RetrievalQuery, RetrievalRecord
+from arandu.shared.results_manager import ResultsManager
+from arandu.shared.schemas import PipelineType
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from arandu.shared.embeddings import EmbedderSettings
+    from arandu.shared.rag.protocol import Retriever
+    from arandu.shared.rag.retrieve.loader import QuestionRecord
+
+logger = logging.getLogger(__name__)
+
+
+CHECKPOINT_FILENAME = "retrieve_checkpoint.json"
+
+
+class RetrieveBatchConfig(BaseModel):
+    """Persisted run-metadata snapshot for the retrieve stage.
+
+    Attributes:
+        pipeline_id: The run identifier.
+        arms: Ordered list of arm names this run targeted.
+        top_k: Passages per question per arm.
+        rebuild_index: Whether arm-side indexes were forcibly rebuilt.
+        include_rejected: Whether judge-rejected CEP pairs were included.
+
+    """
+
+    pipeline_id: str
+    arms: list[str]
+    top_k: int = Field(..., gt=0)
+    rebuild_index: bool = False
+    include_rejected: bool = False
+
+
+class RetrieveBatchResult(BaseModel):
+    """Summary of a completed retrieve batch run.
+
+    Attributes:
+        pipeline_id: Resolved run identifier.
+        run_dir: Absolute path of ``results/<pipeline_id>/retrieve/``.
+        retrievals_written: Count of ``RetrievalRecord`` JSON files emitted.
+        retrievals_resumed: Count of (arm, qa_pair) tuples skipped because
+            the checkpoint already marked them completed.
+        retrievals_failed: Count of (arm, qa_pair) tuples that raised
+            during retrieval. Failures are logged with full context;
+            the run continues so a single bad arm doesn't kill the whole
+            batch.
+
+    """
+
+    pipeline_id: str
+    run_dir: str
+    retrievals_written: int = 0
+    retrievals_resumed: int = 0
+    retrievals_failed: int = 0
+
+
+def run_retrieve_batch(
+    pipeline_id: str,
+    arms: list[ArmName],
+    top_k: int,
+    *,
+    bm25_settings: Bm25RetrieveSettings | None = None,
+    khop_settings: KHopRetrieveSettings | None = None,
+    atlas_rag_settings: AtlasRagRetrieveSettings | None = None,
+    embedder_settings: EmbedderSettings | None = None,
+    dense_settings: DenseRetrieveSettings | None = None,
+    rebuild_index: bool = False,
+    include_rejected: bool = False,
+    base_dir: Path | None = None,
+) -> RetrieveBatchResult:
+    """Drive retrieval across one or more arms over a run's CEP + non-answerable items.
+
+    Args:
+        pipeline_id: Run identifier. The qa/cep stages must already be
+            populated; each arm has its own prerequisites (chunk for
+            bm25, kg for k-hop arms).
+        arms: Ordered list of arm names to run. Empty list raises
+            ``ValueError``.
+        top_k: Passages per question per arm. Must be ``>= 1``; arms
+            internally handle ``top_k=0`` defensively but the batch
+            runner rejects that input upfront because a zero-result
+            benchmark is almost certainly a misconfiguration.
+        bm25_settings: BM25 arm settings (chunker view). Defaults
+            instantiated from env when omitted.
+        khop_settings: K-hop arm settings (k_hop, top_k_seeds, keyword).
+            Defaults instantiated from env when omitted.
+        atlas_rag_settings: atlas-rag arm settings (LLM provider/model/
+            api_key/base_url + keyword/include_events/include_concept).
+            Only consulted when ``"atlas_rag"`` is in ``arms``; the CLI
+            passes ``None`` otherwise to avoid eagerly reading
+            ``ARANDU_ATLAS_RAG_*`` env vars for runs that don't use the
+            arm.
+        embedder_settings: Sentence-encoder choice for the atlas-rag arm.
+            Ignored by the other arms. Defaults are instantiated inside
+            :func:`build_retriever` from ``ARANDU_EMBEDDER_*`` when
+            omitted.
+        dense_settings: Dense arm settings (chunker view, encoder,
+            window, overlap, returned unit). Defaults instantiated from
+            env (``ARANDU_DENSE_*``) when omitted.
+        rebuild_index: Force arm-side index rebuilds where supported
+            (BM25 and dense; k-hop arms build state in-memory; atlas-rag's
+            precompute is rebuilt via
+            ``arandu kg-build-retriever-index --rebuild``).
+        include_rejected: When ``True``, retrieve over all CEP pairs in the
+            run, including those rejected by ``judge-qa``.
+        base_dir: Override the project ``results/`` root.
+
+    Returns:
+        Summary counts via :class:`RetrieveBatchResult`.
+
+    Raises:
+        FileNotFoundError: If the CEP outputs (or any arm-specific
+            prerequisite) are missing for ``pipeline_id``.
+        ValueError: If ``arms`` is empty or contains an unknown name,
+            or ``top_k < 1``.
+
+    """
+    if not arms:
+        raise ValueError("Must request at least one arm; got empty list.")
+    if top_k < 1:
+        raise ValueError(f"top_k must be >= 1, got {top_k}.")
+    unknown = [a for a in arms if a not in KNOWN_ARMS]
+    if unknown:
+        raise ValueError(f"Unknown arm(s) {unknown!r}. Valid arms: {list(KNOWN_ARMS)}.")
+
+    base = base_dir if base_dir is not None else ResultsConfig().base_dir
+    cep_dir = base / pipeline_id / "cep" / "outputs"
+    nonanswerable_dir = base / pipeline_id / PipelineType.NON_ANSWERABLE.value / "outputs"
+
+    questions = load_questions(cep_dir, nonanswerable_dir, include_rejected=include_rejected)
+    if not questions:
+        logger.warning(
+            "No questions found for pipeline %s (CEP dir empty). Returning empty result.",
+            pipeline_id,
+        )
+
+    config = RetrieveBatchConfig(
+        pipeline_id=pipeline_id,
+        arms=list(arms),
+        top_k=top_k,
+        rebuild_index=rebuild_index,
+        include_rejected=include_rejected,
+    )
+    results_mgr = ResultsManager(
+        base,
+        PipelineType.RETRIEVE,
+        pipeline_id=pipeline_id,
+    )
+    results_mgr.create_run(
+        config,
+        input_source=str(cep_dir),
+        checkpoint_filename=CHECKPOINT_FILENAME,
+    )
+    checkpoint = CheckpointManager(results_mgr.run_dir / CHECKPOINT_FILENAME)
+
+    total_units = len(questions) * len(arms)
+    checkpoint.set_total_files(total_units)
+
+    written = 0
+    resumed = 0
+    failed = 0
+    for arm in arms:
+        retriever = _build_with_logging(
+            arm=arm,
+            pipeline_id=pipeline_id,
+            bm25_settings=bm25_settings,
+            khop_settings=khop_settings,
+            atlas_rag_settings=atlas_rag_settings,
+            embedder_settings=embedder_settings,
+            dense_settings=dense_settings,
+            base_dir=base,
+            rebuild_index=rebuild_index,
+        )
+        if retriever is None:
+            # Arm-build failure already logged; skip every question for it.
+            failed += len(questions)
+            continue
+        if is_dense_arm(arm) and not _dense_config_matches(
+            results_mgr.outputs_dir / arm,
+            (dense_settings or DenseRetrieveSettings()).for_arm(arm),
+        ):
+            failed += len(questions)
+            continue
+
+        for question in questions:
+            ckpt_key = _checkpoint_key(arm, question.qa_pair_id)
+            if checkpoint.is_completed(ckpt_key):
+                resumed += 1
+                continue
+
+            try:
+                record = _retrieve_one(
+                    retriever=retriever,
+                    arm=arm,
+                    question=question,
+                    top_k=top_k,
+                )
+            except Exception as exc:
+                # Deliberately broad: each Retriever implementation has its
+                # own failure surface (atlas-rag's PPR, BM25's tokenizer,
+                # NetworkX's graph ops, …). Catching narrowly would force
+                # this module to know each retriever's internals, breaking
+                # the Protocol abstraction. The per-(arm, qa_pair) isolation
+                # contract takes precedence — log + continue + mark failed
+                # so one bad question doesn't kill the rest of the batch.
+                logger.exception(
+                    "Retrieval failed for arm=%s qa_pair_id=%s: %s",
+                    arm,
+                    question.qa_pair_id,
+                    exc,
+                )
+                checkpoint.mark_failed(ckpt_key, str(exc))
+                failed += 1
+                continue
+
+            output_path = _output_path(
+                outputs_dir=results_mgr.outputs_dir,
+                arm=arm,
+                source=question.source,
+                qa_pair_id=question.qa_pair_id,
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            record.save(output_path)
+            checkpoint.mark_completed(ckpt_key)
+            written += 1
+
+    results_mgr.update_progress(written + resumed, failed, total_units)
+    results_mgr.complete_run(success=(failed == 0))
+
+    return RetrieveBatchResult(
+        pipeline_id=results_mgr.metadata.pipeline_id,
+        run_dir=str(results_mgr.run_dir),
+        retrievals_written=written,
+        retrievals_resumed=resumed,
+        retrievals_failed=failed,
+    )
+
+
+def _build_with_logging(
+    *,
+    arm: ArmName,
+    pipeline_id: str,
+    bm25_settings: Bm25RetrieveSettings | None,
+    khop_settings: KHopRetrieveSettings | None,
+    atlas_rag_settings: AtlasRagRetrieveSettings | None,
+    embedder_settings: EmbedderSettings | None,
+    dense_settings: DenseRetrieveSettings | None,
+    base_dir: Path,
+    rebuild_index: bool,
+) -> Retriever | None:
+    """Construct a retriever for ``arm``; log + return ``None`` on failure.
+
+    Per-arm build failures (missing index, missing KG outputs, missing
+    API key, …) are logged with full context. Returning ``None`` lets
+    the batch runner continue with the next arm rather than aborting
+    the whole run.
+    """
+    settings: RetrieveSettings | None = None
+    if arm == "bm25":
+        settings = bm25_settings
+    elif arm in ("khop_passage", "khop_triple"):
+        settings = khop_settings
+    elif arm == "atlas_rag":
+        settings = atlas_rag_settings
+    elif is_dense_arm(arm):
+        settings = dense_settings
+
+    try:
+        return build_retriever(
+            arm,
+            pipeline_id=pipeline_id,
+            settings=settings,
+            embedder_settings=embedder_settings,
+            base_dir=base_dir,
+            rebuild_index=rebuild_index,
+        )
+    # OSError covers encoder loads that fail on the network or on a bad model
+    # name (huggingface_hub and requests errors derive from it), so one dense
+    # arm that cannot load its encoder does not stop the others.
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
+        logger.error("Failed to build %s arm for pipeline %s: %s", arm, pipeline_id, exc)
+        return None
+
+
+def _retrieve_one(
+    *,
+    retriever: Retriever,
+    arm: ArmName,
+    question: QuestionRecord,
+    top_k: int,
+) -> RetrievalRecord:
+    """Run one retrieval call and wrap the result as a :class:`RetrievalRecord`."""
+    t0 = time.perf_counter()
+    query = RetrievalQuery(question=question.question, source_qa_pair_id=question.source_qa_pair_id)
+    passages = retriever.retrieve(query, top_k=top_k)
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    return RetrievalRecord(
+        qa_pair_id=question.qa_pair_id,
+        question=question.question,
+        retriever_id=retriever.retriever_id,
+        chunker_id=question.chunker_id,
+        top_k=top_k,
+        passages=passages,
+        elapsed_ms=elapsed_ms,
+        is_answerable=question.is_answerable,
+        # Per-call diagnostics a retriever may expose (e.g. atlas_rag's
+        # seed_path: edge_filter / node_fallback / ungrounded). Optional
+        # by design - arms without the attribute contribute {}.
+        retriever_meta=dict(getattr(retriever, "last_retrieve_meta", None) or {}),
+    )
+
+
+# Dense settings that change the index or the records of an arm. Device and
+# batch size do not, so a resume may change them.
+_DENSE_IDENTITY_FIELDS = (
+    "chunker_id",
+    "model",
+    "window_tokens",
+    "whole_chunk",
+    "overlap_ratio",
+    "query_prompt",
+    "passage_prompt",
+    "unit",
+)
+DENSE_CONFIG_FILENAME = "dense_config.json"
+
+
+def _dense_config_matches(arm_dir: Path, settings: DenseRetrieveSettings) -> bool:
+    """Record a dense arm's configuration in its output dir, or check it against the recorded one.
+
+    The checkpoint key is ``<arm>::<qa_pair_id>``, so a resume under other
+    ``ARANDU_DENSE_*`` values would add records of a second configuration to
+    the same directory. The first run writes ``dense_config.json``; a later
+    run whose configuration differs is refused (logged, arm skipped).
+    """
+    current = {f: getattr(settings, f) for f in _DENSE_IDENTITY_FIELDS}
+    path = arm_dir / DENSE_CONFIG_FILENAME
+    if path.exists():
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+        if recorded != current:
+            diff = {k: (recorded.get(k), v) for k, v in current.items() if recorded.get(k) != v}
+            logger.error(
+                "Dense arm %s: configuration differs from the one its outputs were "
+                "retrieved with (%s: recorded, requested = %s). Skipping the arm; use a "
+                "new run id or remove %s to start over.",
+                arm_dir.name,
+                path,
+                diff,
+                arm_dir,
+            )
+            return False
+        return True
+    arm_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    return True
+
+
+def _checkpoint_key(arm: ArmName, qa_pair_id: str) -> str:
+    """Composite checkpoint key for the (arm, qa_pair) work unit."""
+    return f"{arm}::{qa_pair_id}"
+
+
+def _output_path(*, outputs_dir: Path, arm: ArmName, source: str, qa_pair_id: str) -> Path:
+    """Resolve the on-disk path for one retrieval record.
+
+    Layout: ``<outputs_dir>/<arm>/<source>/<sanitized_qa_pair_id>.json``.
+    ``qa_pair_id`` carries ``:`` and possibly other path-unfriendly chars
+    (``"<file_id>:<chunk_id>:<idx>"``); sanitize for cross-platform safety.
+    """
+    safe_id = qa_pair_id.replace(":", "__").replace("/", "_")
+    return outputs_dir / arm / source / f"{safe_id}.json"

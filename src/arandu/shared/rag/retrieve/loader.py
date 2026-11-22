@@ -1,0 +1,244 @@
+"""Load CEP QA + (when present) non-answerable items as a uniform question stream.
+
+The retrieve stage iterates two source datasets:
+
+- **CEP QA**: per-source ``QARecordCEP`` files at ``results/<id>/cep/outputs/*.json``.
+  Each record holds many :class:`QAPairCEP` items; we iterate them.
+- **Non-answerable** (optional, when the ``non_answerable`` stage has
+  populated): at ``results/<id>/non_answerable/outputs/`` - silently
+  skipped when absent.
+
+Both produce :class:`QuestionRecord` rows, distinguished by ``source``
+(``"cep"`` or ``"nonanswerable"``). The retrieve batch runner emits
+outputs into separate subdirectories per the spec §10.4 amendment.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Literal
+
+from pydantic import AliasChoices, BaseModel, Field, ValidationError
+
+from arandu.qa.schemas import iter_cep_pairs
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+    from pathlib import Path
+
+    from arandu.qa.schemas import CEPPairRef
+
+logger = logging.getLogger(__name__)
+
+
+QuestionSource = Literal["cep", "nonanswerable"]
+
+
+class _NonAnswerableItem(BaseModel):
+    """Narrow read-model for one non-answerable item.
+
+    The producer (``arandu generate-non-answerable``) writes the full
+    :class:`~arandu.qa.non_answerable.schemas.NonAnswerableItem`, but the
+    retrieve stage only needs five fields to build a query stream (the
+    oracle arm reads ``parent_qa_pair_id``). This
+    stub is kept deliberately narrow (ISP) and tolerant: ``extra="ignore"``
+    drops the producer's analysis-only fields (``bloom_level``,
+    ``swapped_entity``, …) and the
+    :class:`AliasChoices` decouple retrieve from non-breaking field
+    renames upstream. Each ``AliasChoices`` tries its options in order;
+    first hit wins.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    qa_pair_id: str = Field(..., validation_alias=AliasChoices("qa_pair_id", "id"), min_length=1)
+    question: str = Field(..., min_length=1)
+    source_file_id: str = Field(
+        ...,
+        validation_alias=AliasChoices("source_file_id", "source_gdrive_id"),
+        min_length=1,
+    )
+    chunker_id: str = Field(default="unknown")
+    parent_qa_pair_id: str | None = Field(default=None)
+
+
+class _NonAnswerableBatch(BaseModel):
+    """File-level wrapper around a list of :class:`_NonAnswerableItem`."""
+
+    model_config = {"extra": "ignore"}
+
+    items: list[_NonAnswerableItem] = Field(default_factory=list)
+
+
+class QuestionRecord(BaseModel):
+    """One question to retrieve against, normalized across source types.
+
+    Attributes:
+        qa_pair_id: Composite identifier per :class:`RetrievalRecord`'s
+            contract (``"<file_id>:<chunk_id>:<idx>"``). Unique within a run.
+        question: Verbatim question text to feed the retriever.
+        is_answerable: Mirrored from the source item. CEP pairs are
+            answerable by construction; non-answerable items are not.
+        source: ``"cep"`` or ``"nonanswerable"`` — drives the output
+            subdirectory under ``retrieve/outputs/<arm_id>/``.
+        source_file_id: The source media file id the item is associated with.
+            Useful for downstream grouping but not used by the retriever
+            itself.
+        chunker_id: Chunker view recorded on the source item (CEP records
+            track which view was used to slice the transcription for QA
+            generation). The retrieve stage records this on each
+            :class:`RetrievalRecord` to preserve the chunker → retriever
+            provenance.
+        parent_qa_pair_id: For non-answerable items, the ``qa_pair_id`` of
+            the CEP pair the item was perturbed from. ``None`` for CEP rows.
+
+    """
+
+    qa_pair_id: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=1)
+    is_answerable: bool
+    source: QuestionSource
+    source_file_id: str
+    chunker_id: str
+    parent_qa_pair_id: str | None = None
+
+    @property
+    def source_qa_pair_id(self) -> str | None:
+        """Return the id of the CEP pair whose context this item was built from.
+
+        A CEP row is its own source; a non-answerable item points to its parent,
+        or to nothing (``None``) when its dataset predates the parent link.
+        """
+        if self.source == "cep":
+            return self.qa_pair_id
+        return self.parent_qa_pair_id
+
+
+def load_questions(
+    cep_dir: Path,
+    nonanswerable_dir: Path | None = None,
+    *,
+    include_rejected: bool = False,
+) -> list[QuestionRecord]:
+    """Walk the CEP + non-answerable output directories into a flat question list.
+
+    Args:
+        cep_dir: ``results/<id>/cep/outputs/``. Each ``*.json`` is a
+            :class:`QARecordCEP`. ``FileNotFoundError`` if missing -
+            CEP is required for any retrieve run.
+        nonanswerable_dir: ``results/<id>/non_answerable/outputs/``. When
+            ``None`` or non-existent, silently skipped.
+        include_rejected: When ``True``, include CEP pairs rejected by the
+            ``judge-qa`` stage (``is_judge_rejected``) instead of dropping
+            them. Useful when backfilling an arm over a run whose other arms
+            were retrieved before gate verdicts were applied.
+
+    Returns:
+        Flat list of :class:`QuestionRecord` rows. CEP rows first, in
+        sorted file order; then non-answerable. Stable ordering so
+        checkpoint resume + cross-run diffing are deterministic.
+
+    Raises:
+        FileNotFoundError: If ``cep_dir`` does not exist.
+
+    """
+    if not cep_dir.exists():
+        raise FileNotFoundError(
+            f"CEP outputs not found at {cep_dir}. Run `arandu generate-cep-qa` first."
+        )
+
+    refs = list(iter_cep_pairs(cep_dir))
+    questions: list[QuestionRecord] = list(
+        _iter_cep_questions(refs, include_rejected=include_rejected)
+    )
+    if nonanswerable_dir is not None and nonanswerable_dir.exists():
+        nonanswerable = list(_iter_nonanswerable_questions(nonanswerable_dir))
+        _warn_unresolved_parents(nonanswerable, {ref.qa_pair_id for ref in refs})
+        questions.extend(nonanswerable)
+    else:
+        logger.debug(
+            "Non-answerable dir absent (%s); only CEP questions will be retrieved.",
+            nonanswerable_dir,
+        )
+    return questions
+
+
+def _iter_cep_questions(
+    refs: Iterable[CEPPairRef], *, include_rejected: bool = False
+) -> Iterator[QuestionRecord]:
+    """Yield one :class:`QuestionRecord` per ``QAPairCEP`` in the dir.
+
+    Each on-disk file is a :class:`QARecordCEP` holding many pairs. The
+    composite ``qa_pair_id`` follows the schema's documented form:
+    ``"<file_id>:<chunk_id or 'none'>:<idx>"``. ``idx`` is the pair's
+    position within the record, so the id stays stable across reruns
+    that produce the same file.
+
+    Unless ``include_rejected`` is ``True``, pairs the judge-qa stage rejected
+    (``is_judge_rejected``) are skipped so the RAG benchmark evaluates only the
+    approved question set, matching the canonical drop-rule the chunk/kg
+    consumers already use. ``idx`` is still taken over ALL pairs (not the
+    surviving subset), so a rejected pair in the middle does not shift the ids
+    of the pairs after it. Unjudged pairs (``is_valid`` is None, e.g. a run
+    where judge-qa has not run) are kept.
+    """
+    for ref in refs:
+        if not include_rejected and ref.pair.is_judge_rejected:
+            continue
+        yield QuestionRecord(
+            qa_pair_id=ref.qa_pair_id,
+            question=ref.pair.question,
+            is_answerable=True,
+            source="cep",
+            source_file_id=ref.record.source_file_id,
+            chunker_id=ref.record.chunker_id,
+        )
+
+
+def _warn_unresolved_parents(items: list[QuestionRecord], cep_ids: set[str]) -> None:
+    """Log once when non-answerable items do not resolve to a CEP pair of this run.
+
+    An item resolves when its ``parent_qa_pair_id`` names a pair in ``cep_ids``
+    (every CEP pair, judge-rejected ones included). An unresolved item has no
+    source context, so a provenance-keyed arm (the oracle) fails on it; flagging
+    it here reports the cause once instead of as one failure per item.
+    """
+    missing = sum(1 for q in items if not q.parent_qa_pair_id)
+    unknown = sum(1 for q in items if q.parent_qa_pair_id and q.parent_qa_pair_id not in cep_ids)
+    if missing or unknown:
+        logger.warning(
+            "%d of %d non-answerable items do not resolve to a CEP pair of this run "
+            "(%d without parent_qa_pair_id, %d with an unknown parent); "
+            "they have no source context for the oracle arm.",
+            missing + unknown,
+            len(items),
+            missing,
+            unknown,
+        )
+
+
+def _iter_nonanswerable_questions(nonanswerable_dir: Path) -> Iterator[QuestionRecord]:
+    """Yield non-answerable items as :class:`QuestionRecord`.
+
+    Files are parsed as :class:`_NonAnswerableBatch`. Items missing
+    required fields (qa_pair_id, question, source_file_id) are dropped
+    by Pydantic validation rather than silently skipped with manual
+    ``.get()`` calls — the validation error is logged at file scope so
+    operators can spot malformed inputs.
+    """
+    for path in sorted(nonanswerable_dir.glob("*.json")):
+        try:
+            batch = _NonAnswerableBatch.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValidationError) as exc:
+            logger.warning("Skipping unreadable non-answerable file %s: %s", path, exc)
+            continue
+        for item in batch.items:
+            yield QuestionRecord(
+                qa_pair_id=item.qa_pair_id,
+                question=item.question,
+                is_answerable=False,
+                source="nonanswerable",
+                source_file_id=item.source_file_id,
+                chunker_id=item.chunker_id,
+                parent_qa_pair_id=item.parent_qa_pair_id,
+            )

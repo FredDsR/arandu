@@ -1,0 +1,577 @@
+"""Unified LLM client using OpenAI SDK with configurable base_url.
+
+Supports OpenAI, Ollama, and any OpenAI-compatible provider (Gemini,
+DeepSeek, Maritaca, Qwen, ...) through the OpenAI SDK's base_url parameter.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from enum import Enum
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+
+from openai import APIStatusError, BadRequestError, OpenAI, RateLimitError
+from pydantic import BaseModel, SecretStr, ValidationError
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    wait_random_exponential,
+)
+
+from arandu.utils.text import GenerateResult, extract_thinking, strip_markdown_codeblock
+
+if TYPE_CHECKING:
+    from arandu.shared.llm_settings import LLMSettings
+
+T = TypeVar("T", bound=BaseModel)
+
+logger = logging.getLogger(__name__)
+
+# Two backoff profiles, selected per-error by ``_wait_by_error``:
+# - Rate limits (HTTP 429) need a long, jittered wait to outwait the hosted
+#   endpoint's per-minute quota reset; the jitter desynchronizes concurrent
+#   workers so they don't retry in lockstep and re-trip the limit.
+# - Other transient errors (brief network blips) recover quickly, so they get a
+#   short wait instead of sitting through a 60s window for nothing.
+_RATE_LIMIT_WAIT = wait_random_exponential(multiplier=1, max=60)
+_TRANSIENT_WAIT = wait_exponential(multiplier=1, min=2, max=10)
+
+
+def _wait_by_error(retry_state: RetryCallState) -> float:
+    """Pick the backoff by error type: long+jittered for 429s, short otherwise."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, RateLimitError):
+        return _RATE_LIMIT_WAIT(retry_state)
+    return _TRANSIENT_WAIT(retry_state)
+
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    """Classify an exception as a provider rate limit (HTTP 429).
+
+    The batch-level adaptive throttle
+    (:func:`arandu.utils.concurrency.map_concurrent`) uses this to slow
+    the pipeline down instead of failing the record when a call exhausts
+    the client-level 429 retry budget.
+
+    Args:
+        exc: The exception that escaped an LLM call.
+
+    Returns:
+        True when the error is a rate limit.
+    """
+    return isinstance(exc, RateLimitError)
+
+
+#: Request fields ``generate`` sets itself. ``extra_body`` is merged into the
+#: request body after them, so allowing these keys would override the typed
+#: values (and the run snapshot would record the wrong ones).
+_RESERVED_REQUEST_FIELDS = frozenset(
+    {"model", "messages", "temperature", "max_tokens", "response_format", "stream"}
+)
+
+
+class StructuredOutputError(Exception):
+    """Raised when structured output parsing fails after all retries."""
+
+
+class LLMProvider(Enum):
+    """LLM provider types."""
+
+    OPENAI = "openai"
+    OLLAMA = "ollama"
+    CUSTOM = "custom"
+
+
+class LLMClient:
+    """Unified LLM client using OpenAI SDK with configurable base_url.
+
+    Supports OpenAI, Ollama, and any OpenAI-compatible provider.
+
+    Examples:
+        >>> # Using OpenAI
+        >>> client = LLMClient(LLMProvider.OPENAI, "gpt-4", api_key="sk-...")
+        >>> response = client.generate("What is the capital of France?")
+
+        >>> # Using Ollama
+        >>> client = LLMClient(LLMProvider.OLLAMA, "llama3.1:8b")
+        >>> response = client.generate("What is the capital of France?")
+
+        >>> # Using custom OpenAI-compatible endpoint
+        >>> client = LLMClient(
+        ...     LLMProvider.CUSTOM,
+        ...     "model-name",
+        ...     api_key="key",
+        ...     base_url="http://localhost:8000/v1"
+        ... )
+    """
+
+    # Default base URLs for known providers
+    PROVIDER_URLS: ClassVar[dict[LLMProvider, str | None]] = {
+        LLMProvider.OPENAI: None,  # Uses OpenAI default
+        LLMProvider.OLLAMA: "http://localhost:11434/v1",
+        LLMProvider.CUSTOM: None,  # Must be provided explicitly
+    }
+
+    def __init__(
+        self,
+        provider: LLMProvider,
+        model_id: str,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        extra_body: dict[str, Any] | None = None,
+    ) -> None:
+        """Initialize the LLM client.
+
+        Args:
+            provider: The LLM provider type (openai, ollama, custom).
+            model_id: The model identifier (e.g., "gpt-4", "llama3.1:8b").
+            api_key: API key for authentication. Optional for Ollama.
+            base_url: Custom base URL. If not provided, uses provider default.
+            extra_body: Provider-specific fields merged into every request
+                body, e.g. ``{"reasoning_effort": "none"}`` to switch off
+                thinking on DeepSeek/OpenAI/Mistral, or
+                ``{"enable_thinking": False}`` on Qwen.
+
+        Raises:
+            ValueError: If ``extra_body`` sets a field ``generate`` controls.
+        """
+        reserved = sorted(set(extra_body or {}) & _RESERVED_REQUEST_FIELDS)
+        if reserved:
+            raise ValueError(
+                f"extra_body must not set {reserved}: they are per-call arguments "
+                f"configured through their own settings, and an override here would "
+                f"silently win over them."
+            )
+        self.provider = provider
+        self.model_id = model_id
+        self.extra_body = dict(extra_body) if extra_body else None
+
+        # Determine base_url: explicit > provider default
+        if base_url:
+            self._base_url = base_url
+        else:
+            self._base_url = self.PROVIDER_URLS.get(provider)
+
+        # For Ollama, api_key can be anything (not validated by server)
+        if provider == LLMProvider.OLLAMA and not api_key:
+            api_key = "ollama"
+
+        self.client = OpenAI(api_key=api_key, base_url=self._base_url)
+        # Whether the provider accepts response_format json_schema (wire-level
+        # schema enforcement). Optimistic until a BadRequestError proves
+        # otherwise; flipping it from worker threads is a benign race (all
+        # writers store the same False).
+        self._json_schema_supported = True
+
+    @property
+    def base_url(self) -> str | None:
+        """Return the base URL being used."""
+        return self._base_url
+
+    def is_available(self) -> bool:
+        """Check if the provider is available and responding.
+
+        Returns:
+            True if the provider is reachable and responding, False otherwise.
+        """
+        try:
+            self.client.models.list()
+            return True
+        except Exception:
+            return False
+
+    # Retry budget sized for cloud rate limits, not just transient blips.
+    # Hosted endpoints (Gemini, OpenAI) enforce per-minute quotas; a 429 needs
+    # backoff long enough to outwait the reset window (see ``_wait_by_error``,
+    # which applies the long jittered backoff only to RateLimitError). Six
+    # attempts span a per-minute reset. Too-short retries surface as
+    # RetryError[RateLimitError] -> the caller records score=None and drops the
+    # result, which is indistinguishable from a real failure downstream.
+    # Deterministic 4xx client errors (BadRequestError) are excluded:
+    # retrying them wastes the whole backoff budget on a request that can
+    # never succeed (e.g. an unsupported response_format, handled by the
+    # generate_structured fallback layer).
+    # reraise=True: when the budget is exhausted the ORIGINAL exception
+    # propagates (not tenacity.RetryError), so callers can classify it
+    # (e.g. the json_schema fallback below keys on the status code).
+    @retry(
+        stop=stop_after_attempt(6),
+        wait=_wait_by_error,
+        retry=retry_if_not_exception_type(BadRequestError),
+        reraise=True,
+    )
+    def generate(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        system_prompt: str | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> GenerateResult:
+        """Generate text from a prompt.
+
+        Args:
+            prompt: The user prompt to send to the model.
+            temperature: Sampling temperature (0.0-2.0). Higher values mean more
+                random outputs. Defaults to 0.7.
+            max_tokens: Maximum number of tokens to generate. If None, uses model default.
+            system_prompt: Optional system prompt to set context.
+            response_format: Optional response format constraint (e.g.,
+                ``{"type": "json_object"}``). When provided, constrains the LLM
+                to produce output matching this format.
+
+        Returns:
+            GenerateResult with content and optional thinking trace.
+
+        Raises:
+            openai.APIError: If the API request fails after retries.
+        """
+        messages: list[dict[str, str]] = []
+
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        messages.append({"role": "user", "content": prompt})
+
+        kwargs: dict = {
+            "model": self.model_id,
+            "messages": messages,
+            "temperature": temperature,
+        }
+
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
+
+        response = self.client.chat.completions.create(**kwargs)
+
+        message = response.choices[0].message
+        raw_content = message.content or ""
+
+        logger.debug(
+            "Raw LLM response (%d chars): %s",
+            len(raw_content),
+            raw_content[:500] if len(raw_content) > 500 else raw_content,
+        )
+
+        # Source 1: API-level thinking from provider-specific fields
+        # OpenAI o-series uses "reasoning_content", Ollama uses "reasoning"
+        api_thinking = None
+        for field in ("reasoning_content", "reasoning"):
+            value = getattr(message, field, None)
+            if isinstance(value, str) and value.strip():
+                api_thinking = value.strip()
+                logger.debug("API-level thinking via '%s' (%d chars)", field, len(api_thinking))
+                break
+
+        # Ollama may also return reasoning in model_extra (non-standard fields)
+        if api_thinking is None:
+            extras = getattr(message, "model_extra", None) or {}
+            for field in ("reasoning_content", "reasoning"):
+                value = extras.get(field)
+                if isinstance(value, str) and value.strip():
+                    api_thinking = value.strip()
+                    logger.debug(
+                        "API-level thinking via model_extra['%s'] (%d chars)",
+                        field,
+                        len(api_thinking),
+                    )
+                    break
+
+        # Source 2: Inline <think> tags (Ollama/Qwen3/DeepSeek fallback)
+        result = extract_thinking(raw_content)
+
+        # Combine: API-level takes precedence, inline supplements
+        thinking = api_thinking or result.thinking
+
+        if thinking:
+            logger.debug("Thinking extracted (%d chars)", len(thinking))
+        elif "<think>" in raw_content:
+            logger.warning(
+                "Raw response contains <think> tag but extraction failed "
+                "(possibly truncated — missing </think> closing tag)"
+            )
+
+        return GenerateResult(content=result.content, thinking=thinking)
+
+    def generate_structured(
+        self,
+        prompt: str,
+        response_model: type[T],
+        *,
+        system_prompt: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+        max_retries: int = 2,
+    ) -> T:
+        """Generate structured output and parse it into a Pydantic model.
+
+        Calls the LLM with JSON response format, strips any markdown code-block
+        wrappers, and validates the result against ``response_model``. Retries
+        on JSON decode or Pydantic validation errors up to ``max_retries`` times.
+
+        Args:
+            prompt: The user prompt to send to the model.
+            response_model: Pydantic model class to validate the response against.
+            system_prompt: Optional system prompt to set context.
+            temperature: Sampling temperature (0.0-2.0). Defaults to 0.3.
+            max_tokens: Maximum tokens for the response. If None, uses model default.
+            max_retries: Number of additional attempts after the first failure.
+                Defaults to 2 (3 total attempts).
+
+        Returns:
+            An instance of ``response_model`` populated from the LLM response.
+
+        Raises:
+            StructuredOutputError: If all attempts fail to produce valid output.
+        """
+        attempts = 1 + max(max_retries, 0)
+        last_error: Exception | None = None
+
+        # Wire-level schema enforcement: providers that support
+        # response_format json_schema (ollama structured outputs, OpenAI,
+        # Gemini OpenAI-compat) constrain the output grammar to the
+        # response model's canonical keys, retiring key-synonym drift at
+        # the source. Providers that reject it fall back to plain JSON
+        # mode once per client.
+        schema_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": response_model.__name__,
+                "schema": response_model.model_json_schema(),
+            },
+        }
+
+        def _generate(fmt: dict[str, Any]) -> Any:
+            return self.generate(
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                system_prompt=system_prompt,
+                response_format=fmt,
+            )
+
+        for attempt in range(1, attempts + 1):
+            use_schema = self._json_schema_supported
+            try:
+                result = _generate(schema_format if use_schema else {"type": "json_object"})
+            except BadRequestError as exc:
+                if not use_schema:
+                    # Deterministic 4xx in plain JSON mode: the request is
+                    # bad. Surface it through the uniform caller contract.
+                    last_error = exc
+                    continue
+                # A 400 on a schema attempt is ambiguous: schema rejection
+                # OR a bad request (e.g. context overflow). Probe with plain
+                # JSON mode to tell them apart instead of guessing.
+                try:
+                    result = _generate({"type": "json_object"})
+                except BadRequestError:
+                    # Probe also 400s: the request itself is bad; keep
+                    # schema enforcement enabled and fail this attempt.
+                    last_error = exc
+                    continue
+                logger.warning(
+                    "Provider rejected response_format json_schema (%s); "
+                    "falling back to json_object for this client.",
+                    exc,
+                )
+                self._json_schema_supported = False
+            except APIStatusError as exc:
+                if not use_schema or exc.status_code < 500:
+                    raise
+                # Some providers (ollama builds) reject schema grammars with
+                # 5xx. Fall back for THIS call only: a transient 500 must
+                # not permanently disable schema enforcement.
+                try:
+                    result = _generate({"type": "json_object"})
+                except Exception:
+                    raise exc from None
+                logger.warning(
+                    "Schema-mode call failed with %s; json_object succeeded - "
+                    "possible schema-grammar rejection (not latching).",
+                    exc.status_code,
+                )
+
+            raw = strip_markdown_codeblock(result.content)
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                logger.warning(
+                    "Structured output attempt %d/%d: JSON decode error: %s",
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                continue
+
+            try:
+                return response_model.model_validate(data)
+            except ValidationError as exc:
+                last_error = exc
+                logger.warning(
+                    "Structured output attempt %d/%d: validation error: %s",
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                continue
+
+        raise StructuredOutputError(
+            f"Failed to parse structured output after {attempts} attempt(s): {last_error}"
+        )
+
+    def __repr__(self) -> str:
+        """Return string representation of the client."""
+        return (
+            f"LLMClient(provider={self.provider.value}, "
+            f"model_id={self.model_id!r}, "
+            f"base_url={self._base_url!r})"
+        )
+
+
+def parse_provider(provider: LLMProvider | str) -> LLMProvider:
+    """Coerce a provider value to :class:`LLMProvider` with one canonical error.
+
+    Args:
+        provider: An ``LLMProvider`` (returned unchanged) or a string
+            (case-insensitive).
+
+    Returns:
+        The resolved provider enum.
+
+    Raises:
+        ValueError: If a string does not name a valid provider.
+    """
+    if isinstance(provider, LLMProvider):
+        return provider
+    try:
+        return LLMProvider(provider.lower())
+    except ValueError as exc:
+        valid = [p.value for p in LLMProvider]
+        raise ValueError(f"Invalid provider: {provider!r}. Must be one of {valid}") from exc
+
+
+def create_llm_client(
+    provider: LLMProvider | str,
+    model_id: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    extra_body: dict[str, Any] | None = None,
+) -> LLMClient:
+    """Factory function to create an LLM client.
+
+    Args:
+        provider: The LLM provider. Can be an LLMProvider enum or string
+            ("openai", "ollama", "custom").
+        model_id: The model identifier.
+        api_key: API key for authentication.
+        base_url: Custom base URL for the API endpoint.
+        extra_body: Provider-specific fields merged into every request body.
+
+    Returns:
+        Configured LLMClient instance.
+
+    Raises:
+        ValueError: If provider string is not a valid provider type.
+
+    Examples:
+        >>> client = create_llm_client("ollama", "llama3.1:8b")
+        >>> client = create_llm_client(LLMProvider.OPENAI, "gpt-4", api_key="sk-...")
+    """
+    return LLMClient(
+        provider=parse_provider(provider),
+        model_id=model_id,
+        api_key=api_key,
+        base_url=base_url,
+        extra_body=extra_body,
+    )
+
+
+def resolve_api_key(
+    provider: LLMProvider | str,
+    api_key: SecretStr | None,
+    *,
+    key_var: str,
+) -> str | None:
+    """Resolve the API key of one stage's client, failing fast when it is missing.
+
+    Each client has its own key variable (``ARANDU_QA_API_KEY``,
+    ``ARANDU_JUDGE_VALIDATOR_API_KEY``, ...) and there is no shared fallback:
+    a key never reaches a provider it was not set for. Ollama needs no key and
+    gets ``None``.
+
+    Args:
+        provider: The client's provider.
+        api_key: The stage's own key, or ``None`` when unset.
+        key_var: Env var of the stage's own key, named in the error message.
+
+    Returns:
+        The key to send, or ``None`` for ollama.
+
+    Raises:
+        ValueError: If the provider is unknown.
+        RuntimeError: If a cloud provider has no key.
+    """
+    if parse_provider(provider) is LLMProvider.OLLAMA:
+        return None
+    if api_key is None or not api_key.get_secret_value():
+        raise RuntimeError(
+            f"LLM provider {str(provider)!r} needs an API key: set {key_var}, "
+            f"or switch the provider to 'ollama'."
+        )
+    return api_key.get_secret_value()
+
+
+def build_llm_client_from_settings(settings: LLMSettings) -> LLMClient:
+    """Build an :class:`LLMClient` from :class:`LLMSettings`, with stage-aware guards.
+
+    Centralizes the provider parse, API-key lookup, ollama free-pass, and
+    custom-``base_url`` guard that every LLM stage needs. Error messages name
+    the stage's env vars (derived from the settings subclass's own
+    ``env_prefix``) so a misconfiguration is actionable.
+
+    Args:
+        settings: Resolved :class:`LLMSettings` subclass; its ``env_prefix``
+            supplies the env-var names used in error hints.
+
+    Returns:
+        A configured :class:`LLMClient`.
+
+    Raises:
+        ValueError: If the provider is unknown, or ``provider == "custom"``
+            without a ``base_url``.
+        RuntimeError: If a cloud provider has no API key.
+    """
+    prefix = settings.model_config.get("env_prefix") or "ARANDU_LLM_"
+
+    provider_enum = parse_provider(settings.provider)
+    api_key = resolve_api_key(provider_enum, settings.api_key, key_var=f"{prefix}API_KEY")
+
+    # The 'custom' provider exists to target a non-default OpenAI-compatible
+    # endpoint; without an explicit base URL the LLMClient would silently fall
+    # back to OpenAI's default and could send data to the wrong provider.
+    if provider_enum is LLMProvider.CUSTOM and not settings.base_url:
+        raise ValueError(
+            f"provider='custom' requires a base URL. Set {prefix}BASE_URL "
+            f"or pass base_url=... explicitly."
+        )
+
+    return create_llm_client(
+        provider=provider_enum,
+        model_id=settings.model_id,
+        api_key=api_key,
+        base_url=settings.base_url,
+        extra_body=settings.extra_body,
+    )

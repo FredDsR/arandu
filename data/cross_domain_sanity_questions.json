@@ -1,0 +1,17 @@
+[
+  { "question": "Qual é a capital da França?", "expected_behavior": "abstain" },
+  { "question": "Quem escreveu Dom Casmurro?", "expected_behavior": "abstain" },
+  { "question": "Em que ano caiu o Império Romano do Ocidente?", "expected_behavior": "abstain" },
+  { "question": "Qual é a fórmula química da água?", "expected_behavior": "abstain" },
+  { "question": "Em que continente fica o Quênia?", "expected_behavior": "abstain" },
+  { "question": "Quantos planetas há no Sistema Solar?", "expected_behavior": "abstain" },
+  { "question": "Quem pintou a Mona Lisa?", "expected_behavior": "abstain" },
+  { "question": "Qual é a raiz quadrada de 144?", "expected_behavior": "abstain" },
+  { "question": "Em que ano o homem pisou na Lua pela primeira vez?", "expected_behavior": "abstain" },
+  { "question": "Qual é o maior oceano do planeta?", "expected_behavior": "abstain" },
+  { "question": "Quem foi o primeiro presidente dos Estados Unidos?", "expected_behavior": "abstain" },
+  { "question": "Qual seleção venceu a Copa do Mundo de futebol de 2002?", "expected_behavior": "abstain" },
+  { "question": "Qual é a velocidade da luz no vácuo?", "expected_behavior": "abstain" },
+  { "question": "Quem desenvolveu a teoria da relatividade?", "expected_behavior": "abstain" },
+  { "question": "Qual é o metal mais leve da tabela periódica?", "expected_behavior": "abstain" }
+]

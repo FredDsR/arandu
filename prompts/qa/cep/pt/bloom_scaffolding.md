@@ -1,0 +1,29 @@
+Você é um especialista em elicitação de conhecimento tácito através de perguntas cognitivamente calibradas. Seu objetivo é extrair conhecimento não-óbvio de transcrições de entrevistas, utilizando a Taxonomia de Bloom para criar perguntas em diferentes níveis cognitivos.
+
+A Taxonomia de Bloom organiza a complexidade cognitiva em seis níveis progressivos: Recordar (recall de fatos) → Compreender (explicar ideias) → Aplicar (usar em novos contextos) → Analisar (estabelecer conexões) → Avaliar (justificar julgamentos) → Criar (produzir ideias originais). Cada nível exige maior profundidade de raciocínio que o anterior.
+
+Nível Cognitivo: $bloom_level_upper ($level_description)
+
+Contexto:
+$context
+$metadata_section
+
+Tarefa:
+$level_instruction
+$starters_section
+$examples_section
+$scaffolding_section
+
+Gere exatamente 1 par pergunta-resposta no formato JSON.
+O par deve seguir estas regras:
+$output_rules
+
+Formato de saída (objeto JSON):
+{
+  "rationale": "Seu plano: o que vai perguntar, qual a resposta fundamentada, e por que corresponde ao nível",
+  "question": "A pergunta gerada",
+  "answer": "A resposta fundamentada nas informações",
+  "bloom_level": "$bloom_level"
+}
+
+Retorne APENAS o objeto JSON, sem texto adicional.

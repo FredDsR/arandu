@@ -1,0 +1,743 @@
+"""QA generation CLI commands."""
+
+from __future__ import annotations
+
+from pathlib import Path  # noqa: TC003
+from typing import TYPE_CHECKING, Annotated, Any
+
+import typer
+from rich.table import Table
+
+from arandu.utils.console import console
+from arandu.utils.logger import print_error, print_info, print_success, print_warning
+
+if TYPE_CHECKING:
+    from arandu.qa.cep.judge_run import JudgeQARunConfig
+    from arandu.shared.results_manager import ResultsManager
+
+
+def generate_cep_qa(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing transcription JSON files.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+        ),
+    ],
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Output directory for CEP QA dataset JSON files."),
+    ] = None,
+    provider: Annotated[
+        str | None, typer.Option("--provider", help="LLM provider: openai, ollama, custom.")
+    ] = None,
+    model_id: Annotated[
+        str | None,
+        typer.Option(
+            "--model-id", "-m", help="Model ID for QA generation (e.g., llama3.1:8b, gpt-4)."
+        ),
+    ] = None,
+    workers: Annotated[
+        int | None, typer.Option("--workers", "-w", help="Number of parallel workers.")
+    ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option("--temperature", help="LLM temperature for generation (0.0-2.0)."),
+    ] = None,
+    ollama_url: Annotated[
+        str | None, typer.Option("--ollama-url", help="Ollama API base URL.")
+    ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option("--base-url", help="Custom base URL for OpenAI-compatible endpoints."),
+    ] = None,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help="Language for prompts: 'pt' (Portuguese) or 'en' (English). Default: pt",
+        ),
+    ] = None,
+    bloom_dist: Annotated[
+        str | None,
+        typer.Option(
+            "--bloom-dist",
+            help="Bloom level pair counts as 'level:count,...' "
+            "(e.g., 'remember:3,understand:1,analyze:1,evaluate:1').",
+        ),
+    ] = None,
+    export_jsonl: Annotated[
+        bool,
+        typer.Option(
+            "--jsonl/--no-jsonl", help="Also export QA pairs to JSONL format for KGQA training."
+        ),
+    ] = False,
+    pipeline_id: Annotated[
+        str | None,
+        typer.Option("--id", help="Pipeline ID. Auto-resolves transcription outputs."),
+    ] = None,
+    rebuild: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild",
+            help="Clear existing CEP outputs + checkpoint before generating, so a "
+            "re-run on a changed source set (e.g. after a corpus dedup) starts clean.",
+        ),
+    ] = False,
+    scaffolding_gate: Annotated[
+        bool | None,
+        typer.Option(
+            "--scaffolding-gate/--no-scaffolding-gate",
+            help="Judge each pair before it can scaffold later pairs (default: on, "
+            "ARANDU_CEP_ENABLE_SCAFFOLDING_GATE). Needs a validator model.",
+        ),
+    ] = None,
+    validator_model: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-model",
+            help="Judge model for the scaffolding gate (else ARANDU_JUDGE_VALIDATOR_MODEL).",
+        ),
+    ] = None,
+    validator_provider: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-provider",
+            help="Judge provider: openai, ollama, custom (else ARANDU_JUDGE_VALIDATOR_PROVIDER).",
+        ),
+    ] = None,
+    validator_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--validator-base-url",
+            help="Judge endpoint (else ARANDU_JUDGE_VALIDATOR_BASE_URL).",
+        ),
+    ] = None,
+) -> None:
+    """Generate CEP (cognitive scaffolding) QA pairs from transcriptions.
+
+    Uses the Cognitive Elicitation Pipeline (CEP) with:
+    - Module I: Bloom Scaffolding (question generation by cognitive level)
+
+    Questions are distributed across Bloom taxonomy levels (remember, understand,
+    analyze, evaluate) to create cognitively scaffolded QA datasets.
+
+    With the scaffolding gate on (default), each pair is judged during generation and
+    its verdict is persisted, so ``arandu judge-qa`` (resume) only re-judges pairs
+    without a clean verdict.
+
+    Examples:
+        # Basic CEP generation (default: Portuguese)
+        arandu generate-cep-qa results/ -o cep_dataset/
+
+        # Adjust Bloom level pair counts
+        arandu generate-cep-qa results/ \\
+            --bloom-dist "remember:3,understand:1,analyze:1,evaluate:1"
+
+        # Export to JSONL for KGQA training
+        arandu generate-cep-qa results/ --jsonl
+
+        # Gate scaffolding with a separate judge model
+        arandu generate-cep-qa results/ --validator-model qwen3:14b
+    """
+    from arandu.qa.batch import build_gate_validator_client, run_batch_cep_generation
+    from arandu.qa.config import CEPConfig, JudgeConfig, QAConfig, require_gate_validator
+    from arandu.shared.llm_client import resolve_api_key
+
+    # Load configs with defaults from environment variables
+    qa_config = QAConfig()
+    cep_config = CEPConfig()
+
+    # Build QA config overrides dict for CLI args
+    qa_overrides: dict[str, Any] = {}
+    if provider is not None:
+        qa_overrides["provider"] = provider
+    if model_id is not None:
+        qa_overrides["model_id"] = model_id
+    if ollama_url is not None:
+        qa_overrides["ollama_url"] = ollama_url
+    if base_url is not None:
+        qa_overrides["base_url"] = base_url
+    if temperature is not None:
+        qa_overrides["temperature"] = temperature
+    if output_dir is not None:
+        qa_overrides["output_dir"] = output_dir
+    if workers is not None:
+        qa_overrides["workers"] = workers
+
+    if qa_overrides:
+        qa_config = QAConfig.model_validate({**qa_config.model_dump(), **qa_overrides})
+
+    # Build CEP config overrides dict for CLI args
+    cep_overrides: dict[str, Any] = {}
+    if language is not None:
+        cep_overrides["language"] = language
+    if scaffolding_gate is not None:
+        cep_overrides["enable_scaffolding_gate"] = scaffolding_gate
+
+    # Parse Bloom distribution if provided
+    if bloom_dist is not None:
+        try:
+            dist_dict = {}
+            for item in bloom_dist.split(","):
+                level, count = item.strip().split(":")
+                dist_dict[level.strip()] = int(count.strip())
+            cep_overrides["bloom_distribution"] = dist_dict
+        except ValueError as e:
+            print_error(f"Invalid bloom-dist format: {e}")
+            print_error("Expected format: 'level:count,level:count,...'")
+            raise typer.Exit(code=1) from e
+
+    if cep_overrides:
+        try:
+            cep_config = CEPConfig.model_validate({**cep_config.model_dump(), **cep_overrides})
+        except ValueError as e:
+            print_error(f"Invalid CEP configuration: {e}")
+            raise typer.Exit(code=1) from e
+
+    # Judge config for the scaffolding gate (same cascade: env, then CLI)
+    judge_overrides = {
+        key: value
+        for key, value in {
+            "validator_model": validator_model,
+            "validator_provider": validator_provider,
+            "validator_base_url": validator_base_url,
+        }.items()
+        if value is not None
+    }
+    try:
+        judge_config = JudgeConfig()
+        if judge_overrides:
+            judge_config = JudgeConfig.model_validate(
+                {**judge_config.model_dump(), **judge_overrides}
+            )
+    except ValueError as e:
+        print_error(f"Invalid judge configuration: {e}")
+        raise typer.Exit(code=1) from e
+
+    try:
+        require_gate_validator(cep_config, judge_config)
+    except ValueError as e:
+        print_error(str(e))
+        raise typer.Exit(code=1) from e
+
+    if cep_config.scaffolding_gate_active:
+        try:
+            build_gate_validator_client(judge_config)
+        except Exception as e:  # ValueError, or RuntimeError for a missing API key
+            print_error(f"Invalid scaffolding gate validator: {e}")
+            raise typer.Exit(code=1) from e
+
+    # The generator client is built inside each worker process, where a missing
+    # key would break the pool instead of naming the variable to set.
+    try:
+        resolve_api_key(qa_config.provider, qa_config.api_key, key_var="ARANDU_QA_API_KEY")
+    except (ValueError, RuntimeError) as e:
+        print_error(f"Invalid generation client: {e}")
+        raise typer.Exit(code=1) from e
+
+    # Validate configs
+    if qa_config.workers < 1:
+        print_error("Number of workers must be at least 1")
+        raise typer.Exit(code=1)
+
+    valid_languages = {"en", "pt"}
+    if cep_config.language not in valid_languages:
+        print_error(
+            f"Invalid language: {cep_config.language!r}. Must be one of {sorted(valid_languages)}"
+        )
+        raise typer.Exit(code=1)
+
+    # Display configuration
+    console.print("\n[bold]CEP QA Generation Configuration[/bold]\n")
+    console.print(f"[cyan]Input Directory:[/cyan] {input_dir}")
+    console.print(f"[cyan]Output Directory:[/cyan] {qa_config.output_dir}")
+    console.print(f"[cyan]Provider:[/cyan] {qa_config.provider}")
+    console.print(f"[cyan]Model:[/cyan] {qa_config.model_id}")
+    console.print(f"[cyan]Workers:[/cyan] {qa_config.workers}")
+    console.print(f"[cyan]Language:[/cyan] {cep_config.language}")
+    console.print(f"[cyan]Bloom Levels:[/cyan] {', '.join(cep_config.bloom_distribution.keys())}")
+    console.print(f"[cyan]Bloom Distribution (pairs/level):[/cyan] {cep_config.bloom_distribution}")
+    console.print(f"[cyan]Pairs per chunk:[/cyan] {cep_config.pairs_per_chunk}")
+    console.print(f"[cyan]Scaffolding Gate:[/cyan] {cep_config.scaffolding_gate_active}")
+    if cep_config.scaffolding_gate_active:
+        console.print(f"[cyan]Gate Validator:[/cyan] {judge_config.validator_model}")
+    console.print(f"[cyan]Export JSONL:[/cyan] {export_jsonl}")
+    if qa_config.provider == "ollama":
+        console.print(f"[cyan]Ollama URL:[/cyan] {qa_config.ollama_url}")
+    console.print()
+
+    try:
+        run_batch_cep_generation(
+            input_dir,
+            qa_config.output_dir,
+            qa_config,
+            cep_config,
+            qa_config.workers,
+            pipeline_id=pipeline_id,
+            rebuild=rebuild,
+            judge_config=judge_config,
+        )
+
+        # Export to JSONL if requested
+        if export_jsonl:
+            from arandu.qa.schemas import QARecordCEP
+
+            console.print("\n[cyan]Exporting to JSONL format...[/cyan]")
+            for json_file in qa_config.output_dir.glob("*_cep_qa.json"):
+                try:
+                    record = QARecordCEP.load(json_file)
+                    jsonl_file = json_file.with_suffix(".jsonl")
+                    record.to_jsonl(jsonl_file)
+                    console.print(f"  Exported: {jsonl_file.name}")
+                except Exception as e:
+                    print_warning(f"Failed to export {json_file.name}: {e}")
+
+        print_success("CEP QA generation completed!")
+
+    except Exception as e:
+        print_error(f"CEP QA generation failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+def judge_qa(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing *_cep_qa.json files to judge.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ],
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "LLM provider: openai, ollama, custom. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_PROVIDER, then inferred from "
+                "ARANDU_LLM_BASE_URL (custom when set, else ollama)."
+            ),
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            "-m",
+            help=(
+                "Model ID for judge evaluation. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_MODEL when not provided."
+            ),
+        ),
+    ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--base-url",
+            help=(
+                "Custom base URL for OpenAI-compatible endpoints. Falls back to "
+                "ARANDU_JUDGE_VALIDATOR_BASE_URL, then ARANDU_LLM_BASE_URL."
+            ),
+        ),
+    ] = None,
+    language: Annotated[
+        str | None,
+        typer.Option(
+            "--language",
+            "-l",
+            help=(
+                "Language of the judge criterion prompts (pt or en). Falls back "
+                "to ARANDU_JUDGE_LANGUAGE (default pt)."
+            ),
+        ),
+    ] = None,
+    files: Annotated[
+        int | None,
+        typer.Option("--files", help="Maximum number of QA files to sample."),
+    ] = None,
+    pairs: Annotated[
+        int | None,
+        typer.Option("--pairs", help="Maximum QA pairs to judge per file."),
+    ] = None,
+    rejudge: Annotated[
+        bool,
+        typer.Option(
+            "--rejudge/--resume",
+            help=(
+                "--rejudge re-evaluates every sampled pair from scratch. "
+                "--resume (default) skips pairs that already carry a "
+                "``validation`` payload, so a re-submission after a wall "
+                "hit only judges the unjudged remainder."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Judge CEP QA pairs using LLM-as-a-Judge evaluation.
+
+    Evaluates sampled pairs on faithfulness, Bloom calibration, informativeness,
+    and self-containedness using the QAJudge pipeline. Each judged pair is
+    persisted back into its ``*_cep_qa.json`` file by populating the pair's
+    ``validation`` field. ``is_valid`` is derived from
+    ``validation.passed`` automatically. No aggregate side-file is
+    produced — run a downstream analytics script for cross-record reports.
+    When ``input_dir`` is ``results/<id>/cep/outputs``, the run's settings
+    (model, temperature, thresholds, prompt digests) are snapshotted into
+    ``results/<id>/judge_qa/run_metadata.json``.
+
+    Validator model and provider come from ``--model`` / ``--provider`` /
+    ``--base-url`` when supplied, otherwise from
+    ``ARANDU_JUDGE_VALIDATOR_MODEL`` / ``ARANDU_JUDGE_VALIDATOR_PROVIDER``
+    / ``ARANDU_JUDGE_VALIDATOR_BASE_URL`` (with ``ARANDU_LLM_BASE_URL`` as
+    a final fallback for custom endpoints), matching ``judge-transcription``.
+
+    By default the command resumes: any pair whose ``validation`` is already
+    populated is skipped. Pass ``--rejudge`` to force a fresh pass over
+    every sampled pair (e.g. after changing the validator model).
+
+    Examples:
+        # Defaults from ARANDU_JUDGE_* env vars
+        arandu judge-qa cep_dataset/
+
+        # Explicit Ollama
+        arandu judge-qa cep_dataset/ --provider ollama --model qwen3:14b
+
+        # OpenAI-compatible custom endpoint
+        arandu judge-qa cep_dataset/ --provider custom --model gemini-2.5-flash \\
+            --base-url https://generativelanguage.googleapis.com/v1beta/openai/
+
+        arandu judge-qa cep_dataset/ --files 2 --pairs 3
+        arandu judge-qa cep_dataset/ --rejudge
+    """
+    from arandu.qa.cep.judge import QAJudge
+    from arandu.qa.cep.judge_run import build_judge_qa_run_config, has_judge_error
+    from arandu.qa.cep.metadata_context import build_pair_judge_context
+    from arandu.qa.config import CEPConfig, get_judge_config
+    from arandu.qa.schemas import QAPairCEP, QARecordCEP
+    from arandu.transcription.judge import build_validator_client
+
+    judge_config = get_judge_config()
+    resolved_model = model or judge_config.validator_model
+    if not resolved_model:
+        print_error(
+            "Validator model is required. Pass --model or set "
+            "ARANDU_JUDGE_VALIDATOR_MODEL in your environment / .env."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        client = build_validator_client(
+            model_id=resolved_model,
+            provider=provider or judge_config.validator_provider,
+            base_url=base_url or judge_config.validator_base_url,
+            api_key=judge_config.validator_api_key,
+            extra_body=judge_config.validator_extra_body,
+        )
+    except (ValueError, RuntimeError) as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    valid_languages = {"en", "pt"}
+    if language is not None and language not in valid_languages:
+        print_error(f"Invalid language: {language!r}. Must be one of {sorted(valid_languages)}")
+        raise typer.Exit(code=1)
+    if language is not None:
+        # The criteria load their prompts in judge_config.language; the option
+        # must reach it, not only CEPConfig, or it silently has no effect.
+        judge_config = judge_config.model_copy(update={"language": language})
+
+    cep_config = CEPConfig(language=judge_config.language)
+    # Pass the resolved judge config so the metadata snapshot below describes
+    # the exact settings the judge runs with, not a second env read.
+    judge = QAJudge(validator_client=client, cep_config=cep_config, judge_config=judge_config)
+
+    # Find QA files
+    qa_files = sorted(input_dir.glob("*_cep_qa.json"))
+    if not qa_files:
+        print_error(f"No CEP QA files found in {input_dir}")
+        raise typer.Exit(code=1)
+
+    if files is not None:
+        qa_files = qa_files[:files]
+
+    mode_label = "rejudge" if rejudge else "resume"
+    # Snapshot the values the client actually resolved: provider inference and
+    # ARANDU_LLM_BASE_URL inheritance happen inside build_validator_client.
+    resolved_provider = _client_provider(client, provider or judge_config.validator_provider)
+    resolved_base_url = (
+        getattr(client, "base_url", None) or base_url or judge_config.validator_base_url
+    )
+    results_mgr = _start_judge_qa_run(
+        input_dir,
+        build_judge_qa_run_config(
+            mode=mode_label,
+            files=files,
+            pairs=pairs,
+            provider=resolved_provider,
+            model_id=resolved_model,
+            base_url=resolved_base_url,
+            judge=judge_config,
+        ),
+    )
+    print_info(
+        f"Judging [bold]{len(qa_files)}[/bold] QA files (mode: {mode_label})"
+        + (f", up to [bold]{pairs}[/bold] pairs each" if pairs else "")
+    )
+    console.print()
+
+    total_valid = 0
+    total_judged = 0
+    total_skipped = 0
+    total_failed = 0
+    total_sampled = 0
+    unreadable_files: list[str] = []
+
+    try:
+        if not rejudge:
+            # Check every file before judging or writing any, so a mismatch in a
+            # later file cannot leave earlier files already rewritten.
+            _require_gate_validator_match(qa_files, resolved_model)
+        for qa_file in qa_files:
+            try:
+                record = QARecordCEP.model_validate_json(qa_file.read_text())
+            except Exception as e:
+                print_error(f"Failed to read {qa_file.name}: {e}")
+                unreadable_files.append(qa_file.name)
+                continue
+
+            all_pairs = record.qa_pairs
+
+            # Sample diverse pairs by Bloom level first, then fill remaining slots
+            seen_levels: set[str] = set()
+            sampled_indices: list[int] = []
+            for i, p in enumerate(all_pairs):
+                if pairs is not None and len(sampled_indices) >= pairs:
+                    break
+                if p.bloom_level not in seen_levels:
+                    sampled_indices.append(i)
+                    seen_levels.add(p.bloom_level)
+            if pairs is not None:
+                for i in range(len(all_pairs)):
+                    if len(sampled_indices) >= pairs:
+                        break
+                    if i not in sampled_indices:
+                        sampled_indices.append(i)
+            elif pairs is None:
+                sampled_indices = list(range(len(all_pairs)))
+
+            console.print(f"[bold cyan]{qa_file.name}[/bold cyan]")
+
+            updated_pairs: list[QAPairCEP] = list(all_pairs)
+            file_judged = 0
+            file_persisted = 0
+            file_valid = 0
+            file_skipped = 0
+
+            total_sampled += len(sampled_indices)
+            for idx in sampled_indices:
+                qa = updated_pairs[idx]
+                if not rejudge and qa.validation is not None and not has_judge_error(qa.validation):
+                    # Resume mode — pair already carries a clean verdict. A verdict
+                    # with a criterion error is an infrastructure failure, not a
+                    # judgment, so it is re-judged instead of skipped.
+                    if qa.is_valid:
+                        file_valid += 1
+                        total_valid += 1
+                    file_skipped += 1
+                    total_skipped += 1
+                    continue
+                # Give the judge the SAME grounding generation saw: the chunk the
+                # pair came from (persisted on ``QAPairCEP.context``), plus the
+                # source metadata block so answers/questions grounded in metadata
+                # are not scored as fabricated or context-dependent. Drive symmetry
+                # off the values persisted at generation time (not judge-time
+                # config), so the judge cannot drift from what generation injected.
+                context = build_pair_judge_context(
+                    qa.context,
+                    record.transcription_text,
+                    record.source_metadata,
+                    enable_metadata=record.source_metadata_context_enabled,
+                    language=record.language,
+                )
+                try:
+                    # Judge a verdict-free copy: QAJudge.validate returns its input
+                    # unchanged on failure, which would otherwise keep a stale
+                    # verdict from an earlier run and count it as judged now.
+                    validated = judge.validate(qa.model_copy(update={"validation": None}), context)
+                except Exception as e:
+                    print_warning(f"Failed to judge pair in {qa_file.name}: {e}")
+                    total_failed += 1
+                    continue
+                if validated.validation is None or has_judge_error(validated.validation):
+                    # Persisted so the failure is visible; resume re-judges it.
+                    updated_pairs[idx] = validated
+                    file_persisted += 1
+                    print_warning(f"Judge error on a pair in {qa_file.name}; it will be retried.")
+                    total_failed += 1
+                    continue
+                updated_pairs[idx] = validated
+                file_persisted += 1
+                file_judged += 1
+                total_judged += 1
+                if validated.is_valid:
+                    file_valid += 1
+                    total_valid += 1
+                _render_qa_verdict(validated)
+
+            # Persist updated record back to disk. ``resolved_model`` (not the
+            # raw CLI option) is the actual model the judge ran with —
+            # ``model`` may be None when the value came from
+            # ARANDU_JUDGE_VALIDATOR_MODEL, and writing None would clobber an
+            # existing validator_model_id on the record.
+            record.qa_pairs = updated_pairs
+            if file_judged > 0 or (rejudge and file_persisted > 0):
+                # Under --rejudge errored verdicts count too: they replaced the earlier
+                # model's verdicts. On resume only a clean verdict relabels the record.
+                record.validator_model_id = resolved_model
+            # Count pairs that *passed* validation, not just pairs that have a
+            # verdict — the schema field is documented as "Number of pairs
+            # passing validation" and validation_rate is computed off it.
+            record.validated_pairs = sum(1 for p in record.qa_pairs if p.is_valid)
+            qa_file.write_text(record.model_dump_json(indent=2, by_alias=True))
+
+            console.print(
+                f"  [dim]{qa_file.name}: judged {file_judged}, "
+                f"resumed (skipped) {file_skipped}, valid {file_valid}, "
+                f"persisted {record.validated_pairs}/{len(record.qa_pairs)} validated[/dim]"
+            )
+            console.print()
+    except BaseException as exc:
+        # Includes KeyboardInterrupt and the SystemExit a SIGTERM handler raises:
+        # an aborted run must not stay IN_PROGRESS in its metadata.
+        if results_mgr is not None:
+            results_mgr.update_progress(total_judged, total_failed, total_sampled)
+            results_mgr.complete_run(success=False, error=f"{type(exc).__name__}: {exc}")
+        raise
+
+    if results_mgr is not None:
+        # completed counts only pairs judged by THIS run; pairs skipped on
+        # resume keep the verdict (and configuration) of the run that made them.
+        results_mgr.update_progress(total_judged, total_failed, total_sampled)
+        # Unreadable files have no pair count to add to failed_items, so they
+        # fail the run and are named in its error message instead.
+        results_mgr.complete_run(
+            success=total_failed == 0 and not unreadable_files,
+            error=(
+                f"{len(unreadable_files)} unreadable CEP file(s): {', '.join(unreadable_files)}"
+                if unreadable_files
+                else None
+            ),
+        )
+
+    console.print(f"[bold]Total pairs judged:[/bold] {total_judged}")
+    console.print(f"[green]Valid:[/green] {total_valid}")
+    console.print(f"[red]Invalid:[/red] {total_judged + total_skipped - total_valid}")
+    if total_skipped:
+        console.print(f"[dim]Resumed (already judged, skipped):[/dim] {total_skipped}")
+    if total_failed:
+        console.print(f"[yellow]Judge errors (retried on resume):[/yellow] {total_failed}")
+    if unreadable_files:
+        console.print(f"[red]Unreadable files (not judged):[/red] {len(unreadable_files)}")
+    console.print()
+
+
+def _require_gate_validator_match(qa_files: list[Path], resolved_model: str) -> None:
+    """Refuse to resume gate verdicts under a different validator model.
+
+    Args:
+        qa_files: The CEP QA files this run will process.
+        resolved_model: Validator model this run judges with.
+
+    Raises:
+        typer.Exit: With code 1 when a gated file carries another model's verdicts.
+    """
+    from arandu.qa.schemas import QARecordCEP
+
+    for qa_file in qa_files:
+        try:
+            record = QARecordCEP.model_validate_json(qa_file.read_text())
+        except Exception:
+            continue  # unreadable files are reported by the judging loop
+        if (
+            record.scaffolding_gate_enabled
+            and record.validator_model_id
+            and record.validator_model_id != resolved_model
+        ):
+            print_error(
+                f"{qa_file.name} was gated by validator model "
+                f"{record.validator_model_id!r}, but this run uses {resolved_model!r}; "
+                "resuming would mix validator models. Run judge-qa with the gate's "
+                "validator model or pass --rejudge."
+            )
+            raise typer.Exit(code=1)
+
+
+def _client_provider(client: object, fallback: str | None) -> str | None:
+    """Provider name the validator client resolved to, or ``fallback``."""
+    resolved = getattr(client, "provider", None)
+    return getattr(resolved, "value", None) or fallback
+
+
+def _start_judge_qa_run(input_dir: Path, config: JudgeQARunConfig) -> ResultsManager | None:
+    """Open ``results/<id>/judge_qa/run_metadata.json`` for this judge-qa run.
+
+    The verdicts themselves stay inside the CEP records; this step directory
+    only records how they were produced. Returns ``None`` (with a warning) when
+    ``input_dir`` is not a ``<base>/<id>/cep/outputs`` directory.
+    """
+    from arandu.qa.cep.judge_run import archive_previous_snapshot, resolve_pipeline_layout
+    from arandu.shared.results_manager import ResultsManager
+    from arandu.shared.schemas import PipelineType
+
+    layout = resolve_pipeline_layout(input_dir)
+    if layout is None:
+        print_warning(
+            f"{input_dir} is not a results/<id>/cep/outputs directory; "
+            "no run_metadata.json will be written for this judge-qa run."
+        )
+        return None
+    base, pipeline_id = layout
+    archived = archive_previous_snapshot(base / pipeline_id / PipelineType.JUDGE_QA.value)
+    if archived is not None:
+        print_info(f"Previous run metadata archived to {archived}")
+    results_mgr = ResultsManager(base, PipelineType.JUDGE_QA, pipeline_id=pipeline_id)
+    results_mgr.create_run(config, input_source=str(input_dir))
+    print_info(f"Run metadata: {results_mgr.run_dir / 'run_metadata.json'}")
+    return results_mgr
+
+
+def _render_qa_verdict(validated: Any) -> None:
+    """Render a single validated QA pair's verdict to the console."""
+    table = Table(show_header=True, border_style="dim", width=90)
+    table.add_column("Criterion", width=22)
+    table.add_column("Score", justify="right", width=7)
+    table.add_column("Threshold", justify="right", width=10)
+    table.add_column("Pass", justify="center", width=6)
+    table.add_column("Rationale", width=40)
+
+    if validated.validation:
+        for stage_result in validated.validation.stage_results.values():
+            for name, cs in stage_result.criterion_scores.items():
+                if cs.error:
+                    table.add_row(
+                        name, "\u2014", f"{cs.threshold:.2f}", "[red]ERR[/red]", cs.error[:40]
+                    )
+                else:
+                    status = "[green]Yes[/green]" if cs.passed else "[red]No[/red]"
+                    table.add_row(
+                        name,
+                        f"{cs.score:.2f}" if cs.score is not None else "\u2014",
+                        f"{cs.threshold:.2f}",
+                        status,
+                        (cs.rationale or "")[:40],
+                    )
+
+    console.print(f"  Q: {validated.question[:70]}...")
+    console.print(f"  Bloom: {validated.bloom_level}  |  Valid: {validated.is_valid}")
+    console.print(table)
+    console.print()

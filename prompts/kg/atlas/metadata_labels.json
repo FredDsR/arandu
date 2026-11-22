@@ -1,0 +1,22 @@
+{
+  "en": {
+    "header": "[Interview Context]",
+    "transcription": "[Transcription]",
+    "participant": "Participant",
+    "location": "Location",
+    "date": "Date",
+    "context": "Event Context",
+    "researcher": "Researcher",
+    "sequence": "Sequence"
+  },
+  "pt": {
+    "header": "[Contexto da Entrevista]",
+    "transcription": "[Transcrição]",
+    "participant": "Participante",
+    "location": "Local",
+    "date": "Data",
+    "context": "Contexto",
+    "researcher": "Pesquisador(a)",
+    "sequence": "Sequência"
+  }
+}

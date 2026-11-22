@@ -1,0 +1,308 @@
+"""Tests for shared CEP source-metadata context helpers.
+
+These helpers guarantee that QA generation and the QA judge format and inject
+source metadata identically, so the judge cannot penalize a generator for
+grounding an answer in metadata the judge never saw.
+"""
+
+from __future__ import annotations
+
+from arandu.qa.cep.metadata_context import (
+    build_judge_context,
+    build_pair_judge_context,
+    format_metadata_lines,
+    format_metadata_section,
+    render_metadata_context,
+    render_metadata_lines,
+)
+from arandu.shared.schemas import SourceMetadata
+
+
+class TestFormatMetadataSection:
+    """Tests for format_metadata_section()."""
+
+    def test_renders_all_fields_pt(self) -> None:
+        """Portuguese labels render for every populated field."""
+        metadata = SourceMetadata(
+            participant_name="Aida",
+            researcher_name="Julia",
+            location="DOQUINHAS",
+            recording_date="23-04-2026",
+            event_context="Aida- 23-04-2026",
+        )
+
+        section = format_metadata_section(metadata, "pt")
+
+        assert "Metadados da Entrevista:" in section
+        assert "- Participante: Aida" in section
+        assert "- Pesquisador(a): Julia" in section
+        assert "- Local: DOQUINHAS" in section
+        assert "- Data: 23-04-2026" in section
+        assert "- Contexto: Aida- 23-04-2026" in section
+
+    def test_renders_english_labels(self) -> None:
+        """English labels render when language is 'en'."""
+        metadata = SourceMetadata(location="Barra de Pelotas")
+
+        section = format_metadata_section(metadata, "en")
+
+        assert "Interview Metadata:" in section
+        assert "- Location: Barra de Pelotas" in section
+
+    def test_skips_none_fields(self) -> None:
+        """Fields left as None are omitted entirely."""
+        metadata = SourceMetadata(location="DOQUINHAS")
+
+        section = format_metadata_section(metadata, "pt")
+
+        assert "- Local: DOQUINHAS" in section
+        assert "Participante" not in section
+        assert "Pesquisador" not in section
+
+    def test_empty_when_no_renderable_fields(self) -> None:
+        """An all-None metadata renders to an empty string."""
+        metadata = SourceMetadata()
+
+        assert format_metadata_section(metadata, "pt") == ""
+
+    def test_never_leaks_source_gdrive_path(self) -> None:
+        """The Drive path (PII-ish folder names) must never be rendered."""
+        metadata = SourceMetadata(
+            location="DOQUINHAS",
+            source_gdrive_path="/MyDrive/Secret Folder/aida.mp4",
+        )
+
+        section = format_metadata_section(metadata, "pt")
+
+        assert "Secret Folder" not in section
+        assert "aida.mp4" not in section
+
+
+class TestFormatMetadataLines:
+    """Tests for format_metadata_lines() - the header-less rendering."""
+
+    def test_renders_the_same_fields_without_the_header(self) -> None:
+        """Same labels and same order as the section, minus the header line."""
+        metadata = SourceMetadata(
+            participant_name="Aida",
+            researcher_name="Julia",
+            location="DOQUINHAS",
+            recording_date="23-04-2026",
+            event_context="Aida- 23-04-2026",
+        )
+
+        lines = format_metadata_lines(metadata, "pt")
+
+        assert lines.splitlines() == [
+            "- Participante: Aida",
+            "- Pesquisador(a): Julia",
+            "- Local: DOQUINHAS",
+            "- Data: 23-04-2026",
+            "- Contexto: Aida- 23-04-2026",
+        ]
+        assert "Metadados da Entrevista:" not in lines
+
+    def test_starts_with_no_blank_line(self) -> None:
+        """The annotation canvas supplies its own header, so no leading newline."""
+        lines = format_metadata_lines(SourceMetadata(location="DOQUINHAS"), "pt")
+
+        assert lines == "- Local: DOQUINHAS"
+
+    def test_renders_english_labels(self) -> None:
+        lines = format_metadata_lines(SourceMetadata(location="Barra de Pelotas"), "en")
+
+        assert lines == "- Location: Barra de Pelotas"
+
+    def test_empty_when_no_renderable_fields(self) -> None:
+        assert format_metadata_lines(SourceMetadata(), "pt") == ""
+
+    def test_never_leaks_source_gdrive_path(self) -> None:
+        """The Drive path is excluded here exactly as it is from the section."""
+        metadata = SourceMetadata(
+            location="DOQUINHAS",
+            source_gdrive_path="/MyDrive/Secret Folder/aida.mp4",
+        )
+
+        lines = format_metadata_lines(metadata, "pt")
+
+        assert "Secret Folder" not in lines
+        assert "aida.mp4" not in lines
+
+
+class TestRenderMetadataLines:
+    """Tests for render_metadata_lines() - the same gate, header-less output."""
+
+    def test_renders_lines_when_enabled_and_present(self) -> None:
+        lines = render_metadata_lines(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert lines == "- Local: DOQUINHAS"
+
+    def test_empty_when_disabled(self) -> None:
+        """The annotator is blinded to metadata generation never injected."""
+        lines = render_metadata_lines(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert lines == ""
+
+    def test_empty_when_metadata_none(self) -> None:
+        assert render_metadata_lines(None, enable_metadata=True, language="pt") == ""
+
+
+class TestRenderMetadataContext:
+    """Tests for render_metadata_context() — the shared injection gate."""
+
+    def test_renders_section_when_enabled_and_present(self) -> None:
+        """Returns the formatted block when the flag is on and metadata exists."""
+        section = render_metadata_context(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert "- Local: DOQUINHAS" in section
+
+    def test_empty_when_disabled(self) -> None:
+        """Returns '' when the flag is off, regardless of metadata."""
+        section = render_metadata_context(
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert section == ""
+
+    def test_empty_when_metadata_none(self) -> None:
+        """Returns '' when there is no metadata."""
+        section = render_metadata_context(None, enable_metadata=True, language="pt")
+
+        assert section == ""
+
+
+class TestBuildJudgeContext:
+    """Tests for build_judge_context()."""
+
+    def test_appends_metadata_after_transcript_when_enabled(self) -> None:
+        """Metadata follows the transcript, matching the generation prompt order.
+
+        Generation renders ``$context`` (transcript) then ``$metadata_section``,
+        so the judge must place the block in the same position for parity.
+        """
+        metadata = SourceMetadata(location="DOQUINHAS")
+        transcript = "O pescador guardou o barco antes da enchente."
+
+        context = build_judge_context(
+            transcript,
+            metadata,
+            enable_metadata=True,
+            language="pt",
+        )
+
+        # Location lives only in metadata, never in the transcript.
+        assert "DOQUINHAS" not in transcript
+        assert "- Local: DOQUINHAS" in context
+        assert transcript in context
+        # Transcript precedes the metadata block, as in generation.
+        assert context.index(transcript) < context.index("DOQUINHAS")
+
+    def test_returns_plain_transcript_when_disabled(self) -> None:
+        """With the flag off, generation injected nothing, so neither does the judge."""
+        metadata = SourceMetadata(location="DOQUINHAS")
+        transcript = "O pescador guardou o barco."
+
+        context = build_judge_context(
+            transcript,
+            metadata,
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert context == transcript
+
+    def test_returns_plain_transcript_when_no_metadata(self) -> None:
+        """A record without source_metadata yields the bare transcript."""
+        transcript = "O pescador guardou o barco."
+
+        context = build_judge_context(
+            transcript,
+            None,
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert context == transcript
+
+    def test_returns_plain_transcript_when_metadata_empty(self) -> None:
+        """All-None metadata adds nothing to the context."""
+        transcript = "O pescador guardou o barco."
+
+        context = build_judge_context(
+            transcript,
+            SourceMetadata(),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert context == transcript
+
+
+class TestBuildPairJudgeContext:
+    """Tests for build_pair_judge_context()."""
+
+    def test_grounds_on_the_pair_chunk_not_the_transcription(self) -> None:
+        """The judge sees the chunk generation used, not the whole document.
+
+        CEP generation runs the Bloom ladder per chunk, so grounding the judge
+        on the full transcription would let faithfulness pass on evidence the
+        generator never saw.
+        """
+        chunk = "O pescador guardou o barco antes da enchente."
+        transcript = f"Conversa inicial sobre o tempo. {chunk} Depois falou da prefeitura."
+
+        context = build_pair_judge_context(
+            chunk,
+            transcript,
+            None,
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert context == chunk
+        assert "prefeitura" not in context
+
+    def test_falls_back_to_transcription_when_pair_has_no_context(self) -> None:
+        """Legacy pairs without a persisted chunk still get judged."""
+        transcript = "O pescador guardou o barco."
+
+        context = build_pair_judge_context(
+            "   ",
+            transcript,
+            None,
+            enable_metadata=False,
+            language="pt",
+        )
+
+        assert context == transcript
+
+    def test_appends_metadata_to_the_chunk(self) -> None:
+        """Metadata symmetry is preserved on top of the chunk grounding."""
+        chunk = "O pescador guardou o barco."
+        transcript = f"Abertura. {chunk} Encerramento."
+
+        context = build_pair_judge_context(
+            chunk,
+            transcript,
+            SourceMetadata(location="DOQUINHAS"),
+            enable_metadata=True,
+            language="pt",
+        )
+
+        assert context.startswith(chunk)
+        assert "- Local: DOQUINHAS" in context
+        assert "Encerramento" not in context
