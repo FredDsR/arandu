@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use Arandu in your research, please cite this software and the accompanying article."
 title: "Arandu: Open-World Knowledge Graph Construction and Evaluation from Oral Interviews"
 type: software
-version: "0.1.0"
+version: "1.0.0"
 license: MIT
 repository-code: "https://github.com/FredDsR/arandu"
 url: "https://github.com/FredDsR/arandu"

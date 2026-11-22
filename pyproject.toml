@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "arandu"
-version = "0.1.0"
+version = "1.0.0"
 description = "Composable pipelines for ethnographic knowledge elicitation: transcription, QA generation, knowledge graph construction, and open-world RAG evaluation"
 readme = "README.md"
 license = { text = "MIT" }
