@@ -12,7 +12,14 @@ Usage:
         --docs-dir ../dissertacao-tex/submissoes/lre/zenodo \\
         --replica r1=results/intrajudge/thesis-run-02-round-1.tar.gz \\
         --replica r2=results/intrajudge/thesis-run-03-round-1.tar.gz \\
-        --replica r3=results/intrajudge/thesis-run-03-round-2.tar.gz
+        --replica r3=results/intrajudge/thesis-run-03-round-2.tar.gz \\
+        --gate-replica r3-gate=results/thesis-run-03 \\
+        --replica-answers-overlay \\
+            r1:dense_bgem3_256,dense_mpnet128=results/thesis-run-02/judge_answers \\
+        --replica-answers-overlay \\
+            r2:dense_bgem3_256,dense_mpnet128=results/thesis-run-02-dense-retest-r2/judge_answers \\
+        --replica-answers-overlay \\
+            r3:dense_bgem3_256,dense_mpnet128=results/thesis-run-02-dense-retest-r3/judge_answers
 """
 
 from __future__ import annotations
@@ -305,6 +312,46 @@ def parse_replica_specs(replica_specs: list[str]) -> list[tuple[str, Path]]:
     return parsed
 
 
+def parse_overlay_specs(
+    overlay_specs: list[str],
+) -> list[tuple[str, set[str] | None, Path]]:
+    """Parse repeatable ``name[:arm1,arm2]=path`` answer-overlay CLI arguments.
+
+    Args:
+        overlay_specs: List of ``name[:arms]=path`` strings pointing to a
+            ``judge_answers`` directory whose arm outputs should be merged into
+            an already-staged replica.
+
+    Returns:
+        List of ``(replica_name, selected_arms_or_none, resolved_path)`` tuples.
+
+    Raises:
+        ValueError: If any specification is malformed or points to a missing directory.
+    """
+    parsed: list[tuple[str, set[str] | None, Path]] = []
+    for spec in overlay_specs:
+        if "=" not in spec:
+            raise ValueError(
+                f"Invalid --replica-answers-overlay value '{spec}': expected 'name[:arms]=path'."
+            )
+        lhs, raw_path = spec.split("=", 1)
+        if ":" in lhs:
+            name, arms_str = lhs.split(":", 1)
+            arm_set: set[str] | None = {a.strip() for a in arms_str.split(",") if a.strip()}
+            if not arm_set:
+                raise ValueError(f"Empty arm list in overlay '{spec}'.")
+        else:
+            name, arm_set = lhs, None
+        name = name.strip()
+        path = Path(raw_path.strip()).expanduser().resolve()
+        if not name:
+            raise ValueError(f"Empty replica name in overlay '{spec}'.")
+        if not path.is_dir():
+            raise ValueError(f"Overlay judge_answers directory does not exist: {path}")
+        parsed.append((name, arm_set, path))
+    return parsed
+
+
 def _write_json(path: Path, data: Any) -> None:
     """Write formatted UTF-8 JSON to disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -533,6 +580,180 @@ def stage_replicas(
     return counts
 
 
+GATE_REPLICA_STEPS: tuple[str, ...] = ("cep", "judge_qa")
+
+
+def stage_gate_replicas(
+    gate_replicas: list[tuple[str, Path]],
+    stage_root: Path,
+    replacements: list[tuple[str, str]],
+) -> dict[str, int]:
+    """Stage gate-only replicas (``cep/`` and ``judge_qa/``) under ``stage_root/judge-retest/``.
+
+    Args:
+        gate_replicas: List of ``(replica_name, source_path)`` tuples where
+            ``source_path`` is a run directory or ``.tar.gz`` archive.
+        stage_root: Parent staging directory.
+        replacements: Ordered ``(old, new)`` participant replacement pairs.
+
+    Returns:
+        Mapping of replica name to number of staged files.
+    """
+    retest_root = stage_root / "judge-retest"
+    retest_root.mkdir(parents=True, exist_ok=True)
+    counts: dict[str, int] = {}
+
+    for name, src in gate_replicas:
+        dst_rep = retest_root / name
+        dst_rep.mkdir(parents=True, exist_ok=True)
+        file_count = 0
+
+        with tempfile.TemporaryDirectory() as tmp:
+            if src.is_dir():
+                source_dir = src
+            else:
+                tmp_dir = Path(tmp)
+                with tarfile.open(src, "r:*") as tf:
+                    tf.extractall(tmp_dir, filter="data")
+                source_dir = tmp_dir
+
+            for step in GATE_REPLICA_STEPS:
+                src_step = source_dir / step
+                if not src_step.is_dir():
+                    continue
+                for item in sorted(src_step.rglob("*")):
+                    if not item.is_file():
+                        continue
+                    if ".bak" in item.name or item.name == "logging.txt":
+                        continue
+                    rel = item.relative_to(source_dir)
+                    dst = dst_rep / rel
+                    if item.name == "run_metadata.json" or (
+                        rel.parts[0:2] == ("judge_qa", "history") and item.suffix == ".json"
+                    ):
+                        meta = json.loads(item.read_text(encoding="utf-8"))
+                        _write_json(dst, sanitize_run_metadata(meta))
+                    else:
+                        scrub_gdrive = step in GDRIVE_SCRUB_STEPS
+                        _copy_and_transform_file(
+                            item,
+                            dst,
+                            scrub_gdrive=scrub_gdrive,
+                            replacements=replacements,
+                        )
+                    file_count += 1
+
+        counts[name] = file_count
+
+    return counts
+
+
+def overlay_replica_answers(
+    overlays: list[tuple[str, set[str] | None, Path]],
+    stage_root: Path,
+    replacements: list[tuple[str, str]],
+) -> dict[str, int]:
+    """Merge extra arm ``judge_answers`` outputs into already-staged judge-retest replicas.
+
+    Updates ``judge_answers/outputs/<arm>/``, unions ``judge_answers_checkpoint.json``,
+    and updates item totals plus sanitized ``overlay_runs`` provenance in
+    ``judge_answers/run_metadata.json``.
+
+    Args:
+        overlays: List of ``(replica_name, arm_filter_or_none, src_judge_answers_dir)``.
+        stage_root: Parent staging directory containing ``judge-retest/``.
+        replacements: Ordered ``(old, new)`` participant replacement pairs.
+
+    Returns:
+        Mapping of ``"<replica_name> (<arms>)"`` to number of overlaid output files.
+    """
+    retest_root = stage_root / "judge-retest"
+    counts: dict[str, int] = {}
+
+    for rep_name, arm_filter, src_ja in overlays:
+        dst_ja = retest_root / rep_name / "judge_answers"
+        if not dst_ja.is_dir():
+            raise ValueError(
+                f"Cannot overlay answers onto replica '{rep_name}': "
+                f"staged directory not found at {dst_ja}"
+            )
+        src_outputs = src_ja / "outputs"
+        if not src_outputs.is_dir():
+            raise ValueError(f"Overlay source missing outputs/ directory: {src_outputs}")
+
+        available = {p.name for p in src_outputs.iterdir() if p.is_dir()}
+        selected = available if arm_filter is None else arm_filter
+        missing = selected - available
+        if missing:
+            raise ValueError(
+                f"Overlay arms {sorted(missing)} not found in {src_outputs} "
+                f"(available: {sorted(available)})"
+            )
+
+        added_files = 0
+        for arm in sorted(selected):
+            src_arm = src_outputs / arm
+            dst_arm = dst_ja / "outputs" / arm
+            for item in sorted(src_arm.rglob("*")):
+                if not item.is_file() or ".bak" in item.name:
+                    continue
+                rel = item.relative_to(src_arm)
+                _copy_and_transform_file(
+                    item,
+                    dst_arm / rel,
+                    scrub_gdrive=False,
+                    replacements=replacements,
+                )
+                added_files += 1
+
+        # Merge judge_answers_checkpoint.json
+        dst_ckpt_path = dst_ja / "judge_answers_checkpoint.json"
+        src_ckpt_path = src_ja / "judge_answers_checkpoint.json"
+        if dst_ckpt_path.is_file() and src_ckpt_path.is_file():
+            dst_ckpt = json.loads(dst_ckpt_path.read_text(encoding="utf-8"))
+            src_ckpt = filter_arm_checkpoint(
+                json.loads(src_ckpt_path.read_text(encoding="utf-8")), selected
+            )
+            merged_completed = list(
+                dict.fromkeys(
+                    [
+                        *dst_ckpt.get("completed_files", []),
+                        *src_ckpt.get("completed_files", []),
+                    ]
+                )
+            )
+            merged_failed = {
+                **dst_ckpt.get("failed_files", {}),
+                **src_ckpt.get("failed_files", {}),
+            }
+            dst_ckpt["completed_files"] = merged_completed
+            dst_ckpt["failed_files"] = merged_failed
+            dst_ckpt["total_files"] = len(merged_completed) + len(merged_failed)
+            _write_json(dst_ckpt_path, dst_ckpt)
+
+        # Update run_metadata.json totals and attach sanitized overlay provenance
+        dst_meta_path = dst_ja / "run_metadata.json"
+        src_meta_path = src_ja / "run_metadata.json"
+        if dst_meta_path.is_file():
+            dst_meta = json.loads(dst_meta_path.read_text(encoding="utf-8"))
+            if isinstance(dst_meta.get("total_items"), int):
+                dst_meta["total_items"] += added_files
+            if isinstance(dst_meta.get("completed_items"), int):
+                dst_meta["completed_items"] += added_files
+            if src_meta_path.is_file():
+                src_meta_clean = sanitize_run_metadata(
+                    json.loads(src_meta_path.read_text(encoding="utf-8"))
+                )
+                overlay_runs = list(dst_meta.get("overlay_runs") or [])
+                overlay_runs.append({"arms": sorted(selected), "run_metadata": src_meta_clean})
+                dst_meta["overlay_runs"] = overlay_runs
+            _write_json(dst_meta_path, dst_meta)
+
+        counts[f"{rep_name} ({','.join(sorted(selected))})"] = added_files
+
+    return counts
+
+
 def create_tarball(source_dir: Path, tarball_path: Path) -> None:
     """Create a deterministic gzipped tarball rooted at ``source_dir.name``.
 
@@ -654,6 +875,23 @@ def main(
             help="Repeatable 'name=path' judge-retest replica (directory or .tar.gz).",
         ),
     ] = None,
+    gate_replica: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--gate-replica",
+            help="Repeatable 'name=path' gate-only replica (stages only cep/ and judge_qa/).",
+        ),
+    ] = None,
+    replica_answers_overlay: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--replica-answers-overlay",
+            help=(
+                "Repeatable 'name[:arm1,arm2]=path' judge_answers dir to merge into a staged "
+                "replica (updates outputs/, checkpoint, and run_metadata)."
+            ),
+        ),
+    ] = None,
     id_map: Annotated[
         Path | None,
         typer.Option(
@@ -683,6 +921,8 @@ def main(
     try:
         selected_arms = parse_arms_option(arms, available_arms)
         replica_specs = parse_replica_specs(replica or [])
+        gate_replica_specs = parse_replica_specs(gate_replica or [])
+        overlay_specs = parse_overlay_specs(replica_answers_overlay or [])
         replacements = load_id_map(id_map.expanduser().resolve() if id_map else None)
     except ValueError as exc:
         print_error(str(exc))
@@ -724,11 +964,22 @@ def main(
     create_tarball(staging_root / run_path.name, canonical_tar)
     uploadable_files.append(canonical_tar)
 
-    if replica_specs:
-        print_info(f"Staging {len(replica_specs)} judge-retest replica(s)...")
-        rep_counts = stage_replicas(replica_specs, staging_root, replacements)
-        for rep_name, rep_count in rep_counts.items():
-            print_info(f"  replica '{rep_name}': {rep_count} files")
+    if replica_specs or gate_replica_specs:
+        if replica_specs:
+            print_info(f"Staging {len(replica_specs)} judge-retest replica(s)...")
+            rep_counts = stage_replicas(replica_specs, staging_root, replacements)
+            for rep_name, rep_count in rep_counts.items():
+                print_info(f"  replica '{rep_name}': {rep_count} files")
+        if gate_replica_specs:
+            print_info(f"Staging {len(gate_replica_specs)} gate-only replica(s)...")
+            gate_counts = stage_gate_replicas(gate_replica_specs, staging_root, replacements)
+            for rep_name, rep_count in gate_counts.items():
+                print_info(f"  gate replica '{rep_name}': {rep_count} files")
+        if overlay_specs:
+            print_info(f"Applying {len(overlay_specs)} judge_answers overlay(s)...")
+            ov_counts = overlay_replica_answers(overlay_specs, staging_root, replacements)
+            for label, ov_count in ov_counts.items():
+                print_info(f"  overlay '{label}': {ov_count} files")
         retest_tar = out_path / "judge-retest.tar.gz"
         print_info(f"Archiving {retest_tar.name}...")
         create_tarball(staging_root / "judge-retest", retest_tar)

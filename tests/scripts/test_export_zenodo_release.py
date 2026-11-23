@@ -18,11 +18,14 @@ from scripts.export_zenodo_release import (
     filter_arm_checkpoint,
     filter_transcription_checkpoint,
     load_id_map,
+    overlay_replica_answers,
     parse_arms_option,
+    parse_overlay_specs,
     sanitize_host_path,
     sanitize_run_metadata,
     scrub_gdrive_paths,
     stage_canonical_run,
+    stage_gate_replicas,
     stage_replicas,
 )
 
@@ -34,20 +37,21 @@ def _write_json(path: Path, payload: object) -> None:
 
 def test_sanitize_host_path_and_run_metadata() -> None:
     assert (
-        sanitize_host_path("/home/users/researcher/arandu/results/thesis-run-02")
+        sanitize_host_path("/home/users/fdsreckziegel/etno-kgc-preprocessing/results/thesis-run-02")
         == "results/thesis-run-02"
     )
     assert (
-        sanitize_host_path("/home/users/researcher/arandu/cache/huggingface") == "cache/huggingface"
+        sanitize_host_path("/home/users/fdsreckziegel/etno-kgc-preprocessing/cache/huggingface")
+        == "cache/huggingface"
     )
 
     meta = {
-        "execution": {"hostname": "node1", "username": "researcher"},
-        "output_directory": "/home/users/researcher/arandu/results/thesis-run-02/answers",
-        "checkpoint_file": "/home/users/researcher/arandu/results/thesis-run-02/answers/c.json",
+        "execution": {"hostname": "tupi1", "username": "fdsreckziegel"},
+        "output_directory": "/home/users/fdsreckziegel/arandu/results/thesis-run-02/answers",
+        "checkpoint_file": "/home/users/fdsreckziegel/arandu/results/thesis-run-02/answers/c.json",
         "config": {
             "environment_variables": {
-                "ARANDU_RESULTS_DIR": "/home/users/researcher/arandu/results",
+                "ARANDU_RESULTS_DIR": "/home/users/fdsreckziegel/arandu/results",
                 "ARANDU_WORKERS": "3",
             }
         },
@@ -233,3 +237,80 @@ def test_stage_canonical_run_and_replicas(tmp_path: Path) -> None:
     out_tar = tmp_path / "thesis-run-02.tar.gz"
     create_tarball(staged, out_tar)
     assert out_tar.is_file()
+
+
+def test_gate_replica_and_answers_overlay(tmp_path: Path) -> None:
+    stage_root = tmp_path / "staging"
+    # Base replica r2 with bm25 only
+    r2_src = tmp_path / "r2_src"
+    _write_json(r2_src / "judge_answers/outputs/bm25/cep/item1.json", {"answer": "Joao"})
+    _write_json(
+        r2_src / "judge_answers/judge_answers_checkpoint.json",
+        {"completed_files": ["bm25::cep::item1"], "failed_files": {}, "total_files": 1},
+    )
+    _write_json(
+        r2_src / "judge_answers/run_metadata.json",
+        {"status": "completed", "total_items": 1, "completed_items": 1},
+    )
+    stage_replicas([("r2", r2_src)], stage_root, replacements=[("Joao", "P01")])
+
+    # Overlay source with dense_bgem3_256 and oracle (only overlay dense_bgem3_256)
+    ov_src = tmp_path / "ov_ja"
+    _write_json(ov_src / "outputs/dense_bgem3_256/cep/item1.json", {"answer": "Joao dense"})
+    _write_json(ov_src / "outputs/oracle/cep/item1.json", {"answer": "Oracle"})
+    _write_json(
+        ov_src / "judge_answers_checkpoint.json",
+        {
+            "completed_files": ["dense_bgem3_256::cep::item1", "oracle::cep::item1"],
+            "failed_files": {},
+            "total_files": 2,
+        },
+    )
+    _write_json(
+        ov_src / "run_metadata.json",
+        {
+            "status": "completed",
+            "execution": {"hostname": "tupi2", "username": "u1"},
+            "output_directory": "/home/users/u1/arandu/results/dense-r2/judge_answers",
+        },
+    )
+
+    specs = parse_overlay_specs([f"r2:dense_bgem3_256={ov_src}"])
+    counts = overlay_replica_answers(specs, stage_root, replacements=[("Joao", "P01")])
+    assert counts == {"r2 (dense_bgem3_256)": 1}
+
+    dst_ja = stage_root / "judge-retest/r2/judge_answers"
+    assert not (dst_ja / "outputs/oracle").exists()
+    assert json.loads((dst_ja / "outputs/dense_bgem3_256/cep/item1.json").read_text()) == {
+        "answer": "P01 dense"
+    }
+    merged_ckpt = json.loads((dst_ja / "judge_answers_checkpoint.json").read_text())
+    assert merged_ckpt["completed_files"] == ["bm25::cep::item1", "dense_bgem3_256::cep::item1"]
+    assert merged_ckpt["total_files"] == 2
+    merged_meta = json.loads((dst_ja / "run_metadata.json").read_text())
+    assert merged_meta["total_items"] == 2
+    assert merged_meta["completed_items"] == 2
+    assert merged_meta["overlay_runs"][0]["run_metadata"]["execution"]["hostname"] == "redacted"
+    assert "/home/" not in json.dumps(merged_meta)
+
+    # Gate-only replica r3-gate
+    r3_src = tmp_path / "r3_src"
+    _write_json(
+        r3_src / "cep/outputs/ok1_cep_qa.json",
+        {"source_metadata": {"participant_name": "Joao", "source_gdrive_path": "/g/a.mp4"}},
+    )
+    _write_json(
+        r3_src / "judge_qa/run_metadata.json",
+        {"execution": {"hostname": "tupi3", "username": "u1"}},
+    )
+    _write_json(r3_src / "answers/outputs/bm25/cep/skip.json", {"ignore": True})
+
+    gate_counts = stage_gate_replicas(
+        [("r3-gate", r3_src)], stage_root, replacements=[("Joao", "P01")]
+    )
+    assert gate_counts == {"r3-gate": 2}
+    r3g = stage_root / "judge-retest/r3-gate"
+    assert not (r3g / "answers").exists()
+    cep_data = json.loads((r3g / "cep/outputs/ok1_cep_qa.json").read_text())
+    assert cep_data["source_metadata"]["participant_name"] == "P01"
+    assert cep_data["source_metadata"]["source_gdrive_path"] is None
