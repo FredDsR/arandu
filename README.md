@@ -3,6 +3,8 @@
 [![CI](https://github.com/FredDsR/arandu/actions/workflows/ci.yml/badge.svg)](https://github.com/FredDsR/arandu/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
+[![Code DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24453915.svg)](https://doi.org/10.5281/zenodo.24453915)
+[![Dataset DOI](https://img.shields.io/badge/Dataset_DOI-10.5281%2Fzenodo.24453595-blue)](https://doi.org/10.5281/zenodo.24453595)
 
 Arandu turns recorded oral interviews into a knowledge graph and evaluates that
 graph without a reference graph to compare it against. It transcribes the
@@ -155,23 +157,36 @@ uv run arandu --help
 
 ## Reproducing Published Analyses
 
-The restricted-access dataset archive on Zenodo preserves Arandu's native
-`results/<run-id>/<stage>/outputs/` layout. Once extracted into `results/`,
-every analysis module in [analysis/](analysis/README.md) runs read-only from the
-repository root without calling any LLM:
+The restricted-access dataset archive on Zenodo (CC BY-NC-SA 4.0, DOI:
+[10.5281/zenodo.24453595](https://doi.org/10.5281/zenodo.24453595)) preserves
+Arandu's native `results/<run-id>/<stage>/outputs/` layout. Once extracted into
+`results/`, every analysis module in [analysis/](analysis/README.md) runs
+read-only from the repository root without calling any LLM:
 
 ```bash
-# Extract the Zenodo archives into results/
-tar -xzf thesis-run-02.tar.gz -C results/
-tar -xzf judge-retest.tar.gz -C results/
+# Verify checksums and extract the Zenodo archives into results/
+sha256sum -c CHECKSUMS.sha256
+mkdir -p results
+tar -xzf arandu-rs2024-v1.tar.gz -C results/
+tar -xzf arandu-rs2024-v1-retest.tar.gz -C results/
 
 # Examples (see analysis/README.md for the full command index)
-uv run python -m analysis.analyze_bloom_yield --id thesis-run-02
-uv run python -m analysis.analyze_conditional_overcaution --id thesis-run-02
-uv run python -m analysis.kg_structure_profile --id thesis-run-02
+RUN=results/arandu-rs2024-v1
+R=results/arandu-rs2024-v1-retest
+
+uv run python -m analysis.analyze_bloom_yield --id arandu-rs2024-v1
+uv run python -m analysis.analyze_conditional_overcaution --id arandu-rs2024-v1
+uv run python -m analysis.kg_structure_profile --id arandu-rs2024-v1
 uv run python -m analysis.analyze_corpus_coverage \
-    --id thesis-run-02 \
-    --replica results/judge-retest/r1-oracle
+    --id arandu-rs2024-v1 \
+    --replica "$RUN"
+uv run --with krippendorff python -m analysis.analyze_judge_retest \
+    --replica "$R/r1" --replica "$R/r2" --replica "$R/r3" \
+    --gate-from "3=$R/r3-gate" \
+    --nonans-dataset "$RUN/non_answerable/outputs/dataset.json" \
+    --kg-graphml "$RUN/kg/outputs/atlas_output/kg_graphml/transcriptions.json_graph.graphml" \
+    --out-json "$R/out/retest.json" --out-md "$R/out/retest.md" \
+    --n-boot 2000 --seed 20261005
 ```
 
 To package a sanitized release bundle from a completed run, see
@@ -235,15 +250,20 @@ variable reference.
 ## Citation
 
 If you use Arandu in your research, please cite the software using
-[CITATION.cff](CITATION.cff):
+[CITATION.cff](CITATION.cff) (and the restricted-access dataset at
+<https://doi.org/10.5281/zenodo.24453595> when using the corpus or evaluation
+outputs):
 
 ```bibtex
 @software{reckziegel2026arandu,
-  author  = {Reckziegel, Frederico Dal Soglio and Tavares, Anderson Rocha},
-  title   = {Arandu: Open-World Knowledge Graph Construction and Evaluation from Oral Interviews},
-  year    = {2026},
-  url     = {https://github.com/FredDsR/arandu},
-  license = {MIT}
+  author    = {Reckziegel, Frederico Dal Soglio and Tavares, Anderson Rocha},
+  title     = {Arandu: Open-World Knowledge Graph Construction and Evaluation from Oral Interviews},
+  year      = {2026},
+  version   = {1.0.0},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.24453915},
+  url       = {https://doi.org/10.5281/zenodo.24453915},
+  license   = {MIT}
 }
 ```
 

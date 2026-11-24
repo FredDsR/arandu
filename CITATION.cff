@@ -3,6 +3,7 @@ message: "If you use Arandu in your research, please cite this software and the 
 title: "Arandu: Open-World Knowledge Graph Construction and Evaluation from Oral Interviews"
 type: software
 version: "1.0.0"
+doi: "10.5281/zenodo.24453915"
 license: MIT
 repository-code: "https://github.com/FredDsR/arandu"
 url: "https://github.com/FredDsR/arandu"
