@@ -157,7 +157,7 @@ uv run arandu --help
 
 ## Reproducing Published Analyses
 
-The restricted-access dataset archive on Zenodo (CC BY-NC-SA 4.0, DOI:
+The restricted-access dataset archive on Zenodo (governed by an academic Data Use Agreement, DOI:
 [10.5281/zenodo.24453595](https://doi.org/10.5281/zenodo.24453595)) preserves
 Arandu's native `results/<run-id>/<stage>/outputs/` layout. Once extracted into
 `results/`, every analysis module in [analysis/](analysis/README.md) runs
